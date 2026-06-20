@@ -19,8 +19,10 @@ import {
   derivePhotoPrintSizesFromRateCard,
 } from "@/lib/photoPrints/sizes";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
-import { useRateCardPhotoPrints } from "@/hooks/useRateCard";
-import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
+import {
+  useResolvedRateCardPhotoPrints as useRateCardPhotoPrints,
+  useResolvedRateCardPriceBreaksBundle as useRateCardPriceBreaksBundle,
+} from "@/hooks/useResolvedRateCard";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
@@ -131,9 +133,7 @@ export default function PhotoPrintsBuilder() {
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
-  const rcScopeArgs = activeBranch?.id
-    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId: activeBranch.id })
-    : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined });
+  const rcScopeArgs = { tenantId: tenantId ?? undefined, branchId: activeBranch?.id ?? undefined };
   const { data: photoRateCard = [] } = useRateCardPhotoPrints(rcScopeArgs);
   const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcScopeArgs);
 

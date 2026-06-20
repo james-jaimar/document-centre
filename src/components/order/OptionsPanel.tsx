@@ -25,12 +25,21 @@ interface OptionsPanelProps {
 // section in the upload stage, so we hide them from this global panel.
 // Single-section families (flyers, posters, business cards, photo prints,
 // brochures, booklets, loose sheets) MUST show them here.
-const MULTI_SECTION_FAMILIES = new Set([
+export const MULTI_SECTION_FAMILIES = new Set([
   "bound-documents",
   "bound_documents",
   "presentations",
   "ring-binders",
   "ring_binders",
+]);
+
+/** Option names whose pricing inputs (is_color / is_duplex) live on each
+ *  document section. For multi-section families they are controlled per
+ *  section in the upload UI; for single-section families they sit on the
+ *  global OptionsPanel and must mirror down onto the body section. */
+export const SECTION_CONTROLLED_OPTION_NAMES = new Set([
+  "Print Colour",
+  "Print Sides",
 ]);
 
 export default function OptionsPanel({
@@ -41,9 +50,8 @@ export default function OptionsPanel({
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
-  const SECTION_CONTROLLED = new Set(["Print Colour", "Print Sides"]);
   const sortedOptions = [...options]
-    .filter((o) => (isMultiSection ? !SECTION_CONTROLLED.has(o.name) : true))
+    .filter((o) => (isMultiSection ? !SECTION_CONTROLLED_OPTION_NAMES.has(o.name) : true))
     .sort((a, b) => a.sort_order - b.sort_order);
 
   // Get current display value for an option

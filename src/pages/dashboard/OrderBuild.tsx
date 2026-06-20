@@ -11,7 +11,7 @@ import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculateP
 import { isStructuredValues, isValueActive, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "@/components/preview/previewTypes";
-import OptionsPanel from "@/components/order/OptionsPanel";
+import OptionsPanel, { MULTI_SECTION_FAMILIES, SECTION_CONTROLLED_OPTION_NAMES } from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
 import TabInsertDrawer from "@/components/order/TabInsertDrawer";
@@ -35,13 +35,13 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
 import { useDerivedProductRecipe } from "@/hooks/useDerivedProductRecipe";
 import {
-  useRateCardClicks,
-  useRateCardPapers,
-  useRateCardFinishing,
-  useRateCardPhotoPrints,
-  useRateCardBusinessCards,
-} from "@/hooks/useRateCard";
-import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
+  useResolvedRateCardClicks as useRateCardClicks,
+  useResolvedRateCardPapers as useRateCardPapers,
+  useResolvedRateCardFinishing as useRateCardFinishing,
+  useResolvedRateCardPhotoPrints as useRateCardPhotoPrints,
+  useResolvedRateCardBusinessCards as useRateCardBusinessCards,
+  useResolvedRateCardPriceBreaksBundle as useRateCardPriceBreaksBundle,
+} from "@/hooks/useResolvedRateCard";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -68,6 +68,7 @@ export default function OrderBuild() {
   }, [setCollapsed]);
 
   const productFamilyId = orderItem?.product_family_id ?? null;
+  const orderItemId = orderItem?.id ?? "";
 
   // Compute effective branch up-front so it can feed both the resolved-options
   // hook and the pricing cascade further below.
@@ -157,9 +158,7 @@ export default function OrderBuild() {
   // New rate-card engine: recipe + tenant rate card. If both are present,
   // PriceSummary will use the new calculator and ignore the legacy rules path.
   const { data: recipe = null } = useDerivedProductRecipe(productFamilyId);
-  const rcArgs = effectiveBranchId
-    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId: effectiveBranchId } as const)
-    : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined } as const);
+  const rcArgs = { tenantId: tenantId ?? undefined, branchId: effectiveBranchId ?? undefined };
   const { data: rcClicks = [] } = useRateCardClicks(rcArgs);
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
@@ -317,25 +316,32 @@ export default function OrderBuild() {
     }
   }, [dimensionSig]);
 
-  // Options whose values are derived per-section from the uploaded files list
-  // (Print Colour / Print Sides). These must NEVER be seeded as defaults on
-  // spec.selected_options — the per-section truth is the single source.
-  const SECTION_CONTROLLED_OPTIONS = new Set(["Print Colour", "Print Sides"]);
+  // Options whose values mirror onto each document section's is_color /
+  // is_duplex. For multi-section bound families they're owned per section
+  // in the upload UI; for single-section families (posters, flyers,
+  // brochures, booklets, business cards, loose sheets) they sit on the
+  // global OptionsPanel and must seed a default + propagate to the body
+  // section row (handled by the effect further down).
+  const familySlugLower = (productFamily?.slug ?? "").toLowerCase();
+  const isMultiSectionFamily = MULTI_SECTION_FAMILIES.has(familySlugLower);
 
   useEffect(() => {
     if (options.length === 0) return;
     setSpec((prev) => {
       const selected = { ...prev.selected_options };
       let changed = false;
-      // Strip any legacy section-controlled keys that may already be persisted
-      for (const key of Object.keys(selected)) {
-        if (SECTION_CONTROLLED_OPTIONS.has(key)) {
-          delete selected[key];
-          changed = true;
+      // For multi-section families, strip any persisted Print Colour /
+      // Print Sides keys — per-section state is the only truth.
+      if (isMultiSectionFamily) {
+        for (const key of Object.keys(selected)) {
+          if (SECTION_CONTROLLED_OPTION_NAMES.has(key)) {
+            delete selected[key];
+            changed = true;
+          }
         }
       }
       for (const opt of options) {
-        if (SECTION_CONTROLLED_OPTIONS.has(opt.name)) continue;
+        if (isMultiSectionFamily && SECTION_CONTROLLED_OPTION_NAMES.has(opt.name)) continue;
         // Document Size is owned by the PDF auto-detect effect below; do not
         // pre-seed it with the catalogue's first entry, otherwise the
         // detected size never gets a chance to win (the auto-detect bails
@@ -364,7 +370,47 @@ export default function OrderBuild() {
       if (!changed) return prev;
       return { ...prev, selected_options: selected };
     });
-  }, [options]);
+  }, [options, isMultiSectionFamily]);
+
+  // ── Mirror Print Colour / Print Sides → body section is_color / is_duplex.
+  // Only applies to single-section families. The pricing engine reads
+  // section-level flags (so per-section mixed-colour bound documents work);
+  // for single-section products the global picker is the source of truth and
+  // must propagate down to the section row, otherwise picking "Full Colour"
+  // or "Black & White" never changes the resolved click rate.
+  useEffect(() => {
+    if (isMultiSectionFamily) return;
+    if (!orderItemId) return;
+    if (sections.length === 0) return;
+    const colourSlug = spec.selected_options["Print Colour"];
+    const sidesSlug = spec.selected_options["Print Sides"];
+    const PRINTABLE = new Set(["body", "front_cover", "back_cover"]);
+    for (const s of sections) {
+      if (!PRINTABLE.has(s.section_type as string)) continue;
+      const patch: { id: string; is_color?: boolean; is_duplex?: boolean } = { id: s.id };
+      if (colourSlug) {
+        const wantColor = colourSlug.toLowerCase() === "colour" || colourSlug.toLowerCase() === "color";
+        if (!!s.is_color !== wantColor) patch.is_color = wantColor;
+      }
+      if (sidesSlug) {
+        const wantDuplex = sidesSlug.toLowerCase() === "duplex";
+        if (!!s.is_duplex !== wantDuplex) patch.is_duplex = wantDuplex;
+      }
+      if (patch.is_color !== undefined || patch.is_duplex !== undefined) {
+        updateSectionMut.mutate(patch as any);
+      }
+    }
+    // intentionally exclude updateSectionMut + sections from deps to avoid
+    // ping-ponging; we react to the picker values only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isMultiSectionFamily,
+    orderItemId,
+    spec.selected_options["Print Colour"],
+    spec.selected_options["Print Sides"],
+    sections.length,
+  ]);
+
 
   // Auto-match Document Size from uploaded document dimensions
   // Only fires when no Document Size is currently selected — preserves user choice across edit cycles
@@ -868,7 +914,7 @@ export default function OrderBuild() {
     prev.hadInserts = nowHasInserts;
   }, [tabInfo, insertEnabled]);
 
-  const orderItemId = orderItem?.id ?? "";
+  
 
   // ── Cleanup: when tabs/inserts are turned off, remove their sections so the preview matches ──
   useEffect(() => {
