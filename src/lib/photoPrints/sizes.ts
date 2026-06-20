@@ -123,11 +123,20 @@ export function getPhotoPrintSize(
   return available[0] ?? buildSize("4x6", 0);
 }
 
+/**
+ * @deprecated Customer-facing Finish options now come from product_options
+ * (catalog.papers) via `buildFinishesFromOptions`. Kept temporarily for
+ * back-compat with any non-customer surfaces.
+ */
 export const PHOTO_FINISH_OPTIONS = [
   { slug: "gloss", label: "Gloss", is_default: true },
   { slug: "matte", label: "Matte", is_default: false },
 ] as const;
 
+/**
+ * @deprecated Customer-facing Border options now come from product_options
+ * (Border row, source=manual) via `buildBordersFromOptions`.
+ */
 export const PHOTO_BORDER_OPTIONS = [
   { slug: "none", label: "No Border", is_default: true, border_mm: 0 },
   { slug: "white_3mm", label: "White Border (3 mm)", is_default: false, border_mm: 3 },
