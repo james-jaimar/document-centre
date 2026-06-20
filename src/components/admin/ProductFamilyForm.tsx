@@ -225,7 +225,33 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
               />
             </div>
 
+            <FormField
+              control={form.control}
+              name="pricing_engine"
+              rules={{ required: "Pricing engine is required" }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Pricing Engine</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue placeholder="Select pricing engine" /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="click_charges">Click Charges (booklets, flyers, posters, brochures…)</SelectItem>
+                      <SelectItem value="photo_prints">Photo Prints (uses Photo Prints rate card)</SelectItem>
+                      <SelectItem value="business_cards">Business Cards (uses Business Cards rate card)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Determines which Master Pricing tab supplies the per-unit price for this product.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+
               <div>
                 <h4 className="text-sm font-semibold">Print Output</h4>
                 <p className="text-xs text-muted-foreground">
