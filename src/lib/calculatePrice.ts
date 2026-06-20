@@ -468,8 +468,8 @@ export function calculatePriceFromRateCard(
         ? (rc.finishing ?? []).find(
             (r) =>
               r.is_active &&
-              r.code === lamCode &&
-              (r.size ?? "").toUpperCase() === "SRA3",
+              (r.code === lamCode || r.code === `${lamCode}-sra3`) &&
+              (r.size ?? "").toUpperCase().includes("SRA3"),
           )
         : null;
       if (lamRow) {
