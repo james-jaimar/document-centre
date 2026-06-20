@@ -124,7 +124,9 @@ export default function OptionsPanel({
                     option={option}
                     value={selectedOptions[option.name] ?? ""}
                     onChange={(slug) => onOptionChange(option.name, slug)}
+                    suppressPriceDelta={suppressSet.has(option.name)}
                   />
+
                 )}
               </AccordionContent>
             </AccordionItem>
