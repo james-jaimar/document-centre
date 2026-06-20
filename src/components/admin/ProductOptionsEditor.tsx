@@ -509,6 +509,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     const src = ((opt as any).source ?? "manual") as OptionSource;
     const cat = (opt as any).source_filter?.category ?? "";
     const attr = (opt as any).source_filter?.attribute ?? "";
+    const axis = ((opt as any).source_filter?.axis ?? "") as BusinessCardAxis | "";
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
@@ -517,7 +518,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       source: src,
       finishingCategory: cat,
       printAttribute: attr,
+      businessCardAxis: axis,
     });
+
     const parsed = parseOptionValues(opt.values);
     const manualParsed = parseOptionValues((opt as any).manual_values);
     const manualSnapshot = manualParsed.length > 0
