@@ -24,12 +24,17 @@ interface OptionSelectorProps {
   option: ProductOption;
   value: string;
   onChange: (slug: string) => void;
+  /** When true, hide the "+R x /doc" price-delta suffix on each value.
+   *  Used for families (e.g. Business Cards) where pricing is driven by
+   *  a rate-card matrix / finishing catalogue, not per-value impacts. */
+  suppressPriceDelta?: boolean;
 }
 
 export default function OptionSelector({
   option,
   value,
   onChange,
+  suppressPriceDelta,
 }: OptionSelectorProps) {
   const { region } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
