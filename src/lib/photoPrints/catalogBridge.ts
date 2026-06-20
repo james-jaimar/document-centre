@@ -66,7 +66,7 @@ function rcSizeSlugFromOption(slug: string): string {
  *  rate-card finish vocabulary. */
 function rcFinishFromValue(v: StructuredOptionValue): string {
   const raw = String(
-    (v.metadata?.finish ?? "") || (v.metadata?.catalog_code ?? "") || v.slug ?? "",
+    (v.metadata?.finish ?? "") || (v.metadata?.catalog_code ?? "") || (v.slug ?? ""),
   ).toLowerCase();
   if (raw.includes("gloss")) return "gloss";
   if (raw.includes("matt") || raw.includes("silk")) return "matte";
