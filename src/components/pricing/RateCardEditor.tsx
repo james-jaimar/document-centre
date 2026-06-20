@@ -291,7 +291,7 @@ function ClicksTab({
         scope_type: scope,
         tenant_id: scope === "master" ? null : tenantId,
         branch_id: scope === "branch" ? branchId : null,
-        size: adding.size.trim(),
+        size: adding.size.trim().toUpperCase(),
         colour: adding.colour,
         sides: adding.sides,
         sell_price: adding.sell_price,
