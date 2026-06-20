@@ -828,6 +828,40 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               </div>
             )}
 
+            {optionForm.source === "rate_card.business_cards" && (
+              <div className="space-y-1">
+                <Label>Business Cards axis</Label>
+                <Select
+                  value={optionForm.businessCardAxis}
+                  onValueChange={(v) => {
+                    const axis = v as BusinessCardAxis;
+                    const preset = BC_AXIS_OPTIONS.find((o) => o.value === axis);
+                    setOptionForm({
+                      ...optionForm,
+                      businessCardAxis: axis,
+                      // Auto-fill the name with the canonical key the pricing
+                      // engine expects, but only if the admin hasn't typed one.
+                      name: optionForm.name?.trim()
+                        ? optionForm.name
+                        : preset?.optionName ?? optionForm.name,
+                    });
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick an axis…" /></SelectTrigger>
+                  <SelectContent>
+                    {BC_AXIS_OPTIONS.map((a) => (
+                      <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Final unit price comes from Master Pricing → Business Cards, matched on the customer's selected Pack Size / Sides / Paper / Lamination.
+                </p>
+              </div>
+            )}
+
+
+
             {/* Option meta */}
             <div className="grid grid-cols-2 gap-3">
               <div>
