@@ -728,7 +728,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                       <Badge variant="outline" className="text-xs">manual</Badge>
                     ) : (
                       <Badge variant="default" className="text-xs">
-                        {src.replace("catalog.", "")}{sub ? ` · ${sub}` : ""}
+                        {src.replace("catalog.", "").replace("rate_card.", "rate card · ")}{sub ? ` · ${sub}` : ""}
                       </Badge>
                     )}
                   </TableCell>
