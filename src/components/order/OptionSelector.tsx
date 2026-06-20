@@ -68,6 +68,7 @@ export default function OptionSelector({
 
   // Format price delta for an option value
   const formatPrice = (val: StructuredOptionValue) => {
+    if (suppressPriceDelta) return "";
     if (val.price_impact === 0) return "";
     const suffix =
       val.price_type === "per_page"
