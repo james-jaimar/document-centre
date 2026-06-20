@@ -19,8 +19,10 @@ import {
   derivePhotoPrintSizesFromRateCard,
 } from "@/lib/photoPrints/sizes";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
-import { useRateCardPhotoPrints } from "@/hooks/useRateCard";
-import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
+import {
+  useResolvedRateCardPhotoPrints as useRateCardPhotoPrints,
+  useResolvedRateCardPriceBreaksBundle as useRateCardPriceBreaksBundle,
+} from "@/hooks/useResolvedRateCard";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
