@@ -2860,6 +2860,64 @@ class PdfOps:
             return box
         raise ValueError("Page has no TrimBox/BleedBox/MediaBox")
 
+    @staticmethod
+    def _place_with_bleed(
+        target_page,
+        source_page,
+        *,
+        source_rect: list[float],
+        target_rect: "pikepdf.Rectangle",
+        extra_matrix: "pikepdf.Matrix | None" = None,
+    ) -> None:
+        """Overlay ``source_page`` onto ``target_page`` so that
+        ``source_rect`` (in source-page user space) maps to ``target_rect``
+        on the target page.
+
+        This bypasses qpdf's TrimBox-first BBox selection in
+        ``as_form_xobject()`` by stamping ``/BBox`` on the form XObject
+        explicitly. The caller decides which source rectangle to draw
+        (trim, bleed, or media) — typically the bleed rectangle so the
+        source's bleed margin is preserved through imposition rather than
+        being clipped to the TrimBox.
+
+        ``source_rect`` and ``target_rect`` must share the same aspect
+        ratio. Pass ``extra_matrix`` to apply an additional affine
+        transform (e.g. rotation around the slot centre) on top of the
+        scale + translate placement.
+        """
+        formx = source_page.as_form_xobject()
+        formx.BBox = pikepdf.Array(source_rect)
+        # Reset any inherited /Matrix so our cm is the only transform that
+        # matters when the XObject is invoked.
+        formx.Matrix = pikepdf.Array([1, 0, 0, 1, 0, 0])
+        name = target_page.add_resource(formx, pikepdf.Name.XObject)
+
+        src_w = source_rect[2] - source_rect[0]
+        src_h = source_rect[3] - source_rect[1]
+        if src_w <= 0 or src_h <= 0:
+            raise ValueError("source_rect has non-positive dimensions")
+
+        sx = target_rect.width / src_w
+        sy = target_rect.height / src_h
+        ox = target_rect.llx - source_rect[0] * sx
+        oy = target_rect.lly - source_rect[1] * sy
+
+        if extra_matrix is None:
+            cm = f"{sx} 0 0 {sy} {ox} {oy} cm".encode()
+        else:
+            # Compose: first the placement (scale + translate), then the
+            # extra transform (applied in target-page coordinates).
+            # PDF cm is right-to-left, so emit extra_matrix first.
+            m = extra_matrix
+            cm = (
+                f"{m.a} {m.b} {m.c} {m.d} {m.e} {m.f} cm "
+                f"{sx} 0 0 {sy} {ox} {oy} cm"
+            ).encode()
+
+        target_page.contents_add(b"q\n" + cm + f" /{name} Do\nQ\n".encode())
+
+
+
     def impose_nup_trimbox(
         self,
         src: Path,
