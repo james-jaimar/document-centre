@@ -53,10 +53,20 @@ export default function BranchLayout() {
   }, [branchId, qc]);
 
 
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+  const totalUnread = useMemo(
+    () => Object.values(unreadMap).reduce((sum, n) => sum + (Number(n) || 0), 0),
+    [unreadMap],
+  );
+  useDocumentTitleUnread(totalUnread);
+
   return (
     <div className="flex h-screen w-full bg-background">
-      <BranchSidebar />
+      <BranchSidebar unreadOrderCount={totalUnread} />
       <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-12 items-center justify-end gap-2 border-b bg-background px-4">
+          <StaffMessagesBell ordersBasePath="/branch/orders" />
+        </header>
         <SubscriptionGateBanner />
         <main className="flex-1 overflow-auto p-6">
           <Outlet />
