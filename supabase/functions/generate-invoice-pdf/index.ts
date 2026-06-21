@@ -769,16 +769,18 @@ Deno.serve(async (req) => {
     }
 
     // Banking
-    const hasEft = !!from.banking?.eft_enabled && (from.banking?.bank_name || from.banking?.account_number);
-    if (kind !== "receipt" && hasEft && from.banking) {
+    const b = from.banking;
+    const hasAnyBank = !!(b && (b.bank_name || b.account_name || b.account_number || b.branch_code || b.swift_code));
+    const hasEft = !!(b?.eft_enabled && hasAnyBank);
+    if (kind !== "receipt" && hasEft && b) {
       yL -= 6;
       labelChip(page, "Banking Details", M, yL); yL -= 14;
       const kv: [string, string | undefined][] = [
-        ["Bank", from.banking.bank_name],
-        ["Account name", from.banking.account_name],
-        ["Account number", from.banking.account_number],
-        ["Branch code", from.banking.branch_code],
-        ["SWIFT", from.banking.swift_code],
+        ["Bank", b.bank_name],
+        ["Account name", b.account_name],
+        ["Account number", b.account_number],
+        ["Branch code", b.branch_code],
+        ["SWIFT", b.swift_code],
         ["Reference", String(invNum ?? "")],
       ];
       for (const [k, v] of kv) {
@@ -786,6 +788,15 @@ Deno.serve(async (req) => {
         drawText(page, k, M, yL, { size: 8, color: muted });
         drawText(page, String(v), M + 90, yL, { size: 8, bold: true });
         yL -= 10;
+      }
+      if (b.payment_instructions && b.payment_instructions.trim()) {
+        yL -= 4;
+        for (const para of b.payment_instructions.split(/\r?\n/)) {
+          for (const ln of wrap(para, font, 8, leftW - 4)) {
+            drawText(page, ln, M, yL, { size: 8, color: muted });
+            yL -= 10;
+          }
+        }
       }
     }
 
