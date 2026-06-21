@@ -102,6 +102,14 @@ const KPI = ({
 
 const BranchDashboard = () => {
   const { tenantId, branchId, tenantName } = useTenantContext();
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+  const unreadOrderIds = Object.keys(unreadMap).filter((id) => (unreadMap[id] || 0) > 0);
+  const totalUnreadMsgs = Object.values(unreadMap).reduce(
+    (sum, n) => sum + (Number(n) || 0),
+    0,
+  );
+
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["branch-dashboard", tenantId, branchId],
