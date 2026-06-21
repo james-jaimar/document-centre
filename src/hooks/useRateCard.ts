@@ -159,7 +159,10 @@ export function useUpdateRateCardClick() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
