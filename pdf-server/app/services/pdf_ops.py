@@ -3055,20 +3055,21 @@ class PdfOps:
                     min(mb_box[3], trim[3] + bleed),
                 ]
 
-                # Temporarily set MediaBox = the source bleed rectangle
-                # so add_overlay maps that exact area into each slot.
-                original_mb = list(mb_box)
-                cust.MediaBox = pikepdf.Array(cust_bleed)
-                try:
-                    for slot_idx in range(per_sheet):
-                        tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
-                        tgt_rect = pikepdf.Rectangle(
-                            tx0 - bleed, ty0 - bleed,
-                            tx1 + bleed, ty1 + bleed,
-                        )
-                        sheet.add_overlay(cust, tgt_rect)
-                finally:
-                    cust.MediaBox = pikepdf.Array(original_mb)
+                # Place each copy via _place_with_bleed, which overrides
+                # the form XObject's /BBox so the source's bleed margin
+                # survives instead of being clipped to the TrimBox.
+                for slot_idx in range(per_sheet):
+                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                    tgt_rect = pikepdf.Rectangle(
+                        tx0 - bleed, ty0 - bleed,
+                        tx1 + bleed, ty1 + bleed,
+                    )
+                    self._place_with_bleed(
+                        sheet, cust,
+                        source_rect=cust_bleed,
+                        target_rect=tgt_rect,
+                    )
+
 
 
                 # Crop marks + registration overlay (reportlab → pikepdf)
