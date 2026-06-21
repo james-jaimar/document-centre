@@ -185,9 +185,13 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
           ) : (
             <div className="space-y-2">
               {enabledSizes.map((s) => {
-                const matching = templates.filter(
-                  (t) => t.input_size.toLowerCase() === s.code.toLowerCase(),
-                );
+                const matching = templates
+                  .filter((t) => templateMatchesSize(t, s))
+                  .sort(
+                    (a, b) =>
+                      a.n_up - b.n_up ||
+                      a.name.localeCompare(b.name),
+                  );
                 const current = impositionBySize.get(s.code.toLowerCase()) ?? "__cut__";
                 const currentTpl = templates.find((t) => t.id === current);
                 return (
@@ -207,7 +211,7 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
                       <Select
                         value={current}
                         onValueChange={(v) =>
-                          setSizeStrategy(s.code, v === "__cut__" ? null : v)
+                          setSizeStrategy(s, v === "__cut__" ? null : v)
                         }
                         disabled={setImposition.isPending}
                       >
@@ -221,7 +225,7 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
                           ))}
                           {matching.length === 0 && (
                             <SelectItem value="__none__" disabled>
-                              No imposition templates for {s.code.toUpperCase()}
+                              No imposition templates for {s.label}
                             </SelectItem>
                           )}
                         </SelectContent>
