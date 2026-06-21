@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, MessageSquare } from "lucide-react";
 import {
   ADMIN_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
