@@ -153,12 +153,6 @@ export default function BranchOrders() {
       </div>
 
       <div className="space-y-2">
-        <OrderStatusChips
-          statuses={ALL_ADMIN_STATUSES}
-          selected={selectedStatuses}
-          onToggle={handleToggleStatus}
-        />
-      <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={toggleUnreadOnly}
