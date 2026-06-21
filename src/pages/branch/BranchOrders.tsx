@@ -158,6 +158,47 @@ export default function BranchOrders() {
           selected={selectedStatuses}
           onToggle={handleToggleStatus}
         />
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={toggleUnreadOnly}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (unreadOnly
+                ? "border-red-500 bg-red-500 text-white"
+                : totalUnreadOrders > 0
+                ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                : "border-border text-muted-foreground hover:bg-muted")
+            }
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Unread messages
+            {totalUnreadOrders > 0 && (
+              <span
+                className={
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold " +
+                  (unreadOnly ? "bg-white text-red-600" : "bg-red-500 text-white")
+                }
+              >
+                {totalUnreadOrders}
+              </span>
+            )}
+          </button>
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5"
+              checked={unreadFirst}
+              onChange={(e) => setUnreadFirst(e.target.checked)}
+            />
+            Show unread first
+          </label>
+        </div>
+        <OrderStatusChips
+          statuses={ALL_ADMIN_STATUSES}
+          selected={selectedStatuses}
+          onToggle={handleToggleStatus}
+        />
         <PaymentStatusChips
           statuses={ALL_PAYMENT_STATUSES}
           selected={selectedPaymentStatuses}
