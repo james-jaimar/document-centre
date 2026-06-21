@@ -394,7 +394,10 @@ export function useDeleteRateCardPhotoPrint() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
