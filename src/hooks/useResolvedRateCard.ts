@@ -66,6 +66,11 @@ const clickKey = (r: RateCardClick) =>
 export function useResolvedRateCardClicks(args: Args) {
   return useQuery({
     queryKey: KEY("clicks", args),
+    // Pricing must reflect admin edits as fast as possible. These rows are tiny,
+    // so refetch on tab focus and treat as always-stale to avoid showing prices
+    // from before a branch override row was written.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const queries: any[] = [
         supabase

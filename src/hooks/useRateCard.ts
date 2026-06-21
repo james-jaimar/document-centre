@@ -159,7 +159,10 @@ export function useUpdateRateCardClick() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -170,7 +173,10 @@ export function useInsertRateCardClick() {
       const { error } = await supabase.from("rate_card_clicks" as any).insert(input as any);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -181,7 +187,10 @@ export function useDeleteRateCardClick() {
       const { error } = await supabase.from("rate_card_clicks" as any).delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -368,7 +377,10 @@ export function useUpsertRateCardPhotoPrint() {
         if (error) throw error;
       }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -382,7 +394,10 @@ export function useDeleteRateCardPhotoPrint() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -397,7 +412,10 @@ export function useCloneMasterRateCard() {
       });
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -413,6 +431,7 @@ export function useResyncBranchPricing() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
       qc.invalidateQueries({ queryKey: ["pricing_rules"] });
     },
   });
@@ -452,7 +471,10 @@ export function useUpsertRateCardBusinessCard() {
         if (error) throw error;
       }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
@@ -466,6 +488,9 @@ export function useDeleteRateCardBusinessCard() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
