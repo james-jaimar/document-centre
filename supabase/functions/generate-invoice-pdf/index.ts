@@ -85,6 +85,7 @@ interface ResolvedParty {
     branch_code?: string;
     swift_code?: string;
     eft_enabled?: boolean;
+    payment_instructions?: string;
   };
 }
 
