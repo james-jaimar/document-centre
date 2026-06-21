@@ -1,44 +1,27 @@
 ## Problem
 
-The "Re-sync from Tenant" button on the branch Catalog Pricing page calls `public.resync_branch_catalog_from_tenant(branch_id)`, which gates execution behind `public.user_can_manage_branch_catalog(branch_id)`. That helper currently checks:
+The Branch Pricing Rules page's "Re-sync from tenant" button calls `public.resync_branch_pricing_from_tenant`, which still references two retired tables — `rate_card_papers` and `rate_card_finishing`. Those were replaced by the `catalog_papers` / `catalog_paper_prices` and `catalog_finishing` / `catalog_finishing_prices` model (now managed via the separate **Catalogue Pricing** tab and its own `resync_branch_catalog_from_tenant` RPC). The DELETE on `public.rate_card_papers` blows up with `relation "public.rate_card_papers" does not exist`.
 
-```sql
-AND m.role IN ('Owner','Admin')
-```
-
-But the actual role values stored in `tenant_memberships` are lowercase and use a different vocabulary than the memory doc: `admin`, `branch_manager`, `store_operator`, `customer`. So the check **never matches anyone** — even the tenant admin (`hello@jaimar.dev`, role `admin`) and the branch manager (`hello@printmypics.co`, role `branch_manager`) both fail, and the function raises `Not authorised`.
-
-The sibling function `user_is_tenant_admin` already uses the correct lowercase form (`'owner','admin'`), confirming this is just a bug in `user_can_manage_branch_catalog`.
+`clone_tenant_pricing_to_branch` has the same problem — it also INSERTs into both retired tables.
 
 ## Fix
 
-One small migration that recreates `public.user_can_manage_branch_catalog` with the correct, real-world role set:
+Single migration that recreates both functions, dropping the legacy paper/finishing branches and keeping only what genuinely belongs to the Pricing Rules tab.
 
-- Tenant-level: `admin`, `owner` (membership with `branch_id IS NULL`) — can manage any branch in their tenant.
-- Branch-level: `branch_manager`, `admin`, `owner` (membership whose `branch_id` matches) — can manage their own branch.
-- Platform admins continue to bypass via `has_role(auth.uid(), 'platform_admin')`.
+**`resync_branch_pricing_from_tenant(p_branch_id)`** — keep auth check unchanged; delete + repopulate only:
+- `rate_card_clicks` (branch scope)
+- `rate_card_photo_prints` (branch scope)
+- `rate_card_business_cards` (branch scope)
+- `pricing_rules` (branch-scoped)
 
-```sql
-CREATE OR REPLACE FUNCTION public.user_can_manage_branch_catalog(p_branch_id uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.tenant_memberships m
-    JOIN public.branches b ON b.id = p_branch_id
-    WHERE m.profile_id = auth.uid()
-      AND m.is_active
-      AND m.tenant_id = b.tenant_id
-      AND (
-        (m.branch_id IS NULL  AND m.role IN ('owner','admin'))
-     OR (m.branch_id = p_branch_id AND m.role IN ('owner','admin','branch_manager'))
-      )
-  ) OR public.has_role(auth.uid(), 'platform_admin'::app_role);
-$$;
-```
+Then `PERFORM public.clone_tenant_pricing_to_branch(p_branch_id)`.
 
-This fixes both the failing RPC and the matching RLS policies on `catalog_sizes`, `catalog_print_attrs`, `catalog_papers`, `catalog_finishing`, `catalog_paper_prices`, `catalog_finishing_prices`, and `product_catalog_links` (they all delegate to the same helper), so branch admins/branch managers can edit and re-sync their catalog pricing.
+**`clone_tenant_pricing_to_branch(p_branch_id)`** — drop the `rate_card_papers` and `rate_card_finishing` INSERT blocks; keep clicks, photo prints, business cards, and pricing_rules clone logic exactly as-is.
 
-## Out of scope
+Paper & finishing pricing is intentionally out of scope for this RPC — that's what the Catalogue Pricing tab's "Re-sync from tenant" (already working via `resync_branch_catalog_from_tenant`) handles.
 
-- No schema changes, no policy churn beyond the function body.
-- No UI changes; the existing button and toast are correct.
-- Tenant-level resync (`resync_tenant_catalog_from_master`) already uses `user_is_tenant_admin`, which is fine.
+## Verification
+
+After the migration, click **Re-sync from tenant** on `/t/postnet/branch/<test-branch>/pricing-rules`. Expected: toast success, list populates with the tenant's pricing_rules / clicks / photo prints / business cards.
+
+No frontend changes required.
