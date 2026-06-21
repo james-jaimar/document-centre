@@ -80,8 +80,6 @@ import BranchDashboard from "@/pages/branch/BranchDashboard";
 import BranchOrders from "@/pages/branch/BranchOrders";
 import BranchOrderDetail from "@/pages/branch/BranchOrderDetail";
 import BranchProducts from "@/pages/branch/BranchProducts";
-import BranchPricing from "@/pages/branch/BranchPricing";
-import BranchRateCard from "@/pages/branch/BranchRateCard";
 import BranchCatalogPricing from "@/pages/branch/BranchCatalogPricing";
 
 import BranchDelivery from "@/pages/branch/BranchDelivery";
