@@ -471,7 +471,10 @@ export function useUpsertRateCardBusinessCard() {
         if (error) throw error;
       }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
