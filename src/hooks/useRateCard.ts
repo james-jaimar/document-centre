@@ -412,7 +412,10 @@ export function useCloneMasterRateCard() {
       });
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
