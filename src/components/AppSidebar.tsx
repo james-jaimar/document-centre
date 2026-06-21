@@ -155,7 +155,7 @@ const ADMIN_SECTIONS: NavSection[] = [
   },
 ];
 
-export default function AppSidebar() {
+export default function AppSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?: number } = {}) {
   const location = useLocation();
   const { roles, signOut, user, highestRole } = useAuth();
   const { tenantId, tenantName, membershipRole, isOverriding, setOverrideTenantId } = useTenantContext();
