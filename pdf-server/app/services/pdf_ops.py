@@ -2743,6 +2743,8 @@ class PdfOps:
         slots,
         n_up: int,
         out_pdf: Path,
+        *,
+        bleed_mm: float = 3.0,
     ) -> int:
         """Stamp customer pages onto a press-sheet template.
 
@@ -2752,10 +2754,18 @@ class PdfOps:
         source of truth for crop marks, colour bars and registration marks —
         no procedural marks are added here.
 
+        Each slot rectangle is the slot's TRIM size. We grow both the source
+        rectangle (around its TrimBox) and the target rectangle (around the
+        slot) by `bleed_mm` so the customer's bleed flows into the template's
+        inter-slot gutter. Set `bleed_mm=0` to fall back to a trim-only
+        placement (useful for templates whose slots butt against artwork that
+        must not be overdrawn).
+
         Returns the number of composite sheets produced.
         """
         from math import cos, radians, sin
         MM_TO_PT = 2.83464567
+        tpl_bleed_pt = max(0.0, bleed_mm) * MM_TO_PT
 
         if n_up < 1:
             raise ValueError("n_up must be >= 1")
@@ -2790,39 +2800,55 @@ class PdfOps:
                     slot = slots[slot_idx]
                     cust_page = customer_pages[src_idx]
 
-                    # Slot rectangle in PDF points (origin bottom-left of sheet)
+                    # Slot rectangle in PDF points (origin bottom-left of sheet).
+                    # This is the slot's TRIM rectangle.
                     x0 = slot.x_mm * MM_TO_PT
                     y0 = slot.y_mm * MM_TO_PT
                     x1 = (slot.x_mm + slot.width_mm) * MM_TO_PT
                     y1 = (slot.y_mm + slot.height_mm) * MM_TO_PT
-                    rect = pikepdf.Rectangle(x0, y0, x1, y1)
+
+                    # Resolve the source page's trim and grow it by bleed,
+                    # clamped to the source MediaBox so we never reference
+                    # content the producer didn't draw.
+                    trim_src = self._resolve_trim_box(cust_page, fallback_inset_pt=0.0)
+                    mb = cust_page.MediaBox
+                    mb_box = [float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3])]
+                    cust_bleed_src = [
+                        max(mb_box[0], trim_src[0] - tpl_bleed_pt),
+                        max(mb_box[1], trim_src[1] - tpl_bleed_pt),
+                        min(mb_box[2], trim_src[2] + tpl_bleed_pt),
+                        min(mb_box[3], trim_src[3] + tpl_bleed_pt),
+                    ]
+                    tgt_rect = pikepdf.Rectangle(
+                        x0 - tpl_bleed_pt, y0 - tpl_bleed_pt,
+                        x1 + tpl_bleed_pt, y1 + tpl_bleed_pt,
+                    )
 
                     rotation = float(slot.rotation_deg or 0) % 360
-                    if rotation == 0:
-                        sheet.add_overlay(cust_page, rect)
-                    else:
-                        # add_overlay scales to rect first; we then need to rotate
-                        # around the slot centre. pikepdf 9 supports `transform=`.
-                        cx = (x0 + x1) / 2
-                        cy = (y0 + y1) / 2
+                    extra: "pikepdf.Matrix | None" = None
+                    if rotation != 0:
+                        # Rotate around the (expanded) slot centre after the
+                        # placement scale/translate has positioned the source.
+                        cx = (tgt_rect.llx + tgt_rect.urx) / 2
+                        cy = (tgt_rect.lly + tgt_rect.ury) / 2
                         theta = radians(rotation)
                         c, s = cos(theta), sin(theta)
-                        # 2D affine: translate centre→origin, rotate, translate back
                         tx = cx - (cx * c - cy * s)
                         ty = cy - (cx * s + cy * c)
-                        rotate = pikepdf.Matrix(c, s, -s, c, tx, ty)
-                        try:
-                            sheet.add_overlay(cust_page, rect, transform=rotate)
-                        except TypeError:
-                            # Older pikepdf without `transform=` kw — fall back
-                            # to unrotated overlay (the platform admin should
-                            # avoid rotated slots in that case).
-                            sheet.add_overlay(cust_page, rect)
+                        extra = pikepdf.Matrix(c, s, -s, c, tx, ty)
+
+                    self._place_with_bleed(
+                        sheet, cust_page,
+                        source_rect=cust_bleed_src,
+                        target_rect=tgt_rect,
+                        extra_matrix=extra,
+                    )
 
                 sheets += 1
 
             output.save(str(out_pdf))
             return sheets
+
 
     # ------------------------------------------------------------------ #
     # TrimBox-aware n-up imposition (industry-standard, replaces the old
