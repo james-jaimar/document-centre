@@ -173,7 +173,10 @@ export function useInsertRateCardClick() {
       const { error } = await supabase.from("rate_card_clicks" as any).insert(input as any);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+    },
   });
 }
 
