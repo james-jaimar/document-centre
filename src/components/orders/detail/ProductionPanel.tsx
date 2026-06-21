@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, FileCog, Layers, Ticket, Loader2, AlertTriangle } from "lucide-react";
+import { Download, FileCog, Layers, Ticket, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +24,14 @@ function safeFilenamePart(s: string | null | undefined, fallback: string): strin
   return v || fallback;
 }
 
+type Tone = "primary" | "success" | "warning";
+
+const TONE_ICON_BG: Record<Tone, string> = {
+  primary: "bg-primary/10 text-primary",
+  success: "bg-success/10 text-success",
+  warning: "bg-warning/15 text-warning",
+};
+
 export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, orderNumber }: Props) {
   const {
     artefacts,
@@ -40,8 +48,6 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  // Default the picker to the existing job template, otherwise the
-  // product family's primary template, otherwise null.
   useEffect(() => {
     if (artefacts?.imposition_template_id) {
       setSelectedTemplateId(artefacts.imposition_template_id);
@@ -59,11 +65,6 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     return `${order}-${job}-${suffix}.pdf`;
   };
 
-  /**
-   * Fetch the signed S3 URL as a Blob and trigger a same-origin download
-   * with a meaningful filename. Falls back to opening the signed URL in
-   * a new tab if the bucket CORS doesn't allow fetch from this origin.
-   */
   const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
@@ -83,12 +84,11 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           document.body.appendChild(a);
           a.click();
           a.remove();
-          // Revoke after the click has been processed.
           setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
           triggered = true;
         }
       } catch {
-        // CORS / network — fall through to plain open.
+        // CORS fallback
       }
       if (!triggered) window.open(url, "_blank", "noopener,noreferrer");
     } finally {
@@ -118,159 +118,175 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   };
 
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b bg-muted/40 px-5 py-3">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
           Production
         </h3>
         {jobStatus && (
-          <span className="text-[10px] text-muted-foreground">Job status: {jobStatus}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Job status
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-bold">
+              {jobStatus}
+            </span>
+          </div>
         )}
       </div>
 
-      {artefacts?.auto_assemble_error && !artefacts?.print_ready_pdf_path && (
-        <div className="rounded border border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 px-2 py-1.5 text-[11px] flex items-start gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-amber-900 dark:text-amber-200">
-              Auto-assemble failed
-            </div>
-            <div className="text-[10px] text-amber-800/80 dark:text-amber-300/80 truncate" title={artefacts.auto_assemble_error}>
-              {artefacts.auto_assemble_error}
-            </div>
-            {artefacts.auto_assemble_failed_at && (
-              <div className="text-[10px] text-muted-foreground">
-                {format(new Date(artefacts.auto_assemble_failed_at), "d MMM HH:mm")}
+      <div className="p-5 space-y-5">
+        {artefacts?.auto_assemble_error && !artefacts?.print_ready_pdf_path && (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-foreground">Auto-assemble failed</div>
+              <div className="text-[11px] text-muted-foreground truncate" title={artefacts.auto_assemble_error}>
+                {artefacts.auto_assemble_error}
               </div>
+              {artefacts.auto_assemble_failed_at && (
+                <div className="text-[10px] text-muted-foreground">
+                  {format(new Date(artefacts.auto_assemble_failed_at), "d MMM HH:mm")}
+                </div>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 font-bold"
+              onClick={() => retryAutoAssemble()}
+              disabled={generating === "print_ready"}
+            >
+              {generating === "print_ready" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Retry"}
+            </Button>
+          </div>
+        )}
+
+        {/* Print-ready */}
+        <Row
+          tone="primary"
+          icon={<FileCog className="h-5 w-5" />}
+          label="Print-ready PDF"
+          path={artefacts?.print_ready_pdf_path ?? null}
+          loading={isLoading || generating === "print_ready"}
+          opening={openingPath === artefacts?.print_ready_pdf_path}
+          onGenerate={() => generatePrintReady()}
+          onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
+          generateLabel="Assemble"
+        />
+
+        {artefacts?.assembly_report && (
+          <div className="rounded-lg bg-muted/50 border border-border px-3 py-2 space-y-1">
+            {artefacts.assembly_report.reused_source && (
+              <div className="text-[11px] text-muted-foreground">Reused uploaded PDF — no work needed.</div>
+            )}
+            {artefacts.assembly_report.reused_cache && (
+              <div className="text-[11px] text-muted-foreground">Served from cache (spec unchanged).</div>
+            )}
+            {!!artefacts.assembly_report.steps?.length && (
+              <>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Processing chain
+                </div>
+                <p className="text-[11px] text-foreground/80 font-mono break-all">
+                  {artefacts.assembly_report.steps.join(" → ")}
+                </p>
+              </>
+            )}
+            {artefacts.assembly_report.warnings?.map((w, i) => (
+              <div key={i} className="text-[11px] text-warning">⚠ {w}</div>
+            ))}
+            {artefacts?.print_ready_pdf_path && (
+              <button
+                type="button"
+                onClick={() => generatePrintReady({ force: true })}
+                disabled={generating === "print_ready"}
+                className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary hover:underline disabled:opacity-50"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Force rebuild
+              </button>
             )}
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-[10px] shrink-0"
-            onClick={() => retryAutoAssemble()}
-            disabled={generating === "print_ready"}
-          >
-            {generating === "print_ready" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Retry"}
-          </Button>
-        </div>
-      )}
-
-
-      <Row
-        icon={<FileCog className="h-3.5 w-3.5" />}
-        label="Print-ready PDF"
-        path={artefacts?.print_ready_pdf_path ?? null}
-        loading={isLoading || generating === "print_ready"}
-        opening={openingPath === artefacts?.print_ready_pdf_path}
-        onGenerate={() => generatePrintReady()}
-        onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
-        generateLabel="Assemble"
-      />
-      {artefacts?.print_ready_pdf_path && (
-        <div className="flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => generatePrintReady({ force: true })}
-            disabled={generating === "print_ready"}
-          >
-            Force rebuild
-          </Button>
-        </div>
-      )}
-
-      {artefacts?.assembly_report && (
-        <div className="rounded border border-border/60 bg-muted/30 px-2 py-1.5 text-[10px] space-y-0.5">
-          {artefacts.assembly_report.reused_source && (
-            <div className="text-muted-foreground">Reused uploaded PDF — no work needed.</div>
-          )}
-          {artefacts.assembly_report.reused_cache && (
-            <div className="text-muted-foreground">Served from cache (spec unchanged).</div>
-          )}
-          {!!artefacts.assembly_report.steps?.length && (
-            <div>
-              <span className="font-medium">Steps:</span>{" "}
-              {artefacts.assembly_report.steps.join(" → ")}
-            </div>
-          )}
-          {artefacts.assembly_report.warnings?.map((w, i) => (
-            <div key={i} className="text-amber-600 dark:text-amber-500">⚠ {w}</div>
-          ))}
-        </div>
-      )}
-      <Separator />
-
-      {/* Imposition picker — scoped to templates assigned to this product family */}
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Imposition</span>
-        </div>
-
-        {noTemplatesAssigned ? (
-          <div className="rounded border border-dashed border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
-            No imposition templates configured for this product. Ask an admin to assign one in
-            <span className="font-medium"> Platform → Imposition → Assign to products</span>.
-          </div>
-        ) : (
-          <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
-            <SelectTrigger className="h-7 text-[11px]">
-              <SelectValue placeholder={loadingTemplates ? "Loading…" : "Choose output sheet…"} />
-            </SelectTrigger>
-            <SelectContent>
-              {templates.map((t) => (
-                <SelectItem key={t.id} value={t.id} className="text-[11px]">
-                  <span>
-                    {t.name}
-                    {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
-                  </span>
-                  <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         )}
 
+        <Separator />
+
+        {/* Imposition setup */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Layers className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wide">Imposition setup</span>
+          </div>
+
+          {noTemplatesAssigned ? (
+            <div className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+              No imposition templates configured for this product. Ask an admin to assign one in
+              <span className="font-medium"> Platform → Imposition → Assign to products</span>.
+            </div>
+          ) : (
+            <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
+              <SelectTrigger className="h-11 text-sm font-semibold bg-muted/40 border-2">
+                <SelectValue placeholder={loadingTemplates ? "Loading…" : "Choose output sheet…"} />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id} className="text-xs">
+                    <span>
+                      {t.name}
+                      {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
+                    </span>
+                    <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <Row
+            tone="success"
+            icon={<Layers className="h-5 w-5" />}
+            label="Imposed sheet"
+            path={artefacts?.imposed_pdf_path ?? null}
+            loading={isLoading || generating === "impose"}
+            opening={openingPath === artefacts?.imposed_pdf_path}
+            onGenerate={() => generateImposition(selectedTemplateId)}
+            onOpen={() => download(artefacts?.imposed_pdf_path ?? null, "imposed")}
+            generateLabel="Impose"
+            disabledReason={
+              !artefacts?.print_ready_pdf_path
+                ? "Assemble print-ready first"
+                : noTemplatesAssigned
+                ? "No templates assigned"
+                : !selectedTemplate
+                ? "Pick a template above"
+                : undefined
+            }
+          />
+        </div>
+
+        <Separator />
+
+        {/* Job ticket */}
         <Row
-          icon={<Layers className="h-3.5 w-3.5" />}
-          label="Imposed sheet"
-          path={artefacts?.imposed_pdf_path ?? null}
-          loading={isLoading || generating === "impose"}
-          opening={openingPath === artefacts?.imposed_pdf_path}
-          onGenerate={() => generateImposition(selectedTemplateId)}
-          onOpen={() => download(artefacts?.imposed_pdf_path ?? null, "imposed")}
-          generateLabel="Impose"
-          disabledReason={
-            !artefacts?.print_ready_pdf_path
-              ? "Assemble print-ready first"
-              : noTemplatesAssigned
-              ? "No templates assigned"
-              : !selectedTemplate
-              ? "Pick a template above"
-              : undefined
-          }
+          tone="warning"
+          icon={<Ticket className="h-5 w-5" />}
+          label="Job ticket"
+          path={artefacts?.job_ticket_pdf_path ?? null}
+          loading={isLoading || generating === "ticket"}
+          opening={openingPath === artefacts?.job_ticket_pdf_path}
+          onGenerate={() => generateJobTicket({ force: !!artefacts?.job_ticket_pdf_path })}
+          onOpen={() => download(artefacts?.job_ticket_pdf_path ?? null, "ticket")}
+          generateLabel="Print ticket"
         />
       </div>
-
-      <Separator />
-
-      <Row
-        icon={<Ticket className="h-3.5 w-3.5" />}
-        label="Job ticket"
-        path={artefacts?.job_ticket_pdf_path ?? null}
-        loading={isLoading || generating === "ticket"}
-        opening={openingPath === artefacts?.job_ticket_pdf_path}
-        onGenerate={() => generateJobTicket({ force: !!artefacts?.job_ticket_pdf_path })}
-        onOpen={() => download(artefacts?.job_ticket_pdf_path ?? null, "ticket")}
-        generateLabel="Print ticket"
-      />
     </div>
   );
 }
 
 interface RowProps {
+  tone: Tone;
   icon: React.ReactNode;
   label: string;
   path: string | null;
@@ -282,38 +298,46 @@ interface RowProps {
   disabledReason?: string;
 }
 
-function Row({ icon, label, path, loading, opening, generateLabel, onGenerate, onOpen, disabledReason }: RowProps) {
+function Row({ tone, icon, label, path, loading, opening, generateLabel, onGenerate, onOpen, disabledReason }: RowProps) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-muted-foreground">{icon}</span>
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex gap-3 min-w-0">
+        <div className={`mt-0.5 p-2 rounded-lg shrink-0 ${TONE_ICON_BG[tone]}`}>
+          {icon}
+        </div>
         <div className="min-w-0">
-          <div className="text-xs font-medium">{label}</div>
-          <div className="text-[10px] text-muted-foreground truncate">
+          <h4 className="text-sm font-bold text-foreground">{label}</h4>
+          <code className="text-[11px] text-muted-foreground block mt-0.5 truncate max-w-[260px]">
             {path ? path.split("/").pop() : disabledReason ?? "Not generated yet"}
-          </div>
+          </code>
         </div>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex gap-2 shrink-0">
         {path && (
           <Button
-            variant="outline"
             size="sm"
-            className="h-7 px-2 text-[11px]"
             onClick={onOpen}
             disabled={opening}
+            className="h-9 px-4 font-bold shadow-sm"
           >
-            {opening ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+            {opening ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-1.5" />
+                Download
+              </>
+            )}
           </Button>
         )}
         <Button
-          variant={path ? "ghost" : "default"}
+          variant="outline"
           size="sm"
-          className="h-7 px-2 text-[11px]"
           onClick={onGenerate}
           disabled={loading || !!disabledReason}
+          className="h-9 px-4 font-bold border-2"
         >
-          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : path ? "Re-generate" : generateLabel}
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : path ? "Re-generate" : generateLabel}
         </Button>
       </div>
     </div>
