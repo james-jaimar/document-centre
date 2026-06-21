@@ -431,6 +431,7 @@ export function useResyncBranchPricing() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
       qc.invalidateQueries({ queryKey: ["pricing_rules"] });
     },
   });
