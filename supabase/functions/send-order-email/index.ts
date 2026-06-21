@@ -466,7 +466,11 @@ Deno.serve(async (req) => {
 
     const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl, inlineLogoCid });
 
-    const senderName = (notif.sender_name as string) || tenant.trading_name || tenant.name || "Orders";
+    // Sender name: explicit notification override wins; otherwise leave null so
+    // the dispatcher falls back to the selected email account's `from_name`
+    // (e.g. branch admin's "Orders mailbox" / "PostNet Test Store"). Only fall
+    // back to branch/tenant trading names if no email account name is available.
+    const senderName = (notif.sender_name as string) || null;
     const senderEmail = (notif.sender_email as string) || null;
 
     const attachments: Array<any> = [];
