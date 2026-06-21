@@ -1,32 +1,27 @@
 ## Problem
 
-Branch paper rows all show "No sizes set" because their `stocked_sizes` column is empty. Tracing it back:
+Toggling a product on `/branch/products` fails with **"Cannot coerce the result to a single JSON object"**.
 
-- **Master** `catalog_papers` rows have `stocked_sizes` populated (e.g. `[a3, a4, sra3]`).
-- **Tenant** `catalog_papers` rows have `stocked_sizes = []` — the tenant catalogue was cloned before the recent fix that added `stocked_sizes` to the clone.
-- **Branch** `catalog_papers` inherits empty `stocked_sizes` from the tenant.
+Root cause: the `UPDATE` RLS policy on `public.branch_capabilities` only allows tenant_memberships with role `owner`/`admin`, or the legacy `user_roles` table entries for `branch_manager`/`store_operator`. The signed-in user `hello@printmypics.co` has a `tenant_memberships` row with `role = 'branch_manager'` (branch-scoped) — so the update is silently blocked by RLS, returns 0 rows, and `.single()` throws.
 
-The clone functions are now correct, but the *existing* tenant + branch data is stale. A fresh resync wouldn't fix the tenant (the tenant-from-master resync has to be triggered at the platform layer, and even then it would not flow down to branches unless the branch is also resynced afterwards).
+This contradicts project memory: roles live in `tenant_memberships`, not `user_roles`.
 
 ## Fix
 
-One data-only migration that backfills `stocked_sizes` (and the related `is_cover_stock`, `is_edge_to_edge_only` flags) on every existing tenant and branch `catalog_papers` row from the master row with the same `code`:
+One database migration that replaces the two branch-manager policies on `public.branch_capabilities` (`Branch managers can update own capabilities` and `Branch managers can view own capabilities`) with versions that use the same `tenant_memberships` pattern already in use on `branch_product_option_overrides`:
 
-```text
-UPDATE catalog_papers tenant_row
-   SET stocked_sizes        = master.stocked_sizes,
-       is_cover_stock       = master.is_cover_stock,
-       is_edge_to_edge_only = master.is_edge_to_edge_only
-  FROM catalog_papers master
- WHERE master.scope_type = 'master'
-   AND tenant_row.code   = master.code
-   AND tenant_row.scope_type IN ('tenant','branch')
-   AND (tenant_row.stocked_sizes IS NULL OR tenant_row.stocked_sizes = '{}');
-```
+- `SELECT`: any active tenant member of the branch's tenant.
+- `UPDATE` (USING + WITH CHECK): platform admin OR active tenant_memberships row where
+  - `role IN ('owner','admin')` for the branch's tenant, OR
+  - `role IN ('branch_manager','store_operator')` AND `tm.branch_id = branch_capabilities.branch_id`.
 
-After the migration the Paper Stocks tab will render the size columns (A4 / A3 / SRA3 / photo / poster sizes) with editable price cells for every paper. No frontend changes needed; the branch manager can then enter their prices directly.
+The other existing policies (platform admin, head office admin, storefront read) are left untouched.
 
-## Out of scope
+No frontend changes — once the policy permits the update, the existing toggle flow works.
 
-- No changes to UI components, RPCs, or pricing engine.
-- Finishing tab is unaffected (it doesn't depend on `stocked_sizes`).
+## Verification
+
+After the migration runs:
+1. Sign in as the branch manager, go to Products, toggle Ring Binders off → toggle persists, no toast error.
+2. Toggle it back on → still works.
+3. Confirm other branches/tenants are unaffected (admins and platform admins keep full access; storefront read still requires `is_enabled = true`).
