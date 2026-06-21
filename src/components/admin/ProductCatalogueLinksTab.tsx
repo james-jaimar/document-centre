@@ -57,15 +57,19 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
     return m;
   }, [links]);
 
-  /** Map input_size -> imposition template currently selected (if any). */
+  /** Map size code -> imposition template currently selected (if any).
+   *  Matches a default's template to the size by dimensions (not the coarse
+   *  `input_size` enum), so a "BC" template can pin to "bc-90x55" etc. */
   const impositionBySize = useMemo(() => {
     const m = new Map<string, string>();
     impositionDefaults.forEach((d) => {
       const t = templates.find((tt) => tt.id === d.imposition_template_id);
-      if (t) m.set(t.input_size.toLowerCase(), t.id);
+      if (!t) return;
+      const size = sizes.find((s) => templateMatchesSize(t, s));
+      if (size) m.set(size.code.toLowerCase(), t.id);
     });
     return m;
-  }, [impositionDefaults, templates]);
+  }, [impositionDefaults, templates, sizes]);
 
   async function toggleSize(code: string, enabled: boolean) {
     try {
@@ -95,12 +99,16 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
     }
   }
 
-  async function setSizeStrategy(sizeCode: string, templateId: string | null) {
+  async function setSizeStrategy(
+    size: { code: string; width_mm: number | string | null; height_mm: number | string | null },
+    templateId: string | null,
+  ) {
     try {
       await setImposition.mutateAsync({
         product_family_id: productFamilyId,
         imposition_template_id: templateId,
-        input_size_code: sizeCode,
+        size_width_mm: Number(size.width_mm),
+        size_height_mm: Number(size.height_mm),
         templates,
       });
       toast.success(templateId ? "Imposition set" : "Set to cut sheet");
