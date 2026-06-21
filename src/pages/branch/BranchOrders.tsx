@@ -32,14 +32,17 @@ const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
 
 export default function BranchOrders() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId, branchId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
+  const unreadOnly = searchParams.get("unread") === "1";
+  const [unreadFirst, setUnreadFirst] = useState(true);
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly;
 
   const filters: AdminOrderListFilters = useMemo(() => ({
     tenant_id: tenantId || undefined,
