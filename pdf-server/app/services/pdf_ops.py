@@ -2743,6 +2743,8 @@ class PdfOps:
         slots,
         n_up: int,
         out_pdf: Path,
+        *,
+        bleed_mm: float = 3.0,
     ) -> int:
         """Stamp customer pages onto a press-sheet template.
 
@@ -2752,10 +2754,18 @@ class PdfOps:
         source of truth for crop marks, colour bars and registration marks —
         no procedural marks are added here.
 
+        Each slot rectangle is the slot's TRIM size. We grow both the source
+        rectangle (around its TrimBox) and the target rectangle (around the
+        slot) by `bleed_mm` so the customer's bleed flows into the template's
+        inter-slot gutter. Set `bleed_mm=0` to fall back to a trim-only
+        placement (useful for templates whose slots butt against artwork that
+        must not be overdrawn).
+
         Returns the number of composite sheets produced.
         """
         from math import cos, radians, sin
         MM_TO_PT = 2.83464567
+        tpl_bleed_pt = max(0.0, bleed_mm) * MM_TO_PT
 
         if n_up < 1:
             raise ValueError("n_up must be >= 1")
@@ -2790,39 +2800,55 @@ class PdfOps:
                     slot = slots[slot_idx]
                     cust_page = customer_pages[src_idx]
 
-                    # Slot rectangle in PDF points (origin bottom-left of sheet)
+                    # Slot rectangle in PDF points (origin bottom-left of sheet).
+                    # This is the slot's TRIM rectangle.
                     x0 = slot.x_mm * MM_TO_PT
                     y0 = slot.y_mm * MM_TO_PT
                     x1 = (slot.x_mm + slot.width_mm) * MM_TO_PT
                     y1 = (slot.y_mm + slot.height_mm) * MM_TO_PT
-                    rect = pikepdf.Rectangle(x0, y0, x1, y1)
+
+                    # Resolve the source page's trim and grow it by bleed,
+                    # clamped to the source MediaBox so we never reference
+                    # content the producer didn't draw.
+                    trim_src = self._resolve_trim_box(cust_page, fallback_inset_pt=0.0)
+                    mb = cust_page.MediaBox
+                    mb_box = [float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3])]
+                    cust_bleed_src = [
+                        max(mb_box[0], trim_src[0] - tpl_bleed_pt),
+                        max(mb_box[1], trim_src[1] - tpl_bleed_pt),
+                        min(mb_box[2], trim_src[2] + tpl_bleed_pt),
+                        min(mb_box[3], trim_src[3] + tpl_bleed_pt),
+                    ]
+                    tgt_rect = pikepdf.Rectangle(
+                        x0 - tpl_bleed_pt, y0 - tpl_bleed_pt,
+                        x1 + tpl_bleed_pt, y1 + tpl_bleed_pt,
+                    )
 
                     rotation = float(slot.rotation_deg or 0) % 360
-                    if rotation == 0:
-                        sheet.add_overlay(cust_page, rect)
-                    else:
-                        # add_overlay scales to rect first; we then need to rotate
-                        # around the slot centre. pikepdf 9 supports `transform=`.
-                        cx = (x0 + x1) / 2
-                        cy = (y0 + y1) / 2
+                    extra: "pikepdf.Matrix | None" = None
+                    if rotation != 0:
+                        # Rotate around the (expanded) slot centre after the
+                        # placement scale/translate has positioned the source.
+                        cx = (tgt_rect.llx + tgt_rect.urx) / 2
+                        cy = (tgt_rect.lly + tgt_rect.ury) / 2
                         theta = radians(rotation)
                         c, s = cos(theta), sin(theta)
-                        # 2D affine: translate centre→origin, rotate, translate back
                         tx = cx - (cx * c - cy * s)
                         ty = cy - (cx * s + cy * c)
-                        rotate = pikepdf.Matrix(c, s, -s, c, tx, ty)
-                        try:
-                            sheet.add_overlay(cust_page, rect, transform=rotate)
-                        except TypeError:
-                            # Older pikepdf without `transform=` kw — fall back
-                            # to unrotated overlay (the platform admin should
-                            # avoid rotated slots in that case).
-                            sheet.add_overlay(cust_page, rect)
+                        extra = pikepdf.Matrix(c, s, -s, c, tx, ty)
+
+                    self._place_with_bleed(
+                        sheet, cust_page,
+                        source_rect=cust_bleed_src,
+                        target_rect=tgt_rect,
+                        extra_matrix=extra,
+                    )
 
                 sheets += 1
 
             output.save(str(out_pdf))
             return sheets
+
 
     # ------------------------------------------------------------------ #
     # TrimBox-aware n-up imposition (industry-standard, replaces the old
@@ -2859,6 +2885,64 @@ class PdfOps:
                 ]
             return box
         raise ValueError("Page has no TrimBox/BleedBox/MediaBox")
+
+    @staticmethod
+    def _place_with_bleed(
+        target_page,
+        source_page,
+        *,
+        source_rect: list[float],
+        target_rect: "pikepdf.Rectangle",
+        extra_matrix: "pikepdf.Matrix | None" = None,
+    ) -> None:
+        """Overlay ``source_page`` onto ``target_page`` so that
+        ``source_rect`` (in source-page user space) maps to ``target_rect``
+        on the target page.
+
+        This bypasses qpdf's TrimBox-first BBox selection in
+        ``as_form_xobject()`` by stamping ``/BBox`` on the form XObject
+        explicitly. The caller decides which source rectangle to draw
+        (trim, bleed, or media) — typically the bleed rectangle so the
+        source's bleed margin is preserved through imposition rather than
+        being clipped to the TrimBox.
+
+        ``source_rect`` and ``target_rect`` must share the same aspect
+        ratio. Pass ``extra_matrix`` to apply an additional affine
+        transform (e.g. rotation around the slot centre) on top of the
+        scale + translate placement.
+        """
+        formx = source_page.as_form_xobject()
+        formx.BBox = pikepdf.Array(source_rect)
+        # Reset any inherited /Matrix so our cm is the only transform that
+        # matters when the XObject is invoked.
+        formx.Matrix = pikepdf.Array([1, 0, 0, 1, 0, 0])
+        name = target_page.add_resource(formx, pikepdf.Name.XObject)
+
+        src_w = source_rect[2] - source_rect[0]
+        src_h = source_rect[3] - source_rect[1]
+        if src_w <= 0 or src_h <= 0:
+            raise ValueError("source_rect has non-positive dimensions")
+
+        sx = target_rect.width / src_w
+        sy = target_rect.height / src_h
+        ox = target_rect.llx - source_rect[0] * sx
+        oy = target_rect.lly - source_rect[1] * sy
+
+        if extra_matrix is None:
+            cm = f"{sx} 0 0 {sy} {ox} {oy} cm".encode()
+        else:
+            # Compose: first the placement (scale + translate), then the
+            # extra transform (applied in target-page coordinates).
+            # PDF cm is right-to-left, so emit extra_matrix first.
+            m = extra_matrix
+            cm = (
+                f"{m.a} {m.b} {m.c} {m.d} {m.e} {m.f} cm "
+                f"{sx} 0 0 {sy} {ox} {oy} cm"
+            ).encode()
+
+        target_page.contents_add(b"q\n" + cm + f" /{name} Do\nQ\n".encode())
+
+
 
     def impose_nup_trimbox(
         self,
@@ -2997,20 +3081,21 @@ class PdfOps:
                     min(mb_box[3], trim[3] + bleed),
                 ]
 
-                # Temporarily set MediaBox = the source bleed rectangle
-                # so add_overlay maps that exact area into each slot.
-                original_mb = list(mb_box)
-                cust.MediaBox = pikepdf.Array(cust_bleed)
-                try:
-                    for slot_idx in range(per_sheet):
-                        tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
-                        tgt_rect = pikepdf.Rectangle(
-                            tx0 - bleed, ty0 - bleed,
-                            tx1 + bleed, ty1 + bleed,
-                        )
-                        sheet.add_overlay(cust, tgt_rect)
-                finally:
-                    cust.MediaBox = pikepdf.Array(original_mb)
+                # Place each copy via _place_with_bleed, which overrides
+                # the form XObject's /BBox so the source's bleed margin
+                # survives instead of being clipped to the TrimBox.
+                for slot_idx in range(per_sheet):
+                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                    tgt_rect = pikepdf.Rectangle(
+                        tx0 - bleed, ty0 - bleed,
+                        tx1 + bleed, ty1 + bleed,
+                    )
+                    self._place_with_bleed(
+                        sheet, cust,
+                        source_rect=cust_bleed,
+                        target_rect=tgt_rect,
+                    )
+
 
 
                 # Crop marks + registration overlay (reportlab → pikepdf)
@@ -3178,6 +3263,8 @@ class PdfOps:
 
             output = pikepdf.Pdf.new()
 
+            bleed_pt = max(0.0, bleed_mm) * MM
+
             def _place(sheet_page, page, side: str, sheet_index: int) -> None:
                 if page is None:
                     return
@@ -3197,14 +3284,62 @@ class PdfOps:
                 else:
                     x = half_w + (half_w - draw_w) / 2 - creep_shift
 
-                tgt = pikepdf.Rectangle(x, y, x + draw_w, y + draw_h)
+                # Compute the source bleed rectangle around the trim,
+                # clamped to the source MediaBox so we don't draw
+                # outside what the producer rendered.
+                mb = list(map(float, page.MediaBox))
+                src_bleed = [
+                    max(mb[0], trim[0] - bleed_pt),
+                    max(mb[1], trim[1] - bleed_pt),
+                    min(mb[2], trim[2] + bleed_pt),
+                    min(mb[3], trim[3] + bleed_pt),
+                ]
+                # Per-edge bleed widths actually available on the source
+                # (asymmetric when trim sits near a MediaBox edge).
+                bl_left = trim[0] - src_bleed[0]
+                bl_right = src_bleed[2] - trim[2]
+                bl_bottom = trim[1] - src_bleed[1]
+                bl_top = src_bleed[3] - trim[3]
 
-                original_mb = list(map(float, page.MediaBox))
-                page.MediaBox = pikepdf.Array(trim)
-                try:
-                    sheet_page.add_overlay(page, tgt)
-                finally:
-                    page.MediaBox = pikepdf.Array(original_mb)
+                # Grow the target rectangle by the same per-edge bleed
+                # widths (× scale). The spine edge is suppressed so the
+                # bleed never crosses onto the facing page.
+                outer_left = bl_left * scale if side == "right" else 0.0
+                outer_right = bl_right * scale if side == "left" else 0.0
+                # Suppress spine-side bleed:
+                spine_left = 0.0 if side == "right" else bl_left * scale
+                spine_right = 0.0 if side == "left" else bl_right * scale
+                # side=="left" → spine is on the right; side=="right" →
+                # spine is on the left. Recompute cleanly:
+                if side == "left":
+                    grow_left = bl_left * scale
+                    grow_right = 0.0  # spine
+                else:
+                    grow_left = 0.0  # spine
+                    grow_right = bl_right * scale
+                grow_bottom = bl_bottom * scale
+                grow_top = bl_top * scale
+
+                # Mirror the source rectangle to match the target growth
+                # so aspect ratio is preserved by _place_with_bleed.
+                src_rect = [
+                    trim[0] - (grow_left / scale),
+                    trim[1] - (grow_bottom / scale),
+                    trim[2] + (grow_right / scale),
+                    trim[3] + (grow_top / scale),
+                ]
+                tgt = pikepdf.Rectangle(
+                    x - grow_left,
+                    y - grow_bottom,
+                    x + draw_w + grow_right,
+                    y + draw_h + grow_top,
+                )
+                self._place_with_bleed(
+                    sheet_page, page,
+                    source_rect=src_rect,
+                    target_rect=tgt,
+                )
+
 
             for s in range(sheet_count):
                 output.add_blank_page(page_size=(sheet_w, sheet_h))
