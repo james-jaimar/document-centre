@@ -38,11 +38,14 @@ const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
 
 export default function AdminOrders() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
+  const unreadOnly = searchParams.get("unread") === "1";
+  const [unreadFirst, setUnreadFirst] = useState(true);
 
   const filters: AdminOrderListFilters = {
     tenant_id: tenantId || undefined,
@@ -62,12 +65,34 @@ export default function AdminOrders() {
   const totalForTenant = totalData?.total || 0;
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly;
 
   const { data, isLoading } = useAdminOrders(filters);
-  const orders = data?.orders || [];
+  const rawOrders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
+
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, null);
+  const totalUnreadOrders = Object.values(unreadMap).filter((n) => (Number(n) || 0) > 0).length;
+
+  const orders = useMemo(() => {
+    let list = rawOrders;
+    if (unreadOnly) list = list.filter((o: any) => (unreadMap[o.id] || 0) > 0);
+    if (unreadFirst) {
+      list = [...list].sort(
+        (a: any, b: any) => (unreadMap[b.id] || 0) - (unreadMap[a.id] || 0),
+      );
+    }
+    return list;
+  }, [rawOrders, unreadOnly, unreadFirst, unreadMap]);
+
+  const toggleUnreadOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (unreadOnly) next.delete("unread");
+    else next.set("unread", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
 
   const handleToggleStatus = (status: OrderAdminStatus) => {
     setSelectedStatuses((prev) =>
