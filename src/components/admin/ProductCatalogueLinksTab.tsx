@@ -7,6 +7,7 @@ import {
   useImpositionTemplates,
   useProductImpositionDefaults,
   useSetProductImposition,
+  templateMatchesSize,
 } from "@/hooks/useCatalog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
