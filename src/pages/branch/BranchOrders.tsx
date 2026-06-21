@@ -55,12 +55,31 @@ export default function BranchOrders() {
   }), [tenantId, branchId, search, selectedStatuses, selectedPaymentStatuses, page]);
 
   const { data, isLoading } = useAdminOrders(filters);
-  const orders = data?.orders || [];
+  const rawOrders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
-  // When no filters are active, the page total IS the branch total.
   const totalForBranch = hasActiveFilters ? null : total;
   const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+  const totalUnreadOrders = Object.values(unreadMap).filter((n) => (Number(n) || 0) > 0).length;
+
+  const orders = useMemo(() => {
+    let list = rawOrders;
+    if (unreadOnly) list = list.filter((o: any) => (unreadMap[o.id] || 0) > 0);
+    if (unreadFirst) {
+      list = [...list].sort(
+        (a: any, b: any) => (unreadMap[b.id] || 0) - (unreadMap[a.id] || 0),
+      );
+    }
+    return list;
+  }, [rawOrders, unreadOnly, unreadFirst, unreadMap]);
+
+  const toggleUnreadOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (unreadOnly) next.delete("unread");
+    else next.set("unread", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
 
 
   const handleToggleStatus = (status: OrderAdminStatus) => {
