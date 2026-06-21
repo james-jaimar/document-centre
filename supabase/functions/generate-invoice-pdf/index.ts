@@ -119,6 +119,7 @@ function resolveFromParty(tenant: any, branch: any): ResolvedParty {
     branch_code: pick<string>(bBank.branch_code, tBank.branch_code),
     swift_code: pick<string>(bBank.swift_code, tBank.swift_code),
     eft_enabled: bBank.eft_enabled !== undefined ? !!bBank.eft_enabled : !!tBank.eft_enabled,
+    payment_instructions: pick<string>(bBank.payment_instructions, tBank.payment_instructions),
   };
 
   return {
