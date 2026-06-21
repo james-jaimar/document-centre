@@ -85,6 +85,7 @@ interface ResolvedParty {
     branch_code?: string;
     swift_code?: string;
     eft_enabled?: boolean;
+    payment_instructions?: string;
   };
 }
 
@@ -118,6 +119,7 @@ function resolveFromParty(tenant: any, branch: any): ResolvedParty {
     branch_code: pick<string>(bBank.branch_code, tBank.branch_code),
     swift_code: pick<string>(bBank.swift_code, tBank.swift_code),
     eft_enabled: bBank.eft_enabled !== undefined ? !!bBank.eft_enabled : !!tBank.eft_enabled,
+    payment_instructions: pick<string>(bBank.payment_instructions, tBank.payment_instructions),
   };
 
   return {
@@ -447,21 +449,29 @@ Deno.serve(async (req) => {
     const valueW = innerW - 34;
 
     const fromTradingLines = wrap(from.trading_name ?? "", bold, 11, innerW);
+    const fromLegalLines = (from.legal_name && from.legal_name !== from.trading_name)
+      ? wrap(from.legal_name, font, 9, innerW)
+      : [];
     const fromAddrLines: string[] = [];
     for (const ln of from.address_lines) {
       for (const w of wrap(ln, font, 9, innerW)) fromAddrLines.push(w);
     }
     const fromPhoneLines = wrap(from.phone ?? "", font, 9, valueW);
     const fromEmailLines = wrap(from.email ?? "", font, 9, innerW - 38);
+    const idRows: [string, string][] = [];
+    if (from.vat_number) idRows.push(["VAT No:", from.vat_number]);
+    if (from.registration_number) idRows.push(["Reg No:", from.registration_number]);
 
     const fromContentH =
       18 +
       13 * Math.max(1, fromTradingLines.length) +
+      11 * fromLegalLines.length +
       11 * fromAddrLines.length +
       2 +
       11 * Math.max(1, fromPhoneLines.length) +
       11 +
       11 * Math.max(1, fromEmailLines.length) +
+      (idRows.length ? 4 + 11 * idRows.length : 0) +
       8;
     const topRowH = Math.max(110, fromContentH);
     const fromBoxY = y - topRowH;
@@ -478,6 +488,9 @@ Deno.serve(async (req) => {
       for (const ln of fromTradingLines) {
         drawText(page, ln, fromBoxX + padX, yy, { size: 11, bold: true }); yy -= 13;
       }
+      for (const ln of fromLegalLines) {
+        drawText(page, ln, fromBoxX + padX, yy, { size: 9, color: muted }); yy -= 11;
+      }
       for (const ln of fromAddrLines) {
         drawText(page, ln, fromBoxX + padX, yy, { size: 9 }); yy -= 11;
       }
@@ -487,11 +500,18 @@ Deno.serve(async (req) => {
         drawText(page, fromPhoneLines[i] ?? "", fromBoxX + padX + 30, yy, { size: 9 });
         yy -= 11;
       }
-      drawText(page, "Fax:", fromBoxX + padX, yy, { size: 9, color: muted }); yy -= 11;
       drawText(page, "EMail:", fromBoxX + padX, yy, { size: 9, color: muted });
       for (let i = 0; i < Math.max(1, fromEmailLines.length); i++) {
         drawText(page, fromEmailLines[i] ?? "", fromBoxX + padX + 34, yy, { size: 9 });
         yy -= 11;
+      }
+      if (idRows.length) {
+        yy -= 2;
+        for (const [k, v] of idRows) {
+          drawText(page, k, fromBoxX + padX, yy, { size: 9, color: muted });
+          drawText(page, v, fromBoxX + padX + 40, yy, { size: 9, bold: true });
+          yy -= 11;
+        }
       }
     }
 
@@ -749,16 +769,18 @@ Deno.serve(async (req) => {
     }
 
     // Banking
-    const hasEft = !!from.banking?.eft_enabled && (from.banking?.bank_name || from.banking?.account_number);
-    if (kind !== "receipt" && hasEft && from.banking) {
+    const b = from.banking;
+    const hasAnyBank = !!(b && (b.bank_name || b.account_name || b.account_number || b.branch_code || b.swift_code));
+    const hasEft = !!(b?.eft_enabled && hasAnyBank);
+    if (kind !== "receipt" && hasEft && b) {
       yL -= 6;
       labelChip(page, "Banking Details", M, yL); yL -= 14;
       const kv: [string, string | undefined][] = [
-        ["Bank", from.banking.bank_name],
-        ["Account name", from.banking.account_name],
-        ["Account number", from.banking.account_number],
-        ["Branch code", from.banking.branch_code],
-        ["SWIFT", from.banking.swift_code],
+        ["Bank", b.bank_name],
+        ["Account name", b.account_name],
+        ["Account number", b.account_number],
+        ["Branch code", b.branch_code],
+        ["SWIFT", b.swift_code],
         ["Reference", String(invNum ?? "")],
       ];
       for (const [k, v] of kv) {
@@ -766,6 +788,15 @@ Deno.serve(async (req) => {
         drawText(page, k, M, yL, { size: 8, color: muted });
         drawText(page, String(v), M + 90, yL, { size: 8, bold: true });
         yL -= 10;
+      }
+      if (b.payment_instructions && b.payment_instructions.trim()) {
+        yL -= 4;
+        for (const para of b.payment_instructions.split(/\r?\n/)) {
+          for (const ln of wrap(para, font, 8, leftW - 4)) {
+            drawText(page, ln, M, yL, { size: 8, color: muted });
+            yL -= 10;
+          }
+        }
       }
     }
 
