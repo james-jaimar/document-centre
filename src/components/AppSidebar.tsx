@@ -284,6 +284,7 @@ export default function AppSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?
                 const href = item.to.startsWith("/admin")
                   ? buildAdminPath(item.to, tenantId)
                   : item.to;
+                const showBadge = item.to === "/admin/orders" && unreadOrderCount > 0;
 
                 return (
                 <Link
@@ -297,8 +298,18 @@ export default function AppSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?
                   )}
                   title={collapsed ? item.label : undefined}
                 >
-                  <span className="shrink-0">{item.icon}</span>
-                  {!collapsed && <span>{item.label}</span>}
+                  <span className="relative shrink-0">
+                    {item.icon}
+                    {showBadge && collapsed && (
+                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
+                    )}
+                  </span>
+                  {!collapsed && <span className="flex-1">{item.label}</span>}
+                  {!collapsed && showBadge && (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                      {unreadOrderCount > 99 ? "99+" : unreadOrderCount}
+                    </span>
+                  )}
                 </Link>
                 );
               })}
