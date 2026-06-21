@@ -37,9 +37,7 @@ const BRANCH_NAV = [
   { to: "/branch/quotes", icon: <FileText size={20} />, label: "Quotes" },
   { to: "/branch/customers", icon: <Users size={20} />, label: "Customers" },
   { to: "/branch/products", icon: <Store size={20} />, label: "Products" },
-  { to: "/branch/pricing", icon: <DollarSign size={20} />, label: "Pricing Rules" },
-  { to: "/branch/rate-card", icon: <Tags size={20} />, label: "Rate Card" },
-  { to: "/branch/catalog-pricing", icon: <Tags size={20} />, label: "Catalogue Pricing" },
+  { to: "/branch/catalog-pricing", icon: <DollarSign size={20} />, label: "Pricing" },
 
   { to: "/branch/delivery", icon: <Truck size={20} />, label: "Delivery" },
   { to: "/branch/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
