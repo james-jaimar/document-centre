@@ -374,14 +374,16 @@ export function useSetProductImposition() {
       product_family_id: string;
       /** When null, removes any imposition default for this size (= cut sheet). */
       imposition_template_id: string | null;
-      /** All existing rows whose template input_size matches this code are cleared first. */
-      input_size_code: string;
+      /** Dimensions of the catalog size being configured — used to clear any
+       *  existing default whose template matches the same finished size. */
+      size_width_mm: number;
+      size_height_mm: number;
       templates: ImpositionTemplate[];
     }) => {
-      const { product_family_id, imposition_template_id, input_size_code, templates } = input;
-      // Remove any existing defaults for templates whose input_size matches this size code.
+      const { product_family_id, imposition_template_id, size_width_mm, size_height_mm, templates } = input;
+      // Remove any existing defaults for templates that match this size's dimensions.
       const matchingIds = templates
-        .filter((t) => t.input_size.toLowerCase() === input_size_code.toLowerCase())
+        .filter((t) => templateMatchesSize(t, { width_mm: size_width_mm, height_mm: size_height_mm }))
         .map((t) => t.id);
       if (matchingIds.length > 0) {
         const { error: delErr } = await supabase
