@@ -10,7 +10,9 @@ import {
   TrendingUp,
   Wallet,
   ArrowUpRight,
+  MessageSquare,
 } from "lucide-react";
+import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -100,6 +102,14 @@ const KPI = ({
 
 const BranchDashboard = () => {
   const { tenantId, branchId, tenantName } = useTenantContext();
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+  const unreadOrderIds = Object.keys(unreadMap).filter((id) => (unreadMap[id] || 0) > 0);
+  const totalUnreadMsgs = Object.values(unreadMap).reduce(
+    (sum, n) => sum + (Number(n) || 0),
+    0,
+  );
+
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["branch-dashboard", tenantId, branchId],
@@ -217,10 +227,21 @@ const BranchDashboard = () => {
       <BranchOnboardingChecklist branchId={branchId} />
 
       {/* KPI strip */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-7">
         <KPI label="Pending" value={isLoading ? <Skeleton className="h-7 w-10" /> : counts.pending} icon={Inbox} to="/branch/orders?status=new_order" />
         <KPI label="In Production" value={isLoading ? <Skeleton className="h-7 w-10" /> : counts.inProduction} icon={Clock} to="/branch/orders?status=in_production" />
         <KPI label="Ready" value={isLoading ? <Skeleton className="h-7 w-10" /> : counts.ready} icon={PackageCheck} to="/branch/orders?status=ready_for_dispatch" />
+        <KPI
+          label="Unread msgs"
+          value={
+            <span className={totalUnreadMsgs > 0 ? "text-red-600" : undefined}>
+              {totalUnreadMsgs}
+            </span>
+          }
+          icon={MessageSquare}
+          hint={totalUnreadMsgs > 0 ? `${unreadOrderIds.length} order${unreadOrderIds.length === 1 ? "" : "s"}` : "All caught up"}
+          to="/branch/orders?unread=1"
+        />
         <KPI label="Completed today" value={isLoading ? <Skeleton className="h-7 w-10" /> : completedToday} icon={CheckCircle2} />
         <KPI
           label="Revenue today"
@@ -233,6 +254,65 @@ const BranchDashboard = () => {
           icon={TrendingUp}
         />
       </div>
+
+      {/* Awaiting reply */}
+      {totalUnreadMsgs > 0 && (
+        <Card className="border-red-200 bg-red-50/40 dark:bg-red-950/10">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-red-600" />
+              Awaiting your reply
+              <Badge variant="secondary" className="bg-red-500 text-white hover:bg-red-500">
+                {totalUnreadMsgs} new
+              </Badge>
+            </CardTitle>
+            <Link to="/branch/orders?unread=1" className="text-xs text-muted-foreground hover:underline">
+              View all
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {recent
+              .filter((o) => (unreadMap[o.id] || 0) > 0)
+              .slice(0, 5)
+              .map((o) => {
+                const cfg = ADMIN_STATUS_CONFIG[o.admin_status as keyof typeof ADMIN_STATUS_CONFIG];
+                const u = unreadMap[o.id] || 0;
+                return (
+                  <Link
+                    key={o.id}
+                    to={`/branch/orders/${o.id}`}
+                    className="flex items-center justify-between gap-2 rounded-md border border-red-200/60 bg-background px-3 py-2 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white">
+                        {u}
+                      </span>
+                      <span className="font-mono text-sm font-medium truncate">
+                        #{o.order_number ?? o.id.slice(0, 8)}
+                      </span>
+                      <Badge variant="secondary" className={cfg?.color}>
+                        {cfg?.label ?? o.admin_status}
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}
+                    </span>
+                  </Link>
+                );
+              })}
+            {recent.filter((o) => (unreadMap[o.id] || 0) > 0).length === 0 && (
+              <p className="text-sm text-muted-foreground py-2 text-center">
+                Unread messages exist on older orders —{" "}
+                <Link to="/branch/orders?unread=1" className="text-primary hover:underline">
+                  view all
+                </Link>
+                .
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
 
       {/* Chart + Today's queue */}
       <div className="grid gap-4 lg:grid-cols-3">

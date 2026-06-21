@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminOrders } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { OrderStatusChips } from "@/components/orders/OrderStatusChips";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, MessageSquare } from "lucide-react";
 import {
   ADMIN_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
@@ -32,14 +32,17 @@ const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
 
 export default function BranchOrders() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId, branchId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
+  const unreadOnly = searchParams.get("unread") === "1";
+  const [unreadFirst, setUnreadFirst] = useState(true);
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly;
 
   const filters: AdminOrderListFilters = useMemo(() => ({
     tenant_id: tenantId || undefined,
@@ -52,12 +55,31 @@ export default function BranchOrders() {
   }), [tenantId, branchId, search, selectedStatuses, selectedPaymentStatuses, page]);
 
   const { data, isLoading } = useAdminOrders(filters);
-  const orders = data?.orders || [];
+  const rawOrders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
-  // When no filters are active, the page total IS the branch total.
   const totalForBranch = hasActiveFilters ? null : total;
   const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+  const totalUnreadOrders = Object.values(unreadMap).filter((n) => (Number(n) || 0) > 0).length;
+
+  const orders = useMemo(() => {
+    let list = rawOrders;
+    if (unreadOnly) list = list.filter((o: any) => (unreadMap[o.id] || 0) > 0);
+    if (unreadFirst) {
+      list = [...list].sort(
+        (a: any, b: any) => (unreadMap[b.id] || 0) - (unreadMap[a.id] || 0),
+      );
+    }
+    return list;
+  }, [rawOrders, unreadOnly, unreadFirst, unreadMap]);
+
+  const toggleUnreadOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (unreadOnly) next.delete("unread");
+    else next.set("unread", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
 
 
   const handleToggleStatus = (status: OrderAdminStatus) => {
@@ -78,6 +100,11 @@ export default function BranchOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
+    if (unreadOnly) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("unread");
+      setSearchParams(next, { replace: true });
+    }
     setPage(1);
   };
 
@@ -126,6 +153,41 @@ export default function BranchOrders() {
       </div>
 
       <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={toggleUnreadOnly}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (unreadOnly
+                ? "border-red-500 bg-red-500 text-white"
+                : totalUnreadOrders > 0
+                ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                : "border-border text-muted-foreground hover:bg-muted")
+            }
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Unread messages
+            {totalUnreadOrders > 0 && (
+              <span
+                className={
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold " +
+                  (unreadOnly ? "bg-white text-red-600" : "bg-red-500 text-white")
+                }
+              >
+                {totalUnreadOrders}
+              </span>
+            )}
+          </button>
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5"
+              checked={unreadFirst}
+              onChange={(e) => setUnreadFirst(e.target.checked)}
+            />
+            Show unread first
+          </label>
+        </div>
         <OrderStatusChips
           statuses={ALL_ADMIN_STATUSES}
           selected={selectedStatuses}

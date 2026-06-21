@@ -44,7 +44,7 @@ const BRANCH_NAV = [
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings" },
 ];
 
-export default function BranchSidebar() {
+export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?: number } = {}) {
   const location = useLocation();
   const { signOut, user } = useAuth();
   const { tenantName, tenantId, branchId, membershipRole } = useTenantContext();
@@ -124,6 +124,7 @@ export default function BranchSidebar() {
         <div className="flex flex-col gap-0.5">
           {BRANCH_NAV.map((item) => {
             const active = isActive(item.to);
+            const showBadge = item.to === "/branch/orders" && unreadOrderCount > 0;
             return (
               <Link
                 key={item.to}
@@ -147,8 +148,18 @@ export default function BranchSidebar() {
                 }
                 title={collapsed ? item.label : undefined}
               >
-                <span className="shrink-0">{item.icon}</span>
-                {!collapsed && <span className="truncate">{item.label}</span>}
+                <span className="relative shrink-0">
+                  {item.icon}
+                  {showBadge && collapsed && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
+                  )}
+                </span>
+                {!collapsed && <span className="truncate flex-1">{item.label}</span>}
+                {!collapsed && showBadge && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                    {unreadOrderCount > 99 ? "99+" : unreadOrderCount}
+                  </span>
+                )}
               </Link>
             );
           })}

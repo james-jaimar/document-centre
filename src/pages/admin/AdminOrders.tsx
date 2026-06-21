@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminOrders } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { OrderStatusChips } from "@/components/orders/OrderStatusChips";
@@ -25,6 +25,7 @@ import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/l
 import { format } from "date-fns";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "new_order", "under_review", "approved", "in_production", "qa",
@@ -37,11 +38,14 @@ const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
 
 export default function AdminOrders() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
+  const unreadOnly = searchParams.get("unread") === "1";
+  const [unreadFirst, setUnreadFirst] = useState(true);
 
   const filters: AdminOrderListFilters = {
     tenant_id: tenantId || undefined,
@@ -61,12 +65,34 @@ export default function AdminOrders() {
   const totalForTenant = totalData?.total || 0;
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly;
 
   const { data, isLoading } = useAdminOrders(filters);
-  const orders = data?.orders || [];
+  const rawOrders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
+
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, null);
+  const totalUnreadOrders = Object.values(unreadMap).filter((n) => (Number(n) || 0) > 0).length;
+
+  const orders = useMemo(() => {
+    let list = rawOrders;
+    if (unreadOnly) list = list.filter((o: any) => (unreadMap[o.id] || 0) > 0);
+    if (unreadFirst) {
+      list = [...list].sort(
+        (a: any, b: any) => (unreadMap[b.id] || 0) - (unreadMap[a.id] || 0),
+      );
+    }
+    return list;
+  }, [rawOrders, unreadOnly, unreadFirst, unreadMap]);
+
+  const toggleUnreadOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (unreadOnly) next.delete("unread");
+    else next.set("unread", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
 
   const handleToggleStatus = (status: OrderAdminStatus) => {
     setSelectedStatuses((prev) =>
@@ -90,6 +116,11 @@ export default function AdminOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
+    if (unreadOnly) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("unread");
+      setSearchParams(next, { replace: true });
+    }
     setPage(1);
   };
 
@@ -141,6 +172,41 @@ export default function AdminOrders() {
 
       {/* Status filter chips */}
       <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={toggleUnreadOnly}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (unreadOnly
+                ? "border-red-500 bg-red-500 text-white"
+                : totalUnreadOrders > 0
+                ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                : "border-border text-muted-foreground hover:bg-muted")
+            }
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Unread messages
+            {totalUnreadOrders > 0 && (
+              <span
+                className={
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold " +
+                  (unreadOnly ? "bg-white text-red-600" : "bg-red-500 text-white")
+                }
+              >
+                {totalUnreadOrders}
+              </span>
+            )}
+          </button>
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5"
+              checked={unreadFirst}
+              onChange={(e) => setUnreadFirst(e.target.checked)}
+            />
+            Show unread first
+          </label>
+        </div>
         <OrderStatusChips
           statuses={ALL_ADMIN_STATUSES}
           selected={selectedStatuses}
@@ -265,9 +331,20 @@ export default function AdminOrders() {
                       <ReadyIcon status={job.job_status} />
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground min-w-[20px]">
-                        0
-                      </span>
+                      {(() => {
+                        const u = unreadMap[order.id] || 0;
+                        return (
+                          <span
+                            className={
+                              u > 0
+                                ? "inline-flex items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white min-w-[20px]"
+                                : "inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground min-w-[20px]"
+                            }
+                          >
+                            {u}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <StatusBadge {...ADMIN_STATUS_CONFIG[order.admin_status as keyof typeof ADMIN_STATUS_CONFIG]} />
