@@ -302,6 +302,28 @@ export interface ImpositionTemplate {
   work_style: string;
   is_active: boolean;
   kind: string;
+  input_width_mm: number | null;
+  input_height_mm: number | null;
+}
+
+/** Orientation-insensitive dimension match between a template and a catalog
+ *  size (0.5mm tolerance). This is how the Sheet-strategy UI decides which
+ *  templates to offer per enabled size — the coarse `input_size` enum (e.g.
+ *  "BC") doesn't match granular size codes (e.g. "bc-90x55"). */
+export function templateMatchesSize(
+  t: Pick<ImpositionTemplate, "input_width_mm" | "input_height_mm">,
+  size: { width_mm: number | string | null; height_mm: number | string | null },
+): boolean {
+  const tw = Number(t.input_width_mm);
+  const th = Number(t.input_height_mm);
+  const sw = Number(size.width_mm);
+  const sh = Number(size.height_mm);
+  if (!isFinite(tw) || !isFinite(th) || !isFinite(sw) || !isFinite(sh)) return false;
+  const TOL = 0.5;
+  return (
+    (Math.abs(tw - sw) <= TOL && Math.abs(th - sh) <= TOL) ||
+    (Math.abs(tw - sh) <= TOL && Math.abs(th - sw) <= TOL)
+  );
 }
 
 export function useImpositionTemplates() {
@@ -310,7 +332,7 @@ export function useImpositionTemplates() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("imposition_templates" as any)
-        .select("id, name, input_size, output_size, n_up, work_style, is_active, kind")
+        .select("id, name, input_size, output_size, n_up, work_style, is_active, kind, input_width_mm, input_height_mm")
         .eq("is_active", true)
         .order("input_size", { ascending: true });
       if (error) throw error;
@@ -352,14 +374,16 @@ export function useSetProductImposition() {
       product_family_id: string;
       /** When null, removes any imposition default for this size (= cut sheet). */
       imposition_template_id: string | null;
-      /** All existing rows whose template input_size matches this code are cleared first. */
-      input_size_code: string;
+      /** Dimensions of the catalog size being configured — used to clear any
+       *  existing default whose template matches the same finished size. */
+      size_width_mm: number;
+      size_height_mm: number;
       templates: ImpositionTemplate[];
     }) => {
-      const { product_family_id, imposition_template_id, input_size_code, templates } = input;
-      // Remove any existing defaults for templates whose input_size matches this size code.
+      const { product_family_id, imposition_template_id, size_width_mm, size_height_mm, templates } = input;
+      // Remove any existing defaults for templates that match this size's dimensions.
       const matchingIds = templates
-        .filter((t) => t.input_size.toLowerCase() === input_size_code.toLowerCase())
+        .filter((t) => templateMatchesSize(t, { width_mm: size_width_mm, height_mm: size_height_mm }))
         .map((t) => t.id);
       if (matchingIds.length > 0) {
         const { error: delErr } = await supabase

@@ -1,45 +1,43 @@
-## Goal
-Make unread customer messages impossible to miss for branch/admin staff, with multiple proactive surfaces that all link back to the order's message thread.
+## Why the dropdown says "No imposition templates for BC-90X55"
 
-## Where unread indicators will appear
+Templates store `input_size` as a coarse paper key (`A4`, `A3`, `BC`, `DL`, …) but the master catalogue stores granular size codes (`bc-90x55`, `bc-90x50`, `bc-85x55`).
 
-**1. Persistent header Messages bell (admin + branch portals)**
-A bell icon next to the user avatar in the top bar of every admin/branch page (mirroring the existing customer-side `MessagesBell`). Shows total unread count with a red badge. Click opens a popover listing orders with unread messages, newest first, each linking straight to the order. "View all" jumps to a filtered Orders list.
+The Sheet-strategy dropdown filters with:
 
-**2. Dashboard — new "Unread messages" KPI tile + panel**
-- Add a 7th KPI tile ("UNREAD MSGS") alongside Pending / In Production / Ready / etc., showing count of orders with unread customer messages.
-- Add an "Awaiting your reply" panel beside (or under) the Active queue, listing the top 5 orders with unread messages, time since last customer message, and a quick link to open the order.
+```ts
+templates.filter(t => t.input_size.toLowerCase() === s.code.toLowerCase())
+```
 
-**3. Orders list page**
-- Add a sticky filter chip at the top: "Unread messages (N)" — clicking filters the table to only orders with unread messages.
-- On each order row, show a red message badge (e.g. "3 new") in a dedicated column so it's visible without scrolling within a row.
-- Default sort option: "Unread first" toggle, so orders with new messages float to the top regardless of where they sit chronologically.
+`'bc' !== 'bc-90x55'`, so all three Business Card templates are hidden — even after you assigned them to the Business Cards product. The same issue will hit any product whose catalogue size code is more specific than the template's `input_size` bucket (e.g. multiple postcard or flyer sizes in future).
 
-**4. Sidebar nav**
-Add a small red dot + count next to the "Orders" menu item when there are any unread messages, so even from other sections (Quotes, Customers, Pricing) staff see there's something waiting.
+## Fix
 
-**5. Browser tab title**
-When unread > 0, prefix the document title with `(N) ` so it's visible even when the tab is in the background.
+Match a template to a catalogue size by **finished dimensions**, not by the `input_size` enum string. Each template already carries `input_width_mm` / `input_height_mm`, and each `catalog_sizes` row carries `width_mm` / `height_mm`, so this is a pure UI logic change — no schema or data migration.
 
-## Technical approach
+### Matching rule
 
-- Reuse the existing `useUnreadMessagesStaff(tenantId, branchId)` hook (already wired to realtime `messages` INSERTs) as the single source of truth — no new RPCs needed.
-- New components:
-  - `src/components/admin/StaffMessagesBell.tsx` — header popover (adapted from `MessagesBell.tsx`).
-  - `src/components/admin/UnreadMessagesPanel.tsx` — dashboard panel.
-  - `src/components/admin/UnreadBadge.tsx` — small shared red badge.
-- Mount the bell in the admin and branch layout headers.
-- Dashboard tile + panel added to `BranchDashboard.tsx` (and admin dashboard equivalent).
-- Orders page (`BranchOrders.tsx` / admin orders): add column + filter chip + "Unread first" sort using the same hook map.
-- Sidebar dot: read the same hook in the layout and render a dot on the Orders nav item.
-- Tab title: a tiny `useDocumentTitleUnread(count)` hook in the layout.
-- Marking read continues to use the existing `useMarkOrderReadStaff(orderId)` when an order is opened — no schema changes.
+A template matches a size when:
+- `{input_width_mm, input_height_mm}` equals `{size.width_mm, size.height_mm}` (orientation-insensitive — allow the swapped pair so a landscape A4 template still matches A4), with a 0.5 mm tolerance for float noise.
 
-## Out of scope (can do next round if you want)
-- Email/push notifications to staff for unread messages.
-- Per-user (not per-tenant) read state — currently read state is per-order/per-side, which matches Print Job's model.
+For each enabled size in `ProductCatalogueLinksTab` Sheet-strategy section:
+- Show every template whose dimensions match (sorted: cut-sheet 1-up first, then by n-up ascending, then name).
+- Empty-state copy unchanged: "No imposition templates for {SIZE LABEL}".
 
-## Files touched (approx.)
-- New: 3 components + 1 small hook.
-- Edited: branch + admin layout (header + sidebar), `BranchDashboard.tsx`, admin dashboard, `BranchOrders.tsx`, admin Orders page.
-- No DB migrations.
+### Files
+
+- `src/components/admin/ProductCatalogueLinksTab.tsx` — replace the `templates.filter(t => t.input_size === s.code)` predicate (and the `impositionBySize` builder) with a `dimsMatch(template, size)` helper.
+- `src/hooks/useCatalog.ts` — `useSetProductImposition` currently clears existing defaults using the same `input_size === code` test (line ~362). Switch it to the same dimension-based predicate so re-assigning a template still removes the previous one cleanly. Accepts the size's `width_mm` / `height_mm` in the mutation input instead of `input_size_code`.
+
+### Out of scope
+
+- No DB migration; `input_size` stays as a descriptive label on templates.
+- Production panel template picker (`useTemplatesForProductFamily`) is unchanged — it already lists templates assigned to the family.
+- The Imposition Templates admin editor still uses the paper-size enum dropdown; no changes there.
+
+### Verification
+
+After the change, on Admin → Products → Business Cards → Catalogue Links → Sheet strategy:
+- `90x55mm Bus Card` row → dropdown lists "Cut sheet 1-up" + "21-up on SRA3 — Bus Cards (90x55mm) 21 up SRA3".
+- `90x50mm` row → lists the 90x50 template only.
+- `85x55mm Bus Card` row → lists the 85x55 template only.
+- A4 / A3 products keep showing their existing matching templates (regression check).
