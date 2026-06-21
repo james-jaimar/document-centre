@@ -3263,6 +3263,8 @@ class PdfOps:
 
             output = pikepdf.Pdf.new()
 
+            bleed_pt = max(0.0, bleed_mm) * MM
+
             def _place(sheet_page, page, side: str, sheet_index: int) -> None:
                 if page is None:
                     return
@@ -3282,14 +3284,62 @@ class PdfOps:
                 else:
                     x = half_w + (half_w - draw_w) / 2 - creep_shift
 
-                tgt = pikepdf.Rectangle(x, y, x + draw_w, y + draw_h)
+                # Compute the source bleed rectangle around the trim,
+                # clamped to the source MediaBox so we don't draw
+                # outside what the producer rendered.
+                mb = list(map(float, page.MediaBox))
+                src_bleed = [
+                    max(mb[0], trim[0] - bleed_pt),
+                    max(mb[1], trim[1] - bleed_pt),
+                    min(mb[2], trim[2] + bleed_pt),
+                    min(mb[3], trim[3] + bleed_pt),
+                ]
+                # Per-edge bleed widths actually available on the source
+                # (asymmetric when trim sits near a MediaBox edge).
+                bl_left = trim[0] - src_bleed[0]
+                bl_right = src_bleed[2] - trim[2]
+                bl_bottom = trim[1] - src_bleed[1]
+                bl_top = src_bleed[3] - trim[3]
 
-                original_mb = list(map(float, page.MediaBox))
-                page.MediaBox = pikepdf.Array(trim)
-                try:
-                    sheet_page.add_overlay(page, tgt)
-                finally:
-                    page.MediaBox = pikepdf.Array(original_mb)
+                # Grow the target rectangle by the same per-edge bleed
+                # widths (× scale). The spine edge is suppressed so the
+                # bleed never crosses onto the facing page.
+                outer_left = bl_left * scale if side == "right" else 0.0
+                outer_right = bl_right * scale if side == "left" else 0.0
+                # Suppress spine-side bleed:
+                spine_left = 0.0 if side == "right" else bl_left * scale
+                spine_right = 0.0 if side == "left" else bl_right * scale
+                # side=="left" → spine is on the right; side=="right" →
+                # spine is on the left. Recompute cleanly:
+                if side == "left":
+                    grow_left = bl_left * scale
+                    grow_right = 0.0  # spine
+                else:
+                    grow_left = 0.0  # spine
+                    grow_right = bl_right * scale
+                grow_bottom = bl_bottom * scale
+                grow_top = bl_top * scale
+
+                # Mirror the source rectangle to match the target growth
+                # so aspect ratio is preserved by _place_with_bleed.
+                src_rect = [
+                    trim[0] - (grow_left / scale),
+                    trim[1] - (grow_bottom / scale),
+                    trim[2] + (grow_right / scale),
+                    trim[3] + (grow_top / scale),
+                ]
+                tgt = pikepdf.Rectangle(
+                    x - grow_left,
+                    y - grow_bottom,
+                    x + draw_w + grow_right,
+                    y + draw_h + grow_top,
+                )
+                self._place_with_bleed(
+                    sheet_page, page,
+                    source_rect=src_rect,
+                    target_rect=tgt,
+                )
+
 
             for s in range(sheet_count):
                 output.add_blank_page(page_size=(sheet_w, sheet_h))
