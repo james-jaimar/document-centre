@@ -547,7 +547,9 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
                         slots=template.slots,
                         n_up=template.n_up,
                         out_pdf=out_pdf,
+                        bleed_mm=getattr(template, "bleed_mm", 3.0) or 0.0,
                     )
+
                     extra = {"sheets": sheets}
                 elif template.kind == "parametric_nup":
                     sheets = pdf_ops.impose_nup_trimbox(
