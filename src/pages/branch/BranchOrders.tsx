@@ -100,6 +100,11 @@ export default function BranchOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
+    if (unreadOnly) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("unread");
+      setSearchParams(next, { replace: true });
+    }
     setPage(1);
   };
 
