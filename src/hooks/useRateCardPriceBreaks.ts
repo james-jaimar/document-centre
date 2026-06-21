@@ -110,6 +110,7 @@ export function useReplaceRateCardPriceBreaks() {
       qc.invalidateQueries({ queryKey: KEY(vars.table, vars.lineId) });
       qc.invalidateQueries({ queryKey: ["rate_card_price_breaks_bundle"] });
       qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
     },
   });
 }
