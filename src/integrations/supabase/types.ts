@@ -5781,41 +5781,25 @@ export type Database = {
         }
         Returns: string
       }
-      resolve_product_options:
-        | {
-            Args: { p_branch_id?: string; p_product_family_id: string }
-            Returns: {
-              catalog: Database["public"]["Enums"]["catalog_kind"]
-              is_default: boolean
-              is_enabled: boolean
-              item_code: string
-              label: string
-              metadata: Json
-              price_delta_minor: number
-              price_override_minor: number
-              sort_order: number
-              sub_attribute: string
-            }[]
-          }
-        | {
-            Args: {
-              p_branch_id?: string
-              p_product_family_id: string
-              p_tenant_id?: string
-            }
-            Returns: {
-              catalog: Database["public"]["Enums"]["catalog_kind"]
-              is_default: boolean
-              is_enabled: boolean
-              item_code: string
-              label: string
-              metadata: Json
-              price_delta_minor: number
-              price_override_minor: number
-              sort_order: number
-              sub_attribute: string
-            }[]
-          }
+      resolve_product_options: {
+        Args: {
+          p_branch_id?: string
+          p_product_family_id: string
+          p_tenant_id?: string
+        }
+        Returns: {
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          is_default: boolean
+          is_enabled: boolean
+          item_code: string
+          label: string
+          metadata: Json
+          price_delta_minor: number
+          price_override_minor: number
+          sort_order: number
+          sub_attribute: string
+        }[]
+      }
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
         Returns: Json

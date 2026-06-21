@@ -407,7 +407,8 @@ export function useProductCatalogLinks(productFamilyId: string | null) {
       const { data, error } = await supabase
         .from("product_catalog_links" as any)
         .select("*")
-        .eq("product_family_id", productFamilyId);
+        .eq("product_family_id", productFamilyId)
+        .eq("scope_type", "master");
       if (error) throw error;
       return (data ?? []) as unknown as ProductCatalogLink[];
     },
