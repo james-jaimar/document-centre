@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
   // Verify caller belongs to this branch (any active tenant membership scoped to it,
   // or owner/admin of the tenant the branch belongs to)
   const { data: branch } = await sb.from("branches")
-    .select("id, tenant_id, name, billing_email, email")
+    .select("id, tenant_id, name, email")
     .eq("id", body.branch_id).single();
   if (!branch) {
     return new Response(JSON.stringify({ error: "Branch not found" }), {
