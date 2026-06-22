@@ -158,9 +158,24 @@ export function useUpdateRateCardClick() {
         .update(rest)
         .eq("id", id);
       if (error) throw error;
+
+      const tierUpdates: Record<string, number> = {};
+      if (typeof input.sell_price === "number") tierUpdates.sell_price = input.sell_price;
+      if (typeof input.cost_price === "number") tierUpdates.cost_price = input.cost_price;
+
+      if (Object.keys(tierUpdates).length > 0) {
+        const { error: tierError } = await supabase
+          .from("rate_card_price_breaks" as any)
+          .update(tierUpdates)
+          .eq("rate_card_table", "clicks")
+          .eq("rate_card_id", id);
+        if (tierError) throw tierError;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] });
+      qc.invalidateQueries({ queryKey: ["rate_card_price_breaks", "clicks", vars.id] });
+      qc.invalidateQueries({ queryKey: ["rate_card_price_breaks_bundle"] });
       qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
     },
   });
