@@ -12,7 +12,7 @@ const RESOURCE_BRANCH_ROUTE_RE =
   /\/(orders|quotes)\/[0-9a-f-]{8,}(\/|$)/i;
 
 export default function BranchPicker() {
-  const { branches, showPicker, selectBranch, closePicker, activeBranch } = useBranch();
+  const { branches, showPicker, pickerOpenMode, selectBranch, closePicker, activeBranch } = useBranch();
   const { slug: tenantSlug, isSubdomain } = useTenantSlug();
   const navigate = useNavigate();
   const location = useLocation();
