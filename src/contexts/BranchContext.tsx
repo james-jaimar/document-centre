@@ -71,7 +71,7 @@ export function BranchProvider({
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [activeBranch, setActiveBranch] = useState<Branch | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpenMode, setPickerOpenMode] = useState<'manual' | 'auto' | null>(null);
   const [urlBranchSlug, setUrlBranchSlugState] = useState<string | null>(null);
 
   // Load branches for this tenant. The branches table is RLS-protected
