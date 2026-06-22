@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Tables } from "@/integrations/supabase/types";
 import { useUpdateBranch } from "@/hooks/useBranches";
+import { useBranchPrivate, useUpsertBranchPrivate } from "@/hooks/useBranchPrivate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,14 +46,14 @@ interface Props {
   compact?: boolean;
 }
 
-const emptyIdentity = (b: Branch): IdentityForm => ({
+const emptyIdentity = (b: Branch, priv: any): IdentityForm => ({
   trading_name: b.trading_name ?? "",
-  legal_name: b.legal_name ?? "",
-  vat_number: b.vat_number ?? "",
-  registration_number: b.registration_number ?? "",
+  legal_name: priv?.legal_name ?? "",
+  vat_number: priv?.vat_number ?? "",
+  registration_number: priv?.registration_number ?? "",
   email: b.email ?? "",
-  billing_email: b.billing_email ?? "",
-  accounts_email: b.accounts_email ?? "",
+  billing_email: priv?.billing_email ?? "",
+  accounts_email: priv?.accounts_email ?? "",
   phone: b.phone ?? "",
   website_url: b.website_url ?? "",
   address: b.address ?? "",
@@ -62,8 +63,8 @@ const emptyIdentity = (b: Branch): IdentityForm => ({
   country: b.country ?? "ZA",
 });
 
-const emptyBanking = (b: Branch): BankingDetails => {
-  const v = (b.banking_details ?? {}) as BankingDetails;
+const emptyBanking = (priv: any): BankingDetails => {
+  const v = (priv?.banking_details ?? {}) as BankingDetails;
   return {
     bank_name: v.bank_name ?? "",
     account_name: v.account_name ?? "",
@@ -77,16 +78,18 @@ const emptyBanking = (b: Branch): BankingDetails => {
 
 export default function BranchIdentityBankingCard({ branch }: Props) {
   const updateBranch = useUpdateBranch();
+  const { data: priv } = useBranchPrivate(branch.id);
+  const upsertPrivate = useUpsertBranchPrivate();
 
-  const [identity, setIdentity] = useState<IdentityForm>(() => emptyIdentity(branch));
-  const [banking, setBanking] = useState<BankingDetails>(() => emptyBanking(branch));
+  const [identity, setIdentity] = useState<IdentityForm>(() => emptyIdentity(branch, priv));
+  const [banking, setBanking] = useState<BankingDetails>(() => emptyBanking(priv));
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    setIdentity(emptyIdentity(branch));
-    setBanking(emptyBanking(branch));
+    setIdentity(emptyIdentity(branch, priv));
+    setBanking(emptyBanking(priv));
     setDirty(false);
-  }, [branch.id]);
+  }, [branch.id, priv]);
 
   const setI = <K extends keyof IdentityForm>(k: K, v: IdentityForm[K]) => {
     setIdentity((p) => ({ ...p, [k]: v }));
@@ -99,24 +102,29 @@ export default function BranchIdentityBankingCard({ branch }: Props) {
 
   const handleSave = async () => {
     try {
-      await updateBranch.mutateAsync({
-        id: branch.id,
-        trading_name: identity.trading_name || null,
-        legal_name: identity.legal_name || null,
-        vat_number: identity.vat_number || null,
-        registration_number: identity.registration_number || null,
-        email: identity.email || null,
-        billing_email: identity.billing_email || null,
-        accounts_email: identity.accounts_email || null,
-        phone: identity.phone || null,
-        website_url: identity.website_url || null,
-        address: identity.address || null,
-        city: identity.city || null,
-        province: identity.province || null,
-        postal_code: identity.postal_code || null,
-        country: identity.country || "ZA",
-        banking_details: banking as any,
-      });
+      await Promise.all([
+        updateBranch.mutateAsync({
+          id: branch.id,
+          trading_name: identity.trading_name || null,
+          email: identity.email || null,
+          phone: identity.phone || null,
+          website_url: identity.website_url || null,
+          address: identity.address || null,
+          city: identity.city || null,
+          province: identity.province || null,
+          postal_code: identity.postal_code || null,
+          country: identity.country || "ZA",
+        }),
+        upsertPrivate.mutateAsync({
+          branch_id: branch.id,
+          legal_name: identity.legal_name || null,
+          vat_number: identity.vat_number || null,
+          registration_number: identity.registration_number || null,
+          billing_email: identity.billing_email || null,
+          accounts_email: identity.accounts_email || null,
+          banking_details: banking,
+        }),
+      ]);
       toast.success("Branch identity & banking saved");
       setDirty(false);
     } catch (err: any) {
@@ -249,9 +257,9 @@ export default function BranchIdentityBankingCard({ branch }: Props) {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={!dirty || updateBranch.isPending}>
+        <Button onClick={handleSave} disabled={!dirty || updateBranch.isPending || upsertPrivate.isPending}>
           <Save size={14} className="mr-1.5" />
-          {updateBranch.isPending ? "Saving…" : "Save Identity & Banking"}
+          {updateBranch.isPending || upsertPrivate.isPending ? "Saving…" : "Save Identity & Banking"}
         </Button>
       </div>
     </div>
