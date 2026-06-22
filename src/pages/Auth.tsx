@@ -168,16 +168,35 @@ const Auth = () => {
       setError("Sign-up is only available via your organisation's portal.");
       return;
     }
-    if (!email) return setError("Please enter your email");
+    if (!email || !password) return setError("Please enter your email and a password");
+    if (password.length < 6) return setError("Password must be at least 6 characters");
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("request-signup", {
-        body: { email, display_name: displayName, tenant_slug: tenantSlug },
+        body: {
+          email,
+          password,
+          display_name: displayName,
+          tenant_slug: tenantSlug,
+        },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      toast.success("Check your email to set your password and sign in.");
-      setMode("login");
+
+      // Immediately sign in — no email round-trip required.
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (signInErr) {
+        // Most likely: account already existed with a different password.
+        setError(
+          "An account already exists for this email. Try signing in or use Forgot password.",
+        );
+        setMode("login");
+        return;
+      }
+      toast.success("Welcome!");
     } catch (err: any) {
       setError(err.message);
     } finally {
