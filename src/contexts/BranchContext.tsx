@@ -256,6 +256,7 @@ export function useBranch() {
       isMultiBranch: false,
       loading: false,
       showPicker: false,
+      pickerOpenMode: null,
       selectBranch: () => {},
       openPicker: () => {},
       closePicker: () => {},
