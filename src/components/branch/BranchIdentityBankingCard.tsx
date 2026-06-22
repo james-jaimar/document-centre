@@ -122,7 +122,7 @@ export default function BranchIdentityBankingCard({ branch }: Props) {
           registration_number: identity.registration_number || null,
           billing_email: identity.billing_email || null,
           accounts_email: identity.accounts_email || null,
-          banking_details: banking,
+          banking_details: banking as unknown as Record<string, unknown>,
         }),
       ]);
       toast.success("Branch identity & banking saved");
