@@ -1,43 +1,62 @@
-## Goal
+## Root cause
 
-Remove the "check your email → click → set password → sign in" detour on the tenant portal `/auth` sign-up. New customers enter email + password (+ name) once, get logged in immediately, and land in the portal. The email that arrives is a friendly welcome, not a verification gate.
+The PostNet tenant `logo_url` is an **SVG** (`tenant-assets/.../logo.svg`). The screenshot is Outlook, which **does not render SVG `<img>` in email** (it also strips `border-radius`, which is why the CTA looks like a flat red rectangle). The same template renders fine in Gmail/Apple Mail/web preview, which is why "other PostNet emails" appear to work — it's a client-rendering issue, not a code bug per tenant or per email type.
 
-## Current state
+In-app pages don't have this problem because browsers render SVG natively.
 
-- `src/pages/Auth.tsx` register form collects only **email + display name** and shows the toast "Check your email to set your password and sign in." Password input is hidden in register mode.
-- `request-signup` edge function already supports an optional `password` field — when present it creates the user with that password, marks `email_confirm: true`, skips the recovery link, and sends a "Welcome — you're all set" email pointing at `/t/<slug>/print-centre` (no "Set your password" CTA).
-- `CheckoutAuth.tsx` already does the desired flow (request-signup with password → `signInWithPassword`), so the pattern is proven.
+## Fix
 
-## Changes
+Add an **email-safe logo URL** that is always a raster (PNG/JPG) and use it in every transactional email helper.
 
-1. **`src/pages/Auth.tsx` — `handleRegister`**
-   - Require `email` **and** `password` (min 6 chars), same validation as login.
-   - Call `request-signup` with `{ email, password, display_name, first_name, last_name, tenant_slug }`.
-   - On success, immediately `supabase.auth.signInWithPassword({ email, password })`.
-   - On sign-in success, navigate to the tenant landing route (same redirect logic already used after login) — no toast about checking email, just a brief "Welcome" toast.
-   - Keep the existing error surface for duplicate-email / weak-password cases.
+### 1. New tenant branding setting
 
-2. **`src/pages/Auth.tsx` — register form UI**
-   - Show the password field in register mode (it's already rendered for login; just stop hiding it / add it to the register branch).
-   - Label it "Create password" with the 6-char hint. Keep `autoComplete="new-password"`.
-   - Leave the "Forgot password?" link visible only in login mode (already the case).
+Add an optional `logo_email_url` setting (category `branding`, public). When set, emails use it. When not set, emails fall back to `logo_url` only if it is a raster format; otherwise they fall back to the text portal name (current behaviour for "no logo").
 
-3. **No edge function changes needed.** `request-signup` already:
-   - Skips the recovery link when `password` is supplied.
-   - Sends the welcome email with CTA "Go to My Print Centre" instead of "Set your password".
-   - Creates the tenant membership and profile.
+Detection rule (no DB migration needed beyond the new setting key):
+```
+isRasterLogo = /\.(png|jpe?g|gif|webp)(\?|$)/i.test(url)
+```
 
-4. **No DB / migration changes.**
+### 2. Branding admin UI
+
+In `src/pages/admin/AdminBranding.tsx` (or wherever `logo_url` is edited), add a sibling upload field "Email logo (PNG)" that writes `logo_email_url`. Show a hint that SVG is fine for the web but emails need PNG. Keep `logo_url` as-is so the portal/auth pages keep using the crisp SVG.
+
+### 3. Email helpers
+
+Update every transactional email function to read both keys and pick the email-safe one. Centralise the selection in a small shared helper to avoid drift:
+
+`supabase/functions/_shared/emailLogo.ts`
+```ts
+export function pickEmailLogo(logoUrl: string|null, logoEmailUrl: string|null): string|null {
+  if (logoEmailUrl) return logoEmailUrl;
+  if (logoUrl && /\.(png|jpe?g|gif|webp)(\?|$)/i.test(logoUrl)) return logoUrl;
+  return null; // caller renders text fallback
+}
+```
+
+Wire it into all eight functions that currently read `logo_url`:
+- `invite-member` (the failing one in the screenshot)
+- `request-signup`
+- `request-password-reset`
+- `manage-user`
+- `mobile-upload`
+- `send-order-email`
+- `quote-pdf`
+- `generate-invoice-pdf`
+
+### 4. Backfill PostNet immediately
+
+Set `logo_email_url` for the PostNet tenant to the existing PNG version of the PostNet logo (admin uploads via the new field, or one-off SQL insert into `tenant_settings`).
 
 ## Out of scope
 
-- Existing flow on `/t/<slug>` checkout (`CheckoutAuth.tsx`) already works this way — untouched.
-- Google OAuth button — untouched.
-- Password-reset flow for existing users — untouched.
-- Email verification policy at the Supabase project level — untouched (we keep `email_confirm: true` server-side so the user is usable instantly).
+- Auth pages / portal UI continue to use `logo_url` (SVG is correct there).
+- No change to favicon handling — PNG already.
+- No change to Outlook CTA rounded-corners (separate cosmetic, can address later with VML bulletproof button if desired).
 
 ## Verification
 
-- New signup on PostNet portal: enter name, email, password → land on `/t/postnet/print-centre` signed in, no email-click required.
-- Inbox receives "Welcome to PostNet — you're all set" with a "Go to My Print Centre" button (no password link).
-- Duplicate-email case: backend returns the existing profile path; sign-in then fails with "Invalid credentials" if the password differs — surface that as "An account already exists for this email. Try signing in or use Forgot password."
+1. After deploy, re-trigger "add member" for a test user on PostNet → email arrives with PostNet PNG logo visible in Outlook desktop.
+2. Send password-reset and signup emails → same PNG logo renders.
+3. Tenants without `logo_email_url` set whose `logo_url` is PNG: logo still shows (unchanged).
+4. Tenants with SVG-only logo and no email PNG: portal name text shows (no more broken image icon).

@@ -30,6 +30,8 @@ function escapeHtml(s: string) {
   );
 }
 
+import { pickEmailLogoUrl } from "../_shared/emailLogo.ts";
+
 interface BrandInfo {
   tenantName: string;
   primaryColor: string;
@@ -53,7 +55,7 @@ async function getTenantBranding(admin: any, tenantId: string): Promise<BrandInf
   return {
     tenantName: (tenant as any)?.name ?? "Your account",
     primaryColor: typeof map.primary_color === "string" ? map.primary_color : "#1a1a2e",
-    logoUrl: typeof map.logo_url === "string" && map.logo_url ? map.logo_url : null,
+    logoUrl: pickEmailLogoUrl(map),
     portalName: typeof map.portal_name === "string" && map.portal_name ? map.portal_name : ((tenant as any)?.name ?? "Your portal"),
   };
 }

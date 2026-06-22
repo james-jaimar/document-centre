@@ -3,6 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 import { enqueueEmail } from "../_shared/email-queue.ts";
+import { pickEmailLogoUrl } from "../_shared/emailLogo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -213,7 +214,7 @@ Deno.serve(async (req) => {
           for (const r of settingsRows ?? []) settings[r.setting_key] = r.setting_value;
           if (typeof settings.portal_name === "string" && settings.portal_name) portalName = settings.portal_name;
           if (typeof settings.primary_color === "string") primary = settings.primary_color;
-          if (typeof settings.logo_url === "string" && settings.logo_url) logoUrl = settings.logo_url;
+          logoUrl = pickEmailLogoUrl(settings);
         }
 
         const escapeHtml = (s: string) =>

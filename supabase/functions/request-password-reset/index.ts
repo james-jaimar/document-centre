@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 import { enqueueEmail } from "../_shared/email-queue.ts";
+import { pickEmailLogoUrl } from "../_shared/emailLogo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -110,7 +111,7 @@ Deno.serve(async (req) => {
       for (const r of settings ?? []) map[r.setting_key] = r.setting_value;
       if (typeof map.portal_name === "string" && map.portal_name) portalName = map.portal_name;
       if (typeof map.primary_color === "string") primary = map.primary_color;
-      if (typeof map.logo_url === "string" && map.logo_url) logoUrl = map.logo_url;
+      logoUrl = pickEmailLogoUrl(map);
     }
 
     const subject = `Reset your password for ${portalName}`;
