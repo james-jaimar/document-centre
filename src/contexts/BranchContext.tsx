@@ -194,7 +194,7 @@ export function BranchProvider({
 
 
     // 4. Multi-branch, no choice — show picker
-    if (!activeBranch) setPickerOpenMode(activeBranch ? "manual" : "auto");
+    if (!activeBranch) setPickerOpenMode('auto');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, tenantId, urlBranchSlug, allBranches.length, branches.length]);
 
