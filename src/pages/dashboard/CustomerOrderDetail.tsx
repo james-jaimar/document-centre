@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
+import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
 import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
 import { useBranch } from "@/contexts/BranchContext";
@@ -771,7 +772,7 @@ const CustomerOrderDetail = () => {
             displayPageNumbers={snap.displayPageNumbers}
             faceLabels={snap.faceLabels}
             bindingEdge={snap.bindingEdge}
-            bindingArt={snap.bindingArt}
+            bindingArt={snap.bindingArt ?? bindingArtFromSlug((previewJob.configuration as any)?.raw_spec?.selected_options?.Binding)}
             pageAspectRatio={snap.pageAspectRatio ?? undefined}
             pocketCoverPath={snap.pocketCoverThumbnail}
             onClose={() => setPreviewJob(null)}

@@ -1,37 +1,67 @@
-## Problem
+# Fix saved-order binding artwork resolving to black
 
-On `/sandton-city/orders/<id>/build/` the header's "branch" chip does nothing. The chip calls `openPicker()`, which flips `pickerOpen=true`, but `BranchPicker.tsx` short-circuits to `null` whenever the URL matches `\/(orders|quotes)\/<uuid>` — which includes every sub-route like `/build`, `/files`, etc. So an explicit user click is silently swallowed.
+## Root cause (confirmed against DB)
 
-That route-suppression was added to stop the picker auto-opening on a resource page where the active branch is derived from the resource itself. It shouldn't block a user who deliberately taps the chip to switch branches.
+- Order `INV-00101-1` has `raw_spec.selected_options.Binding = "wire-silver"`, but `configuration.preview.bindingArt` is `null`.
+- The "Bound Documents" Binding option row has `source: catalog.finishing` and `values: []` (catalog-backed; enriched live by `useCatalogBackedOptions`).
+- `useCart.placeOrder` passes raw `product_options` rows to `buildPreviewSnapshot`. `selectedBindingArt` runs `isStructuredValues([])` → false → returns `undefined`.
+- The saved snapshot therefore has no `bindingArt`, and `BindingSpine` falls back to `normaliseBindingColor(undefined) → "black"`. Silver wire renders as black, spiral renders as black, etc.
+- The live builder (image 2 — the new order) renders correctly because its options come from the catalog-enriched hook, not the raw table row.
+
+This affects every placed order whose binding option is catalog-backed (all Bound Documents and Presentations going forward).
 
 ## Fix
 
-Separate **auto-open** (suppressed on resource routes) from **manual open** (always honoured).
+Two small, surgical changes — no DB migration, no schema change, no backfill required. Old orders auto-heal on next view.
 
-### Changes
+### 1. New helper: `bindingArtFromSlug`
 
-1. **`src/contexts/BranchContext.tsx`**
-   - Track open intent: `const [pickerOpen, setPickerOpen] = useState<false | 'auto' | 'manual'>(false)`.
-   - `openPicker()` → `setPickerOpen('manual')`.
-   - The auto-open branch in the resolve effect (`if (!activeBranch) setPickerOpen('auto')`).
-   - `selectBranch` / `closePicker` set it back to `false`.
-   - Expose `pickerOpenMode` (or just keep `showPicker` as the boolean and add `pickerManual`) so the picker can tell the two apart.
+Add a tiny lookup in `src/lib/orders/selectedBindingArt.ts` that maps the seeded catalog codes directly to `{method, color}`. Single source of truth for both write-time and read-time fallback.
 
-2. **`src/components/BranchPicker.tsx`**
-   - Remove the `RESOURCE_BRANCH_ROUTE_RE` early-return.
-   - Suppress only when the open was automatic AND the route is a resource detail page: `if (pickerOpenMode === 'auto' && RESOURCE_BRANCH_ROUTE_RE.test(location.pathname)) return null;`
-   - Manual opens always render, regardless of route.
+```ts
+// in src/lib/orders/selectedBindingArt.ts
+const SLUG_TO_ART: Record<string, {method: "spiral"|"comb"|"twin_loop"; color: string}> = {
+  "comb-black":    { method: "comb",      color: "Black"  },
+  "spiral-black":  { method: "spiral",    color: "Black"  },
+  "spiral-white":  { method: "spiral",    color: "White"  },
+  "spiral-clear":  { method: "spiral",    color: "Clear"  },
+  "wire-black":    { method: "twin_loop", color: "Black"  },
+  "wire-silver":   { method: "twin_loop", color: "Silver" },
+};
 
-3. **No change** to `CustomerHeader.tsx` / `MobileNavSheet.tsx` — they already call `openPicker()`. After the fix, clicking the chip from `/orders/<id>/build/` opens the modal; choosing a branch navigates to `/<new-branch-slug>` (or `/t/<tenant>/<new-branch-slug>`), which already exists in `handleSelect`.
+export function bindingArtFromSlug(slug?: string | null) {
+  if (!slug) return undefined;
+  return SLUG_TO_ART[slug];
+}
+```
 
-### Out of scope
+`selectedBindingArt` keeps its current metadata-driven behaviour but adds a final fallback: if the option lookup yields nothing, return `bindingArtFromSlug(selectedOptions[key])`. This means even when `productOptions[Binding].values` is empty, write-time still resolves the art for seeded codes.
 
-- No DB / RLS changes.
-- No change to which branches are listed (still live-only, multi-branch only).
-- No styling changes.
+### 2. Read-time fallback in the two preview lightbox call sites
 
-### Verification
+For orders already in the database with `bindingArt: null` (like INV-00101-1), derive it at render time from `configuration.raw_spec.selected_options.Binding`:
 
-- Manually open the picker from `/sandton-city/orders/<id>/build/` — modal appears, branch selection navigates to the new branch's home.
-- Land on `/sandton-city/orders/<id>` with no active branch in localStorage — picker does **not** auto-pop (resource page still resolves branch from the order).
-- Land on `/print-centre` with no active branch — auto-open still works (unchanged).
+- `src/components/orders/detail/JobDetailPanel.tsx` — before passing `previewSnap.bindingArt` to `PreviewLightbox`, compute `previewSnap.bindingArt ?? bindingArtFromSlug(config.raw_spec?.selected_options?.Binding)`.
+- `src/pages/dashboard/CustomerOrderDetail.tsx` (line 774) — same fallback against `previewJob.configuration?.raw_spec?.selected_options?.Binding`.
+
+That's it. No other touchpoints.
+
+## Why this design
+
+- **Surgical.** Two files for the live fix, one new 15-line helper. No edits to `buildPreviewSnapshot`, `useCatalogBackedOptions`, or pricing.
+- **Auto-heals existing orders.** The read-time fallback means INV-00070-* / INV-00100-1 / INV-00101-1 / etc. all start rendering correctly the next time the panel mounts — no backfill SQL.
+- **Future-proof.** New orders also save the correct `bindingArt` via the write-time fallback, so the snapshot stays self-contained when the catalog later changes.
+- **Limited to seeded codes.** Any custom tenant-specific binding slug that isn't in the map falls back to the existing default (black) — same as today, no regression.
+
+## Out of scope
+
+- No change to live builder preview (already works).
+- No change to pricing, RLS, edge functions, or migrations.
+- No backfill UPDATE on `order_jobs.configuration` — fallback makes it unnecessary.
+
+## Verification
+
+1. Open the admin Job panel for `INV-00101-1` → spine should render silver twin-loop wire (not black comb).
+2. Open the customer order-detail preview for the same job → same result.
+3. Configure a new bound document with silver wire, place it, then re-open as admin → `bindingArt` is now `{method: "twin_loop", color: "Silver"}` in the saved JSON and the preview renders correctly.
+4. Existing live builder previews (image 2) keep working unchanged.
