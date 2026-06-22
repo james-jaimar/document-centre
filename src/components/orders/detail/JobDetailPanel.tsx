@@ -224,7 +224,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
           displayPageNumbers={previewSnap.displayPageNumbers}
           faceLabels={previewSnap.faceLabels}
           bindingEdge={previewSnap.bindingEdge}
-          bindingArt={previewSnap.bindingArt}
+          bindingArt={previewSnap.bindingArt ?? bindingArtFromSlug((config as any)?.raw_spec?.selected_options?.Binding)}
           pageAspectRatio={previewSnap.pageAspectRatio ?? undefined}
           pocketCoverPath={previewSnap.pocketCoverThumbnail}
           onClose={() => setPreviewOpen(false)}
