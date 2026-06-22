@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { KeyRound, Loader2 } from "lucide-react";
+import { KeyRound, Loader2, Printer } from "lucide-react";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
+import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -16,6 +18,17 @@ const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [isRecovery, setIsRecovery] = useState(false);
+
+  const { slug: tenantSlug } = useTenantSlug();
+  const { tenant: brandedTenant, loading: tenantLoading } = useTenantFromSlug();
+  const { data: branding, isLoading: brandingLoading } = useTenantBranding(brandedTenant?.id ?? null);
+  const isTenantPortal = !!tenantSlug;
+
+  useDocumentBranding(
+    brandedTenant?.id ?? null,
+    brandedTenant?.name ?? null,
+    "Reset password",
+  );
 
   useEffect(() => {
     (async () => {
@@ -31,6 +44,35 @@ const ResetPassword = () => {
     })();
   }, [searchParams]);
 
+  const brandColor = useMemo(() => {
+    if (isTenantPortal && branding?.primary_color && branding.primary_color !== "#1a1a2e") {
+      return branding.primary_color;
+    }
+    return null;
+  }, [isTenantPortal, branding?.primary_color]);
+
+  const brandVarsStyle = useMemo(
+    () => (brandColor ? ({ ["--brand" as any]: brandColor } as React.CSSProperties) : undefined),
+    [brandColor],
+  );
+
+  const primaryBtnStyle = useMemo<React.CSSProperties | undefined>(
+    () =>
+      brandColor
+        ? {
+            backgroundColor: brandColor,
+            borderColor: brandColor,
+            boxShadow: `0 10px 25px -10px ${brandColor}55`,
+          }
+        : undefined,
+    [brandColor],
+  );
+
+  const accentTextStyle = useMemo<React.CSSProperties | undefined>(
+    () => (brandColor ? { color: brandColor } : undefined),
+    [brandColor],
+  );
+
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
@@ -43,7 +85,6 @@ const ResetPassword = () => {
       if (error) throw error;
       toast.success("Password updated successfully. Please sign in with your new password.");
       await supabase.auth.signOut();
-      // Stay within the tenant portal if we're under /t/:slug[/:branchSlug]
       const m = window.location.pathname.match(/^\/t\/([^/]+)(?:\/([^/]+))?/);
       const authPath = m
         ? (m[2] ? `/t/${m[1]}/${m[2]}/auth` : `/t/${m[1]}/auth`)
@@ -56,59 +97,154 @@ const ResetPassword = () => {
     }
   };
 
-  if (checking) {
+  if (checking || (isTenantPortal && (tenantLoading || brandingLoading))) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
+        <div className="flex flex-col items-center gap-6">
+          {brandedTenant?.logo_url ? (
+            <img
+              src={brandedTenant.logo_url}
+              alt={brandedTenant?.name ?? ""}
+              className="h-12 w-auto max-w-[220px] object-contain opacity-80"
+            />
+          ) : null}
+          <Loader2 className="h-6 w-6 animate-spin" style={{ color: brandColor ?? "#0f172a" }} />
+        </div>
       </div>
     );
   }
 
+  const authBgUrl = isTenantPortal ? branding?.auth_background_url?.trim() : "";
+
   if (!isRecovery) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle>Invalid Link</CardTitle>
-            <CardDescription>This password reset link is invalid or has expired.</CardDescription>
-          </CardHeader>
-          <CardFooter>
-            <Button onClick={() => navigate("/auth")}>Back to Sign In</Button>
-          </CardFooter>
-        </Card>
+      <div
+        className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#f8f9fa] px-4 py-10"
+        style={brandVarsStyle}
+      >
+        <div className="relative w-full max-w-[460px]">
+          <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] sm:p-10 md:p-12 text-center">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Invalid link</h1>
+            <p className="mt-2 text-sm text-gray-500">This password reset link is invalid or has expired.</p>
+            <Button
+              className="mt-6 w-full"
+              style={primaryBtnStyle}
+              onClick={() => {
+                const path = tenantSlug ? `/t/${tenantSlug}/auth` : "/auth";
+                navigate(path);
+              }}
+            >
+              Back to sign in
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-md px-4">
-        <Card>
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <KeyRound className="h-7 w-7" />
+    <div
+      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#f8f9fa] px-4 py-10"
+      style={brandVarsStyle}
+    >
+      {authBgUrl && (
+        <>
+          <div
+            className="pointer-events-none absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${authBgUrl})`, opacity: 0.5 }}
+            aria-hidden="true"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-white/40" aria-hidden="true" />
+        </>
+      )}
+
+      {!authBgUrl && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className="absolute -left-[10%] -top-[10%] h-[45%] w-[45%] rounded-full opacity-60 blur-[120px]"
+            style={{
+              background: brandColor
+                ? `radial-gradient(circle, ${brandColor}22 0%, transparent 70%)`
+                : "rgba(15, 23, 42, 0.06)",
+            }}
+          />
+          <div className="absolute -bottom-[10%] -right-[10%] h-[45%] w-[45%] rounded-full bg-slate-200 opacity-40 blur-[120px]" />
+        </div>
+      )}
+
+      <div className="relative w-full max-w-[460px]">
+        <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] sm:p-10 md:p-12">
+          <div className="mb-8 flex flex-col items-center text-center">
+            {isTenantPortal && brandedTenant?.logo_url ? (
+              <img
+                src={brandedTenant.logo_url}
+                alt={`${brandedTenant.name} logo`}
+                className="mb-6 h-14 w-auto max-w-[220px] object-contain"
+              />
+            ) : isTenantPortal && brandedTenant ? (
+              <span
+                className="mb-6 text-3xl font-black italic uppercase tracking-tighter"
+                style={accentTextStyle}
+              >
+                {brandedTenant.name}
+              </span>
+            ) : (
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                <KeyRound className="h-7 w-7" />
+              </div>
+            )}
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Set new password</h1>
+            <p className="mt-2 text-sm text-gray-500">Enter your new password below</p>
+          </div>
+
+          <form onSubmit={handleReset} className="space-y-5">
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-2 ml-1 block text-xs font-bold uppercase tracking-wider text-gray-500"
+              >
+                New password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="h-auto rounded-xl border-gray-200 bg-gray-50 px-5 py-4 text-gray-900 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-offset-0"
+                style={brandColor ? ({ ["--tw-ring-color" as any]: `${brandColor}33` } as React.CSSProperties) : undefined}
+              />
             </div>
-            <CardTitle>Set New Password</CardTitle>
-            <CardDescription>Enter your new password below</CardDescription>
-          </CardHeader>
-          <form onSubmit={handleReset}>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="password">New Password</Label>
-                <Input id="password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm">Confirm password</Label>
-                <Input id="confirm" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Updating..." : "Update Password"}
-              </Button>
-            </CardFooter>
+            <div>
+              <label
+                htmlFor="confirm"
+                className="mb-2 ml-1 block text-xs font-bold uppercase tracking-wider text-gray-500"
+              >
+                Confirm password
+              </label>
+              <Input
+                id="confirm"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="h-auto rounded-xl border-gray-200 bg-gray-50 px-5 py-4 text-gray-900 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-offset-0"
+                style={brandColor ? ({ ["--tw-ring-color" as any]: `${brandColor}33` } as React.CSSProperties) : undefined}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              className="h-auto w-full rounded-xl py-4 text-base font-semibold"
+              style={primaryBtnStyle}
+              disabled={loading}
+            >
+              {loading ? "Updating..." : "Update password"}
+            </Button>
           </form>
-        </Card>
+        </div>
       </div>
     </div>
   );
