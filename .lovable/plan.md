@@ -1,22 +1,30 @@
-# Fix stale-chunk error on Place Order
+I checked git history, current preview code, console output, and the stored order snapshots for `INV-00070-3` and the screenshot order UUID.
 
-## What happened
-When you placed the order, the browser tried to load `resolveBranchTax-DvUlD4mF.js`. That file no longer exists because a redeploy went out while your tab was open — Vite renames chunks on every build, and the old `index.html` in your tab pointed at the old hash. The dynamic `import()` 404s, and `useCart.placeOrder` surfaces it as "Failed to place order".
+**What I found**
+- The actual `FlipBook`/`DocumentPreview` renderer has not changed in the last 2 days.
+- `INV-00070-3` is correctly stored as `product_type: saddle_stitched`, so that job should still route to the flipbook.
+- The screenshot order `f2589ba0-2889-4f66-b08d-98f94e2f6e9d` is a bound document with `Binding = Wire Black`, but its saved preview snapshot says `product_type: loose_sheets`.
+- Its selected binding option has empty metadata (`metadata: {}`), so the current inference path cannot recognise it as wire-bound and falls back to loose sheets.
+- The 401 in the console is from Google Analytics / storage signing noise and is not the flipbook routing issue.
 
-A hard refresh (Cmd/Ctrl+Shift+R) would have let you complete the order, but we should stop this from hitting real customers.
+**Plan**
+1. **Harden preview type inference**
+   - Update `src/lib/orders/inferPreviewType.ts` so bound products can be inferred from binding option slugs/labels when metadata is missing.
+   - Map common saved values such as `wire-black`, `wire`, `spiral`, `comb`, `ring`, `saddle`, and `perfect` to the correct `ProductPreviewType`.
+   - Keep existing metadata-based inference as the first priority.
 
-## Fix — two parts
+2. **Apply fallback at render time for existing orders**
+   - In both admin and customer order detail previews, resolve the product type through a helper that overrides invalid saved `loose_sheets` snapshots when the job clearly contains a binding.
+   - This fixes old orders without needing a database migration or rewriting historical snapshots.
 
-### 1. Remove the dynamic import on the checkout hot path
-`src/hooks/useCart.ts` lazy-loads `@/lib/tax/resolveBranchTax` inside `placeOrder`. Tax resolution runs on every checkout and the module is tiny, so code-splitting buys us nothing and exposes us to this exact failure. Convert it to a static top-of-file import so it ships in the main bundle and can't 404 mid-flow.
+3. **Fix new orders going forward**
+   - In checkout snapshot creation (`useCart.ts`), use the hardened inference before persisting `configuration.preview.product_type`.
+   - This prevents new bound jobs from being saved as `loose_sheets` when option metadata is missing.
 
-### 2. Add a global safety net for any other dynamic imports
-Add a `vite:preloadError` listener in `src/main.tsx` that, on a chunk-load failure, shows a toast ("A new version is available — reloading…") and calls `location.reload()`. This is the Vite-recommended pattern and protects every other route-level lazy import (admin pages, platform pages, etc.) from the same class of bug on future deploys.
+4. **Verify against real data**
+   - Re-check `INV-00070-3` and `f2589ba0-2889-4f66-b08d-98f94e2f6e9d` logic after the change.
+   - Confirm bound documents route to `FlipBook` and loose sheets/posters/photo prints remain unchanged.
 
-## Out of scope
-- No changes to the tax logic itself, the cart flow, or any other dynamic imports.
-- No service-worker / cache-busting changes — the reload listener is sufficient.
-
-## Verification
-- Trigger a fresh build, place a test order in PostNet Sandton → completes without error.
-- Manually simulate by deleting a known chunk file from the dev build and navigating to a lazy route → confirm auto-reload toast fires instead of a silent failure.
+**No database changes**
+- I will not mutate orders or snapshots in the database.
+- This is a code-side compatibility fix for missing option metadata in saved order snapshots.
