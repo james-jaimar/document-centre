@@ -133,6 +133,8 @@ export default function RateCardEditor({
   branchId,
   title = "Rate Card",
   description = "Single source of truth for print, paper and finishing prices.",
+  onPull,
+  pullPending,
   onResync,
   resyncPending,
 }: Props) {
@@ -144,6 +146,7 @@ export default function RateCardEditor({
   const { data: businessCards = [], isLoading: bcLoading } = useRateCardBusinessCards(args);
 
   const cloneMaster = useCloneMasterRateCard();
+  const [confirmResync, setConfirmResync] = useState(false);
   const empty = !clicksLoading && !papersLoading && !finLoading && !ppLoading && !bcLoading &&
     clicks.length === 0 && papers.length === 0 && finishing.length === 0 && photoPrints.length === 0 && businessCards.length === 0;
 
@@ -172,18 +175,59 @@ export default function RateCardEditor({
             {empty ? "Initialise from master" : "Pull missing from master"}
           </Button>
         )}
-        {scope === "branch" && branchId && onResync && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onResync()}
-            disabled={!!resyncPending}
-          >
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Re-sync from tenant
-          </Button>
+        {scope === "branch" && branchId && (onPull || onResync) && (
+          <div className="flex items-center gap-2">
+            {onPull && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onPull()}
+                disabled={!!pullPending}
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                {empty ? "Initialise from tenant" : "Pull missing from tenant"}
+              </Button>
+            )}
+            {onResync && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmResync(true)}
+                disabled={!!resyncPending}
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                Re-sync from tenant
+              </Button>
+            )}
+          </div>
         )}
       </div>
+
+      <AlertDialog open={confirmResync} onOpenChange={setConfirmResync}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-sync from tenant?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will <strong>delete every branch-specific price</strong> for click charges,
+              photo prints, business cards and pricing rules, then re-clone a fresh copy from the
+              tenant's defaults. Any custom prices this branch has set will be lost. Use
+              "Pull missing from tenant" instead if you only want to add new items.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setConfirmResync(false);
+                if (onResync) await onResync();
+              }}
+            >
+              Re-sync
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
 
       {empty && scope === "tenant" && (
         <Card className="p-8 text-center text-sm text-muted-foreground">
