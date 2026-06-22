@@ -12,7 +12,7 @@ const RESOURCE_BRANCH_ROUTE_RE =
   /\/(orders|quotes)\/[0-9a-f-]{8,}(\/|$)/i;
 
 export default function BranchPicker() {
-  const { branches, showPicker, selectBranch, closePicker, activeBranch } = useBranch();
+  const { branches, showPicker, pickerOpenMode, selectBranch, closePicker, activeBranch } = useBranch();
   const { slug: tenantSlug, isSubdomain } = useTenantSlug();
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,7 +39,9 @@ export default function BranchPicker() {
   }, [branches, search]);
 
   if (!showPicker) return null;
-  if (RESOURCE_BRANCH_ROUTE_RE.test(location.pathname)) return null;
+  // Only suppress auto-opens on resource detail pages — a user-initiated
+  // click should always open the picker so they can switch branches.
+  if (pickerOpenMode === 'auto' && RESOURCE_BRANCH_ROUTE_RE.test(location.pathname)) return null;
 
 
   return (

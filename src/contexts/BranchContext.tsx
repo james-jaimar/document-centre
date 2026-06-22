@@ -41,6 +41,8 @@ interface BranchContextValue {
   loading: boolean;
   /** Whether the branch picker should be shown */
   showPicker: boolean;
+  /** How the picker was opened: 'manual' = user clicked, 'auto' = context auto-opened */
+  pickerOpenMode: 'manual' | 'auto' | null;
   /** Select a branch (saves to localStorage) */
   selectBranch: (branch: Branch) => void;
   /** Open the branch picker */
@@ -69,7 +71,7 @@ export function BranchProvider({
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [activeBranch, setActiveBranch] = useState<Branch | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpenMode, setPickerOpenMode] = useState<'manual' | 'auto' | null>(null);
   const [urlBranchSlug, setUrlBranchSlugState] = useState<string | null>(null);
 
   // Load branches for this tenant. The branches table is RLS-protected
@@ -159,11 +161,11 @@ export function BranchProvider({
           setActiveBranch(match);
           localStorage.setItem(storageKey(tenantId), branchUrlSlug(match));
         }
-        setPickerOpen(false);
+        setPickerOpenMode(null);
       } else {
         // Invalid URL slug — clear active so the StoreNotAvailable page can render
         setActiveBranch(null);
-        setPickerOpen(false);
+        setPickerOpenMode(null);
       }
       return;
     }
@@ -172,7 +174,7 @@ export function BranchProvider({
     if (branches.length <= 1) {
       const next = branches[0] ?? null;
       if (activeBranch?.id !== next?.id) setActiveBranch(next);
-      setPickerOpen(false);
+      setPickerOpenMode(null);
       return;
     }
 
@@ -182,7 +184,7 @@ export function BranchProvider({
       const match = branches.find((b) => (b.url_slug || b.slug) === saved);
       if (match) {
         if (activeBranch?.id !== match.id) setActiveBranch(match);
-        setPickerOpen(false);
+        setPickerOpenMode(null);
         return;
       }
       // Stale slug (branch removed / taken offline) — clear and fall through
@@ -192,14 +194,14 @@ export function BranchProvider({
 
 
     // 4. Multi-branch, no choice — show picker
-    if (!activeBranch) setPickerOpen(true);
+    if (!activeBranch) setPickerOpenMode('auto');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, tenantId, urlBranchSlug, allBranches.length, branches.length]);
 
   const selectBranch = useCallback(
     (branch: Branch) => {
       setActiveBranch(branch);
-      setPickerOpen(false);
+      setPickerOpenMode(null);
       if (tenantId) {
         localStorage.setItem(storageKey(tenantId), branchUrlSlug(branch));
       }
@@ -207,9 +209,9 @@ export function BranchProvider({
     [tenantId],
   );
 
-  const openPicker = useCallback(() => setPickerOpen(true), []);
+  const openPicker = useCallback(() => setPickerOpenMode('manual'), []);
   const closePicker = useCallback(() => {
-    if (activeBranch) setPickerOpen(false);
+    if (activeBranch) setPickerOpenMode(null);
   }, [activeBranch]);
 
   const setUrlBranchSlug = useCallback((slug: string | null) => {
@@ -230,7 +232,8 @@ export function BranchProvider({
         activeBranch,
         isMultiBranch,
         loading,
-        showPicker: pickerOpen && isMultiBranch,
+        showPicker: pickerOpenMode !== null && isMultiBranch,
+        pickerOpenMode: pickerOpenMode !== null && isMultiBranch ? pickerOpenMode : null,
         selectBranch,
         openPicker,
         closePicker,
@@ -253,6 +256,7 @@ export function useBranch() {
       isMultiBranch: false,
       loading: false,
       showPicker: false,
+      pickerOpenMode: null,
       selectBranch: () => {},
       openPicker: () => {},
       closePicker: () => {},
