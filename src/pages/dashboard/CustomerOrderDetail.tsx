@@ -29,7 +29,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
-import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
+import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
 import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
 import { useBranch } from "@/contexts/BranchContext";
@@ -759,9 +759,7 @@ const CustomerOrderDetail = () => {
         return (
           <PreviewLightbox
             thumbnailPaths={(snap.thumbnails ?? []) as string[]}
-            productType={
-              (snap.product_type as any) || inferPreviewTypeFromJob(previewJob)
-            }
+            productType={resolvePreviewType(previewJob)}
             effects={snap.effects}
             colorFlags={snap.colorFlags}
             bleedFlags={snap.bleedFlags}

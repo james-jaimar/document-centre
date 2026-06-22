@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { JOB_STATUS_CONFIG, PROOF_STATUS_CONFIG, URGENCY_CONFIG } from "@/lib/orders/status-maps";
 import { Separator } from "@/components/ui/separator";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
-import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
+import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import { ProductionPanel } from "./ProductionPanel";
@@ -211,9 +211,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
       {previewOpen && (
         <PreviewLightbox
           thumbnailPaths={previewThumbs}
-          productType={
-            (previewSnap.product_type as any) || inferPreviewTypeFromJob(job)
-          }
+          productType={resolvePreviewType(job)}
           effects={previewSnap.effects}
           colorFlags={previewSnap.colorFlags}
           bleedFlags={previewSnap.bleedFlags}
