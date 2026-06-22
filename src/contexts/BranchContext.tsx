@@ -209,7 +209,7 @@ export function BranchProvider({
     [tenantId],
   );
 
-  const openPicker = useCallback(() => setPickerOpenMode(activeBranch ? "manual" : "auto"), []);
+  const openPicker = useCallback(() => setPickerOpenMode('manual'), []);
   const closePicker = useCallback(() => {
     if (activeBranch) setPickerOpenMode(null);
   }, [activeBranch]);
