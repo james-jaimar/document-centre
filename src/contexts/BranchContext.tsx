@@ -41,6 +41,8 @@ interface BranchContextValue {
   loading: boolean;
   /** Whether the branch picker should be shown */
   showPicker: boolean;
+  /** How the picker was opened: 'manual' = user clicked, 'auto' = context auto-opened */
+  pickerOpenMode: 'manual' | 'auto' | null;
   /** Select a branch (saves to localStorage) */
   selectBranch: (branch: Branch) => void;
   /** Open the branch picker */
