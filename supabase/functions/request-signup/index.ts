@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
     for (const r of settings ?? []) map[r.setting_key] = r.setting_value;
     const portalName = (typeof map.portal_name === "string" && map.portal_name) || tenant.name;
     const primary = typeof map.primary_color === "string" ? map.primary_color : "#1a1a2e";
-    const logoUrl = typeof map.logo_url === "string" ? map.logo_url : null;
+    const logoUrl = pickEmailLogoUrl(map);
     const logo = logoUrl
       ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
       : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;

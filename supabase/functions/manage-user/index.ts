@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
           for (const r of settingsRows ?? []) settings[r.setting_key] = r.setting_value;
           if (typeof settings.portal_name === "string" && settings.portal_name) portalName = settings.portal_name;
           if (typeof settings.primary_color === "string") primary = settings.primary_color;
-          if (typeof settings.logo_url === "string" && settings.logo_url) logoUrl = settings.logo_url;
+          logoUrl = pickEmailLogoUrl(settings);
         }
 
         const escapeHtml = (s: string) =>

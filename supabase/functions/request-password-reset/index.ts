@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
       for (const r of settings ?? []) map[r.setting_key] = r.setting_value;
       if (typeof map.portal_name === "string" && map.portal_name) portalName = map.portal_name;
       if (typeof map.primary_color === "string") primary = map.primary_color;
-      if (typeof map.logo_url === "string" && map.logo_url) logoUrl = map.logo_url;
+      logoUrl = pickEmailLogoUrl(map);
     }
 
     const subject = `Reset your password for ${portalName}`;
