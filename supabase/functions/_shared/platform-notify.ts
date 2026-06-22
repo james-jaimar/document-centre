@@ -120,15 +120,15 @@ export async function branchBillingEmails(
   admin: SupabaseClient,
   branch_id: string,
 ): Promise<string[]> {
-  const { data } = await admin
-    .from("branches")
-    .select("billing_email, email")
-    .eq("id", branch_id)
-    .maybeSingle();
+  const [{ data: br }, { data: bp }] = await Promise.all([
+    admin.from("branches").select("email").eq("id", branch_id).maybeSingle(),
+    admin.from("branch_private" as any).select("billing_email").eq("branch_id", branch_id).maybeSingle(),
+  ]);
   const out: string[] = [];
-  if (data?.billing_email) out.push(String(data.billing_email).toLowerCase());
-  if (data?.email && !out.includes(String(data.email).toLowerCase())) {
-    out.push(String(data.email).toLowerCase());
+  const billing = (bp as any)?.billing_email;
+  if (billing) out.push(String(billing).toLowerCase());
+  if (br?.email && !out.includes(String(br.email).toLowerCase())) {
+    out.push(String(br.email).toLowerCase());
   }
   return out;
 }
