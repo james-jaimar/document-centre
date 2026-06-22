@@ -772,7 +772,7 @@ const CustomerOrderDetail = () => {
             displayPageNumbers={snap.displayPageNumbers}
             faceLabels={snap.faceLabels}
             bindingEdge={snap.bindingEdge}
-            bindingArt={snap.bindingArt}
+            bindingArt={snap.bindingArt ?? bindingArtFromSlug((previewJob.configuration as any)?.raw_spec?.selected_options?.Binding)}
             pageAspectRatio={snap.pageAspectRatio ?? undefined}
             pocketCoverPath={snap.pocketCoverThumbnail}
             onClose={() => setPreviewJob(null)}
