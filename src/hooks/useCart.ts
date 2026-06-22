@@ -8,6 +8,7 @@ import { copyS3Object } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import { buildPreviewSnapshot } from "@/lib/orders/buildPreviewSnapshot";
+import { resolveBranchTax, computeVat } from "@/lib/tax/resolveBranchTax";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
@@ -672,7 +673,6 @@ export function usePlaceOrder() {
       const subtotal = jobs.reduce((sum: number, j: any) => sum + j.net_price, 0);
 
       // Resolve effective tax config: branch override → tenant default.
-      const { resolveBranchTax, computeVat } = await import("@/lib/tax/resolveBranchTax");
       const taxCfg = await resolveBranchTax(
         tenantId || cartOrder.tenant_id,
         input.branchId || cartOrder.branch_id || null,
