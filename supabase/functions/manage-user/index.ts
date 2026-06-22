@@ -3,6 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 import { enqueueEmail } from "../_shared/email-queue.ts";
+import { pickEmailLogoUrl } from "../_shared/emailLogo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
