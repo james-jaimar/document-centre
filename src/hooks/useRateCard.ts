@@ -434,6 +434,25 @@ export function useCloneMasterRateCard() {
   });
 }
 
+/** Additively copy any tenant rate-card rows the branch doesn't yet have. */
+export function useClonePricingToBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (branchId: string) => {
+      const { error } = await supabase.rpc("clone_tenant_pricing_to_branch" as any, {
+        p_branch_id: branchId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
+      qc.invalidateQueries({ queryKey: ["pricing_rules"] });
+      qc.invalidateQueries({ queryKey: ["rate_card_price_breaks_bundle"] });
+    },
+  });
+}
+
 /** Wipe a branch's pricing and re-pull a fresh copy from the tenant. */
 export function useResyncBranchPricing() {
   const qc = useQueryClient();
@@ -448,6 +467,7 @@ export function useResyncBranchPricing() {
       qc.invalidateQueries({ queryKey: ["rate_card"] });
       qc.invalidateQueries({ queryKey: ["resolved_rate_card"] });
       qc.invalidateQueries({ queryKey: ["pricing_rules"] });
+      qc.invalidateQueries({ queryKey: ["rate_card_price_breaks_bundle"] });
     },
   });
 }
