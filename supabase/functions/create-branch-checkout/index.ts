@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
 
   const { data: branch, error: branchErr } = await supabaseAdmin
     .from("branches")
-    .select("id, tenant_id, name, trading_name, billing_email, email")
+    .select("id, tenant_id, name, trading_name, email")
     .eq("id", body.branch_id)
     .single();
   if (branchErr || !branch) {
