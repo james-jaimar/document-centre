@@ -59,7 +59,10 @@ interface Props {
   branchId?: string | null;
   title?: string;
   description?: string;
-  /** Optional resync button (rendered when scope === 'branch') */
+  /** Pull missing rows from tenant (additive, safe). */
+  onPull?: () => void | Promise<void>;
+  pullPending?: boolean;
+  /** Re-sync: wipe + clone from tenant (destructive). */
   onResync?: () => void | Promise<void>;
   resyncPending?: boolean;
 }
