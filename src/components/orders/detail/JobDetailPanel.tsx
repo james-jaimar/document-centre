@@ -6,6 +6,7 @@ import { JOB_STATUS_CONFIG, PROOF_STATUS_CONFIG, URGENCY_CONFIG } from "@/lib/or
 import { Separator } from "@/components/ui/separator";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
+import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import { ProductionPanel } from "./ProductionPanel";
