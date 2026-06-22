@@ -264,7 +264,8 @@ Deno.serve(async (req) => {
       { data: jobs },
       { data: addresses },
       { data: tenant },
-      { data: branch },
+      { data: branchRow },
+      { data: branchPrivate },
       { data: settings },
     ] = await Promise.all([
       admin.from("order_jobs").select("*").eq("order_id", order_id).order("sequence_no"),
@@ -273,8 +274,12 @@ Deno.serve(async (req) => {
       order.branch_id
         ? admin.from("branches").select("*").eq("id", order.branch_id).maybeSingle()
         : Promise.resolve({ data: null } as any),
+      order.branch_id
+        ? admin.from("branch_private" as any).select("*").eq("branch_id", order.branch_id).maybeSingle()
+        : Promise.resolve({ data: null } as any),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
     ]);
+    const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;
 
     const settingsArr = settings || [];
     const brandingTbl: Record<string, any> = {};

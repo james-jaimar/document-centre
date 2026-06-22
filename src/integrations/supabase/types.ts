@@ -357,6 +357,50 @@ export type Database = {
           },
         ]
       }
+      branch_private: {
+        Row: {
+          accounts_email: string | null
+          banking_details: Json
+          billing_email: string | null
+          branch_id: string
+          created_at: string
+          legal_name: string | null
+          registration_number: string | null
+          updated_at: string
+          vat_number: string | null
+        }
+        Insert: {
+          accounts_email?: string | null
+          banking_details?: Json
+          billing_email?: string | null
+          branch_id: string
+          created_at?: string
+          legal_name?: string | null
+          registration_number?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Update: {
+          accounts_email?: string | null
+          banking_details?: Json
+          billing_email?: string | null
+          branch_id?: string
+          created_at?: string
+          legal_name?: string | null
+          registration_number?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_private_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: true
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_product_option_overrides: {
         Row: {
           branch_id: string
@@ -560,10 +604,7 @@ export type Database = {
       }
       branches: {
         Row: {
-          accounts_email: string | null
           address: string | null
-          banking_details: Json
-          billing_email: string | null
           city: string | null
           code: string | null
           country: string
@@ -573,26 +614,20 @@ export type Database = {
           id: string
           is_active: boolean
           is_live: boolean
-          legal_name: string | null
           name: string
           phone: string | null
           postal_code: string | null
           province: string | null
-          registration_number: string | null
           settings: Json
           slug: string
           tenant_id: string
           trading_name: string | null
           updated_at: string
           url_slug: string | null
-          vat_number: string | null
           website_url: string | null
         }
         Insert: {
-          accounts_email?: string | null
           address?: string | null
-          banking_details?: Json
-          billing_email?: string | null
           city?: string | null
           code?: string | null
           country?: string
@@ -602,26 +637,20 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_live?: boolean
-          legal_name?: string | null
           name: string
           phone?: string | null
           postal_code?: string | null
           province?: string | null
-          registration_number?: string | null
           settings?: Json
           slug: string
           tenant_id: string
           trading_name?: string | null
           updated_at?: string
           url_slug?: string | null
-          vat_number?: string | null
           website_url?: string | null
         }
         Update: {
-          accounts_email?: string | null
           address?: string | null
-          banking_details?: Json
-          billing_email?: string | null
           city?: string | null
           code?: string | null
           country?: string
@@ -631,19 +660,16 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_live?: boolean
-          legal_name?: string | null
           name?: string
           phone?: string | null
           postal_code?: string | null
           province?: string | null
-          registration_number?: string | null
           settings?: Json
           slug?: string
           tenant_id?: string
           trading_name?: string | null
           updated_at?: string
           url_slug?: string | null
-          vat_number?: string | null
           website_url?: string | null
         }
         Relationships: [

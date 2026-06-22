@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
   // Verify caller belongs to this branch (any active tenant membership scoped to it,
   // or owner/admin of the tenant the branch belongs to)
   const { data: branch } = await sb.from("branches")
-    .select("id, tenant_id, name, billing_email, email")
+    .select("id, tenant_id, name, email")
     .eq("id", body.branch_id).single();
   if (!branch) {
     return new Response(JSON.stringify({ error: "Branch not found" }), {
@@ -88,7 +88,8 @@ Deno.serve(async (req) => {
   // Fire welcome email exactly once (when trial flipped from not_started → active)
   if (wasNotStarted) {
     try {
-      const toEmail = (branch as any).billing_email || (branch as any).email || user.email;
+      const { data: bp } = await sb.from("branch_private" as any).select("billing_email").eq("branch_id", branch.id).maybeSingle();
+      const toEmail = (bp as any)?.billing_email || (branch as any).email || user.email;
       if (toEmail) {
         await sb.functions.invoke("send-email", {
           body: {

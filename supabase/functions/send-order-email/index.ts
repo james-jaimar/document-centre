@@ -376,14 +376,18 @@ Deno.serve(async (req) => {
     }
 
 
-    const [{ data: tenant }, { data: settings }, { data: addresses }, { data: branch }] = await Promise.all([
+    const [{ data: tenant }, { data: settings }, { data: addresses }, { data: branchRow }, { data: branchPrivate }] = await Promise.all([
       admin.from("tenants").select("*").eq("id", order.tenant_id).single(),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
       admin.from("order_addresses").select("*").eq("order_id", order_id),
       order.branch_id
-        ? admin.from("branches").select("name, email, billing_email, accounts_email, phone").eq("id", order.branch_id).maybeSingle()
+        ? admin.from("branches").select("name, email, phone").eq("id", order.branch_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      order.branch_id
+        ? admin.from("branch_private" as any).select("billing_email, accounts_email").eq("branch_id", order.branch_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
+    const branch = branchRow ? { ...branchRow, ...((branchPrivate as any) ?? {}) } : null;
 
     const branding: any = {}, notif: any = {}, bank: any = {};
     (settings || []).forEach((s: any) => {

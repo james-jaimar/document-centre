@@ -231,12 +231,16 @@ Deno.serve(async (req) => {
     if (qErr || !q) return json({ error: qErr?.message ?? "Quote not found" }, 404);
 
     // Tenant + branch
-    const [{ data: tenant }, { data: branch }] = await Promise.all([
+    const [{ data: tenant }, { data: branchRow }, { data: branchPrivate }] = await Promise.all([
       supa.from("tenants").select("*").eq("id", q.tenant_id).maybeSingle(),
       q.branch_id
         ? supa.from("branches").select("*").eq("id", q.branch_id).maybeSingle()
         : Promise.resolve({ data: null } as any),
+      q.branch_id
+        ? supa.from("branch_private" as any).select("*").eq("branch_id", q.branch_id).maybeSingle()
+        : Promise.resolve({ data: null } as any),
     ]);
+    const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;
 
     const from = resolveFromParty(tenant, branch);
     const tSettings = (tenant?.settings ?? {}) as any;

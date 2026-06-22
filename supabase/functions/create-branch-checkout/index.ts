@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
 
   const { data: branch, error: branchErr } = await supabaseAdmin
     .from("branches")
-    .select("id, tenant_id, name, trading_name, billing_email, email")
+    .select("id, tenant_id, name, trading_name, email")
     .eq("id", body.branch_id)
     .single();
   if (branchErr || !branch) {
@@ -87,8 +87,9 @@ Deno.serve(async (req) => {
 
   let customerId = (existing as any)?.stripe_customer_id;
   if (!customerId) {
+    const { data: bp } = await supabaseAdmin.from("branch_private" as any).select("billing_email").eq("branch_id", branch.id).maybeSingle();
     const customer = await stripe.customers.create({
-      email: (branch as any).billing_email || (branch as any).email || user.email,
+      email: (bp as any)?.billing_email || (branch as any).email || user.email,
       name: (branch as any).trading_name || branch.name,
       metadata: { branch_id: branch.id, tenant_id: branch.tenant_id },
     });
