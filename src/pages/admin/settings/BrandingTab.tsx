@@ -89,6 +89,7 @@ export function BrandingTab() {
   const [accentColor, setAccentColor] = useState("");
   const [portalName, setPortalName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  const [emailLogoUrl, setEmailLogoUrl] = useState("");
   const [heroImageUrl, setHeroImageUrl] = useState("");
   const [authBackgroundUrl, setAuthBackgroundUrl] = useState("");
   const [tagline, setTagline] = useState("");
@@ -122,6 +123,7 @@ export function BrandingTab() {
       setAccentColor((settingsMap.accent_color as string) ?? "#0f3460");
       setPortalName((settingsMap.portal_name as string) ?? "");
       setLogoUrl((settingsMap.logo_url as string) ?? "");
+      setEmailLogoUrl((settingsMap.email_logo_url as string) ?? "");
       setHeroImageUrl((settingsMap.hero_image_url as string) ?? "");
       setAuthBackgroundUrl((settingsMap.auth_background_url as string) ?? "");
       setTagline((settingsMap.tagline as string) ?? "");
@@ -211,6 +213,7 @@ export function BrandingTab() {
         { category: "branding", setting_key: "accent_color", setting_value: accentColor, value_type: "string" },
         { category: "branding", setting_key: "portal_name", setting_value: portalName, value_type: "string" },
         { category: "branding", setting_key: "logo_url", setting_value: logoUrl, value_type: "string" },
+        { category: "branding", setting_key: "email_logo_url", setting_value: emailLogoUrl, value_type: "string" },
         { category: "branding", setting_key: "hero_image_url", setting_value: heroImageUrl, value_type: "string" },
         { category: "branding", setting_key: "auth_background_url", setting_value: authBackgroundUrl, value_type: "string" },
         { category: "branding", setting_key: "tagline", setting_value: tagline, value_type: "string" },
@@ -349,6 +352,21 @@ export function BrandingTab() {
             fileKey="logo"
             previewClass="h-12 w-auto object-contain"
           />
+          <div className="space-y-1">
+            <ImageUploadField
+              label="Email Logo (PNG/JPG)"
+              value={emailLogoUrl}
+              onChange={setEmailLogoUrl}
+              tenantId={tenantId}
+              fileKey="email-logo"
+              previewClass="h-12 w-auto object-contain"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used in transactional emails. Outlook and several other clients do not
+              render SVG logos — upload a PNG or JPG here. If left blank and your main
+              logo is SVG, emails fall back to your portal name as text.
+            </p>
+          </div>
           <ImageUploadField
             label="Hero Image"
             value={heroImageUrl}
