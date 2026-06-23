@@ -112,18 +112,61 @@ export function useOverrideBranchSubscription() {
   });
 }
 
-/** Read-only soft block gate for a branch. */
+export type BranchEntitlementState = "active" | "trialing" | "grace" | "restricted" | "cancelled";
+export interface BranchEntitlement {
+  state: BranchEntitlementState;
+  reason?: string | null;
+  until?: string | null;
+}
+
+/** Server-resolved entitlement — single source of truth for storefront + admin gates. */
+export function useBranchEntitlement(branchId?: string) {
+  return useQuery({
+    queryKey: ["branch_entitlement", branchId],
+    enabled: !!branchId,
+    queryFn: async (): Promise<BranchEntitlement> => {
+      const { data, error } = await (supabase as any).rpc("resolve_branch_entitlement", { _branch_id: branchId });
+      if (error) throw error;
+      return (data ?? { state: "restricted", reason: "unknown" }) as BranchEntitlement;
+    },
+  });
+}
+
+/**
+ * Branch admin gate.
+ *   - active | trialing | grace → full read/write
+ *   - restricted (e.g. grace expired)  → read-only EXCEPT billing routes
+ *   - cancelled                        → read-only, billing only
+ * Storefront-side checkout uses a stricter gate that blocks immediately on past_due — see useBranchStorefrontGate.
+ */
 export function useBranchSubscriptionGate(branchId?: string) {
-  const { data, isLoading } = useBranchSubscription(branchId);
-  if (isLoading) return { readOnly: false, reason: null as string | null, loading: true };
-  if (!data) return { readOnly: true, reason: "No subscription assigned to this branch.", loading: false };
-  const status = data.status || "";
-  const billing = data.billing_status || "";
-  if (status === "active" || status === "trialing" || billing === "paid" || billing === "free") {
-    return { readOnly: false, reason: null, loading: false };
+  const { data, isLoading } = useBranchEntitlement(branchId);
+  if (isLoading) return { readOnly: false, billingOnly: false, reason: null as string | null, loading: true, state: null as BranchEntitlementState | null };
+  if (!data) return { readOnly: true, billingOnly: true, reason: "No subscription assigned to this branch.", loading: false, state: "restricted" as BranchEntitlementState };
+  const s = data.state;
+  if (s === "active" || s === "trialing" || s === "grace") {
+    return { readOnly: false, billingOnly: false, reason: s === "grace" ? "Payment failed — please update billing before the grace period ends." : null, loading: false, state: s };
   }
-  if (status === "past_due") return { readOnly: true, reason: "Subscription payment is past due.", loading: false };
-  if (status === "cancelled" || status === "canceled") return { readOnly: true, reason: "Subscription was cancelled.", loading: false };
-  if (billing === "pending_payment") return { readOnly: true, reason: "Awaiting subscription payment.", loading: false };
-  return { readOnly: true, reason: `Subscription status: ${status || billing || "unknown"}.`, loading: false };
+  // restricted | cancelled → admin can still update billing
+  return {
+    readOnly: true,
+    billingOnly: true,
+    reason: s === "cancelled" ? "Subscription was cancelled." : "Subscription is restricted. Update billing to restore access.",
+    loading: false,
+    state: s,
+  };
+}
+
+/** Customer storefront gate — checkout is blocked the moment payment fails (past_due / restricted / cancelled). */
+export function useBranchStorefrontGate(branchId?: string) {
+  const { data, isLoading } = useBranchEntitlement(branchId);
+  if (isLoading) return { checkoutBlocked: false, reason: null as string | null, loading: true };
+  if (!data) return { checkoutBlocked: true, reason: "Branch unavailable.", loading: false };
+  const s = data.state;
+  if (s === "active" || s === "trialing") return { checkoutBlocked: false, reason: null, loading: false };
+  return {
+    checkoutBlocked: true,
+    reason: s === "cancelled" ? "This store is no longer accepting orders." : "This store is temporarily unavailable.",
+    loading: false,
+  };
 }

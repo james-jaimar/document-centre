@@ -82,15 +82,21 @@ Deno.serve(async (req) => {
         const sub = event.data.object as Stripe.Subscription;
         const branchId = sub.metadata?.branch_id;
         const tenantId = sub.metadata?.tenant_id;
+        const nowIso = new Date().toISOString();
         if (branchId) {
           await supabaseAdmin
             .from("branch_subscriptions" as any)
-            .update({ status: "cancelled", billing_status: "pending_payment", cancelled_at: new Date().toISOString() })
+            .update({ status: "cancelled", billing_status: "pending_payment", cancelled_at: nowIso, grace_until: null })
             .eq("stripe_subscription_id", sub.id);
+          // Close the storefront — branch is hidden from listings and slug URLs fall through to the friendly fallback.
+          await supabaseAdmin
+            .from("branches" as any)
+            .update({ storefront_closed_at: nowIso })
+            .eq("id", branchId);
         } else if (tenantId) {
           await supabaseAdmin
             .from("tenant_subscriptions")
-            .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+            .update({ status: "cancelled", cancelled_at: nowIso })
             .eq("stripe_subscription_id", sub.id);
           await supabaseAdmin.from("tenants").update({ plan_slug: "starter" }).eq("id", tenantId);
         }
@@ -102,10 +108,10 @@ Deno.serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         if (!invoice.subscription) break;
         const subId = invoice.subscription as string;
-        // Try branch table first then tenant table — only one will hit
+        // Try branch table first then tenant table — only one will hit. Clear grace window on success.
         const { data: bsHit } = await supabaseAdmin
           .from("branch_subscriptions" as any)
-          .update({ status: "active", billing_status: "paid" })
+          .update({ status: "active", billing_status: "paid", grace_until: null })
           .eq("stripe_subscription_id", subId).select("id, tenant_id");
         let tenantId: string | null = (bsHit as any[])?.[0]?.tenant_id ?? null;
         if (!bsHit || (bsHit as any[]).length === 0) {
@@ -127,9 +133,23 @@ Deno.serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         if (!invoice.subscription) break;
         const subId = invoice.subscription as string;
+        // 7-day grace anchored to the current period end (or now() if already past), per billing policy.
+        const { data: existing } = await supabaseAdmin
+          .from("branch_subscriptions" as any)
+          .select("current_period_end, grace_until")
+          .eq("stripe_subscription_id", subId)
+          .maybeSingle();
+        const anchor = (existing as any)?.current_period_end
+          ? new Date((existing as any).current_period_end)
+          : new Date();
+        const now = new Date();
+        const base = anchor.getTime() > now.getTime() ? anchor : now;
+        const graceUntil = (existing as any)?.grace_until
+          ?? new Date(base.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
         const { data: bsHit } = await supabaseAdmin
           .from("branch_subscriptions" as any)
-          .update({ status: "past_due" })
+          .update({ status: "past_due", grace_until: graceUntil })
           .eq("stripe_subscription_id", subId).select("id, tenant_id");
         let tenantId: string | null = (bsHit as any[])?.[0]?.tenant_id ?? null;
         if (!bsHit || (bsHit as any[]).length === 0) {

@@ -104,6 +104,7 @@ export function BranchProvider({
         .select("id, name, slug, url_slug, code, city, province, address, is_active, is_live")
         .eq("tenant_id", tenantId)
         .eq("is_active", true)
+        .is("storefront_closed_at", null)
         .order("name");
 
       if (cancelled) return;
