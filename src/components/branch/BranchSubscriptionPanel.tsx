@@ -8,6 +8,7 @@ import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -21,6 +22,7 @@ const statusColors: Record<string, string> = {
 export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
   const { data: subscription, isLoading } = useBranchSubscription(branchId);
   const [loading, setLoading] = useState(false);
+  const [accepted, setAccepted] = useState<AcceptedDocument[] | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -53,6 +55,10 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
   const handlePay = async () => {
     if (!assignedPlan?.stripe_price_id) {
       toast.error("Plan is not Stripe-ready. Contact your tenant admin.");
+      return;
+    }
+    if (!accepted || accepted.length === 0) {
+      toast.error("Please accept all of the required documents before continuing.");
       return;
     }
     setLoading(true);
