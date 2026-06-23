@@ -1,67 +1,62 @@
-# Fix saved-order binding artwork resolving to black
+# SaaS rollout plan
 
-## Root cause (confirmed against DB)
+## Status
+- Phase 1 (Legal Stack) — done
+- Phase 2 (Pre-checkout disclosure + acceptance ledger) — done
+- Phase 3 (Subscription lifecycle enforcement) — in progress
 
-- Order `INV-00101-1` has `raw_spec.selected_options.Binding = "wire-silver"`, but `configuration.preview.bindingArt` is `null`.
-- The "Bound Documents" Binding option row has `source: catalog.finishing` and `values: []` (catalog-backed; enriched live by `useCatalogBackedOptions`).
-- `useCart.placeOrder` passes raw `product_options` rows to `buildPreviewSnapshot`. `selectedBindingArt` runs `isStructuredValues([])` → false → returns `undefined`.
-- The saved snapshot therefore has no `bindingArt`, and `BindingSpine` falls back to `normaliseBindingColor(undefined) → "black"`. Silver wire renders as black, spiral renders as black, etc.
-- The live builder (image 2 — the new order) renders correctly because its options come from the catalog-enriched hook, not the raw table row.
+## Decisions (locked)
+- **Grace window**: 7 days from `current_period_end` (or `now()` if already past).
+- **Cancellation**: access until `current_period_end`, no pro-rata refunds.
+- **Liability cap**: fees paid in prior 6 months.
+- **Availability target**: 99.5% calendar month.
+- **VAT**: Jaimar not registered — "VAT not applicable".
+- **Retention**: production files 180 days, logs 90 days, order records 5 years.
 
-This affects every placed order whose binding option is catalog-backed (all Bound Documents and Presentations going forward).
+### Phase 3 specifics (locked this turn)
+- **On payment failure**:
+  - Storefront checkout blocked **immediately** when sub goes `past_due`.
+  - Branch admin portal stays read/write for 7 days of grace, then becomes **read-only with billing as the only writable area**.
+- **Trial**: 14 days no card, OR 30 days with card on file (no charge until day 30).
+- **Cancelled branches**: storefront `/t/:slug/...` URLs fall through to the friendly "store not online yet" page (a saved customer link is effectively redirected to tenant landing). Branch is removed from the picker and search — it simply won't list.
 
-## Fix
+## Phase 3 work
+- DB
+  - `branch_subscriptions.grace_until` — 7-day grace window per failure (done).
+  - `branches.storefront_closed_at` — flips on `customer.subscription.deleted` (done).
+  - `resolve_branch_entitlement(branch_id) → { state, until, reason }` RPC (done).
+- Stripe webhook (`stripe-webhook/index.ts`)
+  - Set `grace_until` on `invoice.payment_failed` (done).
+  - Clear `grace_until` on `invoice.payment_succeeded` (done).
+  - Set `branches.storefront_closed_at = now()` on `customer.subscription.deleted` (done).
+- Frontend gates
+  - `useBranchEntitlement(branchId)` — server-resolved (done).
+  - `useBranchSubscriptionGate` — admin: full ↔ billing-only (done).
+  - `useBranchStorefrontGate` — checkout block (done).
+  - `BranchContext` filters out `storefront_closed_at` so the picker hides closed branches (done).
+- Remaining for Phase 3
+  - Wire `useBranchStorefrontGate` into `Cart` / checkout buttons (storefront).
+  - Wire `useBranchSubscriptionGate` into branch admin layout — read-only banner + lock everything except `Settings → Billing`.
+  - Trial selector: extend `assign-branch-plan` / `start-branch-trial` to accept `{ trial_days: 14 | 30, requires_card: bool }`.
+  - Dunning emails: day 0 / 3 / 6 / 7 — extend `notifyTenant("invoice_failed", ...)` into a scheduled sweep (`pg_cron` job hitting a `subscription-dunning-sweep` edge function).
 
-Two small, surgical changes — no DB migration, no schema change, no backfill required. Old orders auto-heal on next view.
+## Phase 4 — Tenant self-service
+- Branch → Settings → Billing tab (plan, renewal, payment method via Stripe Portal, acceptance history).
+- Re-acceptance modal on `LEGAL_DOC_VERSIONS` bump.
 
-### 1. New helper: `bindingArtFromSlug`
+## Phase 5 — Platform admin controls
+- Platform → Subscriptions list (status, MRR, grace, manual overrides).
+- Platform → Legal versioning workflow.
+- Admin action audit log.
 
-Add a tiny lookup in `src/lib/orders/selectedBindingArt.ts` that maps the seeded catalog codes directly to `{method, color}`. Single source of truth for both write-time and read-time fallback.
+## Phase 6 — Customer-facing legal
+- `/t/:slug/legal/{terms,privacy}` rendered from tenant-configurable templates (branch is merchant of record).
+- Checkout consent → `customer_acceptances` tied to the order.
+- Storefront cookie banner.
 
-```ts
-// in src/lib/orders/selectedBindingArt.ts
-const SLUG_TO_ART: Record<string, {method: "spiral"|"comb"|"twin_loop"; color: string}> = {
-  "comb-black":    { method: "comb",      color: "Black"  },
-  "spiral-black":  { method: "spiral",    color: "Black"  },
-  "spiral-white":  { method: "spiral",    color: "White"  },
-  "spiral-clear":  { method: "spiral",    color: "Clear"  },
-  "wire-black":    { method: "twin_loop", color: "Black"  },
-  "wire-silver":   { method: "twin_loop", color: "Silver" },
-};
-
-export function bindingArtFromSlug(slug?: string | null) {
-  if (!slug) return undefined;
-  return SLUG_TO_ART[slug];
-}
-```
-
-`selectedBindingArt` keeps its current metadata-driven behaviour but adds a final fallback: if the option lookup yields nothing, return `bindingArtFromSlug(selectedOptions[key])`. This means even when `productOptions[Binding].values` is empty, write-time still resolves the art for seeded codes.
-
-### 2. Read-time fallback in the two preview lightbox call sites
-
-For orders already in the database with `bindingArt: null` (like INV-00101-1), derive it at render time from `configuration.raw_spec.selected_options.Binding`:
-
-- `src/components/orders/detail/JobDetailPanel.tsx` — before passing `previewSnap.bindingArt` to `PreviewLightbox`, compute `previewSnap.bindingArt ?? bindingArtFromSlug(config.raw_spec?.selected_options?.Binding)`.
-- `src/pages/dashboard/CustomerOrderDetail.tsx` (line 774) — same fallback against `previewJob.configuration?.raw_spec?.selected_options?.Binding`.
-
-That's it. No other touchpoints.
-
-## Why this design
-
-- **Surgical.** Two files for the live fix, one new 15-line helper. No edits to `buildPreviewSnapshot`, `useCatalogBackedOptions`, or pricing.
-- **Auto-heals existing orders.** The read-time fallback means INV-00070-* / INV-00100-1 / INV-00101-1 / etc. all start rendering correctly the next time the panel mounts — no backfill SQL.
-- **Future-proof.** New orders also save the correct `bindingArt` via the write-time fallback, so the snapshot stays self-contained when the catalog later changes.
-- **Limited to seeded codes.** Any custom tenant-specific binding slug that isn't in the map falls back to the existing default (black) — same as today, no regression.
-
-## Out of scope
-
-- No change to live builder preview (already works).
-- No change to pricing, RLS, edge functions, or migrations.
-- No backfill UPDATE on `order_jobs.configuration` — fallback makes it unnecessary.
-
-## Verification
-
-1. Open the admin Job panel for `INV-00101-1` → spine should render silver twin-loop wire (not black comb).
-2. Open the customer order-detail preview for the same job → same result.
-3. Configure a new bound document with silver wire, place it, then re-open as admin → `bindingArt` is now `{method: "twin_loop", color: "Silver"}` in the saved JSON and the preview renders correctly.
-4. Existing live builder previews (image 2) keep working unchanged.
+## Phase 7 — Launch readiness
+- DPA countersignature (e-sign + ledger row).
+- Sub-processor change notifications (30-day notice).
+- `/status` page for SLA reporting.
+- Security questionnaire pack (SIG-Lite / CAIQ-Lite).
+- Runbooks: incident, DSR, breach notification, restore drill.
