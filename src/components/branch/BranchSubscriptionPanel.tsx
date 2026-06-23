@@ -126,7 +126,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
                 </div>
               </div>
             </div>
-            <Button onClick={handlePay} disabled={loading} size="lg" className="w-full">
+            <SubscriptionDisclosureCard
+              planSlug={subscription.assigned_plan_slug}
+              trialDays={subscription?.trial_days || 0}
+              onChange={setAccepted}
+            />
+            <Button onClick={handlePay} disabled={loading || !accepted} size="lg" className="w-full">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Pay Now
             </Button>
           </div>
@@ -144,7 +149,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             <p className="text-sm text-muted-foreground">
               Trial ends {new Date(trialEndsAt!).toLocaleDateString()} — add payment any time to continue without interruption.
             </p>
-            <Button onClick={handlePay} disabled={loading} size="sm" variant="outline" className="w-full">
+            <SubscriptionDisclosureCard
+              planSlug={subscription?.assigned_plan_slug}
+              trialDays={0}
+              onChange={setAccepted}
+            />
+            <Button onClick={handlePay} disabled={loading || !accepted} size="sm" variant="outline" className="w-full">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
             </Button>
           </div>
