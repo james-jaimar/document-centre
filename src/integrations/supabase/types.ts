@@ -4790,6 +4790,69 @@ export type Database = {
           },
         ]
       }
+      subscription_acceptances: {
+        Row: {
+          accepted_at: string
+          accepted_by: string
+          branch_id: string
+          context: string
+          created_at: string
+          document_slug: string
+          document_version: number
+          id: string
+          ip_address: string | null
+          metadata: Json
+          stripe_checkout_session_id: string | null
+          tenant_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          accepted_at?: string
+          accepted_by: string
+          branch_id: string
+          context?: string
+          created_at?: string
+          document_slug: string
+          document_version: number
+          id?: string
+          ip_address?: string | null
+          metadata?: Json
+          stripe_checkout_session_id?: string | null
+          tenant_id: string
+          user_agent?: string | null
+        }
+        Update: {
+          accepted_at?: string
+          accepted_by?: string
+          branch_id?: string
+          context?: string
+          created_at?: string
+          document_slug?: string
+          document_version?: number
+          id?: string
+          ip_address?: string | null
+          metadata?: Json
+          stripe_checkout_session_id?: string | null
+          tenant_id?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_acceptances_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_acceptances_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           contact_name: string | null
