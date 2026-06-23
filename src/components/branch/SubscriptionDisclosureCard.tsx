@@ -53,7 +53,7 @@ export function SubscriptionDisclosureCard({ planSlug, priceLabel, trialDays, on
       <CardContent className="space-y-4 text-sm">
         <div className="rounded-md bg-muted/40 p-3 space-y-1">
           <p>
-            <strong>{LEGAL_ENTITY.tradingAs}</strong> ({LEGAL_ENTITY.legalName},
+            <strong>{LEGAL_ENTITY.tradingName}</strong> ({LEGAL_ENTITY.legalName},
             company no. {LEGAL_ENTITY.companyNumber}) will bill this branch
             for the <strong className="capitalize">{planSlug ?? "selected"}</strong> plan
             {priceLabel ? <> at <strong>{priceLabel}</strong></> : null}
