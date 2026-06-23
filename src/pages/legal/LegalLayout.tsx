@@ -2,10 +2,13 @@ import { Link, NavLink } from "react-router-dom";
 import { ReactNode } from "react";
 import { Linkedin, Youtube, Mail } from "lucide-react";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
+import { LEGAL_DOCS_LIST } from "@/lib/legal/versions";
+import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
 
 interface LegalLayoutProps {
   title: string;
   updated: string;
+  version?: number;
   children: ReactNode;
 }
 
@@ -13,7 +16,7 @@ const Logo = ({ height = 56 }: { height?: number }) => (
   <img src={docCentreLogo} alt="Document Centre" style={{ height }} className="w-auto" />
 );
 
-export default function LegalLayout({ title, updated, children }: LegalLayoutProps) {
+export default function LegalLayout({ title, updated, version, children }: LegalLayoutProps) {
   return (
     <div className="dc-marketing min-h-screen bg-white text-[hsl(var(--dc-navy))]">
       {/* Header */}
@@ -25,6 +28,7 @@ export default function LegalLayout({ title, updated, children }: LegalLayoutPro
           <nav className="hidden md:flex gap-7 text-sm font-medium">
             <Link to="/#features" className="hover:text-[hsl(var(--dc-blue))]">Features</Link>
             <Link to="/pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</Link>
+            <Link to="/legal" className="hover:text-[hsl(var(--dc-blue))]">Legal</Link>
             <Link to="/auth" className="hover:text-[hsl(var(--dc-blue))]">Sign in</Link>
           </nav>
         </div>
@@ -35,35 +39,44 @@ export default function LegalLayout({ title, updated, children }: LegalLayoutPro
         <div className="max-w-[860px] mx-auto px-6">
           <p className="text-xs uppercase tracking-[0.2em] text-white/70 mb-3">Legal</p>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight">{title}</h1>
-          <p className="mt-3 text-sm text-white/70">Last updated: {updated}</p>
+          <p className="mt-3 text-sm text-white/70">
+            Last updated: {updated}
+            {version !== undefined && <span className="ml-3 opacity-70">· Version {version}</span>}
+          </p>
         </div>
       </section>
 
-      {/* Sub-nav */}
+      {/* Sub-nav — scrollable horizontally on small screens */}
       <div className="border-b border-[hsl(var(--dc-border))] bg-white sticky top-0 z-10">
-        <div className="max-w-[860px] mx-auto px-6 flex gap-6 text-sm h-12 items-center">
-          <NavLink
-            to="/privacy"
-            className={({ isActive }) =>
-              `py-3 border-b-2 ${isActive ? "border-[hsl(var(--dc-blue))] text-[hsl(var(--dc-blue))] font-medium" : "border-transparent text-[hsl(var(--dc-navy))]/70 hover:text-[hsl(var(--dc-navy))]"}`
-            }
-          >
-            Privacy Policy
-          </NavLink>
-          <NavLink
-            to="/terms"
-            className={({ isActive }) =>
-              `py-3 border-b-2 ${isActive ? "border-[hsl(var(--dc-blue))] text-[hsl(var(--dc-blue))] font-medium" : "border-transparent text-[hsl(var(--dc-navy))]/70 hover:text-[hsl(var(--dc-navy))]"}`
-            }
-          >
-            Terms of Service
-          </NavLink>
+        <div className="max-w-[1240px] mx-auto px-6 overflow-x-auto">
+          <div className="flex gap-6 text-sm h-12 items-center whitespace-nowrap">
+            <NavLink
+              to="/legal"
+              end
+              className={({ isActive }) =>
+                `py-3 border-b-2 ${isActive ? "border-[hsl(var(--dc-blue))] text-[hsl(var(--dc-blue))] font-medium" : "border-transparent text-[hsl(var(--dc-navy))]/70 hover:text-[hsl(var(--dc-navy))]"}`
+              }
+            >
+              Index
+            </NavLink>
+            {LEGAL_DOCS_LIST.map((d) => (
+              <NavLink
+                key={d.slug}
+                to={d.route}
+                className={({ isActive }) =>
+                  `py-3 border-b-2 ${isActive ? "border-[hsl(var(--dc-blue))] text-[hsl(var(--dc-blue))] font-medium" : "border-transparent text-[hsl(var(--dc-navy))]/70 hover:text-[hsl(var(--dc-navy))]"}`
+                }
+              >
+                {d.title}
+              </NavLink>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Content */}
       <main className="max-w-[860px] mx-auto px-6 py-12">
-        <article className="prose prose-slate max-w-none prose-headings:text-[hsl(var(--dc-navy))] prose-headings:font-semibold prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-4 prose-h3:text-lg prose-h3:mt-6 prose-p:text-[15px] prose-p:leading-relaxed prose-li:text-[15px] prose-a:text-[hsl(var(--dc-blue))] prose-a:no-underline hover:prose-a:underline">
+        <article className="prose prose-slate max-w-none prose-headings:text-[hsl(var(--dc-navy))] prose-headings:font-semibold prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-4 prose-h3:text-lg prose-h3:mt-6 prose-p:text-[15px] prose-p:leading-relaxed prose-li:text-[15px] prose-a:text-[hsl(var(--dc-blue))] prose-a:no-underline hover:prose-a:underline prose-table:text-[14px]">
           {children}
         </article>
       </main>
@@ -72,11 +85,12 @@ export default function LegalLayout({ title, updated, children }: LegalLayoutPro
       <footer className="bg-white border-t border-[hsl(var(--dc-border))] py-10">
         <div className="max-w-[1240px] mx-auto px-6 flex flex-wrap items-center justify-between gap-6">
           <Logo height={48} />
-          <nav className="flex flex-wrap gap-7 text-sm font-medium">
+          <nav className="flex flex-wrap gap-x-7 gap-y-2 text-sm font-medium">
             <Link to="/" className="hover:text-[hsl(var(--dc-blue))]">Home</Link>
             <Link to="/pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</Link>
-            <Link to="/privacy" className="hover:text-[hsl(var(--dc-blue))]">Privacy</Link>
-            <Link to="/terms" className="hover:text-[hsl(var(--dc-blue))]">Terms</Link>
+            <Link to="/legal" className="hover:text-[hsl(var(--dc-blue))]">Legal</Link>
+            <Link to="/legal/sla" className="hover:text-[hsl(var(--dc-blue))]">Service status</Link>
+            <a href={`mailto:${E.supportEmail}`} className="hover:text-[hsl(var(--dc-blue))]">Support</a>
           </nav>
           <div className="flex gap-2.5">
             {[Linkedin, Youtube, Mail].map((Icon, i) => (
@@ -91,7 +105,7 @@ export default function LegalLayout({ title, updated, children }: LegalLayoutPro
           </div>
         </div>
         <div className="max-w-[1240px] mx-auto px-6 mt-8 pt-5 border-t border-[hsl(var(--dc-border))] text-xs text-[hsl(var(--dc-navy))]/60">
-          © {new Date().getFullYear()} Document Centre. All rights reserved.
+          © {new Date().getFullYear()} {E.legalName} · Company No. {E.companyNumber} ({E.jurisdiction}) · Trading as {E.tradingName}
         </div>
       </footer>
     </div>

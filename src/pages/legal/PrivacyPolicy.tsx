@@ -1,9 +1,12 @@
 import LegalLayout from "./LegalLayout";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
+import { LEGAL_DOCS } from "@/lib/legal/versions";
 
 export default function PrivacyPolicy() {
+  const v = LEGAL_DOCS.privacy;
   return (
-    <LegalLayout title="Privacy Policy" updated="1 June 2026">
+    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+
       <p>
         This Privacy Policy explains how <strong>{E.legalName}</strong>, trading as{" "}
         <strong>{E.tradingName}</strong> ("we", "us", or "our"), collects, uses, discloses, and
@@ -98,11 +101,30 @@ export default function PrivacyPolicy() {
       <p>
         We retain personal information for as long as your account is active and for a
         reasonable period afterward to comply with legal obligations (including UK accounting
-        record-keeping requirements), resolve disputes, and enforce our agreements. Uploaded
-        order files are retained for the period configured by the relevant Tenant; abandoned
-        drafts are typically purged automatically. You may request deletion of your account and
-        associated personal data at any time (see Section 9).
+        record-keeping requirements), resolve disputes, and enforce our agreements. You may
+        request deletion of your account and associated personal data at any time (see Section
+        9), subject to the retention requirements set out below.
       </p>
+      <div className="not-prose my-6 overflow-x-auto rounded-lg border border-[hsl(var(--dc-border))]">
+        <table className="w-full text-[14px]">
+          <thead className="bg-[hsl(var(--dc-navy))] text-white">
+            <tr>
+              <th className="text-left p-3 font-semibold">Category</th>
+              <th className="text-left p-3 font-semibold">Retention</th>
+              <th className="text-left p-3 font-semibold">Reason</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[hsl(var(--dc-border))]">
+            <tr><td className="p-3">Uploaded production files (originals and rendered output)</td><td className="p-3">180 days after order completion or account closure (whichever is earlier)</td><td className="p-3">Reprint, dispute resolution, support</td></tr>
+            <tr><td className="p-3">Order and invoice records</td><td className="p-3">Up to 5 years</td><td className="p-3">Accounting, tax, statutory record-keeping</td></tr>
+            <tr><td className="p-3">System and application logs</td><td className="p-3">Up to 90 days</td><td className="p-3">Security, debugging, audit</td></tr>
+            <tr><td className="p-3">Database backups</td><td className="p-3">Rolling 35 days</td><td className="p-3">Disaster recovery</td></tr>
+            <tr><td className="p-3">Account profile data</td><td className="p-3">For the life of the account, then deleted on request (subject to legal hold)</td><td className="p-3">Operate the Service</td></tr>
+            <tr><td className="p-3">Billing records held by Stripe</td><td className="p-3">As required by applicable financial-services law</td><td className="p-3">Regulatory compliance</td></tr>
+          </tbody>
+        </table>
+      </div>
+
 
       <h2>7. International data transfers</h2>
       <p>
@@ -160,16 +182,24 @@ export default function PrivacyPolicy() {
         information, please contact us and we will delete it.
       </p>
 
-      <h2>12. Contact us</h2>
+      <h2>12. Information Officer (POPIA) and Data Protection contact</h2>
       <p>
-        If you have questions about this Privacy Policy or how we handle your information,
-        please contact us at:
+        For the purposes of section 56 of the South African Protection of Personal Information
+        Act, 2013 ("POPIA"), the role of <strong>Information Officer</strong> for {E.legalName}{" "}
+        is held by the company's directors. Data-protection questions, requests, and notices
+        — whether under UK GDPR, EU GDPR or POPIA — can be sent to:
       </p>
       <p>
         <strong>{E.legalName}</strong> (trading as {E.tradingName})<br />
         {E.registeredOffice}<br />
         Email: <a href={`mailto:${E.dpoEmail}`}>{E.dpoEmail}</a>
       </p>
+      <p>
+        South African data subjects may also lodge a complaint with the Information Regulator:
+        Information Regulator (South Africa), JD House, 27 Stiemens Street, Braamfontein,
+        Johannesburg, 2001 — <a href="https://inforegulator.org.za" target="_blank" rel="noopener noreferrer">inforegulator.org.za</a>.
+      </p>
+
 
       <h2>13. Changes to this policy</h2>
       <p>
