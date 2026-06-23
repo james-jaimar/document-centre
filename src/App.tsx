@@ -28,6 +28,14 @@ import Pricing from "@/pages/Pricing";
 import Contact from "@/pages/Contact";
 import PrivacyPolicy from "@/pages/legal/PrivacyPolicy";
 import TermsOfService from "@/pages/legal/TermsOfService";
+import LegalIndex from "@/pages/legal/LegalIndex";
+import DataProcessingAddendum from "@/pages/legal/DataProcessingAddendum";
+import AcceptableUsePolicy from "@/pages/legal/AcceptableUsePolicy";
+import ServiceLevel from "@/pages/legal/ServiceLevel";
+import BillingPolicy from "@/pages/legal/BillingPolicy";
+import SubProcessors from "@/pages/legal/SubProcessors";
+import SecurityStatement from "@/pages/legal/SecurityStatement";
+import CookiePolicy from "@/pages/legal/CookiePolicy";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 import MobileUpload from "@/pages/MobileUpload";
 import MicrosoftCallbackResult from "@/pages/oauth/MicrosoftCallbackResult";
@@ -184,6 +192,14 @@ function AppRoutes() {
       {/* Public legal pages */}
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/legal" element={<LegalIndex />} />
+      <Route path="/legal/dpa" element={<DataProcessingAddendum />} />
+      <Route path="/legal/aup" element={<AcceptableUsePolicy />} />
+      <Route path="/legal/sla" element={<ServiceLevel />} />
+      <Route path="/legal/billing" element={<BillingPolicy />} />
+      <Route path="/legal/sub-processors" element={<SubProcessors />} />
+      <Route path="/legal/security" element={<SecurityStatement />} />
+      <Route path="/legal/cookies" element={<CookiePolicy />} />
       <Route path="/contact" element={<Contact />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/try" element={<Try />} />
