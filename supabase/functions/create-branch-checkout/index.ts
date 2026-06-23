@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
     discount_type?: string | null;
     discount_value?: number;
     trial_days?: number;
+    acceptances?: { slug: string; version: number }[];
   };
   try { body = await req.json(); } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
@@ -46,6 +47,14 @@ Deno.serve(async (req) => {
   }
   if (!body.branch_id || !body.price_id || !body.success_url || !body.cancel_url) {
     return new Response(JSON.stringify({ error: "Missing required fields" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const REQUIRED_DOCS = ["terms", "privacy", "dpa", "billing"];
+  const acceptedSlugs = new Set((body.acceptances ?? []).map((a) => a.slug));
+  const missing = REQUIRED_DOCS.filter((s) => !acceptedSlugs.has(s));
+  if (missing.length > 0) {
+    return new Response(JSON.stringify({ error: `Missing acceptance for: ${missing.join(", ")}` }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
