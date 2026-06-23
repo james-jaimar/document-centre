@@ -8,6 +8,7 @@ import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -21,6 +22,7 @@ const statusColors: Record<string, string> = {
 export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
   const { data: subscription, isLoading } = useBranchSubscription(branchId);
   const [loading, setLoading] = useState(false);
+  const [accepted, setAccepted] = useState<AcceptedDocument[] | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -55,6 +57,10 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
       toast.error("Plan is not Stripe-ready. Contact your tenant admin.");
       return;
     }
+    if (!accepted || accepted.length === 0) {
+      toast.error("Please accept all of the required documents before continuing.");
+      return;
+    }
     setLoading(true);
     try {
       const origin = window.location.origin;
@@ -67,6 +73,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
           discount_type: subscription?.discount_type || null,
           discount_value: subscription?.discount_value || 0,
           trial_days: subscription?.trial_days || 0,
+          acceptances: accepted,
         },
       });
       if (error) throw error;
@@ -119,7 +126,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
                 </div>
               </div>
             </div>
-            <Button onClick={handlePay} disabled={loading} size="lg" className="w-full">
+            <SubscriptionDisclosureCard
+              planSlug={subscription.assigned_plan_slug}
+              trialDays={subscription?.trial_days || 0}
+              onChange={setAccepted}
+            />
+            <Button onClick={handlePay} disabled={loading || !accepted} size="lg" className="w-full">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Pay Now
             </Button>
           </div>
@@ -137,7 +149,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             <p className="text-sm text-muted-foreground">
               Trial ends {new Date(trialEndsAt!).toLocaleDateString()} — add payment any time to continue without interruption.
             </p>
-            <Button onClick={handlePay} disabled={loading} size="sm" variant="outline" className="w-full">
+            <SubscriptionDisclosureCard
+              planSlug={subscription?.assigned_plan_slug}
+              trialDays={0}
+              onChange={setAccepted}
+            />
+            <Button onClick={handlePay} disabled={loading || !accepted} size="sm" variant="outline" className="w-full">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
             </Button>
           </div>

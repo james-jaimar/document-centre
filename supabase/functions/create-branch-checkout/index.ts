@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
     discount_type?: string | null;
     discount_value?: number;
     trial_days?: number;
+    acceptances?: { slug: string; version: number }[];
   };
   try { body = await req.json(); } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
@@ -46,6 +47,14 @@ Deno.serve(async (req) => {
   }
   if (!body.branch_id || !body.price_id || !body.success_url || !body.cancel_url) {
     return new Response(JSON.stringify({ error: "Missing required fields" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const REQUIRED_DOCS = ["terms", "privacy", "dpa", "billing"];
+  const acceptedSlugs = new Set((body.acceptances ?? []).map((a) => a.slug));
+  const missing = REQUIRED_DOCS.filter((s) => !acceptedSlugs.has(s));
+  if (missing.length > 0) {
+    return new Response(JSON.stringify({ error: `Missing acceptance for: ${missing.join(", ")}` }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -148,6 +157,30 @@ Deno.serve(async (req) => {
   }
 
   const session = await stripe.checkout.sessions.create(sessionParams);
+
+  // Record acceptances in the immutable ledger. We log but don't block checkout if this fails.
+  try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+    const ua = req.headers.get("user-agent") || null;
+    const rows = (body.acceptances ?? []).map((a) => ({
+      branch_id: branch.id,
+      tenant_id: branch.tenant_id,
+      accepted_by: user.id,
+      document_slug: a.slug,
+      document_version: a.version,
+      ip_address: ip,
+      user_agent: ua,
+      context: "branch_checkout",
+      stripe_checkout_session_id: session.id,
+    }));
+    if (rows.length > 0) {
+      const { error: accErr } = await supabaseAdmin.from("subscription_acceptances" as any).insert(rows);
+      if (accErr) console.error("subscription_acceptances insert failed:", accErr);
+    }
+  } catch (e) {
+    console.error("Failed to log acceptances:", e);
+  }
+
   return new Response(JSON.stringify({ url: session.url }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
