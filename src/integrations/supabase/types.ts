@@ -516,6 +516,7 @@ export type Database = {
           current_period_start: string | null
           discount_type: string | null
           discount_value: number | null
+          grace_until: string | null
           id: string
           metadata: Json
           plan_slug: string | null
@@ -543,6 +544,7 @@ export type Database = {
           current_period_start?: string | null
           discount_type?: string | null
           discount_value?: number | null
+          grace_until?: string | null
           id?: string
           metadata?: Json
           plan_slug?: string | null
@@ -570,6 +572,7 @@ export type Database = {
           current_period_start?: string | null
           discount_type?: string | null
           discount_value?: number | null
+          grace_until?: string | null
           id?: string
           metadata?: Json
           plan_slug?: string | null
@@ -620,6 +623,7 @@ export type Database = {
           province: string | null
           settings: Json
           slug: string
+          storefront_closed_at: string | null
           tenant_id: string
           trading_name: string | null
           updated_at: string
@@ -643,6 +647,7 @@ export type Database = {
           province?: string | null
           settings?: Json
           slug: string
+          storefront_closed_at?: string | null
           tenant_id: string
           trading_name?: string | null
           updated_at?: string
@@ -666,6 +671,7 @@ export type Database = {
           province?: string | null
           settings?: Json
           slug?: string
+          storefront_closed_at?: string | null
           tenant_id?: string
           trading_name?: string | null
           updated_at?: string
@@ -5859,6 +5865,10 @@ export type Database = {
         Returns: number
       }
       release_stuck_claims: { Args: never; Returns: number }
+      resolve_branch_entitlement: {
+        Args: { _branch_id: string }
+        Returns: Json
+      }
       resolve_delivery_zone: {
         Args: {
           p_branch_id: string
@@ -5936,6 +5946,7 @@ export type Database = {
           current_period_start: string | null
           discount_type: string | null
           discount_value: number | null
+          grace_until: string | null
           id: string
           metadata: Json
           plan_slug: string | null
