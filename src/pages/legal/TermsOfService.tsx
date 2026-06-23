@@ -1,9 +1,12 @@
 import LegalLayout from "./LegalLayout";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
+import { LEGAL_DOCS } from "@/lib/legal/versions";
 
 export default function TermsOfService() {
+  const v = LEGAL_DOCS.terms;
   return (
-    <LegalLayout title="Terms of Service" updated="1 June 2026">
+    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+
       <p>
         These Terms of Service ("Terms") govern your access to and use of the Document Centre
         web-to-print platform, marketing website, customer storefronts, and related services
@@ -177,15 +180,34 @@ export default function TermsOfService() {
       </p>
       <p>
         Our total aggregate liability arising out of or relating to these Terms or the Service
-        will not exceed the greater of (a) the total fees you paid to {E.legalName} in the
-        twelve (12) months preceding the event giving rise to the claim, or (b) one hundred
-        Pounds Sterling (GBP 100).
+        will not exceed the greater of (a) the total fees you paid to {E.legalName} in the{" "}
+        <strong>six (6) months</strong> preceding the event giving rise to the claim, or (b) one
+        hundred Pounds Sterling (GBP 100).
       </p>
       <p>
         Nothing in these Terms excludes or limits liability that cannot lawfully be excluded or
         limited, including liability for death or personal injury caused by negligence, or for
         fraud or fraudulent misrepresentation.
       </p>
+
+      <h2>13A. What we are not responsible for</h2>
+      <p>
+        Without limiting Section 12 (Disclaimers) or Section 13 (Limitation of liability), and
+        for the avoidance of doubt, {E.legalName} is not responsible for, and has no liability
+        in respect of:
+      </p>
+      <ul>
+        <li>Pricing, product-setup or catalogue errors made by a Tenant in its own admin portal;</li>
+        <li>Errors in artwork, files or specifications supplied by a Customer or by a Tenant;</li>
+        <li>Print-colour, paper-feel, finishing or other production-quality differences delivered by a Tenant;</li>
+        <li>Production delays at branch level, including those caused by equipment, staffing or supply-chain issues;</li>
+        <li>Courier or delivery delays, except where the delay is directly attributable to a failure of the platform itself;</li>
+        <li>Disputes between a Tenant and its own end-customers regarding products, refunds, deadlines or service quality;</li>
+        <li>Incorrect branch contact, banking or VAT details supplied by the Tenant;</li>
+        <li>User error, lost credentials, or content uploaded in breach of the <a href="/legal/aup">Acceptable Use Policy</a>;</li>
+        <li>Outages, errors or data loss originating in third-party services we do not control (including Stripe, Supabase, Amazon Web Services, Google Cloud, our DNS provider, our email provider, and the public internet).</li>
+      </ul>
+
 
       <h2>14. Indemnity</h2>
       <p>
