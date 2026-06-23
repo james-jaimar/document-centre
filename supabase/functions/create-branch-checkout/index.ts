@@ -157,6 +157,30 @@ Deno.serve(async (req) => {
   }
 
   const session = await stripe.checkout.sessions.create(sessionParams);
+
+  // Record acceptances in the immutable ledger. We log but don't block checkout if this fails.
+  try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+    const ua = req.headers.get("user-agent") || null;
+    const rows = (body.acceptances ?? []).map((a) => ({
+      branch_id: branch.id,
+      tenant_id: branch.tenant_id,
+      accepted_by: user.id,
+      document_slug: a.slug,
+      document_version: a.version,
+      ip_address: ip,
+      user_agent: ua,
+      context: "branch_checkout",
+      stripe_checkout_session_id: session.id,
+    }));
+    if (rows.length > 0) {
+      const { error: accErr } = await supabaseAdmin.from("subscription_acceptances" as any).insert(rows);
+      if (accErr) console.error("subscription_acceptances insert failed:", accErr);
+    }
+  } catch (e) {
+    console.error("Failed to log acceptances:", e);
+  }
+
   return new Response(JSON.stringify({ url: session.url }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
