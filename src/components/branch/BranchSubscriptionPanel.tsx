@@ -73,6 +73,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
           discount_type: subscription?.discount_type || null,
           discount_value: subscription?.discount_value || 0,
           trial_days: subscription?.trial_days || 0,
+          acceptances: accepted,
         },
       });
       if (error) throw error;
