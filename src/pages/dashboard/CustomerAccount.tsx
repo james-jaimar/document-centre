@@ -21,7 +21,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ClipboardList, Plus, Pencil, Trash2, Star, MapPin, Check, ChevronsUpDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Star, MapPin, Check, ChevronsUpDown } from "lucide-react";
 import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { useFavouriteBranch } from "@/hooks/useFavouriteBranch";
