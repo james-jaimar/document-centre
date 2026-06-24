@@ -53,6 +53,12 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.provision-branch-admins]
     verify_jwt = false
+  [functions.subscription-dunning-sweep]
+    verify_jwt = false
+
+
+
+
 
 
 
