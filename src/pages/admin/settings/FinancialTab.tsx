@@ -33,6 +33,8 @@ export function FinancialTab() {
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [invoicePrefix, setInvoicePrefix] = useState("INV");
   const [invoiceNextNumber, setInvoiceNextNumber] = useState("1001");
+  const [defaultCurrency, setDefaultCurrency] = useState("ZAR");
+  const [lockCurrency, setLockCurrency] = useState(true);
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
@@ -48,6 +50,12 @@ export function FinancialTab() {
       setTaxInclusive(settingsMap.tax_inclusive === true);
       setInvoicePrefix((settingsMap.invoice_prefix as string) ?? "INV");
       setInvoiceNextNumber(String(settingsMap.invoice_next_number ?? 1001));
+      setDefaultCurrency(((settingsMap.default_currency_code as string) ?? "ZAR").toUpperCase());
+      setLockCurrency(
+        settingsMap.lock_currency === undefined || settingsMap.lock_currency === null
+          ? true
+          : settingsMap.lock_currency === true,
+      );
     }
   }, [isLoading, settingsMap]);
 
@@ -60,6 +68,8 @@ export function FinancialTab() {
         { category: "financial", setting_key: "tax_inclusive", setting_value: taxInclusive, value_type: "boolean" },
         { category: "financial", setting_key: "invoice_prefix", setting_value: invoicePrefix, value_type: "string" },
         { category: "financial", setting_key: "invoice_next_number", setting_value: parseInt(invoiceNextNumber), value_type: "number" },
+        { category: "financial", setting_key: "default_currency_code", setting_value: defaultCurrency, value_type: "string" },
+        { category: "financial", setting_key: "lock_currency", setting_value: lockCurrency, value_type: "boolean" },
       ]);
       toast.success("Financial settings saved");
     } catch (e: any) {
