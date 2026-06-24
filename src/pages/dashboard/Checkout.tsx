@@ -30,6 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
+import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
