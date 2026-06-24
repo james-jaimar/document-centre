@@ -236,6 +236,24 @@ export default function Checkout() {
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
       });
 
+      // Record immutable Terms / Privacy acceptance against the new order.
+      if (tenantId && legalAccept) {
+        try {
+          await supabase.from("order_legal_acceptances").insert({
+            order_id: newOrderId,
+            tenant_id: tenantId,
+            branch_id: collectionBranch?.id ?? activeBranch?.id ?? null,
+            user_id: user?.id ?? null,
+            terms_updated_at: legalAccept.terms_updated_at,
+            privacy_updated_at: legalAccept.privacy_updated_at,
+            user_agent: navigator.userAgent.slice(0, 500),
+          });
+        } catch (e) {
+          console.warn("Failed to record legal acceptance:", e);
+        }
+      }
+
+
       // Persist PO / cost centre on the new order (best-effort).
       if (poNumber.trim() || costCentre.trim()) {
         try {
