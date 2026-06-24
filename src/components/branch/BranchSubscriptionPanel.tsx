@@ -5,10 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CreditCard, AlertCircle, Check } from "lucide-react";
 import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
+import { useBranchPortalSession } from "@/hooks/useBranchBillingSelfService";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
+import { BranchReAcceptanceBanner } from "./BranchReAcceptanceBanner";
+import { BranchAcceptanceHistory } from "./BranchAcceptanceHistory";
+import { ExternalLink } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
