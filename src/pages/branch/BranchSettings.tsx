@@ -17,6 +17,8 @@ import { PayFastQuickStartGuide } from "@/components/branch/PayFastQuickStartGui
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
 import { BranchSubscriptionPanel } from "@/components/branch/BranchSubscriptionPanel";
+import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptanceBanner";
+import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
 import { useSearchParams } from "react-router-dom";
 
@@ -156,8 +158,10 @@ const BranchSettings = () => {
           )}
         </TabsContent>
 
-        <TabsContent value="subscription">
+        <TabsContent value="subscription" className="space-y-4">
+          <BranchReAcceptanceBanner branchId={branch.id} />
           <BranchSubscriptionPanel branchId={branch.id} />
+          <BranchAcceptanceHistory branchId={branch.id} />
         </TabsContent>
 
 

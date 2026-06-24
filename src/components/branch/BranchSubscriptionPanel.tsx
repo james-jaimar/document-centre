@@ -5,10 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CreditCard, AlertCircle, Check } from "lucide-react";
 import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
+import { useBranchPortalSession } from "@/hooks/useBranchBillingSelfService";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
+import { BranchReAcceptanceBanner } from "./BranchReAcceptanceBanner";
+import { BranchAcceptanceHistory } from "./BranchAcceptanceHistory";
+import { ExternalLink } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -159,26 +163,51 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold capitalize">{subscription?.assigned_plan_slug || subscription?.plan_slug}</p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={statusColors[status] || statusColors.paid}>{status || "active"}</Badge>
-                </div>
-              </div>
-            </div>
-            {subscription?.current_period_end && (
-              <p className="text-sm text-muted-foreground">
-                Current period ends {new Date(subscription.current_period_end).toLocaleDateString()}
-              </p>
-            )}
-          </div>
+          <ActiveSubscriptionBlock subscription={subscription} status={status} branchId={branchId} />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ActiveSubscriptionBlock({ subscription, status, branchId }: { subscription: any; status: string; branchId: string }) {
+  const portal = useBranchPortalSession();
+  const openPortal = async () => {
+    try {
+      const { url } = await portal.mutateAsync({
+        branch_id: branchId,
+        return_url: `${window.location.origin}/branch/settings?tab=subscription`,
+      });
+      if (url) window.location.href = url;
+    } catch (e: any) {
+      toast.error(e.message || "Unable to open billing portal");
+    }
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+          <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+        </div>
+        <div>
+          <p className="text-lg font-semibold capitalize">{subscription?.assigned_plan_slug || subscription?.plan_slug}</p>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className={statusColors[status] || statusColors.paid}>{status || "active"}</Badge>
+          </div>
+        </div>
+      </div>
+      {subscription?.current_period_end && (
+        <p className="text-sm text-muted-foreground">
+          Current period ends {new Date(subscription.current_period_end).toLocaleDateString()}
+        </p>
+      )}
+      <Button size="sm" variant="outline" onClick={openPortal} disabled={portal.isPending || !subscription?.stripe_customer_id}>
+        {portal.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-3.5 w-3.5" />}
+        Manage billing in Stripe
+      </Button>
+      {!subscription?.stripe_customer_id && (
+        <p className="text-xs text-muted-foreground">Payment method appears here after your first successful charge.</p>
+      )}
+    </div>
   );
 }

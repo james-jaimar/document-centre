@@ -60,3 +60,16 @@
 - `/status` page for SLA reporting.
 - Security questionnaire pack (SIG-Lite / CAIQ-Lite).
 - Runbooks: incident, DSR, breach notification, restore drill.
+
+## Phase 4 — Tenant self-service (DONE)
+- `create-branch-portal-session` edge function → Stripe Billing Portal (authz: platform admin OR owner/admin/branch_manager).
+- `record-branch-reacceptance` edge function → inserts re-acceptance rows server-side.
+- `useBranchBillingSelfService.ts` — `useBranchAcceptanceHistory`, `useBranchDocsNeedingReacceptance`, `useRecordBranchReacceptance`, `useBranchPortalSession`.
+- `BranchAcceptanceHistory` table + `BranchReAcceptanceBanner` (auto-shown when `LEGAL_DOCS[slug].version > latest accepted version`).
+- "Manage billing in Stripe" button on active subscriptions.
+- Wired into Branch → Settings → Subscription tab.
+
+## Phase 5 — Platform admin controls (next)
+- Platform → Subscriptions list (status, MRR, grace, manual overrides).
+- Platform → Legal versioning workflow.
+- Admin action audit log.
