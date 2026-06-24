@@ -29,8 +29,8 @@ import { useBranch } from "@/contexts/BranchContext";
 
 export default function CustomerAccount() {
   const { user } = useAuth();
-  const { slug, tenantPath } = useTenantSlug();
-  const navigate = useNavigate();
+  const { slug, tenantPath: _tenantPath } = useTenantSlug();
+  void _tenantPath; void slug;
   const qc = useQueryClient();
 
   const { data: profile, isLoading } = useQuery({
