@@ -4,9 +4,24 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
 import { toast } from "sonner";
-import { Save, Receipt } from "lucide-react";
+import { Save, Receipt, Coins } from "lucide-react";
+
+const CURRENCY_CHOICES = [
+  { code: "ZAR", label: "ZAR — South African Rand (R)" },
+  { code: "GBP", label: "GBP — Pound Sterling (£)" },
+  { code: "EUR", label: "EUR — Euro (€)" },
+  { code: "USD", label: "USD — US Dollar ($)" },
+  { code: "AUD", label: "AUD — Australian Dollar (A$)" },
+];
 
 export function FinancialTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("financial");
