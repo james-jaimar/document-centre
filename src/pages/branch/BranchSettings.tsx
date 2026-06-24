@@ -158,8 +158,10 @@ const BranchSettings = () => {
           )}
         </TabsContent>
 
-        <TabsContent value="subscription">
+        <TabsContent value="subscription" className="space-y-4">
+          <BranchReAcceptanceBanner branchId={branch.id} />
           <BranchSubscriptionPanel branchId={branch.id} />
+          <BranchAcceptanceHistory branchId={branch.id} />
         </TabsContent>
 
 
