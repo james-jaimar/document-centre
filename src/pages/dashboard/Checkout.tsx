@@ -217,6 +217,11 @@ export default function Checkout() {
       toast.error("We couldn't quote delivery to that address. Please check the city / postal code.");
       return;
     }
+    if (!legalAccept) {
+      toast.error("Please accept the Terms & Conditions and Privacy Policy to continue.");
+      return;
+    }
+
 
     setIsSubmitting(true);
     try {
