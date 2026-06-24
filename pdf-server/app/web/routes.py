@@ -251,6 +251,82 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
     return dict(row)
 
 
+@api_router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, db: Session = Depends(get_db)):
+    """Cancel a single in-flight job.
+
+    Revokes the celery task (SIGTERM) and marks the job row as ``cancelled``
+    so any caller polling ``GET /v1/jobs/{id}`` stops waiting. Idempotent —
+    re-cancelling a terminal job is a no-op.
+    """
+    from app.worker import celery_app
+    row = db.execute(
+        text("select id, status, celery_task_id from jobs where id=:id"),
+        {"id": job_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(404, "Job not found")
+    if row["status"] in ("completed", "failed", "cancelled"):
+        return {"job_id": job_id, "status": row["status"], "already_terminal": True}
+    task_id = row.get("celery_task_id")
+    if task_id:
+        try:
+            celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        except Exception as e:  # noqa: BLE001
+            # Best-effort — still mark the job as cancelled in the DB.
+            print(f"[cancel_job] revoke failed for {task_id}: {e}")
+    db.execute(
+        text(
+            "update jobs set status='cancelled', "
+            "result = coalesce(result, '{}'::jsonb) || jsonb_build_object('message','Cancelled by user'), "
+            "updated_at=now() where id=:id"
+        ),
+        {"id": job_id},
+    )
+    db.commit()
+    return {"job_id": job_id, "status": "cancelled", "task_revoked": bool(task_id)}
+
+
+@api_router.post("/assets/{asset_id}/cancel-jobs")
+def cancel_jobs_for_asset(asset_id: str, db: Session = Depends(get_db)):
+    """Cancel every non-terminal job belonging to an asset.
+
+    Used by the customer "Cancel" button so a single click can stop any
+    pending normalize/inspect/render/imposition work on the asset they
+    just abandoned.
+    """
+    from app.worker import celery_app
+    rows = db.execute(
+        text(
+            "select id, celery_task_id from jobs "
+            "where asset_id=:aid and status not in ('completed','failed','cancelled')"
+        ),
+        {"aid": asset_id},
+    ).mappings().all()
+    revoked = 0
+    for r in rows:
+        tid = r.get("celery_task_id")
+        if tid:
+            try:
+                celery_app.control.revoke(tid, terminate=True, signal="SIGTERM")
+                revoked += 1
+            except Exception as e:  # noqa: BLE001
+                print(f"[cancel_jobs_for_asset] revoke failed for {tid}: {e}")
+    if rows:
+        db.execute(
+            text(
+                "update jobs set status='cancelled', "
+                "result = coalesce(result, '{}'::jsonb) || jsonb_build_object('message','Cancelled by user'), "
+                "updated_at=now() "
+                "where asset_id=:aid and status not in ('completed','failed','cancelled')"
+            ),
+            {"aid": asset_id},
+        )
+        db.commit()
+    return {"asset_id": asset_id, "jobs_cancelled": len(rows), "tasks_revoked": revoked}
+
+
+
 @api_router.get("/jobs")
 def list_jobs(
     limit: int = 100,
