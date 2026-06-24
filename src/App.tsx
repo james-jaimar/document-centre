@@ -106,6 +106,9 @@ import PlatformProducts from "@/pages/platform/PlatformProducts";
 import PlatformMasterPricing from "@/pages/platform/PlatformMasterPricing";
 import PlatformCatalog from "@/pages/platform/PlatformCatalog";
 import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
+import PlatformBranchSubscriptions from "@/pages/platform/PlatformBranchSubscriptions";
+import PlatformLegalStatus from "@/pages/platform/PlatformLegalStatus";
+import PlatformAuditLog from "@/pages/platform/PlatformAuditLog";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import PlatformImposition from "@/pages/platform/PlatformImposition";
 import DocumentCentreLayout from "@/components/platform/DocumentCentreLayout";
@@ -425,6 +428,21 @@ function AppRoutes() {
         <Route path="/platform/subscriptions" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformSubscriptions />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/branch-subscriptions" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformBranchSubscriptions />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/legal-status" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformLegalStatus />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/audit-log" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformAuditLog />
           </ProtectedRoute>
         } />
         <Route path="/platform/demo-print-pricing" element={

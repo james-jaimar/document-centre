@@ -20,6 +20,8 @@ import {
   FileText,
   Activity,
   CreditCard,
+  ShieldCheck,
+  History,
   Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -80,7 +82,10 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform", icon: <Globe size={20} />, label: "Tenants" },
       { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
       { to: "/platform/demo", icon: <Sparkles size={20} />, label: "Demo Activity" },
-      { to: "/platform/subscriptions", icon: <CreditCard size={20} />, label: "Subscriptions" },
+      { to: "/platform/subscriptions", icon: <CreditCard size={20} />, label: "Tenant Subscriptions" },
+      { to: "/platform/branch-subscriptions", icon: <CreditCard size={20} />, label: "Branch Subscriptions" },
+      { to: "/platform/legal-status", icon: <ShieldCheck size={20} />, label: "Legal Status" },
+      { to: "/platform/audit-log", icon: <History size={20} />, label: "Audit Log" },
       { to: "/platform/document-centre", icon: <Activity size={20} />, label: "Document Centre" },
       { to: "/platform/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
