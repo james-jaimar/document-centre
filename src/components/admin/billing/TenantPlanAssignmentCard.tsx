@@ -144,9 +144,21 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                   onChange={(e) => setForm((f) => ({ ...f, discount_value: parseFloat(e.target.value) || 0 }))} />
               </div>
               <div>
-                <Label>Trial days</Label>
-                <Input type="number" value={form.trial_days}
-                  onChange={(e) => setForm((f) => ({ ...f, trial_days: parseInt(e.target.value) || 0 }))} />
+                <Label>Trial</Label>
+                <Select
+                  value={String(form.trial_days || 0)}
+                  onValueChange={(v) => setForm((f) => ({ ...f, trial_days: parseInt(v) || 0 }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">No trial</SelectItem>
+                    <SelectItem value="14">14 days — no card required</SelectItem>
+                    <SelectItem value="30">30 days — card required (billed after)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  14-day trial auto-starts on first sign-in. 30-day trial requires the branch to enter a card at checkout; nothing is charged until the trial ends.
+                </p>
               </div>
               <div className="md:col-span-2">
                 <Label>Internal notes</Label>

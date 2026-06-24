@@ -14,15 +14,30 @@ import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
   const gate = useBranchSubscriptionGate(branchId);
-  if (!branchId || gate.loading || !gate.readOnly) return null;
-  // Owners/admins bypass visually too — they need to see normal portal to manage
-  if (membershipRole === "owner" || membershipRole === "admin") return null;
+  if (!branchId || gate.loading) return null;
+  // Active/trialing — no banner. Grace shows a soft warning to all roles.
+  // Restricted/cancelled (grace expired) shows a strong banner to all roles, including
+  // owners/admins, since they're the ones who must restore billing.
+  const isAdmin = membershipRole === "owner" || membershipRole === "admin";
+  if (gate.state === "active" || gate.state === "trialing") return null;
+  if (gate.state === "grace" && !isAdmin) {
+    // Staff don't need the soft-grace warning — admins do.
+    return null;
+  }
+  const tone =
+    gate.state === "grace"
+      ? "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200"
+      : "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-200";
+  const headline =
+    gate.state === "grace"
+      ? gate.reason
+      : isAdmin
+        ? `This branch is restricted — ${gate.reason} Only billing settings remain available.`
+        : `This branch is read-only — ${gate.reason} New orders are disabled until the subscription is active.`;
   return (
-    <div className="border-b border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-sm text-amber-900 dark:text-amber-200 flex items-center gap-2">
+    <div className={`border-b px-4 py-2 text-sm flex items-center gap-2 ${tone}`}>
       <AlertCircle className="h-4 w-4 shrink-0" />
-      <span className="flex-1">
-        This branch is read-only — {gate.reason} New orders are disabled until the subscription is active.
-      </span>
+      <span className="flex-1">{headline}</span>
       <Link to="/branch/settings?tab=subscription" className="underline font-medium">
         Manage subscription
       </Link>
