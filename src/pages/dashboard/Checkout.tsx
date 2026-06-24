@@ -28,6 +28,8 @@ import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type Shipp
 import AddressPicker from "@/components/customer/AddressPicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
+import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
+import { AlertCircle } from "lucide-react";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
@@ -193,8 +195,14 @@ export default function Checkout() {
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
   const total = subtotal + deliveryFee;
 
+  const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
+
   const handlePlaceOrder = async () => {
     if (!cart) return;
+    if (storefrontGate.checkoutBlocked) {
+      toast.error(storefrontGate.reason || "Checkout is temporarily unavailable for this branch.");
+      return;
+    }
     if (deliveryMethod === "collection" && !collectionBranch) {
       toast.error("No collection branch selected");
       return;
@@ -701,11 +709,17 @@ export default function Checkout() {
               <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>
           </div>
+          {storefrontGate.checkoutBlocked && (
+            <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{storefrontGate.reason}</span>
+            </div>
+          )}
           <Button
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user}
+            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked}
           >
             {isSubmitting ? (
               <>
