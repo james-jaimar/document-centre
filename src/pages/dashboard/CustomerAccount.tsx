@@ -287,15 +287,6 @@ export default function CustomerAccount() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="orders">
-          <Card className="p-8 text-center">
-            <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground mb-4">
-              View all your past and current orders.
-            </p>
-            <Button onClick={() => navigate(tenantPath("orders"))}>Go to my orders</Button>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="security">
           <Card className="p-4 md:p-6 max-w-md space-y-4">
