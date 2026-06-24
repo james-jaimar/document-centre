@@ -30,6 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
+import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
@@ -53,6 +54,7 @@ export default function Checkout() {
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
   const [saveAddress, setSaveAddress] = useState(false);
+  const [legalAccept, setLegalAccept] = useState<CheckoutLegalAcceptance | null>(null);
   const { create: createSavedAddress } = useCustomerAddresses(user?.id);
 
   // Fetch online payment providers enabled for this tenant
@@ -215,6 +217,11 @@ export default function Checkout() {
       toast.error("We couldn't quote delivery to that address. Please check the city / postal code.");
       return;
     }
+    if (!legalAccept) {
+      toast.error("Please accept the Terms & Conditions and Privacy Policy to continue.");
+      return;
+    }
+
 
     setIsSubmitting(true);
     try {
@@ -228,6 +235,24 @@ export default function Checkout() {
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
       });
+
+      // Record immutable Terms / Privacy acceptance against the new order.
+      if (tenantId && legalAccept) {
+        try {
+          await supabase.from("order_legal_acceptances").insert({
+            order_id: newOrderId,
+            tenant_id: tenantId,
+            branch_id: collectionBranch?.id ?? activeBranch?.id ?? null,
+            user_id: user?.id ?? null,
+            terms_updated_at: legalAccept.terms_updated_at,
+            privacy_updated_at: legalAccept.privacy_updated_at,
+            user_agent: navigator.userAgent.slice(0, 500),
+          });
+        } catch (e) {
+          console.warn("Failed to record legal acceptance:", e);
+        }
+      }
+
 
       // Persist PO / cost centre on the new order (best-effort).
       if (poNumber.trim() || costCentre.trim()) {
@@ -715,11 +740,17 @@ export default function Checkout() {
               <span>{storefrontGate.reason}</span>
             </div>
           )}
+          <CheckoutLegalConsent
+            tenantId={tenantId ?? null}
+            termsHref={tenantPath("terms")}
+            privacyHref={tenantPath("privacy")}
+            onChange={setLegalAccept}
+          />
           <Button
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked}
+            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept}
           >
             {isSubmitting ? (
               <>
