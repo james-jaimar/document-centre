@@ -4,9 +4,24 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
 import { toast } from "sonner";
-import { Save, Receipt } from "lucide-react";
+import { Save, Receipt, Coins } from "lucide-react";
+
+const CURRENCY_CHOICES = [
+  { code: "ZAR", label: "ZAR — South African Rand (R)" },
+  { code: "GBP", label: "GBP — Pound Sterling (£)" },
+  { code: "EUR", label: "EUR — Euro (€)" },
+  { code: "USD", label: "USD — US Dollar ($)" },
+  { code: "AUD", label: "AUD — Australian Dollar (A$)" },
+];
 
 export function FinancialTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("financial");
@@ -18,6 +33,8 @@ export function FinancialTab() {
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [invoicePrefix, setInvoicePrefix] = useState("INV");
   const [invoiceNextNumber, setInvoiceNextNumber] = useState("1001");
+  const [defaultCurrency, setDefaultCurrency] = useState("ZAR");
+  const [lockCurrency, setLockCurrency] = useState(true);
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
@@ -33,6 +50,12 @@ export function FinancialTab() {
       setTaxInclusive(settingsMap.tax_inclusive === true);
       setInvoicePrefix((settingsMap.invoice_prefix as string) ?? "INV");
       setInvoiceNextNumber(String(settingsMap.invoice_next_number ?? 1001));
+      setDefaultCurrency(((settingsMap.default_currency_code as string) ?? "ZAR").toUpperCase());
+      setLockCurrency(
+        settingsMap.lock_currency === undefined || settingsMap.lock_currency === null
+          ? true
+          : settingsMap.lock_currency === true,
+      );
     }
   }, [isLoading, settingsMap]);
 
@@ -45,6 +68,8 @@ export function FinancialTab() {
         { category: "financial", setting_key: "tax_inclusive", setting_value: taxInclusive, value_type: "boolean" },
         { category: "financial", setting_key: "invoice_prefix", setting_value: invoicePrefix, value_type: "string" },
         { category: "financial", setting_key: "invoice_next_number", setting_value: parseInt(invoiceNextNumber), value_type: "number" },
+        { category: "financial", setting_key: "default_currency_code", setting_value: defaultCurrency, value_type: "string" },
+        { category: "financial", setting_key: "lock_currency", setting_value: lockCurrency, value_type: "boolean" },
       ]);
       toast.success("Financial settings saved");
     } catch (e: any) {
@@ -56,6 +81,39 @@ export function FinancialTab() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Coins className="h-5 w-5" /> Currency</CardTitle>
+          <CardDescription>
+            Lock the display and order currency so visitor location can't switch your customers to a different currency.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 max-w-2xl">
+          <div className="space-y-2">
+            <Label>Default currency</Label>
+            <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CURRENCY_CHOICES.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-start gap-3 pt-6">
+            <Switch checked={lockCurrency} onCheckedChange={setLockCurrency} />
+            <div className="space-y-0.5">
+              <Label>Lock to this currency</Label>
+              <p className="text-xs text-muted-foreground">
+                Recommended. When on, geo-detection and manual region switching are ignored — every order, quote and invoice uses your default currency.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> Tax Configuration</CardTitle>

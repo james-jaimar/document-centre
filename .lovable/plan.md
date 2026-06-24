@@ -1,120 +1,48 @@
-# Phase 5 — Platform admin controls
+Three small fixes (Phase 7 still parked for later).
 
-Goal: give platform admins (Jaimar staff) a single place to see every branch subscription across every tenant, run manual interventions when Stripe can't, monitor legal document uptake, and keep an immutable record of every staff action.
+## 1. Preserve uploads when switching from Stapled/Loose → Presentations
 
-## 1. Platform Subscriptions list
+**Problem**: When the orientation advisory offers "Use Presentations instead", we currently `navigate(tenantPath("orders/new"))` and the in-progress order (with uploaded landscape files) is abandoned. Customer loses everything.
 
-New page: `/platform/subscriptions`
+**Fix**: Convert the current order in place instead of starting a new one.
 
-Columns:
-- Tenant → Branch (with link into the tenant/branch admin)
-- Plan + interval (monthly/annual)
-- Status (active / trialing / grace / past_due / restricted / cancelled)
-- MRR contribution (plan price normalised to monthly)
-- Renews / grace ends / cancelled on
-- Last invoice status
-- Actions menu
+- In `OrderFiles.tsx` `handleSwitchProductFamily`:
+  - Resolve the target product family slug (`presentations` when `mode === "to-portrait"`, `bound-documents` when `to-landscape`).
+  - Look up the target family + a sensible default product/recipe (mirroring what `NewOrder` would have picked).
+  - Update the existing `order_items` row: set the new `product_family_id`, `product_id`, refreshed `recipe_snapshot` (preserve qty, copy across sensible options like paper/colour/sides if compatible — otherwise reset to family defaults).
+  - Keep all `documents` / `order_documents` rows attached to the same `order_item_id` — they already point at the same uploads, so nothing needs re-uploading.
+  - Clear the orientation flag on each affected document (`preflight_data.orientation_resolved = true`, `orientation_action = "switched_family"`) so the new flow doesn't re-prompt.
+  - Navigate to the same order's build/files page under the new family (`tenantPath(\`orders/${orderId}/files\`)` or the equivalent route presentations uses).
+  - Toast: "Switched to Presentations — your files are still here."
+- If the conversion fails (e.g. incompatible recipe), fall back to current behaviour with a clear toast.
 
-Header summary cards:
-- Active branches, Trialing, In grace, Restricted, Cancelled (last 30d)
-- Total MRR, Trial-to-paid conversion (last 90d)
+## 2. Lock currency to the tenant (ignore geo)
 
-Filters: status, tenant, plan, "in grace only", "trial ending in 7 days".
+**Problem**: `useRegionalPricing` runs `detect-region` (IP → country) and overrides the displayed/stored currency. A UK visitor on a ZAR-only tenant gets GBP across the order, invoice, emails.
 
-Sort: MRR desc by default.
+**Fix**: Tenant-level currency lock that short-circuits geo detection.
 
-Data source: new RPC `platform_list_branch_subscriptions(filters jsonb)` returning a flat view joined with `branches`, `tenants`, `platform_pricing_plans`. Restricted to platform admins via `has_role(auth.uid(), 'platform_admin')`.
+- **Schema (migration)**: Add `default_currency_code text not null default 'ZAR'` and `lock_currency boolean not null default true` to `public.tenants` (or store as two `tenant_settings` rows under category `financial`: `default_currency_code`, `lock_currency`). Going with `tenant_settings` to match existing financial config pattern — no schema change to `tenants`.
+- **Admin UI**: Add a "Default currency" select (ZAR/GBP/EUR/USD/AUD) and a "Lock to this currency (ignore visitor region)" switch to `src/pages/admin/settings/FinancialTab.tsx`. Default = ZAR, locked = true.
+- **Hook**: Update `useRegionalPricing` to accept/observe the tenant's locked currency. When `lock_currency` is true, skip `detect-region`, force `region` to the tenant's currency entry, and disable the manual region switcher. When unlocked, keep current geo behaviour.
+- **Currency-stamping safety net**: In `useCart` (line ~118) and `useQuotes`, when stamping `orders.currency` / `quotes.currency`, prefer the tenant's locked currency over `input.currencyCode` if the lock is on. Belt-and-braces so any forgotten caller still produces ZAR rows.
+- Existing orders are not migrated — they keep whatever currency was stamped at order time (financial immutability rule).
 
-## 2. Manual overrides (all four locked in)
+## 3. Searchable favourite-branch picker on Customer → Settings
 
-Each row's action menu exposes:
+**Problem**: `CustomerAccount.tsx` renders favourite branch as a plain `<Select>`; with hundreds of branches it's an unusable scroll.
 
-1. **Comp** — mark as paid for N days/months without charging.
-   - Sets `branch_subscriptions.status = 'active'`, `comp_until = now() + interval`, clears `grace_until`.
-   - Cancels Stripe sub at period end so we don't double-bill.
-   - Reason field required.
+**Fix**: Replace the `Select` with a shadcn `Command`-based combobox inside a `Popover` (same pattern as the existing storefront `BranchPicker` search).
 
-2. **Extend grace** — push `grace_until` forward by N days.
-   - Does not touch Stripe.
-   - Reason required.
+- Trigger: a `Button variant="outline"` showing the current favourite branch name (or "No preference"), full-width up to `max-w-sm`.
+- Popover content: `Command` with `CommandInput placeholder="Search branches…"`, `CommandList`, a "No preference" item at the top, then one `CommandItem` per branch showing `name` + small `city, province` line. Filter matches name/city/province/slug.
+- On select: call `fav.set.mutate(...)` and close the popover.
+- No data-model change — uses the existing `useFavouriteBranch` hook and `useBranch().branches`.
 
-3. **Force cancel** — immediate cancellation.
-   - Cancels Stripe sub immediately (`stripe.subscriptions.cancel`).
-   - Sets `status='cancelled'`, `branches.storefront_closed_at = now()`.
-   - Reason required + confirmation modal.
+## Technical notes
 
-4. **Reset to trial** — re-issue a fresh trial.
-   - Picks 14-no-card or 30-with-card (same selector as `start-branch-trial`).
-   - Cancels any existing Stripe sub first.
-   - Reason required.
+- Order conversion (item 1) only touches existing `order_items` / `documents` rows; no new tables. The order row itself stays the same (cart status, branch, customer).
+- Currency lock (item 2) reads from `tenant_settings` via the existing `useTenantSettingsMap("financial")` hook — no new query plumbing.
+- Combobox (item 3) is a pure frontend swap inside `CustomerAccount.tsx`.
 
-All four go through a single new edge function `platform-subscription-override` that:
-- Validates `has_role(auth.uid(), 'platform_admin')`.
-- Performs the Stripe call.
-- Updates `branch_subscriptions` + `branches`.
-- Writes one row to `platform_admin_audit` (see §4).
-- Sends a notification email to the tenant owner.
-
-Schema add (column, not table):
-- `branch_subscriptions.comp_until timestamptz null`
-- `branch_subscriptions.override_reason text null` (last reason; full history lives in the audit log)
-
-`resolve_branch_entitlement` updated: if `comp_until > now()` → return `active` regardless of Stripe status.
-
-## 3. Legal versioning status (code-only, as you chose)
-
-New page: `/platform/legal`
-
-- Lists every doc in `LEGAL_DOCS` (Terms, Privacy, DPA, AUP) with current version + effective date pulled from `src/lib/legal/versions.ts`.
-- Below each doc, a table: tenant → branch → latest accepted version → "current" / "stale (v1, needs v2)" badge → last acceptance date.
-- Summary: "82 of 91 branches on current Terms v2.1, 9 stale".
-- Read-only — no edit UI. Bumping a version is still: edit `versions.ts`, commit, deploy. The re-acceptance banner from Phase 4 takes over from there.
-
-Data source: existing `subscription_acceptances` ledger + `LEGAL_DOCS` constants. New RPC `platform_legal_acceptance_status()` returns the join.
-
-## 4. Admin action audit log
-
-New table `platform_admin_audit`:
-- `actor_user_id`, `actor_email_snapshot`
-- `action` (`comp` | `extend_grace` | `force_cancel` | `reset_trial` | `legal_version_bump_observed`)
-- `target_type` (`branch_subscription` | `tenant` | `legal_doc`)
-- `target_id`, `tenant_id`, `branch_id`
-- `before_state jsonb`, `after_state jsonb`
-- `reason text`
-- `ip`, `user_agent`
-- `created_at`
-
-RLS: insert from edge functions only (service role); select restricted to platform admins.
-
-New page: `/platform/audit` — filterable table (actor, action, tenant, date range), CSV export. Also surfaced as a "Recent activity" widget on `/platform/subscriptions`.
-
-## 5. Navigation + access
-
-- Add "Subscriptions", "Legal status", "Audit log" entries to the platform admin sidebar (`src/components/PlatformLayout.tsx`).
-- All three routes gated by `has_role(auth.uid(), 'platform_admin')` server-side via RPC, plus client-side route guard.
-
-## File summary
-
-New:
-- `supabase/functions/platform-subscription-override/index.ts`
-- `src/pages/platform/PlatformSubscriptions.tsx`
-- `src/pages/platform/PlatformLegalStatus.tsx`
-- `src/pages/platform/PlatformAuditLog.tsx`
-- `src/components/platform/SubscriptionOverrideDialog.tsx` (one dialog, four modes)
-- `src/hooks/usePlatformSubscriptions.ts`
-
-Edited:
-- `src/components/PlatformLayout.tsx` (sidebar entries)
-- `src/App.tsx` (routes)
-- `src/lib/legal/versions.ts` (export helper for status page if needed)
-- `supabase/functions/_shared/entitlement.ts` if exists, else inline in webhook — honour `comp_until`.
-
-Migrations:
-- Add `comp_until`, `override_reason` to `branch_subscriptions`.
-- Create `platform_admin_audit` table + GRANTs + RLS.
-- Update `resolve_branch_entitlement` to consider `comp_until`.
-- Create `platform_list_branch_subscriptions` and `platform_legal_acceptance_status` RPCs.
-
-## After Phase 5
-
-Phase 6 (customer-facing legal at `/t/:slug/legal/*` + checkout consent + cookie banner) and Phase 7 (DPA countersign, sub-processor notices, `/status` page, security questionnaire pack, runbooks) remain.
+Want me to proceed?

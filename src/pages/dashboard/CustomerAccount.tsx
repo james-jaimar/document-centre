@@ -11,8 +11,17 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { toast } from "sonner";
-import { ClipboardList, Plus, Pencil, Trash2, Star, MapPin } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, Star, MapPin, Check, ChevronsUpDown } from "lucide-react";
 import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { useFavouriteBranch } from "@/hooks/useFavouriteBranch";
@@ -190,22 +199,11 @@ export default function CustomerAccount() {
                     <p className="text-xs text-muted-foreground">
                       We'll preselect this branch whenever you visit the storefront.
                     </p>
-                    <Select
-                      value={fav.data ?? "none"}
-                      onValueChange={(v) => fav.set.mutate(v === "none" ? null : v)}
-                    >
-                      <SelectTrigger className="max-w-sm">
-                        <SelectValue placeholder="No preference" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No preference</SelectItem>
-                        {liveBranches.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}{b.city ? ` — ${b.city}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FavouriteBranchCombobox
+                      value={fav.data ?? null}
+                      branches={liveBranches}
+                      onSelect={(id) => fav.set.mutate(id)}
+                    />
                   </div>
                 )}
               </div>
@@ -330,5 +328,104 @@ export default function CustomerAccount() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+type BranchOption = {
+  id: string;
+  name: string;
+  slug?: string;
+  city?: string | null;
+  province?: string | null;
+};
+
+function FavouriteBranchCombobox({
+  value,
+  branches,
+  onSelect,
+}: {
+  value: string | null;
+  branches: BranchOption[];
+  onSelect: (branchId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = value ? branches.find((b) => b.id === value) : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full max-w-sm justify-between"
+        >
+          <span className="truncate">
+            {selected ? (
+              <>
+                {selected.name}
+                {selected.city ? ` — ${selected.city}` : ""}
+              </>
+            ) : (
+              <span className="text-muted-foreground">No preference</span>
+            )}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(28rem,calc(100vw-2rem))] p-0" align="start">
+        <Command
+          filter={(value, search) => {
+            return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Search branches…" />
+          <CommandList>
+            <CommandEmpty>No branches found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="no-preference"
+                onSelect={() => {
+                  onSelect(null);
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={`mr-2 h-4 w-4 ${value === null ? "opacity-100" : "opacity-0"}`}
+                />
+                <span className="text-muted-foreground">No preference</span>
+              </CommandItem>
+              {branches.map((b) => {
+                const loc = [b.city, b.province].filter(Boolean).join(", ");
+                const searchKey = `${b.name} ${loc} ${b.slug ?? ""}`.trim();
+                return (
+                  <CommandItem
+                    key={b.id}
+                    value={searchKey}
+                    onSelect={() => {
+                      onSelect(b.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={`mr-2 h-4 w-4 ${value === b.id ? "opacity-100" : "opacity-0"}`}
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate">{b.name}</div>
+                      {loc && (
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{loc}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
