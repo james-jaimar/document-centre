@@ -199,22 +199,11 @@ export default function CustomerAccount() {
                     <p className="text-xs text-muted-foreground">
                       We'll preselect this branch whenever you visit the storefront.
                     </p>
-                    <Select
-                      value={fav.data ?? "none"}
-                      onValueChange={(v) => fav.set.mutate(v === "none" ? null : v)}
-                    >
-                      <SelectTrigger className="max-w-sm">
-                        <SelectValue placeholder="No preference" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No preference</SelectItem>
-                        {liveBranches.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}{b.city ? ` — ${b.city}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FavouriteBranchCombobox
+                      value={fav.data ?? null}
+                      branches={liveBranches}
+                      onSelect={(id) => fav.set.mutate(id)}
+                    />
                   </div>
                 )}
               </div>
