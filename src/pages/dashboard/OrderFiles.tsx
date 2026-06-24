@@ -1131,16 +1131,87 @@ export default function OrderFiles() {
     }
   }, [orientationDoc, documents, refetchDocuments, renderWithProgress]);
 
-  const handleSwitchProductFamily = useCallback(() => {
+  const handleSwitchProductFamily = useCallback(async () => {
     const toPortrait = orientationDoc?.mode === "to-portrait";
+    const targetSlug = toPortrait ? "presentations" : "bound-documents";
+    const targetLabel = toPortrait ? "Presentations" : "Bound Documents";
     setOrientationDoc(null);
-    navigate(tenantPath("orders/new"));
-    toast.info(
-      toPortrait
-        ? "Please select Presentations for landscape files"
-        : "Please select Bound Documents for portrait files"
-    );
-  }, [navigate, slug, orientationDoc]);
+
+    // If no order item exists yet, just route to the new family's start page.
+    if (!orderItem?.id || !effectiveOrderId) {
+      navigate(tenantPath("orders/new"));
+      toast.info(`Please select ${targetLabel} for these files`);
+      return;
+    }
+
+    try {
+      // Resolve target family id by slug.
+      const { data: targetFamily, error: famErr } = await supabase
+        .from("product_families")
+        .select("id, slug, name")
+        .eq("slug", targetSlug)
+        .maybeSingle();
+      if (famErr || !targetFamily) throw famErr ?? new Error("Target product family not found");
+
+      // Update the existing order item to the new family — reset spec to
+      // defaults (options between families aren't compatible) but keep the
+      // order, documents, and uploads attached as-is.
+      const { error: itemErr } = await supabase
+        .from("order_items")
+        .update({
+          product_family_id: targetFamily.id,
+          spec: {
+            page_count: 0,
+            quantity: 1,
+            is_color: true,
+            is_duplex: true,
+            selected_options: {},
+          } as any,
+        })
+        .eq("id", orderItem.id);
+      if (itemErr) throw itemErr;
+
+      // Clear orientation_mismatch flags on documents for this item so the
+      // new flow doesn't immediately re-prompt the customer.
+      const { data: itemDocs } = await supabase
+        .from("documents")
+        .select("id, preflight_data")
+        .eq("order_item_id", orderItem.id);
+      if (itemDocs && itemDocs.length > 0) {
+        await Promise.all(
+          itemDocs.map((d: any) => {
+            const pf = (d.preflight_data ?? {}) as Record<string, any>;
+            const { orientation_mismatch: _om, ...rest } = pf;
+            return supabase
+              .from("documents")
+              .update({
+                preflight_data: {
+                  ...rest,
+                  awaiting_review: false,
+                  orientation_resolved: true,
+                  orientation_action: "switched_family",
+                },
+              })
+              .eq("id", d.id);
+          }),
+        );
+      }
+
+      // Refresh caches and route to the same order under the new family.
+      qc.invalidateQueries({ queryKey: ["order"] });
+      qc.invalidateQueries({ queryKey: ["order_item"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+      refetchDocuments();
+      navigate(tenantPath(`orders/${effectiveOrderId}/files`));
+      toast.success(`Switched to ${targetLabel} — your files are still here.`);
+    } catch (err: any) {
+      console.error("[switch product family] failed:", err);
+      toast.error("Could not switch product", {
+        description: err?.message ?? "Please start a new order in the target product.",
+      });
+      navigate(tenantPath("orders/new"));
+    }
+  }, [navigate, slug, orientationDoc, orderItem?.id, effectiveOrderId, tenantPath, qc, refetchDocuments]);
 
   /**
    * User dismissed the orientation advisory — keep the file as-is. We must
