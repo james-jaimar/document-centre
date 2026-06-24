@@ -511,6 +511,7 @@ export type Database = {
           billing_status: string | null
           branch_id: string
           cancelled_at: string | null
+          comp_until: string | null
           created_at: string
           current_period_end: string | null
           current_period_start: string | null
@@ -519,6 +520,7 @@ export type Database = {
           grace_until: string | null
           id: string
           metadata: Json
+          override_reason: string | null
           plan_slug: string | null
           promo_code_id: string | null
           region_id: string | null
@@ -539,6 +541,7 @@ export type Database = {
           billing_status?: string | null
           branch_id: string
           cancelled_at?: string | null
+          comp_until?: string | null
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
@@ -547,6 +550,7 @@ export type Database = {
           grace_until?: string | null
           id?: string
           metadata?: Json
+          override_reason?: string | null
           plan_slug?: string | null
           promo_code_id?: string | null
           region_id?: string | null
@@ -567,6 +571,7 @@ export type Database = {
           billing_status?: string | null
           branch_id?: string
           cancelled_at?: string | null
+          comp_until?: string | null
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
@@ -575,6 +580,7 @@ export type Database = {
           grace_until?: string | null
           id?: string
           metadata?: Json
+          override_reason?: string | null
           plan_slug?: string | null
           promo_code_id?: string | null
           region_id?: string | null
@@ -3575,6 +3581,57 @@ export type Database = {
           },
         ]
       }
+      platform_admin_audit: {
+        Row: {
+          action: string
+          actor_email_snapshot: string | null
+          actor_user_id: string | null
+          after_state: Json | null
+          before_state: Json | null
+          branch_id: string | null
+          created_at: string
+          id: string
+          ip: string | null
+          reason: string | null
+          target_id: string | null
+          target_type: string
+          tenant_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          actor_email_snapshot?: string | null
+          actor_user_id?: string | null
+          after_state?: Json | null
+          before_state?: Json | null
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          ip?: string | null
+          reason?: string | null
+          target_id?: string | null
+          target_type: string
+          tenant_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          actor_email_snapshot?: string | null
+          actor_user_id?: string | null
+          after_state?: Json | null
+          before_state?: Json | null
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          ip?: string | null
+          reason?: string | null
+          target_id?: string | null
+          target_type?: string
+          tenant_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       platform_pricing_plans: {
         Row: {
           created_at: string
@@ -5828,6 +5885,45 @@ export type Database = {
         Args: { p_app_id: string; p_sequence_type: string }
         Returns: number
       }
+      platform_legal_acceptance_status: {
+        Args: never
+        Returns: {
+          accepted_at: string
+          accepted_version: number
+          branch_id: string
+          branch_name: string
+          doc_slug: string
+          tenant_id: string
+          tenant_name: string
+        }[]
+      }
+      platform_list_branch_subscriptions: {
+        Args: never
+        Returns: {
+          assigned_plan_slug: string
+          billing_status: string
+          branch_id: string
+          branch_name: string
+          branch_slug: string
+          cancelled_at: string
+          comp_until: string
+          created_at: string
+          current_period_end: string
+          grace_until: string
+          override_reason: string
+          plan_slug: string
+          status: string
+          storefront_closed_at: string
+          stripe_customer_id: string
+          stripe_subscription_id: string
+          subscription_id: string
+          tenant_id: string
+          tenant_name: string
+          tenant_slug: string
+          trial_ends_at: string
+          updated_at: string
+        }[]
+      }
       profile_belongs_to_branch: {
         Args: { _branch_id: string; _profile_id: string }
         Returns: boolean
@@ -5941,6 +6037,7 @@ export type Database = {
           billing_status: string | null
           branch_id: string
           cancelled_at: string | null
+          comp_until: string | null
           created_at: string
           current_period_end: string | null
           current_period_start: string | null
@@ -5949,6 +6046,7 @@ export type Database = {
           grace_until: string | null
           id: string
           metadata: Json
+          override_reason: string | null
           plan_slug: string | null
           promo_code_id: string | null
           region_id: string | null
