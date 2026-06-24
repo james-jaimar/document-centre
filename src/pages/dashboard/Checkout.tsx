@@ -740,11 +740,17 @@ export default function Checkout() {
               <span>{storefrontGate.reason}</span>
             </div>
           )}
+          <CheckoutLegalConsent
+            tenantId={tenantId ?? null}
+            termsHref={tenantPath("terms")}
+            privacyHref={tenantPath("privacy")}
+            onChange={setLegalAccept}
+          />
           <Button
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked}
+            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept}
           >
             {isSubmitting ? (
               <>
