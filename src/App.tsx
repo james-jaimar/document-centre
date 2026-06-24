@@ -430,6 +430,21 @@ function AppRoutes() {
             <PlatformSubscriptions />
           </ProtectedRoute>
         } />
+        <Route path="/platform/branch-subscriptions" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformBranchSubscriptions />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/legal-status" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformLegalStatus />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/audit-log" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformAuditLog />
+          </ProtectedRoute>
+        } />
         <Route path="/platform/demo-print-pricing" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformDemoPrintPricing />
