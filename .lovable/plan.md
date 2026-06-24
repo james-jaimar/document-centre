@@ -1,75 +1,120 @@
-# SaaS rollout plan
+# Phase 5 — Platform admin controls
 
-## Status
-- Phase 1 (Legal Stack) — done
-- Phase 2 (Pre-checkout disclosure + acceptance ledger) — done
-- Phase 3 (Subscription lifecycle enforcement) — in progress
+Goal: give platform admins (Jaimar staff) a single place to see every branch subscription across every tenant, run manual interventions when Stripe can't, monitor legal document uptake, and keep an immutable record of every staff action.
 
-## Decisions (locked)
-- **Grace window**: 7 days from `current_period_end` (or `now()` if already past).
-- **Cancellation**: access until `current_period_end`, no pro-rata refunds.
-- **Liability cap**: fees paid in prior 6 months.
-- **Availability target**: 99.5% calendar month.
-- **VAT**: Jaimar not registered — "VAT not applicable".
-- **Retention**: production files 180 days, logs 90 days, order records 5 years.
+## 1. Platform Subscriptions list
 
-### Phase 3 specifics (locked this turn)
-- **On payment failure**:
-  - Storefront checkout blocked **immediately** when sub goes `past_due`.
-  - Branch admin portal stays read/write for 7 days of grace, then becomes **read-only with billing as the only writable area**.
-- **Trial**: 14 days no card, OR 30 days with card on file (no charge until day 30).
-- **Cancelled branches**: storefront `/t/:slug/...` URLs fall through to the friendly "store not online yet" page (a saved customer link is effectively redirected to tenant landing). Branch is removed from the picker and search — it simply won't list.
+New page: `/platform/subscriptions`
 
-## Phase 3 work
-- DB
-  - `branch_subscriptions.grace_until` — 7-day grace window per failure (done).
-  - `branches.storefront_closed_at` — flips on `customer.subscription.deleted` (done).
-  - `resolve_branch_entitlement(branch_id) → { state, until, reason }` RPC (done).
-- Stripe webhook (`stripe-webhook/index.ts`)
-  - Set `grace_until` on `invoice.payment_failed` (done).
-  - Clear `grace_until` on `invoice.payment_succeeded` (done).
-  - Set `branches.storefront_closed_at = now()` on `customer.subscription.deleted` (done).
-- Frontend gates
-  - `useBranchEntitlement(branchId)` — server-resolved (done).
-  - `useBranchSubscriptionGate` — admin: full ↔ billing-only (done).
-  - `useBranchStorefrontGate` — checkout block (done).
-  - `BranchContext` filters out `storefront_closed_at` so the picker hides closed branches (done).
-- Remaining for Phase 3
-  - Wire `useBranchStorefrontGate` into `Cart` / checkout buttons (storefront).
-  - Wire `useBranchSubscriptionGate` into branch admin layout — read-only banner + lock everything except `Settings → Billing`.
-  - Trial selector: extend `assign-branch-plan` / `start-branch-trial` to accept `{ trial_days: 14 | 30, requires_card: bool }`.
-  - Dunning emails: day 0 / 3 / 6 / 7 — extend `notifyTenant("invoice_failed", ...)` into a scheduled sweep (`pg_cron` job hitting a `subscription-dunning-sweep` edge function).
+Columns:
+- Tenant → Branch (with link into the tenant/branch admin)
+- Plan + interval (monthly/annual)
+- Status (active / trialing / grace / past_due / restricted / cancelled)
+- MRR contribution (plan price normalised to monthly)
+- Renews / grace ends / cancelled on
+- Last invoice status
+- Actions menu
 
-## Phase 4 — Tenant self-service
-- Branch → Settings → Billing tab (plan, renewal, payment method via Stripe Portal, acceptance history).
-- Re-acceptance modal on `LEGAL_DOC_VERSIONS` bump.
+Header summary cards:
+- Active branches, Trialing, In grace, Restricted, Cancelled (last 30d)
+- Total MRR, Trial-to-paid conversion (last 90d)
 
-## Phase 5 — Platform admin controls
-- Platform → Subscriptions list (status, MRR, grace, manual overrides).
-- Platform → Legal versioning workflow.
-- Admin action audit log.
+Filters: status, tenant, plan, "in grace only", "trial ending in 7 days".
 
-## Phase 6 — Customer-facing legal
-- `/t/:slug/legal/{terms,privacy}` rendered from tenant-configurable templates (branch is merchant of record).
-- Checkout consent → `customer_acceptances` tied to the order.
-- Storefront cookie banner.
+Sort: MRR desc by default.
 
-## Phase 7 — Launch readiness
-- DPA countersignature (e-sign + ledger row).
-- Sub-processor change notifications (30-day notice).
-- `/status` page for SLA reporting.
-- Security questionnaire pack (SIG-Lite / CAIQ-Lite).
-- Runbooks: incident, DSR, breach notification, restore drill.
+Data source: new RPC `platform_list_branch_subscriptions(filters jsonb)` returning a flat view joined with `branches`, `tenants`, `platform_pricing_plans`. Restricted to platform admins via `has_role(auth.uid(), 'platform_admin')`.
 
-## Phase 4 — Tenant self-service (DONE)
-- `create-branch-portal-session` edge function → Stripe Billing Portal (authz: platform admin OR owner/admin/branch_manager).
-- `record-branch-reacceptance` edge function → inserts re-acceptance rows server-side.
-- `useBranchBillingSelfService.ts` — `useBranchAcceptanceHistory`, `useBranchDocsNeedingReacceptance`, `useRecordBranchReacceptance`, `useBranchPortalSession`.
-- `BranchAcceptanceHistory` table + `BranchReAcceptanceBanner` (auto-shown when `LEGAL_DOCS[slug].version > latest accepted version`).
-- "Manage billing in Stripe" button on active subscriptions.
-- Wired into Branch → Settings → Subscription tab.
+## 2. Manual overrides (all four locked in)
 
-## Phase 5 — Platform admin controls (next)
-- Platform → Subscriptions list (status, MRR, grace, manual overrides).
-- Platform → Legal versioning workflow.
-- Admin action audit log.
+Each row's action menu exposes:
+
+1. **Comp** — mark as paid for N days/months without charging.
+   - Sets `branch_subscriptions.status = 'active'`, `comp_until = now() + interval`, clears `grace_until`.
+   - Cancels Stripe sub at period end so we don't double-bill.
+   - Reason field required.
+
+2. **Extend grace** — push `grace_until` forward by N days.
+   - Does not touch Stripe.
+   - Reason required.
+
+3. **Force cancel** — immediate cancellation.
+   - Cancels Stripe sub immediately (`stripe.subscriptions.cancel`).
+   - Sets `status='cancelled'`, `branches.storefront_closed_at = now()`.
+   - Reason required + confirmation modal.
+
+4. **Reset to trial** — re-issue a fresh trial.
+   - Picks 14-no-card or 30-with-card (same selector as `start-branch-trial`).
+   - Cancels any existing Stripe sub first.
+   - Reason required.
+
+All four go through a single new edge function `platform-subscription-override` that:
+- Validates `has_role(auth.uid(), 'platform_admin')`.
+- Performs the Stripe call.
+- Updates `branch_subscriptions` + `branches`.
+- Writes one row to `platform_admin_audit` (see §4).
+- Sends a notification email to the tenant owner.
+
+Schema add (column, not table):
+- `branch_subscriptions.comp_until timestamptz null`
+- `branch_subscriptions.override_reason text null` (last reason; full history lives in the audit log)
+
+`resolve_branch_entitlement` updated: if `comp_until > now()` → return `active` regardless of Stripe status.
+
+## 3. Legal versioning status (code-only, as you chose)
+
+New page: `/platform/legal`
+
+- Lists every doc in `LEGAL_DOCS` (Terms, Privacy, DPA, AUP) with current version + effective date pulled from `src/lib/legal/versions.ts`.
+- Below each doc, a table: tenant → branch → latest accepted version → "current" / "stale (v1, needs v2)" badge → last acceptance date.
+- Summary: "82 of 91 branches on current Terms v2.1, 9 stale".
+- Read-only — no edit UI. Bumping a version is still: edit `versions.ts`, commit, deploy. The re-acceptance banner from Phase 4 takes over from there.
+
+Data source: existing `subscription_acceptances` ledger + `LEGAL_DOCS` constants. New RPC `platform_legal_acceptance_status()` returns the join.
+
+## 4. Admin action audit log
+
+New table `platform_admin_audit`:
+- `actor_user_id`, `actor_email_snapshot`
+- `action` (`comp` | `extend_grace` | `force_cancel` | `reset_trial` | `legal_version_bump_observed`)
+- `target_type` (`branch_subscription` | `tenant` | `legal_doc`)
+- `target_id`, `tenant_id`, `branch_id`
+- `before_state jsonb`, `after_state jsonb`
+- `reason text`
+- `ip`, `user_agent`
+- `created_at`
+
+RLS: insert from edge functions only (service role); select restricted to platform admins.
+
+New page: `/platform/audit` — filterable table (actor, action, tenant, date range), CSV export. Also surfaced as a "Recent activity" widget on `/platform/subscriptions`.
+
+## 5. Navigation + access
+
+- Add "Subscriptions", "Legal status", "Audit log" entries to the platform admin sidebar (`src/components/PlatformLayout.tsx`).
+- All three routes gated by `has_role(auth.uid(), 'platform_admin')` server-side via RPC, plus client-side route guard.
+
+## File summary
+
+New:
+- `supabase/functions/platform-subscription-override/index.ts`
+- `src/pages/platform/PlatformSubscriptions.tsx`
+- `src/pages/platform/PlatformLegalStatus.tsx`
+- `src/pages/platform/PlatformAuditLog.tsx`
+- `src/components/platform/SubscriptionOverrideDialog.tsx` (one dialog, four modes)
+- `src/hooks/usePlatformSubscriptions.ts`
+
+Edited:
+- `src/components/PlatformLayout.tsx` (sidebar entries)
+- `src/App.tsx` (routes)
+- `src/lib/legal/versions.ts` (export helper for status page if needed)
+- `supabase/functions/_shared/entitlement.ts` if exists, else inline in webhook — honour `comp_until`.
+
+Migrations:
+- Add `comp_until`, `override_reason` to `branch_subscriptions`.
+- Create `platform_admin_audit` table + GRANTs + RLS.
+- Update `resolve_branch_entitlement` to consider `comp_until`.
+- Create `platform_list_branch_subscriptions` and `platform_legal_acceptance_status` RPCs.
+
+## After Phase 5
+
+Phase 6 (customer-facing legal at `/t/:slug/legal/*` + checkout consent + cookie banner) and Phase 7 (DPA countersign, sub-processor notices, `/status` page, security questionnaire pack, runbooks) remain.
