@@ -17,6 +17,8 @@ import { PayFastQuickStartGuide } from "@/components/branch/PayFastQuickStartGui
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
 import { BranchSubscriptionPanel } from "@/components/branch/BranchSubscriptionPanel";
+import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptanceBanner";
+import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
 import { useSearchParams } from "react-router-dom";
 
