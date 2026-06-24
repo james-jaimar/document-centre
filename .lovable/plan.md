@@ -1,48 +1,90 @@
-Three small fixes (Phase 7 still parked for later).
+# Test branch still shows "read-only — subscription restricted"
 
-## 1. Preserve uploads when switching from Stapled/Loose → Presentations
+## Root cause
 
-**Problem**: When the orientation advisory offers "Use Presentations instead", we currently `navigate(tenantPath("orders/new"))` and the in-progress order (with uploaded landscape files) is abandoned. Customer loses everything.
+Two separate bugs, both confirmed against the database.
 
-**Fix**: Convert the current order in place instead of starting a new one.
+**Bug 1 — `resolve_branch_entitlement` is broken for every branch.**
+The SECURITY DEFINER function does:
 
-- In `OrderFiles.tsx` `handleSwitchProductFamily`:
-  - Resolve the target product family slug (`presentations` when `mode === "to-portrait"`, `bound-documents` when `to-landscape`).
-  - Look up the target family + a sensible default product/recipe (mirroring what `NewOrder` would have picked).
-  - Update the existing `order_items` row: set the new `product_family_id`, `product_id`, refreshed `recipe_snapshot` (preserve qty, copy across sensible options like paper/colour/sides if compatible — otherwise reset to family defaults).
-  - Keep all `documents` / `order_documents` rows attached to the same `order_item_id` — they already point at the same uploads, so nothing needs re-uploading.
-  - Clear the orientation flag on each affected document (`preflight_data.orientation_resolved = true`, `orientation_action = "switched_family"`) so the new flow doesn't re-prompt.
-  - Navigate to the same order's build/files page under the new family (`tenantPath(\`orders/${orderId}/files\`)` or the equivalent route presentations uses).
-  - Toast: "Switched to Presentations — your files are still here."
-- If the conversion fails (e.g. incompatible recipe), fall back to current behaviour with a clear toast.
+```sql
+SELECT storefront_closed_at INTO br FROM public.branches WHERE id = _branch_id;
+IF br IS NULL THEN
+  RETURN jsonb_build_object('state','restricted','reason','branch_not_found');
+END IF;
+```
 
-## 2. Lock currency to the tenant (ignore geo)
+In plpgsql, when a record contains only NULL columns, `record IS NULL` evaluates to TRUE — even when a row was actually returned. Since `storefront_closed_at` is NULL for virtually every branch, the function short-circuits to `branch_not_found` and the gate falls through to "restricted" for all branches. Verified by calling the RPC directly:
 
-**Problem**: `useRegionalPricing` runs `detect-region` (IP → country) and overrides the displayed/stored currency. A UK visitor on a ZAR-only tenant gets GBP across the order, invoice, emails.
+- `Test Branch` → `{state: restricted, reason: branch_not_found}`
+- `Sandton City` → `{state: restricted, reason: branch_not_found}`
+- `PostNet Sandton City` → `{state: restricted, reason: branch_not_found}`
 
-**Fix**: Tenant-level currency lock that short-circuits geo detection.
+(Other branches don't visibly fail today because most call sites treat missing entitlement as "allow" while loading, or the banner only renders in the new `BranchLayout` you just adopted for the Test Branch portal.)
 
-- **Schema (migration)**: Add `default_currency_code text not null default 'ZAR'` and `lock_currency boolean not null default true` to `public.tenants` (or store as two `tenant_settings` rows under category `financial`: `default_currency_code`, `lock_currency`). Going with `tenant_settings` to match existing financial config pattern — no schema change to `tenants`.
-- **Admin UI**: Add a "Default currency" select (ZAR/GBP/EUR/USD/AUD) and a "Lock to this currency (ignore visitor region)" switch to `src/pages/admin/settings/FinancialTab.tsx`. Default = ZAR, locked = true.
-- **Hook**: Update `useRegionalPricing` to accept/observe the tenant's locked currency. When `lock_currency` is true, skip `detect-region`, force `region` to the tenant's currency entry, and disable the manual region switcher. When unlocked, keep current geo behaviour.
-- **Currency-stamping safety net**: In `useCart` (line ~118) and `useQuotes`, when stamping `orders.currency` / `quotes.currency`, prefer the tenant's locked currency over `input.currencyCode` if the lock is on. Belt-and-braces so any forgotten caller still produces ZAR rows.
-- Existing orders are not migrated — they keep whatever currency was stamped at order time (financial immutability rule).
+**Bug 2 — the comp migration didn't match this branch.**
+The migration matched `lower(name) LIKE '%postnet test branch%'`, but the actual branch is just named `Test Branch` (tenant = PostNet). So `comp_until` was never set on row `93f5ba02-…`. Current state:
 
-## 3. Searchable favourite-branch picker on Customer → Settings
+```
+plan_slug=postnet · status=active · billing_status=free · comp_until=NULL
+```
 
-**Problem**: `CustomerAccount.tsx` renders favourite branch as a plain `<Select>`; with hundreds of branches it's an unusable scroll.
+Even with Bug 1 fixed, this row already resolves to `active` via the `billing_status='free'` branch — so the comp isn't strictly required for the gate to open. But you asked for the row to be explicitly marked as a permanent comp so it's visually distinct in the Platform → Subscriptions list and survives any future plan reassignment.
 
-**Fix**: Replace the `Select` with a shadcn `Command`-based combobox inside a `Popover` (same pattern as the existing storefront `BranchPicker` search).
+## Fix
 
-- Trigger: a `Button variant="outline"` showing the current favourite branch name (or "No preference"), full-width up to `max-w-sm`.
-- Popover content: `Command` with `CommandInput placeholder="Search branches…"`, `CommandList`, a "No preference" item at the top, then one `CommandItem` per branch showing `name` + small `city, province` line. Filter matches name/city/province/slug.
-- On select: call `fav.set.mutate(...)` and close the popover.
-- No data-model change — uses the existing `useFavouriteBranch` hook and `useBranch().branches`.
+### 1. Repair `resolve_branch_entitlement` (migration)
 
-## Technical notes
+Replace the broken NULL check with `FOUND`, and select the row properly:
 
-- Order conversion (item 1) only touches existing `order_items` / `documents` rows; no new tables. The order row itself stays the same (cart status, branch, customer).
-- Currency lock (item 2) reads from `tenant_settings` via the existing `useTenantSettingsMap("financial")` hook — no new query plumbing.
-- Combobox (item 3) is a pure frontend swap inside `CustomerAccount.tsx`.
+```sql
+CREATE OR REPLACE FUNCTION public.resolve_branch_entitlement(_branch_id uuid)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  sub record;
+  br_closed_at timestamptz;
+  br_found boolean;
+  now_ts timestamptz := now();
+BEGIN
+  SELECT storefront_closed_at INTO br_closed_at
+  FROM public.branches WHERE id = _branch_id;
+  br_found := FOUND;
 
-Want me to proceed?
+  IF NOT br_found THEN
+    RETURN jsonb_build_object('state','restricted','reason','branch_not_found');
+  END IF;
+  IF br_closed_at IS NOT NULL THEN
+    RETURN jsonb_build_object('state','cancelled','reason','storefront_closed','until', br_closed_at);
+  END IF;
+
+  SELECT * INTO sub FROM public.branch_subscriptions WHERE branch_id = _branch_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('state','restricted','reason','no_subscription');
+  END IF;
+
+  -- (remainder of function unchanged: comp → cancelled → trialing → past_due → active fallthrough)
+END;
+$$;
+```
+
+### 2. Apply the comp to the real Test Branch row (data update)
+
+```sql
+UPDATE public.branch_subscriptions
+SET comp_until = '2099-12-31T23:59:59Z'::timestamptz,
+    override_reason = 'Internal test/demo branch — permanent comp granted by platform.',
+    updated_at = now()
+WHERE branch_id = '93f5ba02-497f-4b03-bd64-9f97efb6fe93';
+```
+
+(Branch is keyed by id, not name, so we can't be tripped up by naming next time.)
+
+### 3. Verify
+
+Re-call `resolve_branch_entitlement` for Test Branch and Sandton — both should return `state: active`. Reload the Test Branch portal and confirm the red banner is gone.
+
+## Notes
+
+- No client code changes needed; the RPC name and JSON shape are unchanged.
+- Bug 1 is the real blocker — every other branch in the system was one new gated layout away from showing the same banner.
