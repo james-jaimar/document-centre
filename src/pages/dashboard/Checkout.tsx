@@ -54,6 +54,7 @@ export default function Checkout() {
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
   const [saveAddress, setSaveAddress] = useState(false);
+  const [legalAccept, setLegalAccept] = useState<CheckoutLegalAcceptance | null>(null);
   const { create: createSavedAddress } = useCustomerAddresses(user?.id);
 
   // Fetch online payment providers enabled for this tenant
