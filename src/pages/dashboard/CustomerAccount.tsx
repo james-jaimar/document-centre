@@ -330,3 +330,102 @@ export default function CustomerAccount() {
     </div>
   );
 }
+
+type BranchOption = {
+  id: string;
+  name: string;
+  slug?: string;
+  city?: string | null;
+  province?: string | null;
+};
+
+function FavouriteBranchCombobox({
+  value,
+  branches,
+  onSelect,
+}: {
+  value: string | null;
+  branches: BranchOption[];
+  onSelect: (branchId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = value ? branches.find((b) => b.id === value) : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full max-w-sm justify-between"
+        >
+          <span className="truncate">
+            {selected ? (
+              <>
+                {selected.name}
+                {selected.city ? ` — ${selected.city}` : ""}
+              </>
+            ) : (
+              <span className="text-muted-foreground">No preference</span>
+            )}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(28rem,calc(100vw-2rem))] p-0" align="start">
+        <Command
+          filter={(value, search) => {
+            return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Search branches…" />
+          <CommandList>
+            <CommandEmpty>No branches found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="no-preference"
+                onSelect={() => {
+                  onSelect(null);
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={`mr-2 h-4 w-4 ${value === null ? "opacity-100" : "opacity-0"}`}
+                />
+                <span className="text-muted-foreground">No preference</span>
+              </CommandItem>
+              {branches.map((b) => {
+                const loc = [b.city, b.province].filter(Boolean).join(", ");
+                const searchKey = `${b.name} ${loc} ${b.slug ?? ""}`.trim();
+                return (
+                  <CommandItem
+                    key={b.id}
+                    value={searchKey}
+                    onSelect={() => {
+                      onSelect(b.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={`mr-2 h-4 w-4 ${value === b.id ? "opacity-100" : "opacity-0"}`}
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate">{b.name}</div>
+                      {loc && (
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{loc}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
