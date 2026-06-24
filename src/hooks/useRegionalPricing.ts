@@ -60,9 +60,47 @@ export function useRegionalPricing(): RegionalPricingResult {
   const [loading, setLoading] = useState(true);
   const [detected, setDetected] = useState(false);
 
+  // Tenant currency lock — when a tenant has locked their default currency
+  // we ignore any geo detection / manual override and force their currency.
+  // This prevents a UK visitor on a ZAR-only tenant from getting GBP prices
+  // and a GBP stamp on their cart/order/invoice.
+  const { tenantId } = useTenantContext();
+  const [tenantLock, setTenantLock] = useState<{ currency: string; locked: boolean } | null>(null);
+  const [tenantLockLoaded, setTenantLockLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!tenantId) {
+      setTenantLock(null);
+      setTenantLockLoaded(true);
+      return;
+    }
+    setTenantLockLoaded(false);
+    (async () => {
+      const { data } = await supabase
+        .from("tenant_settings")
+        .select("setting_key, setting_value")
+        .eq("tenant_id", tenantId)
+        .eq("category", "financial")
+        .in("setting_key", ["default_currency_code", "lock_currency"]);
+      if (cancelled) return;
+      const map: Record<string, unknown> = {};
+      for (const r of data ?? []) map[(r as any).setting_key] = (r as any).setting_value;
+      const currency = String(map.default_currency_code ?? "ZAR").toUpperCase();
+      // Default: locked on for safety — tenants opt out explicitly.
+      const locked = map.lock_currency === undefined || map.lock_currency === null
+        ? true
+        : map.lock_currency === true;
+      setTenantLock({ currency, locked });
+      setTenantLockLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
   // Fetch all regions once
   useEffect(() => {
     let cancelled = false;
+    if (!tenantLockLoaded) return;
 
     async function load() {
       const { data: regionsData } = await supabase
@@ -74,6 +112,17 @@ export function useRegionalPricing(): RegionalPricingResult {
       setRegions(regionsData as PricingRegion[]);
 
       const defaultRegion = regionsData.find((r: any) => r.is_default) || regionsData[0];
+
+      // Tenant lock wins over geo and manual override.
+      if (tenantLock?.locked) {
+        const forced = regionsData.find(
+          (r: any) => (r.currency_code ?? "").toUpperCase() === tenantLock.currency,
+        );
+        setRegionState((forced ?? defaultRegion) as PricingRegion);
+        setDetected(false);
+        setLoading(false);
+        return;
+      }
 
       // Check for manual override
       const override = localStorage.getItem(OVERRIDE_KEY);
@@ -110,7 +159,8 @@ export function useRegionalPricing(): RegionalPricingResult {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [tenantLockLoaded, tenantLock?.locked, tenantLock?.currency]);
+
 
   // Fetch plans when region changes
   useEffect(() => {
