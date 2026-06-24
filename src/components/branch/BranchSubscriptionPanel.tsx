@@ -163,15 +163,11 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             </Button>
           </div>
         ) : (
-          <ActiveBlock subscription={subscription} status={status} />
+          <ActiveSubscriptionBlock subscription={subscription} status={status} branchId={branchId} />
         )}
       </CardContent>
     </Card>
   );
-
-  function ActiveBlock({ subscription, status }: { subscription: any; status: string }) {
-    return null as any;
-  }
 }
 
 function ActiveSubscriptionBlock({ subscription, status, branchId }: { subscription: any; status: string; branchId: string }) {
