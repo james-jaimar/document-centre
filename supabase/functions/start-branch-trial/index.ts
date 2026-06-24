@@ -65,11 +65,20 @@ Deno.serve(async (req) => {
 
   // Check prior state to know if this call actually starts the trial
   const { data: prior } = await sb.from("branch_subscriptions")
-    .select("trial_started_at, assigned_plan_slug").eq("branch_id", branch.id).maybeSingle();
+    .select("trial_started_at, assigned_plan_slug, trial_days").eq("branch_id", branch.id).maybeSingle();
 
   // Only stamp if a plan is assigned (no plan → nothing to trial)
   if (!prior?.assigned_plan_slug) {
     return new Response(JSON.stringify({ ok: true, skipped: "no_plan" }), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // 14-day trials are no-card and auto-start here. Anything longer (e.g. 30 days)
+  // requires a card via Stripe Checkout — Stripe owns the trial clock in that case.
+  const trialDays = (prior as any)?.trial_days ?? 0;
+  if (trialDays > 14) {
+    return new Response(JSON.stringify({ ok: true, skipped: "requires_card" }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
