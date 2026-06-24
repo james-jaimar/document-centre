@@ -132,7 +132,6 @@ export default function CustomerAccount() {
         <TabsList className="w-full md:w-auto overflow-x-auto flex">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="addresses">Addresses</TabsTrigger>
-          <TabsTrigger value="orders">Order History</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
