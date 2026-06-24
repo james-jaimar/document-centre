@@ -1,6 +1,6 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+// (navigate removed — order history tab gone)
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,7 +21,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { toast } from "sonner";
-import { ClipboardList, Plus, Pencil, Trash2, Star, MapPin, Check, ChevronsUpDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Star, MapPin, Check, ChevronsUpDown } from "lucide-react";
 import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { useFavouriteBranch } from "@/hooks/useFavouriteBranch";
@@ -29,8 +29,8 @@ import { useBranch } from "@/contexts/BranchContext";
 
 export default function CustomerAccount() {
   const { user } = useAuth();
-  const { slug, tenantPath } = useTenantSlug();
-  const navigate = useNavigate();
+  const { slug, tenantPath: _tenantPath } = useTenantSlug();
+  void _tenantPath; void slug;
   const qc = useQueryClient();
 
   const { data: profile, isLoading } = useQuery({
@@ -132,7 +132,6 @@ export default function CustomerAccount() {
         <TabsList className="w-full md:w-auto overflow-x-auto flex">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="addresses">Addresses</TabsTrigger>
-          <TabsTrigger value="orders">Order History</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -288,15 +287,6 @@ export default function CustomerAccount() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="orders">
-          <Card className="p-8 text-center">
-            <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground mb-4">
-              View all your past and current orders.
-            </p>
-            <Button onClick={() => navigate(tenantPath("orders"))}>Go to my orders</Button>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="security">
           <Card className="p-4 md:p-6 max-w-md space-y-4">

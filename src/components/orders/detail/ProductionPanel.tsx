@@ -48,16 +48,42 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
+  // Pull the actual job trim size (post-assembly) so we can pick a matching
+  // template instead of always defaulting to the primary. Bus card jobs that
+  // print 90×55mm should not silently fall back to a 90×50mm sheet.
+  const jobTarget = (artefacts?.assembly_report as { target?: { width_mm?: number; height_mm?: number } } | undefined)?.target;
+  const jobW = Number(jobTarget?.width_mm) || 0;
+  const jobH = Number(jobTarget?.height_mm) || 0;
+
   useEffect(() => {
     if (artefacts?.imposition_template_id) {
       setSelectedTemplateId(artefacts.imposition_template_id);
       return;
     }
-    if (templates.length > 0) {
-      const primary = templates.find((t) => t.is_primary) ?? templates[0];
-      setSelectedTemplateId(primary.id);
+    if (templates.length === 0) return;
+
+    // Try size-matching first (±1mm tolerance, both orientations).
+    const TOL = 1.0;
+    const matchesSize = (t: typeof templates[number]) => {
+      const iw = Number((t as any).input_width_mm) || 0;
+      const ih = Number((t as any).input_height_mm) || 0;
+      if (!(iw > 0 && ih > 0)) return false;
+      const matchPortrait = Math.abs(iw - jobW) <= TOL && Math.abs(ih - jobH) <= TOL;
+      const matchLandscape = Math.abs(iw - jobH) <= TOL && Math.abs(ih - jobW) <= TOL;
+      return matchPortrait || matchLandscape;
+    };
+
+    let chosen: typeof templates[number] | undefined;
+    if (jobW > 0 && jobH > 0) {
+      // Prefer a primary template that matches; otherwise any matching template.
+      chosen = templates.find((t) => t.is_primary && matchesSize(t))
+        ?? templates.find(matchesSize);
     }
-  }, [artefacts?.imposition_template_id, templates]);
+    if (!chosen) {
+      chosen = templates.find((t) => t.is_primary) ?? templates[0];
+    }
+    setSelectedTemplateId(chosen.id);
+  }, [artefacts?.imposition_template_id, templates, jobW, jobH]);
 
   const filenameFor = (suffix: string): string => {
     const order = safeFilenamePart(orderNumber, "order");

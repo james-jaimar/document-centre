@@ -1799,6 +1799,62 @@ export default function OrderFiles() {
     refetchDocuments();
   }, [clearUploads, refetchDocuments]);
 
+  /**
+   * Hard-cancel every still-processing upload in the current order item.
+   *
+   * Per product spec (#4) we *delete* the row entirely rather than leave a
+   * "cancelled" ghost — this is a customer-side "I changed my mind" action
+   * and a leftover row was confusing.
+   *
+   * Side effects:
+   *   • Calls `cancel-document` edge fn for each in-flight doc. That fn
+   *     in turn pings the Cloud Run worker to `revoke` any non-terminal
+   *     celery jobs on the backend asset so we don't burn CPU on a render
+   *     the user just abandoned.
+   *   • Removes the source PDF from the `document-uploads` bucket.
+   *   • Closes the modal and clears local upload state.
+   */
+  const handleUploadCancel = useCallback(async () => {
+    const activeFileNames = new Set(
+      Object.values(uploads)
+        .filter((u) => u.status === "uploading" || u.status === "analyzing")
+        .map((u) => u.fileName),
+    );
+
+    // Match against current documents by file_name. We deliberately ignore
+    // already-`done`/`error` rows in the modal — those have either fully
+    // landed or already errored, so the user can keep / retry them.
+    const docsToCancel = documents.filter(
+      (d) => activeFileNames.has(d.file_name) && d.document_status !== "ready",
+    );
+
+    // Close the modal immediately for snappy UX; cleanup happens in bg.
+    setUploadModalOpen(false);
+    clearUploads();
+    pendingFilesRef.current = [];
+
+    if (docsToCancel.length === 0) {
+      refetchDocuments();
+      return;
+    }
+
+    toast.info(
+      docsToCancel.length === 1
+        ? "Cancelling upload…"
+        : `Cancelling ${docsToCancel.length} uploads…`,
+    );
+
+    await Promise.allSettled(
+      docsToCancel.map((d) =>
+        supabase.functions.invoke("cancel-document", {
+          body: { document_id: d.id },
+        }),
+      ),
+    );
+
+    refetchDocuments();
+  }, [uploads, documents, clearUploads, refetchDocuments]);
+
   const familySlug = productFamily?.slug ?? null;
 
   // ── Active print size (for mismatch guard) ─────────────────────
@@ -2691,6 +2747,7 @@ export default function OrderFiles() {
         open={uploadModalOpen}
         uploads={uploads}
         onContinue={handleUploadContinue}
+        onCancel={handleUploadCancel}
       />
 
       {/* Paper Size Advisory Dialog */}
