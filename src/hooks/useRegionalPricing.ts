@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useTenantContext } from "@/hooks/useTenantContext";
 
 const OVERRIDE_KEY = "dc_region_override";
 const SESSION_COUNTRY_KEY = "dc_detected_country";
