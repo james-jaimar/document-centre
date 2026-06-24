@@ -185,6 +185,8 @@ export function useRegionalPricing(): RegionalPricingResult {
 
   const setRegion = useCallback(
     (regionCode: string) => {
+      // When the tenant has locked currency, manual region switching is disabled.
+      if (tenantLock?.locked) return;
       const found = regions.find((r) => r.region_code === regionCode);
       if (found) {
         localStorage.setItem(OVERRIDE_KEY, regionCode);
@@ -192,7 +194,7 @@ export function useRegionalPricing(): RegionalPricingResult {
         setDetected(false);
       }
     },
-    [regions]
+    [regions, tenantLock?.locked]
   );
 
   return { region, regions, plans, loading, detected, setRegion };
