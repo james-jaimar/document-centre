@@ -3198,6 +3198,76 @@ export type Database = {
           },
         ]
       }
+      order_legal_acceptances: {
+        Row: {
+          accepted_at: string
+          branch_id: string | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          order_id: string
+          privacy_snapshot_hash: string | null
+          privacy_updated_at: string | null
+          tenant_id: string
+          terms_snapshot_hash: string | null
+          terms_updated_at: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          accepted_at?: string
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          order_id: string
+          privacy_snapshot_hash?: string | null
+          privacy_updated_at?: string | null
+          tenant_id: string
+          terms_snapshot_hash?: string | null
+          terms_updated_at?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          accepted_at?: string
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          order_id?: string
+          privacy_snapshot_hash?: string | null
+          privacy_updated_at?: string | null
+          tenant_id?: string
+          terms_snapshot_hash?: string | null
+          terms_updated_at?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_legal_acceptances_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_legal_acceptances_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_legal_acceptances_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_payment_attempts: {
         Row: {
           amount: number
