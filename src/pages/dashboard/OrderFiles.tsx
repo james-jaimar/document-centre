@@ -2747,6 +2747,7 @@ export default function OrderFiles() {
         open={uploadModalOpen}
         uploads={uploads}
         onContinue={handleUploadContinue}
+        onCancel={handleUploadCancel}
       />
 
       {/* Paper Size Advisory Dialog */}
