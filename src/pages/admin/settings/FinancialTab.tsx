@@ -83,6 +83,39 @@ export function FinancialTab() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Coins className="h-5 w-5" /> Currency</CardTitle>
+          <CardDescription>
+            Lock the display and order currency so visitor location can't switch your customers to a different currency.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 max-w-2xl">
+          <div className="space-y-2">
+            <Label>Default currency</Label>
+            <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CURRENCY_CHOICES.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-start gap-3 pt-6">
+            <Switch checked={lockCurrency} onCheckedChange={setLockCurrency} />
+            <div className="space-y-0.5">
+              <Label>Lock to this currency</Label>
+              <p className="text-xs text-muted-foreground">
+                Recommended. When on, geo-detection and manual region switching are ignored — every order, quote and invoice uses your default currency.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> Tax Configuration</CardTitle>
           <CardDescription>How tax is calculated and displayed on orders and invoices</CardDescription>
         </CardHeader>
