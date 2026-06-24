@@ -20,6 +20,8 @@ import {
   FileText,
   Activity,
   CreditCard,
+  ShieldCheck,
+  History,
   Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
