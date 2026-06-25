@@ -21,6 +21,7 @@ type Action =
   | "extend_grace"
   | "force_cancel"
   | "reset_trial"
+  | "reset_pending"
   | "reopen_storefront";
 
 interface Body {
@@ -61,21 +62,29 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  // Platform admins only.
-  const { data: platformRole } = await sb
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("role", "platform_admin")
-    .maybeSingle();
-  if (!platformRole) return json({ error: "Forbidden" }, 403);
-
   const { data: branch } = await sb
     .from("branches")
     .select("id, tenant_id, storefront_closed_at")
     .eq("id", branchId)
     .single();
   if (!branch) return json({ error: "Branch not found" }, 404);
+
+  // Platform admins OR tenant owners/admins of the branch's tenant.
+  const { data: platformRole } = await sb
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("role", "platform_admin")
+    .maybeSingle();
+  const { data: membership } = await sb
+    .from("tenant_memberships")
+    .select("role")
+    .eq("profile_id", user.id)
+    .eq("tenant_id", branch.tenant_id)
+    .eq("is_active", true)
+    .in("role", ["owner", "admin"])
+    .maybeSingle();
+  if (!platformRole && !membership) return json({ error: "Forbidden" }, 403);
 
   const { data: existing } = await sb
     .from("branch_subscriptions" as any)
@@ -141,6 +150,23 @@ Deno.serve(async (req) => {
       patch.trial_started_at = nowIso;
       patch.trial_ends_at = addDaysIso(window);
       patch.cancelled_at = null;
+      branchPatch = { storefront_closed_at: null };
+      break;
+    }
+    case "reset_pending": {
+      // Clear runtime state, keep assigned plan so branch sees activation chooser again.
+      patch.status = "incomplete";
+      patch.billing_status = "pending_payment";
+      patch.trial_status = null;
+      patch.trial_started_at = null;
+      patch.trial_ends_at = null;
+      patch.trial_started_via = null;
+      patch.current_period_start = null;
+      patch.current_period_end = null;
+      patch.stripe_subscription_id = null;
+      patch.cancelled_at = null;
+      patch.comp_until = null;
+      patch.grace_until = null;
       branchPatch = { storefront_closed_at: null };
       break;
     }
