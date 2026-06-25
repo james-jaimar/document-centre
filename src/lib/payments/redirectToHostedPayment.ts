@@ -1,18 +1,19 @@
 // Hosted-payment helpers.
 //
-// Stripe: `payments-create-session` returns `redirect_url` (Stripe Checkout
-// session URL) and we navigate to it.
+// Stripe: server returns `redirect_url` (Stripe Checkout session) — we
+// navigate to it directly.
 //
-// PayFast: `payments-create-session` returns a signed `form` payload
-// (`{ action, method, fields }`). We render a hidden form on the APP origin
-// and submit it. The app's CSP `form-action` already whitelists
-// payfast.co.za, so the cross-origin POST is allowed by the browser, and
-// nothing about the merchant credentials ever appears in a visible URL.
+// PayFast: server returns a signed `form` payload `{ action, method, fields }`.
+// We stash it in sessionStorage and navigate to a same-origin React page
+// (/pay/payfast) that renders a real <form> with an auto-submit + visible
+// "Continue to PayFast" fallback button. This matches PayFast's documented
+// "Custom Integration" flow exactly and avoids dynamic JS form injection,
+// which some browsers block.
 //
-// Failures degrade to a clean error — never expose internal reasons to the
-// customer (the edge function returns a safe `code` like
-// `PAYFAST_CONFIG_INCOMPLETE` and a user-friendly message).
+// Credentials never appear in any URL; failures degrade to a user-friendly
+// message (no internal error text shown to customers).
 import { supabase } from "@/integrations/supabase/client";
+import { PAYFAST_HANDOFF_KEY } from "@/pages/PayfastHandoff";
 
 export interface StartHostedPaymentArgs {
   orderId: string;
@@ -46,7 +47,6 @@ export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<
     },
   });
   if (error) {
-    // supabase-js wraps function errors. Try to read the structured body.
     let msg = "We couldn't start your online payment. Please try again or pay by EFT.";
     const ctx: any = (error as any)?.context;
     try {
@@ -63,38 +63,27 @@ export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<
     throw new Error("Payment service did not respond. Please try again.");
   }
 
-  // Stripe path
+  // Stripe — direct redirect to hosted checkout.
   if (data.redirect_url) {
     window.location.assign(data.redirect_url);
     return;
   }
 
-  // PayFast path — build a hidden form on the app origin and submit.
+  // PayFast — stash signed form payload and hand off via same-origin page.
   if (data.provider === "payfast" && data.form?.action && data.form.fields) {
-    submitHiddenForm(data.form);
+    try {
+      sessionStorage.setItem(
+        PAYFAST_HANDOFF_KEY,
+        JSON.stringify({ form: data.form, cancelUrl: args.cancelUrl }),
+      );
+    } catch {
+      throw new Error("Your browser blocked the secure payment handoff. Please enable storage and try again.");
+    }
+    window.location.assign("/pay/payfast");
     return;
   }
 
   throw new Error("Payment session response was invalid.");
-}
-
-/** Builds a hidden form, appends it to the document, and submits it. */
-function submitHiddenForm(form: PayfastFormPayload): void {
-  const f = document.createElement("form");
-  f.method = (form.method || "POST").toUpperCase();
-  f.action = form.action;
-  f.style.display = "none";
-  f.acceptCharset = "UTF-8";
-  for (const [name, value] of Object.entries(form.fields)) {
-    if (value == null) continue;
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = String(value);
-    f.appendChild(input);
-  }
-  document.body.appendChild(f);
-  f.submit();
 }
 
 export interface OrderOnlineProvider {

@@ -39,6 +39,7 @@ import CookiePolicy from "@/pages/legal/CookiePolicy";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 import MobileUpload from "@/pages/MobileUpload";
 import MicrosoftCallbackResult from "@/pages/oauth/MicrosoftCallbackResult";
+import PayfastHandoff from "@/pages/PayfastHandoff";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
@@ -212,6 +213,9 @@ function AppRoutes() {
 
       {/* OAuth popup result page — Microsoft connect flow redirects here */}
       <Route path="/oauth/microsoft/callback-result" element={<MicrosoftCallbackResult />} />
+
+      {/* PayFast handoff — same-origin page that renders the signed form */}
+      <Route path="/pay/payfast" element={<PayfastHandoff />} />
 
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
       <Route path="/t/:slug" element={<CustomerLayout />}>
