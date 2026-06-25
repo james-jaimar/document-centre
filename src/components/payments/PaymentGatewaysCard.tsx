@@ -244,11 +244,16 @@ function ProviderRow({
               </div>
               {summaryQ.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
               {summary?.payfast && provider === "payfast" && (
-                <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                  <SummaryField label="Merchant ID" value={summary.payfast.merchant_id ?? "— not set"} mono />
-                  <SummaryField label="Merchant Key" value={summary.payfast.merchant_key_mask ?? "— not set"} mono />
-                  <SummaryField label="Passphrase" value={summary.payfast.has_passphrase ? "•••••• saved" : "— not set"} />
-                </dl>
+                <>
+                  <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <SummaryField label="Merchant ID" value={summary.payfast.merchant_id ?? "— not set"} mono />
+                    <SummaryField label="Merchant Key" value={summary.payfast.merchant_key_mask ?? "— not set"} mono />
+                    <SummaryField label="Passphrase" value={summary.payfast.has_passphrase ? "•••••• saved" : "— not set"} />
+                  </dl>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    The passphrase here must match the one set in your PayFast dashboard (Settings → Integration) exactly. If PayFast has a passphrase set, this branch must too — and vice versa. A mismatch causes "Generated signature does not match submitted signature" at checkout.
+                  </p>
+                </>
               )}
               {summary?.stripe && provider === "stripe" && (
                 <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">

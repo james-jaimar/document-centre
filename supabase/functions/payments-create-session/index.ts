@@ -125,34 +125,64 @@ Deno.serve(async (req) => {
   const projectUrl = Deno.env.get("SUPABASE_URL")!;
   const itnUrl = `${projectUrl}/functions/v1/payfast-itn`;
 
-  const fields: Record<string, string> = {
+  // PayFast: fields in fixed documented order; same array drives signature + form POST.
+  const orderedPairs: Array<[string, string]> = [
+    ["merchant_id", String(creds.merchant_id).trim()],
+    ["merchant_key", String(creds.merchant_key).trim()],
+    ["return_url", return_url],
+    ["cancel_url", cancel_url],
+    ["notify_url", itnUrl],
+    ["m_payment_id", attempt.id],
+    ["amount", amount.toFixed(2)],
+    ["item_name", `Order ${order.order_number || order.id.slice(0, 8)}`],
+  ];
+
+  const passphrase = (creds.passphrase || "").trim();
+  const { signature, baseString } = payfastSignature(orderedPairs, passphrase);
+
+  // Diagnostic logging — never logs merchant_key or passphrase in cleartext.
+  console.log("payfast.sign", JSON.stringify({
+    branch_id: gw.branchId ?? null,
+    tenant_id: order.tenant_id,
+    mode: gw.mode,
     merchant_id: creds.merchant_id,
-    merchant_key: creds.merchant_key,
-    return_url,
-    cancel_url,
-    notify_url: itnUrl,
-    m_payment_id: attempt.id,
-    amount: amount.toFixed(2),
-    item_name: `Order ${order.order_number || order.id.slice(0, 8)}`,
-  };
-  // Signature
-  const signature = payfastSignature(fields, creds.passphrase || "");
+    has_passphrase: !!passphrase,
+    base_string_redacted: passphrase
+      ? baseString.replace(passphrase, "***PASSPHRASE***")
+      : baseString,
+    signature,
+  }));
+
+  const fields: Record<string, string> = {};
+  for (const [k, v] of orderedPairs) fields[k] = v;
   fields.signature = signature;
 
   return json({ form_action: action, form_fields: fields });
 });
 
-function payfastSignature(fields: Record<string, string>, passphrase: string): string {
-  // PayFast: build query string in the order fields are added (excluding 'signature'),
-  // url-encode values (spaces -> '+'), append passphrase, MD5.
+function payfastSignature(
+  pairs: Array<[string, string]>,
+  passphrase: string,
+): { signature: string; baseString: string } {
   const parts: string[] = [];
-  for (const [k, v] of Object.entries(fields)) {
+  for (const [k, v] of pairs) {
     if (k === "signature" || v === "" || v == null) continue;
-    parts.push(`${k}=${encodeURIComponent(v).replace(/%20/g, "+")}`);
+    parts.push(`${k}=${pfEncode(v)}`);
   }
-  let payload = parts.join("&");
-  if (passphrase) payload += `&passphrase=${encodeURIComponent(passphrase).replace(/%20/g, "+")}`;
-  return md5(payload);
+  let baseString = parts.join("&");
+  if (passphrase) baseString += `&passphrase=${pfEncode(passphrase)}`;
+  return { signature: md5(baseString), baseString };
+}
+
+// PHP urlencode-compatible: spaces -> '+'; also encode ! * ' ( )
+function pfEncode(v: string): string {
+  return encodeURIComponent(v)
+    .replace(/%20/g, "+")
+    .replace(/!/g, "%21")
+    .replace(/\*/g, "%2A")
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29");
 }
 
 // Tiny MD5 implementation (RFC 1321) — PayFast still requires it.
