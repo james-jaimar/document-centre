@@ -44,7 +44,24 @@ export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<
     form.appendChild(input);
   });
   document.body.appendChild(form);
+  const startHref = window.location.href;
   HTMLFormElement.prototype.submit.call(form);
+  // If the browser blocks the form-action (CSP, extension, popup blocker)
+  // the page won't navigate. Surface a clear error after a short delay
+  // instead of silently leaving the user on the previous page.
+  await new Promise<void>((resolve, reject) => {
+    window.setTimeout(() => {
+      if (window.location.href === startHref) {
+        reject(
+          new Error(
+            "The browser blocked the redirect to PayFast. This is usually a Content Security Policy or browser-extension issue — please contact support.",
+          ),
+        );
+      } else {
+        resolve();
+      }
+    }, 1800);
+  });
 }
 
 export interface OrderOnlineProvider {

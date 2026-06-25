@@ -179,9 +179,16 @@ function ProviderRow({
             <Badge variant="outline">Not configured</Badge>
           )}
           {hasCreds && (scope === "tenant" || isEnabledAtTenant) && persistedMode === "live" && (
-            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">
-              Live — accepting payments
-            </Badge>
+            provider === "payfast" && summary?.payfast && !summary.payfast.has_passphrase ? (
+              <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
+                <AlertTriangle className="h-3 w-3" />
+                Passphrase missing — payments will fail
+              </Badge>
+            ) : (
+              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">
+                Live — accepting payments
+              </Badge>
+            )
           )}
           {hasCreds && (scope === "tenant" || isEnabledAtTenant) && persistedMode === "test" && (
             <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
