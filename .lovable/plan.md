@@ -1,65 +1,61 @@
-## Goal
+# Admin controls for branch subscriptions
 
-Align the branch subscription activation flow with your mental model: admin assigns a plan, then on first login the branch chooses how to start (14-day no-card trial, 30-day trial with card, or pay now). The clock starts when the branch acts, not when the admin assigns.
+## Problem
 
-## What changes
+On a branch's **Subscription** tab (e.g. PostNet Aliwal North), the admin card is read-only. Once a branch has any subscription row — even a stale "free / active" one from an earlier assignment — there is no way to:
 
-### 1. Per-plan "trial offer" toggle (Platform)
+- Re-assign it to a different plan,
+- Reset it back to `pending_payment` so the branch sees the trial/pay chooser again,
+- Cancel it outright.
 
-Add a `trial_offer` field to `platform_pricing_plans` controlling which start options branches see:
-- `none` — Pay now only
-- `trial_14_no_card` — 14-day no-card OR Pay now
-- `trial_30_with_card` — 30-day with card OR Pay now
-- `both` — all three options
+The card also still says *"Plan is inherited from the tenant's subscription"*, which no longer matches our per-branch model.
 
-Edit on the Platform → Plans editor. Default `both` for existing plans.
+## What we'll build
 
-### 2. New "Activate subscription" UI (Branch)
+Upgrade `BranchSubscriptionAssignCard` (rendered on `/admin/branches/:id` → Subscription tab) with three admin actions plus accurate copy.
 
-In the branch Subscription panel, when `billing_status = pending_payment` and no Stripe sub exists yet, replace the single "Pay Now" button with a 3-card chooser (filtered by the plan's `trial_offer`):
+### 1. Change / Assign plan
+- Button → opens a small dialog with: region (auto from branch), plan dropdown (from `platform_pricing_plans` for that region), optional discount %, optional trial days, notes.
+- Calls the existing `assign-branch-plan` edge function (already supports re-assignment).
+- Works whether the branch currently has a row or not, replacing both "Activate branch" and "Assign plan" entry points with one consistent action.
 
-```text
-┌─ Start 14-day free trial ──┐ ┌─ Start 30-day trial ─────┐ ┌─ Activate now ───────┐
-│ No card required           │ │ Card required, auto-     │ │ Pay immediately,     │
-│ Full access for 14 days    │ │ charges on day 30        │ │ subscription live    │
-│ [ Start free trial ]       │ │ [ Start trial with card ]│ │ [ Pay & activate ]   │
-└────────────────────────────┘ └──────────────────────────┘ └──────────────────────┘
-```
+### 2. Reset to pending payment
+- Button (with confirm dialog) → sets the branch_subscriptions row back to a clean pre-activation state:
+  - `status = 'incomplete'`
+  - `billing_status = 'pending_payment'`
+  - `trial_status = NULL`, `trial_ends_at = NULL`, `trial_started_via = NULL`
+  - `current_period_start/end = NULL`
+  - keeps `assigned_plan_slug` / `assigned_region_id` / `tenant_id` so the branch still has a plan to activate
+  - if a live Stripe sub exists, do **not** touch Stripe here (use Cancel for that) — just unlink (`stripe_subscription_id = NULL`) so the next checkout starts a fresh sub.
+- Branch user, on next login, sees the 3-card activation chooser again.
 
-All three require legal acceptance checkboxes (same as today's checkout).
+### 3. Cancel subscription
+- Button (with confirm dialog) → cancels at Stripe (`stripe.subscriptions.cancel`) if `stripe_subscription_id` is set, then sets `status = 'cancelled'`, `cancelled_at = now()`.
+- Branch goes read-only via the existing `useBranchSubscriptionGate`.
 
-### 3. Wire each button
+### 4. Copy fix
+Replace the "inherited from tenant" sentence with: *"Each branch is billed individually. Use the actions below to assign, reset, or cancel this branch's subscription."*
 
-- **14-day no-card** → existing `start-branch-trial` edge function. Sets `trial_status=active`, `trial_ends_at = now+14d`, `billing_status=trialing`. No Stripe call.
-- **30-day with card** → existing `create-branch-checkout` with `trial_days: 30`. Stripe owns the clock.
-- **Pay now** → existing `create-branch-checkout` with `trial_days: 0`.
+## Technical notes
 
-### 4. Trial-expiry transition
-
-When the 14-day no-card trial ends, `resolve_branch_entitlement` already flips state to `restricted`. The panel will then show a single "Add card to continue" button → standard checkout (no trial). No backend change needed; just UI copy for the post-trial state.
-
-### 5. Small backend tweaks
-
-- `start-branch-trial`: check the plan's `trial_offer` allows `trial_14_no_card` before granting.
-- `create-branch-checkout`: when `trial_days=30`, check the plan's `trial_offer` allows `trial_30_with_card`.
-- Add a `trial_started_via` column (`no_card_14` | `stripe_30` | null) on `branch_subscriptions` for reporting.
-
-## Out of scope
-
-- Tenant-level "umbrella" billing
-- Branch self-service plan switching
-- Stripe Tax / `automatic_tax`
-- Promo code → Stripe coupon sync
-- Removing `tenant_subscriptions` legacy table
-
-These stay as discussed — separate decisions for later.
+- **New edge function `reset-branch-subscription`** (platform/tenant-admin only): performs the field reset described above. Audit log entry written.
+- **New edge function `cancel-branch-subscription`** (platform/tenant-admin only): cancels Stripe sub (if any) + flips status. Audit log entry.
+- **Existing `assign-branch-plan`** already handles both first-time assign and re-assign — wire the dialog to it; no backend change needed.
+- New hooks in `src/hooks/useBranchSubscriptions.ts`: `useResetBranchSubscription`, `useCancelBranchSubscription` (mirror the existing `useOverrideBranchSubscription` pattern).
+- New dialog component `ChangeBranchPlanDialog.tsx` inside `src/components/admin/branches/`.
+- Permission guard: only users with `tenant_memberships` role of Owner/Admin on the tenant (or platform admins) see these buttons — same gate the rest of `/admin/branches/:id` uses.
 
 ## Files touched
 
-- `supabase/migrations/<new>.sql` — add `trial_offer` to `platform_pricing_plans`, add `trial_started_via` to `branch_subscriptions`
-- `src/pages/platform/PlatformPricingPlans.tsx` (or the plan editor component) — trial offer select
-- `src/hooks/useBranchSubscriptions.ts` — expose `trial_offer` on plans
-- `src/components/branch/SubscriptionPanel.tsx` (or wherever the current "Pay Now" lives) — new 3-card chooser
-- `supabase/functions/start-branch-trial/index.ts` — enforce `trial_offer`
-- `supabase/functions/create-branch-checkout/index.ts` — enforce `trial_offer` for 30-day path, record `trial_started_via`
-- `supabase/functions/stripe-webhook/index.ts` — set `trial_started_via='stripe_30'` on trialing subs
+- `src/components/admin/branches/BranchSubscriptionAssignCard.tsx` (add actions + copy fix)
+- `src/components/admin/branches/ChangeBranchPlanDialog.tsx` (new)
+- `src/hooks/useBranchSubscriptions.ts` (two new mutation hooks)
+- `supabase/functions/reset-branch-subscription/index.ts` (new)
+- `supabase/functions/cancel-branch-subscription/index.ts` (new)
+- `supabase/config.toml` (register the two new functions)
+
+## Out of scope
+
+- No changes to the branch-side panel — once reset, the existing 3-card chooser handles re-activation.
+- No bulk reset across all PostNet branches in this pass (we can add a tenant-level "reset all pending" later if you want it).
+- No migration; we're only flipping existing column values.
