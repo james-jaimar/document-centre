@@ -43,6 +43,19 @@ Deno.serve(async (req) => {
   const creds = await readSecret(secretId);
   if (!creds) return new Response("Credentials missing", { status: 500 });
 
+  // Cross-check that the ITN merchant_id matches the credentials we resolved for
+  // this attempt's tenant/branch. Belt-and-braces ringfence: even if a misrouted
+  // ITN reaches us, it cannot credit another tenant's order.
+  const reportedMerchant = (data["merchant_id"] || "").trim();
+  if (reportedMerchant && String(creds.merchant_id).trim() !== reportedMerchant) {
+    console.warn("PayFast ITN merchant_id mismatch", {
+      attemptId,
+      reported: reportedMerchant,
+      expected: creds.merchant_id,
+    });
+    return new Response("Merchant mismatch", { status: 400 });
+  }
+
   // Validate signature
   const sigReceived = data["signature"];
   const expected = payfastSignature(data, creds.passphrase || "");
@@ -50,6 +63,7 @@ Deno.serve(async (req) => {
     console.warn("PayFast ITN signature mismatch", { attemptId });
     return new Response("Invalid signature", { status: 400 });
   }
+
 
   // Validate amount
   const reportedAmount = Number(data["amount_gross"] ?? "0");
