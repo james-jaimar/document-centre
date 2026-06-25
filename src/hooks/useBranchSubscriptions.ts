@@ -101,8 +101,14 @@ export function useAssignBranchPlan() {
 export function useOverrideBranchSubscription() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { branch_id: string }) => {
-      const { data, error } = await supabase.functions.invoke("override-branch-subscription", { body: payload });
+    mutationFn: async (payload: {
+      branch_id: string;
+      action?: "comp" | "clear_comp" | "extend_grace" | "force_cancel" | "reset_trial" | "reset_pending" | "reopen_storefront";
+      reason?: string | null;
+      days?: number;
+    }) => {
+      const body = { action: "comp", ...payload };
+      const { data, error } = await supabase.functions.invoke("override-branch-subscription", { body });
       if (error) throw error;
       return data as { ok: boolean; subscription: BranchSubscription };
     },
