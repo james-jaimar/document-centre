@@ -7,7 +7,7 @@ import {
   resolveGatewaysForOrder,
   readSecret,
 } from "../_shared/payments.ts";
-import { mintRedirectToken } from "../_shared/payfast.ts";
+import { payfastProcessUrl, payfastSignFormPairs, type PayfastMode } from "../_shared/payfast.ts";
 
 const BodySchema = z.object({
   order_id: z.string().uuid(),
@@ -119,29 +119,60 @@ Deno.serve(async (req) => {
     return json({ redirect_url: session.url });
   }
 
-  // PayFast — hand off via the server-rendered redirect page on Supabase.
-  // The browser navigates with a plain GET; CSP form-action on the app
-  // domain is irrelevant because the cross-origin POST originates from
-  // *.supabase.co.
+  // PayFast — return a signed form payload. The client builds a hidden form
+  // on the APP origin and submits to PayFast directly. This keeps the POST
+  // origin under our CSP (`form-action` already whitelists payfast.co.za),
+  // avoids the Supabase function HTML page being sandboxed, and never
+  // exposes the merchant key to a customer-visible URL.
   if (!creds.merchant_id || !creds.merchant_key) {
-    return json({ error: "PayFast credentials incomplete" }, 500);
+    return json({ error: "Payment is temporarily unavailable. Please try again or pay by EFT.", code: "PAYFAST_CONFIG_INCOMPLETE" }, 400);
   }
 
-  const token = await mintRedirectToken(attempt.id);
   const projectUrl = Deno.env.get("SUPABASE_URL")!;
-  const redirectUrl = `${projectUrl}/functions/v1/payfast-redirect?token=${encodeURIComponent(token)}`;
+  const itnUrl = `${projectUrl}/functions/v1/payfast-itn`;
+  const mode = (gw.mode as PayfastMode) ?? "live";
+
+  const pairs: Array<[string, string]> = [
+    ["merchant_id", String(creds.merchant_id).trim()],
+    ["merchant_key", String(creds.merchant_key).trim()],
+    ["return_url", return_url],
+    ["cancel_url", cancel_url],
+    ["notify_url", itnUrl],
+    ["m_payment_id", attempt.id],
+    ["amount", amount.toFixed(2)],
+    ["item_name", `Order ${order.order_number || order.id.slice(0, 8)}`],
+    ["custom_str1", String(order.tenant_id)],
+    ["custom_str2", String(order.branch_id ?? "")],
+  ];
+  const passphrase = (creds.passphrase || "").trim();
+  const { signature } = payfastSignFormPairs(pairs, passphrase);
+
+  const fields: Record<string, string> = {};
+  for (const [k, v] of pairs) {
+    if (v == null || v === "") continue;
+    fields[k] = v;
+  }
+  fields.signature = signature;
 
   console.log("payfast.session", JSON.stringify({
     attempt_id: attempt.id,
     branch_id: gw.branchId ?? null,
     tenant_id: order.tenant_id,
-    mode: gw.mode,
+    mode,
     merchant_id: creds.merchant_id,
-    has_passphrase: !!(creds.passphrase || "").trim(),
+    has_passphrase: !!passphrase,
     amount: amount.toFixed(2),
   }));
 
-  return json({ redirect_url: redirectUrl });
+  return json({
+    provider: "payfast",
+    mode,
+    form: {
+      action: payfastProcessUrl(mode),
+      method: "POST",
+      fields,
+    },
+  });
 });
 
 function json(body: unknown, status = 200) {
