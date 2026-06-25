@@ -21,6 +21,7 @@ type Action =
   | "extend_grace"
   | "force_cancel"
   | "reset_trial"
+  | "reset_pending"
   | "reopen_storefront";
 
 interface Body {
