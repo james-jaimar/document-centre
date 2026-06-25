@@ -113,7 +113,9 @@ Deno.serve(async (req) => {
   }
 
   const { data: plan } = await supabaseAdmin
-    .from("platform_pricing_plans").select("plan_slug").eq("stripe_price_id", body.price_id).maybeSingle();
+    .from("platform_pricing_plans").select("plan_slug, trial_offer").eq("stripe_price_id", body.price_id).maybeSingle();
+
+  const trialOffer = (plan as any)?.trial_offer ?? "both";
 
   const discountType = body.discount_type ?? (existing as any)?.discount_type ?? null;
   const discountValue = body.discount_value ?? (existing as any)?.discount_value ?? 0;
