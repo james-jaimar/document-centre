@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
 
   // Check prior state to know if this call actually starts the trial
   const { data: prior } = await sb.from("branch_subscriptions")
-    .select("trial_started_at, assigned_plan_slug, trial_days").eq("branch_id", branch.id).maybeSingle();
+    .select("trial_started_at, assigned_plan_slug, trial_days, region_id").eq("branch_id", branch.id).maybeSingle();
 
   // Only stamp if a plan is assigned (no plan → nothing to trial)
   if (!prior?.assigned_plan_slug) {
@@ -74,12 +74,16 @@ Deno.serve(async (req) => {
     });
   }
 
-  // 14-day trials are no-card and auto-start here. Anything longer (e.g. 30 days)
-  // requires a card via Stripe Checkout — Stripe owns the trial clock in that case.
-  const trialDays = (prior as any)?.trial_days ?? 0;
-  if (trialDays > 14) {
-    return new Response(JSON.stringify({ ok: true, skipped: "requires_card" }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+  // Enforce the plan's trial_offer setting — 14-day no-card path must be allowed.
+  const { data: plan } = await sb.from("platform_pricing_plans")
+    .select("trial_offer")
+    .eq("region_id", (prior as any).region_id)
+    .eq("plan_slug", prior.assigned_plan_slug)
+    .maybeSingle();
+  const trialOffer = (plan as any)?.trial_offer ?? "both";
+  if (trialOffer !== "trial_14_no_card" && trialOffer !== "both") {
+    return new Response(JSON.stringify({ error: "14-day no-card trial is not offered on this plan" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
@@ -93,6 +97,11 @@ Deno.serve(async (req) => {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  // Stamp which trial path was used (best-effort)
+  await sb.from("branch_subscriptions" as any)
+    .update({ trial_started_via: "no_card_14" })
+    .eq("branch_id", branch.id);
 
   // Fire welcome email exactly once (when trial flipped from not_started → active)
   if (wasNotStarted) {
