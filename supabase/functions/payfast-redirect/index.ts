@@ -41,17 +41,18 @@ Deno.serve(async (req) => {
 
   const { data: attempt, error: attemptErr } = await sb
     .from("order_payment_attempts")
-    .select("id, order_id, tenant_id, branch_id, amount, currency, provider")
+    .select("id, order_id, tenant_id, branch_id, amount, currency, provider, raw_payload")
     .eq("id", attemptId)
     .maybeSingle();
   if (attemptErr || !attempt) return htmlError("Payment attempt not found", 404);
   if (attempt.provider !== "payfast") return htmlError("Wrong provider", 400);
 
-  const { data: order } = await sb
+  const { data: order, error: orderErr } = await sb
     .from("orders")
-    .select("id, order_number, currency, return_url_path, branch_id, tenant_id")
+    .select("id, order_number")
     .eq("id", attempt.order_id)
     .maybeSingle();
+  if (orderErr) console.error("payfast-redirect order lookup error", orderErr);
   if (!order) return htmlError("Order not found", 404);
 
   // Re-resolve PayFast credentials (branch override -> tenant) using the
@@ -89,14 +90,9 @@ Deno.serve(async (req) => {
     return htmlError("PayFast credentials incomplete", 500);
   }
 
-  // Read the original return/cancel URLs stashed on the attempt's raw_payload
-  // when the session was created (we set them there for exactly this purpose).
-  const { data: attemptRow } = await sb
-    .from("order_payment_attempts")
-    .select("raw_payload")
-    .eq("id", attemptId)
-    .maybeSingle();
-  const handoff = (attemptRow?.raw_payload as any)?.handoff ?? {};
+  // Original return/cancel URLs were stashed on the attempt's raw_payload
+  // by payments-create-session for exactly this purpose.
+  const handoff = (attempt.raw_payload as any)?.handoff ?? {};
   const returnUrl = handoff.return_url as string | undefined;
   const cancelUrl = handoff.cancel_url as string | undefined;
   if (!returnUrl || !cancelUrl) {
