@@ -1,62 +1,119 @@
+## What I found so far
 
-## What's actually happening
+**Do I know what the issue is?** Partially, yes: this is not a normal “PayFast is hard to connect” problem. There are multiple weak points in our implementation, and at least two are visible from the current evidence.
 
-I checked the live header on `https://www.postnetprintcentre.com/` and the deployed CSP already lists `https://www.payfast.co.za`:
+1. **The current PayFast POST flow is brittle in the browser.**
+   - We submit a hidden form from React and then wait 1.8 seconds to see if the browser navigated.
+   - That check can produce the exact toast in your screenshot even when the browser is slow, blocked, or redirected oddly.
+   - It also gives the customer a poor failure mode instead of a proper gateway handoff page.
 
-```
-form-action 'self' https://www.payfast.co.za https://sandbox.payfast.co.za
-```
+2. **The customer return URL is wrong for the PostNet custom-domain branch route.**
+   - The failing URL is `https://www.postnetprintcentre.com/test/orders/.../`.
+   - Directly checking that URL returns a CloudFront/S3 **404**, while the root domain loads.
+   - That means deep links on the custom domain are not being rewritten back to the React app shell. Even after PayFast works, customer returns can fail unless the hosting rewrite is corrected.
 
-…yet Chrome still blocks the POST. That tells us the POST is being blocked **on a redirect hop**, not the initial target. PayFast's `/eng/process` endpoint does an internal 302 chain (between `www.payfast.co.za`, `payfast.co.za` apex, and `onsite.payfast.co.za` for their Onsite/iframe-style checkout). The CSP3 `form-action` directive is checked at every hop, so as soon as one hop isn't on the allow-list the whole submission is killed — which is exactly what you're seeing.
+3. **PayFast docs confirm the main integration requirements.**
+   - Form posts should go to:
+     - Live: `https://www.payfast.co.za/eng/process`
+     - Sandbox: `https://sandbox.payfast.co.za/eng/process`
+   - Signature must use fields in PayFast’s documented field order, not alphabetical order.
+   - Values are URL-encoded like PHP `urlencode`, spaces as `+`.
+   - If a PayFast dashboard passphrase is set, the exact same passphrase must be included in the signature.
+   - PayFast ITN/webhook validation should verify signature, amount, merchant identity, and perform server-side validation against PayFast’s `/eng/query/validate` endpoint.
 
-Two other things showed up in the same trace:
-
-1. **The 404 on `/test/orders/<id>/`** — that's the cancel/return URL the app navigated to *after* the form-post got killed. It's the wrong URL for the live tenant subdomain (the Amplify SPA rewrite is fine for `/test/orders/<id>` but not always for the trailing-slash variant produced by some clipboard/back-button paths). Cosmetic — goes away once the POST actually leaves the page — but worth tightening.
-2. **You saved credentials with no passphrase, and the UI still shows a green "Live — accepting payments" badge.** That's misleading. If PayFast's account has a passphrase configured (which it almost always does on Live), the signature will never match and every transaction will 400. The UI should call this out, loudly, before you hit checkout.
+4. **Current DB state shows the branch is isolated but still stuck in pending attempts.**
+   - PostNet Test Branch has branch-level PayFast credentials in live mode.
+   - Recent PayFast attempts exist for `INV-00111` and `INV-00114`, all still `pending`.
+   - No `payfast-itn` logs were found, so PayFast has not successfully notified/confirmed back into the system.
 
 ## Plan
 
-### 1. Broaden CSP `form-action` for PayFast (the real fix)
+### 1. Replace the brittle client-side hidden form handoff
+Build a safer PayFast redirect handoff so the React app does not directly own the cross-origin POST timing.
 
-In `customHttp.yml`, change:
+- Change `payments-create-session` so PayFast session creation produces a controlled handoff payload.
+- Update `redirectToHostedPayment.ts` so PayFast either:
+  - redirects to a dedicated handoff page/route, or
+  - submits the form without the false “same URL after 1.8s” failure check.
+- Remove the current misleading timeout error that says CSP/browser extension blocked PayFast when we have not proven that.
+- Keep Stripe redirect behavior unchanged.
 
+### 2. Re-check and harden CSP for PayFast
+Audit the deployed headers, not only the repo file.
+
+- Confirm whether the live custom domain is serving one CSP header or multiple CSP headers.
+- Ensure PayFast form submission is allowed for:
+  - `https://www.payfast.co.za`
+  - `https://sandbox.payfast.co.za`
+  - PayFast documented alternates such as `https://w1w.payfast.co.za` and `https://w2w.payfast.co.za` where relevant.
+- Keep the policy tight; do not open all form submissions globally.
+
+### 3. Fix custom-domain deep-link rewrites
+The route `https://www.postnetprintcentre.com/test/orders/...` should load the app shell, not S3 404.
+
+- Add or verify the AWS Amplify/CloudFront rewrite rule equivalent to:
+
+```text
+/<*>  ->  /index.html  200
 ```
-form-action 'self' https://www.payfast.co.za https://sandbox.payfast.co.za
-```
 
-to:
+- This is hosting configuration, not only React code.
+- I’ll document exactly what needs to be changed if it cannot be changed from code.
 
-```
-form-action 'self' https://*.payfast.co.za https://payfast.co.za
-```
+### 4. Centralise PayFast signing and validation
+Avoid having separate near-duplicate signature code in create-session and ITN.
 
-That covers `www`, `sandbox`, `onsite`, the bare apex, and any other PayFast subdomain they redirect through. Same change needs to be deployed via Amplify (push `customHttp.yml`) — there is **no** inline `<meta http-equiv="Content-Security-Policy">` in `index.html`, so this header is the only source of truth.
+- Create a shared PayFast helper used by both edge functions.
+- Make checkout signature generation follow the docs exactly:
+  - PayFast field order
+  - omit blank values
+  - trim values
+  - PHP-style URL encoding
+  - append passphrase only when present
+- Make ITN signature verification follow the ITN field order received from PayFast and exclude `signature`.
 
-Per the PayFast integration docs, no other CSP directive (script/connect/frame/img) needs to change for the standard redirect flow — they only need the form POST plus the ITN server-to-server callback, which doesn't touch the browser CSP.
+### 5. Complete the PayFast ITN security checks
+Bring the backend closer to PayFast’s official “Confirm payment” process.
 
-### 2. Surface a "Passphrase missing" warning in the Payments card
+- Keep existing tenant/branch ringfencing by `m_payment_id` and branch credential lookup.
+- Keep merchant ID cross-check so one branch can never credit another branch’s payment.
+- Add PayFast server validation against:
+  - Live: `https://www.payfast.co.za/eng/query/validate`
+  - Sandbox: `https://sandbox.payfast.co.za/eng/query/validate`
+- Validate amount and status before marking the order paid.
+- Log redacted diagnostics only; no merchant key/passphrase leakage.
 
-`src/components/payments/PaymentGatewaysCard.tsx` currently shows a green "Live — accepting payments" badge as soon as `merchant_id` + `merchant_key` are present. Change the badge logic so that, when `provider === "payfast"` AND `mode === "live"` AND `summary.payfast.has_passphrase === false`, it shows an amber "Passphrase missing — payments will fail" badge instead, with a one-liner: "PayFast Live accounts always require a passphrase. Add yours, or remove it in your PayFast dashboard to match."
+### 6. Add admin-side credential validation rules
+Prevent “saved but unusable” PayFast setups.
 
-Same treatment in sandbox mode but as a softer info note ("Sandbox accounts may not require a passphrase — only set one if your sandbox profile has one").
+- Require Merchant ID and Merchant Key for PayFast.
+- In live mode, warn/block if the passphrase state is inconsistent with what the branch expects to use.
+- Make the saved credentials panel clearly show:
+  - provider enabled at tenant level
+  - tenant fallback vs branch override
+  - live vs sandbox
+  - merchant ID
+  - merchant key saved/missing
+  - passphrase saved/missing
+  - ITN URL to paste into PayFast
 
-### 3. Harden the post-submit flow in `redirectToHostedPayment.ts`
+### 7. End-to-end test the exact PostNet branch flow
+After implementation, verify from front to back.
 
-After `HTMLFormElement.prototype.submit.call(form)`, schedule a 1.5s timer: if the page is still on the same `location.href`, surface a toast ("Browser blocked the redirect to PayFast — usually a CSP / extension issue"). This converts silent CSP failures (like today's) into a visible error instead of the misleading "navigated to /orders/<id>/" 404. The caller (`Checkout.tsx`, `CustomerOrderDetail.tsx`, `ReorderPaymentDialog.tsx`) keeps its existing `await` and just doesn't run any post-submit navigation.
+- Test `INV-00111` / current unpaid order Pay Now flow.
+- Test a fresh checkout order from PostNet Test Branch.
+- Confirm the browser leaves the app and reaches PayFast.
+- Confirm the return/cancel URLs are valid on `postnetprintcentre.com`.
+- Check `payments-create-session` logs for signature payload shape.
+- Check `payfast-itn` logs after a payment attempt.
+- Confirm only the matching PostNet Test Branch attempt/order can be updated.
 
-### 4. Verify the `/test/orders/<id>/` 404
+### 8. Produce a short operational checklist for you
+When done, I’ll give you a concise branch setup checklist:
 
-Confirm `customHttp.yml` / Amplify SPA rewrite still maps `**/*` → `/index.html` (it currently does). The 404 you saw was a side-effect of the blocked POST plus the trailing slash — once #1 lands it will stop happening, but I'll do a final curl against `https://www.postnetprintcentre.com/test/orders/<known-id>/` to confirm the SPA picks it up.
-
-### Technical notes (skip if not interested)
-
-- The signature/encoding fix from the previous turn (`pfEncode` + ordered tuple + redacted diagnostic log) is **already in `payments-create-session`**. It's correct per PayFast's docs (PHP `urlencode` semantics: spaces→`+`, plus `! * ' ( )` percent-encoded, fields signed in the order they appear in the POST). We're not touching that again.
-- The ITN ringfence (`merchant_id` cross-check against the credentials we resolved for that order's tenant/branch) is also in `payfast-itn` already. Each tenant/branch is sealed off — a misrouted ITN can't credit another tenant's order.
-- Wildcards in `form-action` are well-supported (Chrome ≥40, Firefox ≥36, Safari ≥15.4). PayFast's own integration guide uses the same wildcard pattern in its sample CSPs.
-
-### Out of scope (intentionally)
-
-- No changes to signature generation, the ITN handler, the credentials store, or the database. Those are correct; this is purely a CSP + UX issue.
-- No change to the per-branch isolation model.
-
-Ready to switch to build mode and apply 1–4 in one pass?
+- what to enter in PayFast dashboard
+- what to enter in branch admin
+- exact ITN URL
+- live vs sandbox rules
+- passphrase rules
+- what “healthy” looks like before a store goes live
