@@ -137,11 +137,11 @@ export default function PlatformPricingRegions() {
   function getBranchPlan(regionId: string, slug: string) {
     return branchPlans.find((p) => p.region_id === regionId && p.plan_slug === slug);
   }
-  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name", value: any) {
+  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name" | "trial_offer", value: any) {
     setPlans((prev) =>
       prev.map((p) =>
         p.scope === "branch" && p.region_id === regionId && p.plan_slug === slug
-          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : value || (field === "stripe_price_id" ? null : "") }
+          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : (field === "trial_offer" ? value : (value || (field === "stripe_price_id" ? null : ""))) }
           : p
       )
     );
