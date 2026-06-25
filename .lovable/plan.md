@@ -1,30 +1,38 @@
-## What actually happened
+## What I found
 
-The order was placed on **EFT** because the PayFast radio never rendered. Two issues combined:
+- The latest Test Branch order `INV-00113` did create a pending PayFast payment attempt, so the checkout did reach `payments-create-session`.
+- There are no matching PayFast redirects/network traces in the browser snapshot, so the weak point is the frontend hidden-form redirect/submission.
+- The order detail **Pay Now** button is definitely wrong for this branch: it always asks for `stripe`, so PayFast-only branches get “Online payments not available”.
+- The reorder payment dialog also only checks tenant-level credentials, so it can miss branch-level PayFast credentials.
 
-1. **Race condition in the providers query.** The query that lists enabled online payment providers only waits for `tenantId` before firing — it does not wait for `activeBranch.id`. On the first render `activeBranch` is `undefined`, so the branch-creds lookup runs against an empty array. Tenant-level PayFast has **no credentials** (only the branch does), so when the tenant row arrives without branch creds the filter drops PayFast entirely. The query result is then cached and is not re-run when the branch resolves a tick later.
+## Build plan
 
-2. **Silent fallback to EFT.** `paymentMethod` defaults to `"offline"`, the Place Order button stays enabled regardless of whether the providers query has finished, and the button label only changes when an online provider is explicitly picked. So a customer who expects PayFast to be there can click Place Order and submit an EFT order without realising.
+1. **Create one shared browser payment redirect helper**
+   - Add a small frontend helper for hosted-payment redirects.
+   - For Stripe: redirect to `redirect_url` as before.
+   - For PayFast: create the POST form, append it, and submit via `HTMLFormElement.prototype.submit.call(form)` so React/browser overrides cannot block it.
+   - Add a visible fallback button/link if the auto-submit does not leave the page after a short moment.
 
-Confirmed in DB: Test Branch (`93f5ba02…`) has live PayFast creds; tenant has PayFast enabled but no creds. RLS and grants are correct. The just-placed order is `INV-00112` (R287.50, `confirmed / unpaid`).
+2. **Fix checkout payment submission**
+   - Replace the inline PayFast form code in `Checkout.tsx` with the shared helper.
+   - Keep PayFast selected automatically when available.
+   - If the selected provider fails to start, show the real backend error instead of silently continuing as EFT.
 
-## Fix
+3. **Fix order detail “Pay Now”**
+   - Stop hardcoding `provider: "stripe"`.
+   - Call `payments-list-providers` for the order, choose PayFast when that is what the branch has, then call `payments-create-session` with that provider.
+   - Use the same shared redirect helper.
+   - If no provider is available, show a clear “PayFast/online payments unavailable for this order” message.
 
-### 1. `src/pages/dashboard/Checkout.tsx` — providers query
-- Add `activeBranch?.id` (when there are branches) to the `enabled` gate so the query waits for the branch to resolve.
-- Track `isLoading` from the query and use it to (a) show a small "Loading payment options…" line under the Payment Method heading, and (b) disable the Place Order button until providers have loaded.
+4. **Fix reorder payment options**
+   - Update `ReorderPaymentDialog` to use `payments-list-providers` / order-aware gateway resolution instead of tenant-level credential checks.
+   - This makes branch-level PayFast credentials work consistently after reorder too.
 
-### 2. Checkout default + UX guard
-- When the providers query returns at least one online provider, **auto-select the first online provider** (PayFast in this case) instead of leaving "offline" pre-selected. This matches the user's expectation that PayFast is the primary path when configured.
-- Keep EFT as a manual choice, just not the default when online is available.
+5. **Optional cleanup for the accidental order**
+   - After the code fix is approved, I can also remove `INV-00113` if you want, since it was created during this failed PayFast test.
 
-### 3. Clean up the stray order
-- Delete `INV-00112` (id `2a4f7a80-a1c0-4010-a495-517d88abcc36`) and its order_items / documents so Test Branch isn't polluted with a misfired EFT order. Confirm before running.
+## Verification
 
-No backend / RLS changes needed — the data and policies are correct; this is a frontend timing + default-selection bug.
-
-## Out of scope
-- Tenant-level PayFast creds (you've intentionally put them on the branch).
-- Any change to the EFT flow itself.
-
-Confirm and I'll implement, plus delete INV-00112 if you want it gone.
+- Confirm Test Branch has PayFast enabled from branch credentials.
+- Place a checkout order and verify the app attempts to leave for PayFast instead of landing on the EFT confirmation path.
+- Open `INV-00113` and verify **Pay Now** offers/starts PayFast instead of saying online payments are unavailable.

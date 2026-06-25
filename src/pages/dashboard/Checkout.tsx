@@ -332,36 +332,15 @@ export default function Checkout() {
         const origin = window.location.origin;
         const returnUrl = `${origin}${tenantPath(`orders/${newOrderId}/confirmation`)}`;
         const cancelUrl = `${origin}${tenantPath("checkout")}?payment=cancelled`;
-        const { data, error } = await supabase.functions.invoke("payments-create-session", {
-          body: {
-            order_id: newOrderId,
-            provider: paymentMethod,
-            return_url: returnUrl,
-            cancel_url: cancelUrl,
-          },
+        const { startHostedPayment } = await import("@/lib/payments/redirectToHostedPayment");
+        await startHostedPayment({
+          orderId: newOrderId,
+          provider: paymentMethod,
+          returnUrl,
+          cancelUrl,
         });
-        if (error) throw error;
-        if (paymentMethod === "stripe" && data?.redirect_url) {
-          window.location.href = data.redirect_url;
-          return;
-        }
-        if (paymentMethod === "payfast" && data?.form_action && data?.form_fields) {
-          // Build & auto-submit a hidden form
-          const form = document.createElement("form");
-          form.method = "POST";
-          form.action = data.form_action;
-          Object.entries(data.form_fields as Record<string, string>).forEach(([k, v]) => {
-            const input = document.createElement("input");
-            input.type = "hidden";
-            input.name = k;
-            input.value = v;
-            form.appendChild(input);
-          });
-          document.body.appendChild(form);
-          form.submit();
-          return;
-        }
-        throw new Error("Payment session response was empty");
+        // We're navigating away — bail out without falling through to confirmation.
+        return;
       }
 
       navigate(tenantPath(`orders/${newOrderId}/confirmation`));

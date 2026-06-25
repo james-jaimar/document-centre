@@ -184,24 +184,31 @@ const CustomerOrderDetail = () => {
   const handlePayNow = async () => {
     if (!order) return;
     try {
+      const { listOrderOnlineProviders, startHostedPayment } = await import(
+        "@/lib/payments/redirectToHostedPayment"
+      );
+      const providers = await listOrderOnlineProviders(order.id);
+      if (!providers.length) {
+        toast.info("Online payments not available", {
+          description: "Please pay via EFT; your store will mark the order paid once received.",
+        });
+        return;
+      }
+      // Prefer PayFast for ZAR orders, otherwise first available.
+      const preferred =
+        providers.find((p) => p.provider === "payfast" && (order.currency || "ZAR") === "ZAR") ??
+        providers[0];
       const origin = window.location.origin;
       const returnUrl = `${origin}${tenantPath(`orders/${order.id}`)}`;
       const cancelUrl = `${origin}${tenantPath(`orders/${order.id}`)}?payment=cancelled`;
-      const { data, error } = await import("@/integrations/supabase/client").then((m) =>
-        m.supabase.functions.invoke("payments-create-session", {
-          body: { order_id: order.id, provider: "stripe", return_url: returnUrl, cancel_url: cancelUrl },
-        })
-      );
-      if (error) throw error;
-      if (data?.redirect_url) {
-        window.location.href = data.redirect_url;
-        return;
-      }
-      toast.info("Pay by EFT — banking details have been emailed");
-    } catch (e: any) {
-      toast.info("Online payments not available", {
-        description: "Please pay via EFT; your store will mark the order paid once received.",
+      await startHostedPayment({
+        orderId: order.id,
+        provider: preferred.provider,
+        returnUrl,
+        cancelUrl,
       });
+    } catch (e: any) {
+      toast.error("Failed to start payment", { description: e?.message });
     }
   };
 
