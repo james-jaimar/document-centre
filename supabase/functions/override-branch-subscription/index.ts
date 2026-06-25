@@ -153,6 +153,23 @@ Deno.serve(async (req) => {
       branchPatch = { storefront_closed_at: null };
       break;
     }
+    case "reset_pending": {
+      // Clear runtime state, keep assigned plan so branch sees activation chooser again.
+      patch.status = "incomplete";
+      patch.billing_status = "pending_payment";
+      patch.trial_status = null;
+      patch.trial_started_at = null;
+      patch.trial_ends_at = null;
+      patch.trial_started_via = null;
+      patch.current_period_start = null;
+      patch.current_period_end = null;
+      patch.stripe_subscription_id = null;
+      patch.cancelled_at = null;
+      patch.comp_until = null;
+      patch.grace_until = null;
+      branchPatch = { storefront_closed_at: null };
+      break;
+    }
     case "reopen_storefront": {
       branchPatch = { storefront_closed_at: null };
       break;
