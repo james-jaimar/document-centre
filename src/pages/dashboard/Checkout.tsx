@@ -794,7 +794,7 @@ export default function Checkout() {
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept}
+            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading}
           >
             {isSubmitting ? (
               <>
