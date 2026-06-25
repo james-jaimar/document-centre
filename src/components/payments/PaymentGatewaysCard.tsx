@@ -166,10 +166,10 @@ function ProviderRow({
           ) : (
             <Badge variant="outline">Not configured</Badge>
           )}
-          {scope === "branch" && !tenantHasCreds && (
+          {scope === "branch" && !tenantHasCreds && !hasCreds && (
             <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
               <AlertTriangle className="h-3 w-3" />
-              Branch credentials required
+              Add your merchant credentials to accept this method
             </Badge>
           )}
         </div>

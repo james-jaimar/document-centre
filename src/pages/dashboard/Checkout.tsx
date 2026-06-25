@@ -57,20 +57,37 @@ export default function Checkout() {
   const [legalAccept, setLegalAccept] = useState<CheckoutLegalAcceptance | null>(null);
   const { create: createSavedAddress } = useCustomerAddresses(user?.id);
 
-  // Fetch online payment providers enabled for this tenant
+  // Fetch online payment providers enabled for this tenant. A provider is
+  // available at checkout when the tenant has enabled it AND credentials exist
+  // at either the tenant level or for the active branch (branch creds override
+  // tenant creds in the backend — see _shared/payments.ts).
   const { data: onlineProviders } = useQuery({
-    queryKey: ["tenant-online-payment-providers", tenantId],
+    queryKey: ["tenant-online-payment-providers", tenantId, activeBranch?.id],
     enabled: !!tenantId,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("tenant_payment_gateways")
-        .select("provider, display_label, mode, is_enabled, credentials_secret_id")
-        .eq("tenant_id", tenantId!)
-        .eq("is_enabled", true);
-      if (error) throw error;
-      // Only show providers with credentials configured AND compatible currency
-      return (data ?? []).filter((g) => {
-        if (!g.credentials_secret_id) return false;
+      const [tenantRes, branchRes] = await Promise.all([
+        supabase
+          .from("tenant_payment_gateways")
+          .select("provider, display_label, mode, is_enabled, credentials_secret_id")
+          .eq("tenant_id", tenantId!)
+          .eq("is_enabled", true),
+        activeBranch?.id
+          ? supabase
+              .from("branch_payment_gateways")
+              .select("provider, credentials_secret_id")
+              .eq("branch_id", activeBranch.id)
+          : Promise.resolve({ data: [], error: null } as any),
+      ]);
+      if (tenantRes.error) throw tenantRes.error;
+      if (branchRes.error) throw branchRes.error;
+      const branchCreds = new Set(
+        ((branchRes.data ?? []) as Array<{ provider: string; credentials_secret_id: string | null }>)
+          .filter((b) => !!b.credentials_secret_id)
+          .map((b) => b.provider),
+      );
+      return (tenantRes.data ?? []).filter((g) => {
+        const hasCreds = !!g.credentials_secret_id || branchCreds.has(g.provider);
+        if (!hasCreds) return false;
         if (g.provider === "payfast" && currency !== "ZAR") return false;
         return true;
       });
