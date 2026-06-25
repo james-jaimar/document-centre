@@ -61,9 +61,12 @@ export default function Checkout() {
   // available at checkout when the tenant has enabled it AND credentials exist
   // at either the tenant level or for the active branch (branch creds override
   // tenant creds in the backend — see _shared/payments.ts).
-  const { data: onlineProviders } = useQuery({
+  const { data: onlineProviders, isLoading: providersLoading } = useQuery({
     queryKey: ["tenant-online-payment-providers", tenantId, activeBranch?.id],
-    enabled: !!tenantId,
+    // Wait for the branch to resolve too — otherwise the branch-creds lookup
+    // runs against an empty array and providers that only have branch-level
+    // credentials get filtered out, hiding PayFast/Stripe at checkout.
+    enabled: !!tenantId && (liveBranches.length === 0 || !!activeBranch?.id),
     queryFn: async () => {
       const [tenantRes, branchRes] = await Promise.all([
         supabase
@@ -100,6 +103,15 @@ export default function Checkout() {
         });
     },
   });
+
+  // Auto-select the first online provider when one is available, so customers
+  // aren't silently defaulted to EFT when PayFast/Stripe is configured.
+  const [paymentTouched, setPaymentTouched] = useState(false);
+  useEffect(() => {
+    if (paymentTouched) return;
+    if (!onlineProviders || onlineProviders.length === 0) return;
+    setPaymentMethod(onlineProviders[0].provider);
+  }, [onlineProviders, paymentTouched]);
 
 
   // The collection branch is locked to the active storefront branch. Pricing,
