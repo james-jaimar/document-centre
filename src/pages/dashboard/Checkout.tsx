@@ -74,25 +74,33 @@ export default function Checkout() {
         activeBranch?.id
           ? supabase
               .from("branch_payment_gateways")
-              .select("provider, credentials_secret_id")
+              .select("provider, credentials_secret_id, mode")
               .eq("branch_id", activeBranch.id)
           : Promise.resolve({ data: [], error: null } as any),
       ]);
       if (tenantRes.error) throw tenantRes.error;
       if (branchRes.error) throw branchRes.error;
-      const branchCreds = new Set(
-        ((branchRes.data ?? []) as Array<{ provider: string; credentials_secret_id: string | null }>)
-          .filter((b) => !!b.credentials_secret_id)
-          .map((b) => b.provider),
+      const branchByProvider = new Map(
+        ((branchRes.data ?? []) as Array<{ provider: string; credentials_secret_id: string | null; mode: string }>)
+          .map((b) => [b.provider, b]),
       );
-      return (tenantRes.data ?? []).filter((g) => {
-        const hasCreds = !!g.credentials_secret_id || branchCreds.has(g.provider);
-        if (!hasCreds) return false;
-        if (g.provider === "payfast" && currency !== "ZAR") return false;
-        return true;
-      });
+      return (tenantRes.data ?? [])
+        .filter((g) => {
+          const b = branchByProvider.get(g.provider);
+          const hasCreds = !!g.credentials_secret_id || !!b?.credentials_secret_id;
+          if (!hasCreds) return false;
+          if (g.provider === "payfast" && currency !== "ZAR") return false;
+          return true;
+        })
+        .map((g) => {
+          const b = branchByProvider.get(g.provider);
+          // Branch creds + branch mode override tenant when present.
+          const effectiveMode = b?.credentials_secret_id ? (b.mode ?? g.mode) : g.mode;
+          return { ...g, mode: effectiveMode };
+        });
     },
   });
+
 
   // The collection branch is locked to the active storefront branch. Pricing,
   // stock and customer accounts are all scoped per-branch, so switching
