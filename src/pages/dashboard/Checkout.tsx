@@ -61,9 +61,12 @@ export default function Checkout() {
   // available at checkout when the tenant has enabled it AND credentials exist
   // at either the tenant level or for the active branch (branch creds override
   // tenant creds in the backend — see _shared/payments.ts).
-  const { data: onlineProviders } = useQuery({
+  const { data: onlineProviders, isLoading: providersLoading } = useQuery({
     queryKey: ["tenant-online-payment-providers", tenantId, activeBranch?.id],
-    enabled: !!tenantId,
+    // Wait for the branch to resolve too — otherwise the branch-creds lookup
+    // runs against an empty array and providers that only have branch-level
+    // credentials get filtered out, hiding PayFast/Stripe at checkout.
+    enabled: !!tenantId && (liveBranches.length === 0 || !!activeBranch?.id),
     queryFn: async () => {
       const [tenantRes, branchRes] = await Promise.all([
         supabase
@@ -100,6 +103,15 @@ export default function Checkout() {
         });
     },
   });
+
+  // Auto-select the first online provider when one is available, so customers
+  // aren't silently defaulted to EFT when PayFast/Stripe is configured.
+  const [paymentTouched, setPaymentTouched] = useState(false);
+  useEffect(() => {
+    if (paymentTouched) return;
+    if (!onlineProviders || onlineProviders.length === 0) return;
+    setPaymentMethod(onlineProviders[0].provider);
+  }, [onlineProviders, paymentTouched]);
 
 
   // The collection branch is locked to the active storefront branch. Pricing,
@@ -644,29 +656,36 @@ export default function Checkout() {
           {/* Payment Method */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Payment Method</h3>
-            <RadioGroup
-              value={paymentMethod}
-              onValueChange={setPaymentMethod}
-              className="space-y-2"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="offline" id="pm-offline" />
-                <Label htmlFor="pm-offline" className="cursor-pointer">
-                  EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
-                </Label>
+            {providersLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading payment options…
               </div>
-              {(onlineProviders ?? []).map((p) => (
-                <div key={p.provider} className="flex items-center space-x-2">
-                  <RadioGroupItem value={p.provider} id={`pm-${p.provider}`} />
-                  <Label htmlFor={`pm-${p.provider}`} className="cursor-pointer">
-                    {p.display_label || (p.provider === "stripe" ? "Pay by Card" : "PayFast")}
-                    {p.mode === "test" && (
-                      <span className="ml-2 text-xs text-muted-foreground">(sandbox)</span>
-                    )}
+            ) : (
+              <RadioGroup
+                value={paymentMethod}
+                onValueChange={(v) => { setPaymentTouched(true); setPaymentMethod(v); }}
+                className="space-y-2"
+              >
+                {(onlineProviders ?? []).map((p) => (
+                  <div key={p.provider} className="flex items-center space-x-2">
+                    <RadioGroupItem value={p.provider} id={`pm-${p.provider}`} />
+                    <Label htmlFor={`pm-${p.provider}`} className="cursor-pointer">
+                      {p.display_label || (p.provider === "stripe" ? "Pay by Card" : "PayFast")}
+                      {p.mode === "test" && (
+                        <span className="ml-2 text-xs text-muted-foreground">(sandbox)</span>
+                      )}
+                    </Label>
+                  </div>
+                ))}
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="offline" id="pm-offline" />
+                  <Label htmlFor="pm-offline" className="cursor-pointer">
+                    EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
                   </Label>
                 </div>
-              ))}
-            </RadioGroup>
+              </RadioGroup>
+            )}
           </div>
 
           {/* PO / Cost Centre (optional) */}
@@ -775,7 +794,7 @@ export default function Checkout() {
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept}
+            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading}
           >
             {isSubmitting ? (
               <>
