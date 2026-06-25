@@ -1,15 +1,28 @@
-Delete all `email_outbox` rows for PostNet Sandton City (`50af6453-1a97-4a1a-bf5b-e3c5b12cf66c`) so the branch starts with a clean Sent Mail view.
+## Problem
 
-## Steps
+Clicking **Remove from branch** in the Branch Staff panel shows a "Removed from branch" toast but the membership is still in the database (verified: `sandtonstaff1@postnet.co.za` still has an active `store_operator` row on the Sandton City branch).
 
-1. Count rows in `email_outbox` where `branch_id = '50af6453-1a97-4a1a-bf5b-e3c5b12cf66c'` so we know what we're about to wipe.
-2. Delete those rows via the migration tool (one-shot SQL).
-3. Related `email_events` rows reference outbox by `email_outbox_id` — check FK behaviour; if not ON DELETE CASCADE, delete the matching `email_events` rows first.
-4. Leave `email_accounts`, tenant-level mail, and all other branches untouched.
+Root cause: `BranchUsersPanel` calls `useDeleteTenantMember`, which runs a direct `supabase.from("tenant_memberships").delete().eq("id", …)` from the browser. RLS silently filters the row out (no rows deleted, no error returned), so the UI thinks it succeeded.
 
-## Scope
+The codebase already has the correct path: the `manage-user` edge function exposes a `remove_membership` action that runs with the service role and writes to `user_admin_audit`. The Platform Users page uses it; the Branch Staff panel does not.
 
-- **Deleted**: `email_outbox` (and dependent `email_events`) for this branch only.
-- **Preserved**: everything else — branch config, subscription, members, customers, other branches' mail.
+## Fix
 
-No code changes, no new edge function — this is a one-shot SQL cleanup via migration, same pattern as the order wipe.
+Route the branch-staff remove action through `manage-user` instead of the direct table delete.
+
+In `src/components/branch/BranchUsersPanel.tsx` → `handleRemove`:
+
+- Replace `deleteMember.mutateAsync(removeTarget.id)` with
+  `manageUser.mutateAsync({ action: "remove_membership", target_profile_id: removeTarget.profile_id, tenant_id: removeTarget.tenant_id, app_id: removeTarget.app_id, membership_id: removeTarget.id })`.
+- Invalidate the `["tenant-members"]` query on success so the row disappears from the table.
+- Drop the now-unused `useDeleteTenantMember` import.
+
+No backend, schema, or RLS changes needed — `manage-user` already authorises tenant owners/admins and platform admins for this action.
+
+## Cleanup of the stuck row
+
+After the fix is in, remove the lingering membership for `sandtonstaff1@postnet.co.za` (membership id `8e944c2d-2db3-4ebe-863a-cd6e3004abf3`) via a one-shot data delete so the Sandton City branch starts clean.
+
+## Out of scope
+
+- I won't touch the Tenant-level Members page or other callers of `useDeleteTenantMember` in this change — they may have the same silent-failure issue, but you didn't report a problem there. Happy to audit them next if you want.
