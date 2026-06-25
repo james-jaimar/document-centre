@@ -26,6 +26,7 @@ interface Plan {
   sort_order: number;
   stripe_price_id: string | null;
   scope?: string;
+  trial_offer?: "none" | "trial_14_no_card" | "trial_30_with_card" | "both";
 }
 
 const FLAG_MAP: Record<string, string> = {
