@@ -102,11 +102,22 @@ function payfastSignature(fields: Record<string, string>, passphrase: string): s
   const parts: string[] = [];
   for (const [k, v] of Object.entries(fields)) {
     if (k === "signature" || v === "" || v == null) continue;
-    parts.push(`${k}=${encodeURIComponent(v).replace(/%20/g, "+")}`);
+    parts.push(`${k}=${pfEncode(v)}`);
   }
   let payload = parts.join("&");
-  if (passphrase) payload += `&passphrase=${encodeURIComponent(passphrase).replace(/%20/g, "+")}`;
+  if (passphrase) payload += `&passphrase=${pfEncode(passphrase)}`;
   return md5(payload);
+}
+
+// PHP urlencode-compatible: spaces -> '+'; also encode ! * ' ( )
+function pfEncode(v: string): string {
+  return encodeURIComponent(v)
+    .replace(/%20/g, "+")
+    .replace(/!/g, "%21")
+    .replace(/\*/g, "%2A")
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29");
 }
 
 // MD5 (RFC 1321)
