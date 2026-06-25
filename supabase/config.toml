@@ -41,6 +41,8 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.payfast-itn]
     verify_jwt = false
+  [functions.payfast-redirect]
+    verify_jwt = false
   [functions.payments-list-providers]
     verify_jwt = false
   [functions.payments-create-session]
