@@ -158,13 +158,28 @@ function ProviderRow({
   return (
     <div className={`rounded-lg border p-4 space-y-3 ${disabledAtTenant ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <CreditCard className="h-4 w-4" />
           <span className="font-medium capitalize">{provider}</span>
           {hasCreds ? (
             <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Credentials saved</Badge>
           ) : (
             <Badge variant="outline">Not configured</Badge>
+          )}
+          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && currentMode === "live" && (
+            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">
+              Live — accepting payments
+            </Badge>
+          )}
+          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && currentMode === "test" && (
+            <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
+              Sandbox — test mode
+            </Badge>
+          )}
+          {hasCreds && scope === "branch" && !isEnabledAtTenant && (
+            <Badge variant="outline" className="text-muted-foreground">
+              Disabled at tenant level
+            </Badge>
           )}
           {scope === "branch" && !tenantHasCreds && !hasCreds && (
             <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
