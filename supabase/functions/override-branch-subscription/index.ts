@@ -62,21 +62,29 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  // Platform admins only.
-  const { data: platformRole } = await sb
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("role", "platform_admin")
-    .maybeSingle();
-  if (!platformRole) return json({ error: "Forbidden" }, 403);
-
   const { data: branch } = await sb
     .from("branches")
     .select("id, tenant_id, storefront_closed_at")
     .eq("id", branchId)
     .single();
   if (!branch) return json({ error: "Branch not found" }, 404);
+
+  // Platform admins OR tenant owners/admins of the branch's tenant.
+  const { data: platformRole } = await sb
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("role", "platform_admin")
+    .maybeSingle();
+  const { data: membership } = await sb
+    .from("tenant_memberships")
+    .select("role")
+    .eq("profile_id", user.id)
+    .eq("tenant_id", branch.tenant_id)
+    .eq("is_active", true)
+    .in("role", ["owner", "admin"])
+    .maybeSingle();
+  if (!platformRole && !membership) return json({ error: "Forbidden" }, 403);
 
   const { data: existing } = await sb
     .from("branch_subscriptions" as any)
