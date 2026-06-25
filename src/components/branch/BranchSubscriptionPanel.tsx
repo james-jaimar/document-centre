@@ -25,7 +25,7 @@ const statusColors: Record<string, string> = {
 
 export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
   const { data: subscription, isLoading } = useBranchSubscription(branchId);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<null | "trial14" | "trial30" | "pay">(null);
   const [accepted, setAccepted] = useState<AcceptedDocument[] | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -40,7 +40,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     }
   }, [searchParams, setSearchParams]);
 
-  // Resolve assigned plan to grab stripe_price_id
+  // Resolve assigned plan — includes trial_offer so we know which buttons to show.
   const { data: assignedPlan } = useQuery({
     queryKey: ["branch_assigned_plan", subscription?.region_id, subscription?.assigned_plan_slug],
     enabled: !!subscription?.region_id && !!subscription?.assigned_plan_slug,
@@ -56,16 +56,43 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     },
   });
 
-  const handlePay = async () => {
+  const trialOffer: "none" | "trial_14_no_card" | "trial_30_with_card" | "both" =
+    (assignedPlan?.trial_offer as any) ?? "both";
+  const offer14 = trialOffer === "trial_14_no_card" || trialOffer === "both";
+  const offer30 = trialOffer === "trial_30_with_card" || trialOffer === "both";
+
+  const requireAccepted = () => {
+    if (!accepted || accepted.length === 0) {
+      toast.error("Please accept all of the required documents before continuing.");
+      return false;
+    }
+    return true;
+  };
+
+  const handleStartTrial14 = async () => {
+    if (!requireAccepted()) return;
+    setLoading("trial14");
+    try {
+      const { error } = await supabase.functions.invoke("start-branch-trial", {
+        body: { branch_id: branchId },
+      });
+      if (error) throw error;
+      toast.success("Your 14-day free trial has started!");
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to start trial");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleCheckout = async (mode: "trial30" | "pay") => {
     if (!assignedPlan?.stripe_price_id) {
       toast.error("Plan is not Stripe-ready. Contact your tenant admin.");
       return;
     }
-    if (!accepted || accepted.length === 0) {
-      toast.error("Please accept all of the required documents before continuing.");
-      return;
-    }
-    setLoading(true);
+    if (!requireAccepted()) return;
+    setLoading(mode);
     try {
       const origin = window.location.origin;
       const { data, error } = await supabase.functions.invoke("create-branch-checkout", {
@@ -76,7 +103,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
           cancel_url: `${origin}/branch/settings?tab=subscription&checkout=cancelled`,
           discount_type: subscription?.discount_type || null,
           discount_value: subscription?.discount_value || 0,
-          trial_days: subscription?.trial_days || 0,
+          trial_days: mode === "trial30" ? 30 : 0,
           acceptances: accepted,
         },
       });
@@ -85,7 +112,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     } catch (e: any) {
       toast.error(e.message || "Failed to start checkout");
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
@@ -98,6 +125,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
   const isActive = status === "active" || status === "trialing" || billing === "paid" || inTrial;
   const isPending = (!isActive && !!subscription?.assigned_plan_slug) || trialExpired;
   const noPlan = !subscription?.assigned_plan_slug;
+  const anyLoading = loading !== null;
 
   return (
     <Card>
@@ -122,22 +150,59 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
                 <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-900 dark:text-amber-200">
-                    {trialExpired ? "Your 14-day trial has ended" : "Activate your subscription"}
+                    {trialExpired ? "Your free trial has ended" : "Activate your subscription"}
                   </p>
                   <p className="text-sm text-amber-800 dark:text-amber-300">
-                    Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready. Complete payment to {trialExpired ? "keep your branch active" : "activate this branch"}.
+                    Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready.{" "}
+                    {trialExpired ? "Add a payment method to keep your branch active." : "Choose how you'd like to start below."}
                   </p>
                 </div>
               </div>
             </div>
+
             <SubscriptionDisclosureCard
               planSlug={subscription.assigned_plan_slug}
               trialDays={subscription?.trial_days || 0}
               onChange={setAccepted}
             />
-            <Button onClick={handlePay} disabled={loading || !accepted} size="lg" className="w-full">
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Pay Now
-            </Button>
+
+            {trialExpired ? (
+              <Button onClick={() => handleCheckout("pay")} disabled={anyLoading || !accepted} size="lg" className="w-full">
+                {loading === "pay" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
+              </Button>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-3">
+                {offer14 && (
+                  <TrialChoiceCard
+                    title="Start 14-day free trial"
+                    blurb="No card required. Full access for 14 days."
+                    cta="Start free trial"
+                    loading={loading === "trial14"}
+                    disabled={anyLoading || !accepted}
+                    onClick={handleStartTrial14}
+                  />
+                )}
+                {offer30 && (
+                  <TrialChoiceCard
+                    title="Start 30-day trial"
+                    blurb="Card required. Auto-charges on day 30. Cancel anytime."
+                    cta="Start trial with card"
+                    loading={loading === "trial30"}
+                    disabled={anyLoading || !accepted}
+                    onClick={() => handleCheckout("trial30")}
+                  />
+                )}
+                <TrialChoiceCard
+                  title="Activate now"
+                  blurb="Pay immediately. Subscription goes live right away."
+                  cta="Pay & activate"
+                  highlight
+                  loading={loading === "pay"}
+                  disabled={anyLoading || !accepted}
+                  onClick={() => handleCheckout("pay")}
+                />
+              </div>
+            )}
           </div>
         ) : inTrial ? (
           <div className="space-y-3">
@@ -158,8 +223,8 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
               trialDays={0}
               onChange={setAccepted}
             />
-            <Button onClick={handlePay} disabled={loading || !accepted} size="sm" variant="outline" className="w-full">
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
+            <Button onClick={() => handleCheckout("pay")} disabled={anyLoading || !accepted} size="sm" variant="outline" className="w-full">
+              {loading === "pay" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
             </Button>
           </div>
         ) : (
@@ -167,6 +232,26 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function TrialChoiceCard({
+  title, blurb, cta, loading, disabled, highlight, onClick,
+}: {
+  title: string; blurb: string; cta: string;
+  loading: boolean; disabled: boolean; highlight?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className={`rounded-lg border p-4 flex flex-col gap-3 ${highlight ? "border-primary/50 bg-primary/5" : "bg-muted/20"}`}>
+      <div className="space-y-1">
+        <p className="font-semibold text-sm">{title}</p>
+        <p className="text-xs text-muted-foreground">{blurb}</p>
+      </div>
+      <Button onClick={onClick} disabled={disabled} size="sm" variant={highlight ? "default" : "outline"} className="mt-auto">
+        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {cta}
+      </Button>
+    </div>
   );
 }
 
