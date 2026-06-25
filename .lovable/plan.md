@@ -1,23 +1,15 @@
-## Problem
+Delete all `email_outbox` rows for PostNet Sandton City (`50af6453-1a97-4a1a-bf5b-e3c5b12cf66c`) so the branch starts with a clean Sent Mail view.
 
-Clicking **Reset to pending** on Aliwal North fails with "Edge Function returned a non-2xx status code".
+## Steps
 
-Root cause: in `supabase/functions/override-branch-subscription/index.ts`, the `reset_pending` branch sets `patch.trial_status = null`. The `branch_subscriptions.trial_status` column is `NOT NULL` (default `'not_started'`), so the upsert raises a NOT NULL violation and the function returns 500.
+1. Count rows in `email_outbox` where `branch_id = '50af6453-1a97-4a1a-bf5b-e3c5b12cf66c'` so we know what we're about to wipe.
+2. Delete those rows via the migration tool (one-shot SQL).
+3. Related `email_events` rows reference outbox by `email_outbox_id` — check FK behaviour; if not ON DELETE CASCADE, delete the matching `email_events` rows first.
+4. Leave `email_accounts`, tenant-level mail, and all other branches untouched.
 
-## Fix
+## Scope
 
-One-line change in the `reset_pending` case:
+- **Deleted**: `email_outbox` (and dependent `email_events`) for this branch only.
+- **Preserved**: everything else — branch config, subscription, members, customers, other branches' mail.
 
-```ts
-patch.trial_status = "not_started";   // was: null
-```
-
-Everything else in that case (clearing `trial_started_at`, `trial_ends_at`, `trial_started_via`, `stripe_subscription_id`, period dates, comp/grace, reopening storefront, billing_status = pending_payment, status = incomplete) stays as-is.
-
-No DB migration, no frontend changes.
-
-## Verification
-
-After the edit:
-1. Open Aliwal North → Subscription tab → **Reset to pending** — should succeed and the badges should flip to `incomplete` / `pending payment`.
-2. Logging back in as a branch user for Aliwal North should show the 3-card activation chooser (14-day trial / 30-day trial / pay now).
+No code changes, no new edge function — this is a one-shot SQL cleanup via migration, same pattern as the order wipe.
