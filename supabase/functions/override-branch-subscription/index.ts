@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
       // Clear runtime state, keep assigned plan so branch sees activation chooser again.
       patch.status = "incomplete";
       patch.billing_status = "pending_payment";
-      patch.trial_status = null;
+      patch.trial_status = "not_started";
       patch.trial_started_at = null;
       patch.trial_ends_at = null;
       patch.trial_started_via = null;
