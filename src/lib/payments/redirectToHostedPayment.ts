@@ -20,7 +20,6 @@ export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<
     },
   });
   if (error) {
-    // Surface backend error message if present
     const msg = (error as any)?.context?.error || (error as any)?.message || "Failed to start payment";
     throw new Error(typeof msg === "string" ? msg : "Failed to start payment");
   }
@@ -45,33 +44,32 @@ export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<
     form.appendChild(input);
   });
   document.body.appendChild(form);
-  // Use the native submit (avoid any wrapper that might no-op).
   HTMLFormElement.prototype.submit.call(form);
 }
 
-/** Fetch resolved online providers for an order via payments-list-providers. */
-export async function listOrderOnlineProviders(orderId: string): Promise<
-  Array<{ provider: "stripe" | "payfast"; mode: "test" | "live"; source: "branch" | "tenant"; display_label?: string | null }>
-> {
-  const { data, error } = await supabase.functions.invoke("payments-list-providers", {
-    method: "GET" as any,
-    body: undefined,
-    // supabase-js doesn't accept query params natively for invoke; fall through to fetch
-  } as any).catch(() => ({ data: null, error: new Error("invoke failed") } as any));
+export interface OrderOnlineProvider {
+  provider: "stripe" | "payfast";
+  mode: "test" | "live";
+  source: "branch" | "tenant";
+  display_label?: string | null;
+}
 
-  if (data?.providers) return data.providers;
-
-  // Fallback: direct fetch with query string (invoke doesn't support GET query reliably)
+/** Fetch resolved online providers for an order via payments-list-providers (GET). */
+export async function listOrderOnlineProviders(orderId: string): Promise<OrderOnlineProvider[]> {
   const { data: sess } = await supabase.auth.getSession();
   const token = sess.session?.access_token;
+  const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/payments-list-providers?order_id=${encodeURIComponent(orderId)}`;
   const res = await fetch(url, {
     headers: {
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      Authorization: token ? `Bearer ${token}` : `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      apikey,
+      Authorization: token ? `Bearer ${token}` : `Bearer ${apikey}`,
     },
   });
-  if (!res.ok) throw new Error(`payments-list-providers failed (${res.status})`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`payments-list-providers failed (${res.status}): ${txt}`);
+  }
   const body = await res.json();
-  return body.providers ?? [];
+  return (body.providers ?? []) as OrderOnlineProvider[];
 }
