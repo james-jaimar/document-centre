@@ -26,6 +26,7 @@ interface Plan {
   sort_order: number;
   stripe_price_id: string | null;
   scope?: string;
+  trial_offer?: "none" | "trial_14_no_card" | "trial_30_with_card" | "both";
 }
 
 const FLAG_MAP: Record<string, string> = {
@@ -115,7 +116,8 @@ export default function PlatformPricingRegions() {
           price: p.price,
           plan_name: p.plan_name,
           stripe_price_id: p.stripe_price_id,
-        }).eq("id", p.id);
+          trial_offer: p.trial_offer ?? "both",
+        } as any).eq("id", p.id);
       }
 
       toast.success("Pricing regions saved");
@@ -135,11 +137,11 @@ export default function PlatformPricingRegions() {
   function getBranchPlan(regionId: string, slug: string) {
     return branchPlans.find((p) => p.region_id === regionId && p.plan_slug === slug);
   }
-  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name", value: any) {
+  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name" | "trial_offer", value: any) {
     setPlans((prev) =>
       prev.map((p) =>
         p.scope === "branch" && p.region_id === regionId && p.plan_slug === slug
-          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : value || (field === "stripe_price_id" ? null : "") }
+          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : (field === "trial_offer" ? value : (value || (field === "stripe_price_id" ? null : ""))) }
           : p
       )
     );
@@ -472,6 +474,47 @@ export default function PlatformPricingRegions() {
                               className="h-8 w-48 font-mono text-xs"
                               placeholder="price_..."
                             />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-lg border bg-card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left font-semibold">Region — Trial Offer (branch-side activation choices)</th>
+                    {branchSlugs.map((s) => (
+                      <th key={s} className="px-4 py-3 text-left font-semibold">
+                        <div className="font-mono text-xs">{s}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {regions.map((r) => (
+                    <tr key={r.id} className="border-b last:border-0">
+                      <td className="px-4 py-2 font-medium">
+                        {FLAG_MAP[r.region_code] || ""} {r.region_code}
+                      </td>
+                      {branchSlugs.map((slug) => {
+                        const p = getBranchPlan(r.id, slug);
+                        return (
+                          <td key={slug} className="px-4 py-2">
+                            <select
+                              value={p?.trial_offer ?? "both"}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "trial_offer", e.target.value)}
+                              className="h-8 w-48 rounded-md border bg-background px-2 text-xs"
+                            >
+                              <option value="both">Both (14-day no-card + 30-day w/ card + Pay now)</option>
+                              <option value="trial_14_no_card">14-day no-card + Pay now</option>
+                              <option value="trial_30_with_card">30-day w/ card + Pay now</option>
+                              <option value="none">Pay now only</option>
+                            </select>
                           </td>
                         );
                       })}

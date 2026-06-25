@@ -113,7 +113,9 @@ Deno.serve(async (req) => {
   }
 
   const { data: plan } = await supabaseAdmin
-    .from("platform_pricing_plans").select("plan_slug").eq("stripe_price_id", body.price_id).maybeSingle();
+    .from("platform_pricing_plans").select("plan_slug, trial_offer").eq("stripe_price_id", body.price_id).maybeSingle();
+
+  const trialOffer = (plan as any)?.trial_offer ?? "both";
 
   const discountType = body.discount_type ?? (existing as any)?.discount_type ?? null;
   const discountValue = body.discount_value ?? (existing as any)?.discount_value ?? 0;
@@ -134,7 +136,18 @@ Deno.serve(async (req) => {
     },
     metadata: { branch_id: branch.id, tenant_id: branch.tenant_id },
   };
-  if (trialDays > 0) sessionParams.subscription_data!.trial_period_days = trialDays;
+  if (trialDays > 0) {
+    if (trialDays >= 30 && trialOffer !== "trial_30_with_card" && trialOffer !== "both") {
+      return new Response(JSON.stringify({ error: "30-day trial is not offered on this plan" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    sessionParams.subscription_data!.trial_period_days = trialDays;
+    // Record that this checkout is the stripe-trial path
+    await supabaseAdmin.from("branch_subscriptions" as any)
+      .update({ trial_started_via: "stripe_30" })
+      .eq("branch_id", branch.id);
+  }
 
   if (discountType && discountValue > 0) {
     try {
