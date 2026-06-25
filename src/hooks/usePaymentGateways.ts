@@ -107,3 +107,37 @@ export function useToggleTenantGatewayEnabled() {
     onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["tenant-payment-gateways", vars.tenantId] }),
   });
 }
+
+export interface PaymentCredentialsSummary {
+  configured: boolean;
+  mode: GatewayMode;
+  payfast?: {
+    merchant_id: string | null;
+    merchant_key_mask: string | null;
+    has_passphrase: boolean;
+  };
+  stripe?: {
+    publishable_key: string | null;
+    secret_key_mask: string | null;
+    webhook_secret_mask: string | null;
+  };
+}
+
+export function usePaymentCredentialsSummary(
+  scope: "tenant" | "branch",
+  scopeId: string | null | undefined,
+  provider: GatewayProvider,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["payment-credentials-summary", scope, scopeId, provider],
+    enabled: !!scopeId && enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("payments-get-credentials-summary", {
+        body: { scope, scope_id: scopeId, provider },
+      });
+      if (error) throw error;
+      return data as PaymentCredentialsSummary;
+    },
+  });
+}

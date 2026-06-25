@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,20 +6,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CreditCard, Globe, Lock, AlertTriangle } from "lucide-react";
+import { CreditCard, Globe, Lock, AlertTriangle, CheckCircle2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   useTenantPaymentGateways,
   useSavePaymentCredentials,
   useBranchPaymentGateways,
   useToggleTenantGatewayEnabled,
+  usePaymentCredentialsSummary,
   type GatewayMode,
   type GatewayProvider,
   type TenantPaymentGateway,
 } from "@/hooks/usePaymentGateways";
 
 const SUPABASE_FUNCTIONS_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-
 const ALL_PROVIDERS: GatewayProvider[] = ["stripe", "payfast"];
 
 interface Props {
@@ -39,8 +39,6 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
   const tenantGws = tenantQ.data ?? [];
   const enabledTenantGws = tenantGws.filter((g) => g.is_enabled);
 
-  // Tenant scope: show ALL providers (enabled + not-yet-enabled) so the tenant admin can toggle.
-  // Branch scope: show ONLY tenant-enabled providers so branch managers see what's available to configure.
   const visibleProviders: GatewayProvider[] =
     scope === "tenant" ? ALL_PROVIDERS : enabledTenantGws.map((g) => g.provider);
 
@@ -73,6 +71,11 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
           const branchOverride = scope === "branch" ? branchQ.data?.find((b) => b.provider === provider) : undefined;
           const tenantHasCreds = !!tg?.credentials_secret_id;
           const branchHasCreds = !!branchOverride?.credentials_secret_id;
+          const hasCreds = scope === "tenant" ? tenantHasCreds : branchHasCreds;
+          const persistedMode: GatewayMode =
+            scope === "branch"
+              ? (branchOverride?.mode as GatewayMode | undefined) ?? tg?.mode ?? "test"
+              : tg?.mode ?? "test";
           return (
             <ProviderRow
               key={provider}
@@ -81,8 +84,8 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
               scopeId={scopeId}
               tenantGateway={tg}
               isEnabledAtTenant={!!tg?.is_enabled}
-              currentMode={(branchOverride?.mode as GatewayMode | undefined) ?? tg?.mode ?? "test"}
-              hasCreds={scope === "tenant" ? tenantHasCreds : branchHasCreds}
+              persistedMode={persistedMode}
+              hasCreds={hasCreds}
               tenantHasCreds={tenantHasCreds}
               displayLabel={tg?.display_label ?? ""}
               onToggleEnabled={(next) => {
@@ -106,7 +109,7 @@ interface RowProps {
   scopeId: string;
   tenantGateway?: TenantPaymentGateway;
   isEnabledAtTenant: boolean;
-  currentMode: GatewayMode;
+  persistedMode: GatewayMode;
   hasCreds: boolean;
   tenantHasCreds: boolean;
   displayLabel: string;
@@ -114,12 +117,15 @@ interface RowProps {
 }
 
 function ProviderRow({
-  provider, scope, scopeId, isEnabledAtTenant, currentMode, hasCreds, tenantHasCreds,
+  provider, scope, scopeId, isEnabledAtTenant, persistedMode, hasCreds, tenantHasCreds,
   displayLabel, onToggleEnabled,
 }: RowProps) {
   const save = useSavePaymentCredentials();
-  const [mode, setMode] = useState<GatewayMode>(currentMode);
+  const summaryQ = usePaymentCredentialsSummary(scope, scopeId, provider, hasCreds);
+
+  const [mode, setMode] = useState<GatewayMode>(persistedMode);
   const [label, setLabel] = useState(displayLabel);
+  const [editing, setEditing] = useState(!hasCreds);
   // Stripe
   const [secretKey, setSecretKey] = useState("");
   const [pubKey, setPubKey] = useState("");
@@ -129,7 +135,10 @@ function ProviderRow({
   const [merchantKey, setMerchantKey] = useState("");
   const [passphrase, setPassphrase] = useState("");
 
-  const handleSave = async () => {
+  // Random suffix so password managers can't match the field across scopes.
+  const nameSuffix = useMemo(() => `${provider}-${scopeId}-${Math.random().toString(36).slice(2, 8)}`, [provider, scopeId]);
+
+  const handleSave = async (opts?: { modeOnly?: boolean }) => {
     try {
       await save.mutateAsync({
         scope,
@@ -137,16 +146,17 @@ function ProviderRow({
         provider,
         mode,
         display_label: scope === "tenant" ? label || undefined : undefined,
-        secret_key: secretKey || undefined,
-        publishable_key: pubKey || undefined,
-        webhook_secret: webhookSecret || undefined,
-        merchant_id: merchantId || undefined,
-        merchant_key: merchantKey || undefined,
-        passphrase: passphrase || undefined,
+        secret_key: opts?.modeOnly ? undefined : (secretKey || undefined),
+        publishable_key: opts?.modeOnly ? undefined : (pubKey || undefined),
+        webhook_secret: opts?.modeOnly ? undefined : (webhookSecret || undefined),
+        merchant_id: opts?.modeOnly ? undefined : (merchantId || undefined),
+        merchant_key: opts?.modeOnly ? undefined : (merchantKey || undefined),
+        passphrase: opts?.modeOnly ? undefined : (passphrase || undefined),
       });
-      toast.success("Credentials saved");
+      toast.success(opts?.modeOnly ? "Mode updated" : "Credentials saved");
       setSecretKey(""); setPubKey(""); setWebhookSecret("");
       setMerchantId(""); setMerchantKey(""); setPassphrase("");
+      if (!opts?.modeOnly && hasCreds) setEditing(false);
     } catch (e: any) {
       toast.error(e?.message ?? "Save failed");
     }
@@ -154,6 +164,8 @@ function ProviderRow({
 
   const webhookUrl = `${SUPABASE_FUNCTIONS_BASE}/${provider === "stripe" ? "stripe-order-webhook" : "payfast-itn"}`;
   const disabledAtTenant = scope === "tenant" && !isEnabledAtTenant;
+  const modeChanged = mode !== persistedMode;
+  const summary = summaryQ.data;
 
   return (
     <div className={`rounded-lg border p-4 space-y-3 ${disabledAtTenant ? "opacity-60" : ""}`}>
@@ -166,12 +178,12 @@ function ProviderRow({
           ) : (
             <Badge variant="outline">Not configured</Badge>
           )}
-          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && currentMode === "live" && (
+          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && persistedMode === "live" && (
             <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">
               Live — accepting payments
             </Badge>
           )}
-          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && currentMode === "test" && (
+          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && persistedMode === "test" && (
             <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
               Sandbox — test mode
             </Badge>
@@ -202,6 +214,11 @@ function ProviderRow({
               <SelectItem value="live">Live</SelectItem>
             </SelectContent>
           </Select>
+          {modeChanged && hasCreds && (
+            <Button size="sm" variant="outline" onClick={() => handleSave({ modeOnly: true })} disabled={save.isPending}>
+              Save mode
+            </Button>
+          )}
         </div>
       </div>
 
@@ -211,6 +228,38 @@ function ProviderRow({
         </p>
       ) : (
         <>
+          {/* Saved credentials summary */}
+          {hasCreds && (
+            <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  Currently saved
+                </div>
+                {!editing && (
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+                    <Pencil className="h-3 w-3 mr-1" /> Replace credentials
+                  </Button>
+                )}
+              </div>
+              {summaryQ.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {summary?.payfast && provider === "payfast" && (
+                <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <SummaryField label="Merchant ID" value={summary.payfast.merchant_id ?? "— not set"} mono />
+                  <SummaryField label="Merchant Key" value={summary.payfast.merchant_key_mask ?? "— not set"} mono />
+                  <SummaryField label="Passphrase" value={summary.payfast.has_passphrase ? "•••••• saved" : "— not set"} />
+                </dl>
+              )}
+              {summary?.stripe && provider === "stripe" && (
+                <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <SummaryField label="Publishable key" value={summary.stripe.publishable_key ?? "— not set"} mono />
+                  <SummaryField label="Secret key" value={summary.stripe.secret_key_mask ?? "— not set"} mono />
+                  <SummaryField label="Webhook secret" value={summary.stripe.webhook_secret_mask ?? "— not set"} mono />
+                </dl>
+              )}
+            </div>
+          )}
+
           {scope === "tenant" && (
             <div className="space-y-1">
               <Label className="text-xs">Display label (shown at checkout)</Label>
@@ -218,51 +267,109 @@ function ProviderRow({
             </div>
           )}
 
-          {provider === "stripe" ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1 md:col-span-2">
-                <Label className="text-xs">Secret key (sk_…)</Label>
-                <Input type="password" autoComplete="off" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} placeholder={hasCreds ? "•••••• (leave blank to keep)" : "sk_test_…"} />
+          {editing && (
+            <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-3">
+              {/* Autofill trap — Chrome/Safari dump guesses here instead of the real fields */}
+              <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", top: "auto", width: 1, height: 1, overflow: "hidden" }}>
+                <input type="text" name="username" tabIndex={-1} autoComplete="username" />
+                <input type="password" name="password" tabIndex={-1} autoComplete="current-password" />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Publishable key</Label>
-                <Input value={pubKey} onChange={(e) => setPubKey(e.target.value)} placeholder={hasCreds ? "••••••" : "pk_test_…"} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Webhook signing secret</Label>
-                <Input type="password" autoComplete="off" value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder={hasCreds ? "•••••• (leave blank to keep)" : "whsec_…"} />
-              </div>
-              <div className="md:col-span-2 text-xs text-muted-foreground">
-                Webhook URL to paste in Stripe dashboard: <code className="font-mono">{webhookUrl}</code>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Merchant ID</Label>
-                <Input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} placeholder={hasCreds ? "••••••" : "10000100"} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Merchant Key</Label>
-                <Input type="password" autoComplete="off" value={merchantKey} onChange={(e) => setMerchantKey(e.target.value)} placeholder={hasCreds ? "•••••• (leave blank to keep)" : "46f0cd694581a"} />
-              </div>
-              <div className="space-y-1 md:col-span-2">
-                <Label className="text-xs">Passphrase (optional but recommended)</Label>
-                <Input type="password" autoComplete="off" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder={hasCreds ? "•••••• (leave blank to keep)" : ""} />
-              </div>
-              <div className="md:col-span-2 text-xs text-muted-foreground">
-                ITN URL to paste in PayFast settings: <code className="font-mono">{webhookUrl}</code>
-              </div>
-            </div>
-          )}
 
-          <div className="flex justify-end">
-            <Button size="sm" onClick={handleSave} disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save credentials"}
-            </Button>
-          </div>
+              {provider === "stripe" ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1 md:col-span-2">
+                    <Label className="text-xs">Secret key (sk_…)</Label>
+                    <Input
+                      type="password" autoComplete="new-password" data-lpignore="true" data-1p-ignore
+                      name={`sk-${nameSuffix}`}
+                      value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
+                      placeholder={hasCreds ? "•••••• (leave blank to keep)" : "sk_test_…"}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Publishable key</Label>
+                    <Input
+                      autoComplete="off" data-lpignore="true" data-1p-ignore
+                      name={`pk-${nameSuffix}`}
+                      value={pubKey} onChange={(e) => setPubKey(e.target.value)}
+                      placeholder={hasCreds ? "••••••" : "pk_test_…"}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Webhook signing secret</Label>
+                    <Input
+                      type="password" autoComplete="new-password" data-lpignore="true" data-1p-ignore
+                      name={`wh-${nameSuffix}`}
+                      value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)}
+                      placeholder={hasCreds ? "•••••• (leave blank to keep)" : "whsec_…"}
+                    />
+                  </div>
+                  <div className="md:col-span-2 text-xs text-muted-foreground">
+                    Webhook URL to paste in Stripe dashboard: <code className="font-mono">{webhookUrl}</code>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Merchant ID</Label>
+                    <Input
+                      autoComplete="off" data-lpignore="true" data-1p-ignore
+                      name={`pf-mid-${nameSuffix}`}
+                      value={merchantId} onChange={(e) => setMerchantId(e.target.value)}
+                      placeholder={hasCreds ? "(leave blank to keep)" : "10000100"}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Merchant Key</Label>
+                    <Input
+                      type="password" autoComplete="new-password" data-lpignore="true" data-1p-ignore
+                      name={`pf-mkey-${nameSuffix}`}
+                      value={merchantKey} onChange={(e) => setMerchantKey(e.target.value)}
+                      placeholder={hasCreds ? "•••••• (leave blank to keep)" : "46f0cd694581a"}
+                    />
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <Label className="text-xs">Passphrase (optional but recommended)</Label>
+                    <Input
+                      type="password" autoComplete="new-password" data-lpignore="true" data-1p-ignore
+                      name={`pf-pp-${nameSuffix}`}
+                      value={passphrase} onChange={(e) => setPassphrase(e.target.value)}
+                      placeholder={hasCreds ? "•••••• (leave blank to keep)" : ""}
+                    />
+                  </div>
+                  <div className="md:col-span-2 text-xs text-muted-foreground">
+                    ITN URL to paste in PayFast settings: <code className="font-mono">{webhookUrl}</code>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                {hasCreds && (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => {
+                    setEditing(false);
+                    setSecretKey(""); setPubKey(""); setWebhookSecret("");
+                    setMerchantId(""); setMerchantKey(""); setPassphrase("");
+                  }}>
+                    <X className="h-3 w-3 mr-1" /> Cancel
+                  </Button>
+                )}
+                <Button type="submit" size="sm" disabled={save.isPending}>
+                  {save.isPending ? "Saving…" : "Save credentials"}
+                </Button>
+              </div>
+            </form>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+function SummaryField({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className={mono ? "font-mono break-all" : ""}>{value}</dd>
     </div>
   );
 }
