@@ -1,170 +1,87 @@
-## Do I know what the issue is?
+Short answer: we have over-complicated this. PayFast’s documented custom integration is a plain signed HTML form POST to `/eng/process`, plus an ITN/webhook confirmation. We should strip this back to that model and remove the extra redirect-token/handoff complexity.
 
-**Yes, for the current failure shown in the screenshot.** PayFast is not the first thing failing here: the browser is stuck on our Supabase `payfast-redirect` handoff page before the customer reliably reaches PayFast.
+## What I verified
 
-What I verified:
-- The latest payment attempt exists: `INV-00114`, amount `R392.00`, branch `Test Branch`, PayFast attempt `ae92e5db-8ff7-49c6-b7c9-71d16aeb4d57`.
-- `payments-create-session` resolved branch-level PayFast credentials and produced a handoff URL.
-- The handoff page is currently an HTML page served from `*.supabase.co/functions/v1/payfast-redirect`.
-- Supabase-hosted HTML is being treated/sandboxed in a way that blocks the auto-submit script: `document's frame is sandboxed and the 'allow-scripts' permission is not set`.
-- The browser is also rendering the raw handoff HTML/source, which exposes fields and looks broken.
-- Official PayFast docs confirm their custom integration expects a browser form POST to `/eng/process`, ordered MD5 signing, optional passphrase, and ITN validation via `/eng/query/validate`.
+- The current app is generating a PayFast form payload server-side in `payments-create-session`.
+- The frontend then dynamically creates and submits a hidden form in `redirectToHostedPayment.ts`.
+- The live CSP header on `postnetprintcentre.com`/`document-centre.com` includes `form-action 'self' https://payfast.co.za https://*.payfast.co.za`, but the browser is still blocking the POST to `https://www.payfast.co.za/eng/process`.
+- The old `payfast-redirect` edge-function handoff is now only a fallback, but remnants of that over-engineered approach remain in comments/config/shared helpers.
+- PayFast docs say the standard flow is:
+  1. Build a form with merchant/order fields.
+  2. Generate MD5 signature in PayFast field order, not API alphabetical order.
+  3. POST the form to `https://www.payfast.co.za/eng/process` or sandbox.
+  4. Confirm payment through ITN checks: signature, PayFast host/IP, amount, server validation.
 
-So the current architectural mistake is: **we moved the PayFast browser POST onto a Supabase Edge Function HTML page. That page is not a safe/reliable place to run an auto-submitting payment form, and customers should never land there.**
+## Build plan
 
-There is also a second issue to fix before calling this production-grade: **our ITN validation currently posts the raw ITN body back to PayFast, but the docs show the validation string should be the canonical parameter string excluding `signature`.** That may break confirmation even after a successful PayFast payment.
+### 1. Remove the over-engineered redirect-token layer
+- Delete PayFast redirect token logic from `_shared/payfast.ts`.
+- Leave `payfast-redirect` only as a generic stale-link fallback, or remove it from active use entirely.
+- Clean misleading comments that still reference a server-rendered redirect page.
 
-## Target outcome
+### 2. Replace dynamic hidden-form submission with a normal PayFast handoff page
+- Add an internal app route such as `/payment/payfast/:attemptId`.
+- `payments-create-session` returns a same-origin URL to that route, not a PayFast URL and not a Supabase HTML page.
+- The React route fetches/receives the signed PayFast payload and renders a real documented HTML form:
+  - visible message: “Redirecting to PayFast…”
+  - visible fallback button: “Continue to PayFast”
+  - form action exactly `https://www.payfast.co.za/eng/process` or `https://sandbox.payfast.co.za/eng/process`
+  - method `POST`
+- Auto-submit can still run, but the manual button gives a reliable fallback if a browser/security policy blocks scripted submission.
 
-Build a best-practice PayFast flow where:
-- Customers never see Supabase function HTML, source code, tokens, stack details, or internal error reasons.
-- Payment handoff happens from the app UI or PayFast-hosted UI, not from a raw Supabase HTML page.
-- ITN/webhook confirmation is the source of truth.
-- Tenant/branch ringfencing is enforced server-side.
-- Admins get clear configuration status without exposing secrets.
-- Failures degrade to a clean in-app message with EFT fallback.
+### 3. Make CSP explicit, not clever
+- Change `customHttp.yml` `form-action` to include exact PayFast hosts:
+  - `https://www.payfast.co.za`
+  - `https://sandbox.payfast.co.za`
+  - optionally keep `https://*.payfast.co.za` as a backup
+- Add a semicolon-terminated CSP string for clarity.
+- Do not send customers through Supabase-hosted HTML again.
 
-## Plan
+### 4. Keep signing server-side and PayFast-doc compliant
+- Keep merchant credentials server-side only.
+- Ensure outbound form fields are ordered exactly per PayFast docs:
+  - merchant details
+  - customer details if supplied
+  - transaction details
+  - transaction options/payment method if supplied
+  - signature last
+- Use PHP-compatible encoding: trim values, spaces as `+`, MD5 final string.
+- Add edge-function tests for known PayFast signature examples and our generated payload shape.
 
-### 1. Remove the customer-facing Supabase HTML handoff
-- Stop using `payfast-redirect` as a browser destination from `payments-create-session`.
-- Change all payment initiation failures to return structured JSON only, with safe public error codes such as:
-  - `PAYFAST_CONFIG_INCOMPLETE`
-  - `PAYFAST_HANDOFF_FAILED`
-  - `PAYFAST_UNAVAILABLE`
-  - `ORDER_NOT_PAYABLE`
-- Keep detailed reasons only in server logs.
-- If `payfast-redirect` remains temporarily for backwards compatibility, make it non-revealing: no merchant fields, no raw form, no internal object names, no specific DB failure text.
+### 5. Harden ITN without adding customer-facing complexity
+- Keep ITN verification in `payfast-itn`:
+  - resolve attempt by `m_payment_id`
+  - resolve branch/tenant credentials from that attempt only
+  - merchant ID must match resolved credentials
+  - amount must match the attempt
+  - validate PayFast signature
+  - POST canonical ITN body excluding `signature` to `/eng/query/validate`
+- Review the current PayFast IP/host check because PayFast’s own sample uses referrer-host DNS; in edge environments, direct source IP headers can be unreliable behind proxies. If it creates false negatives, rely on signature + server validation + merchant/amount ringfencing and log the IP check as advisory.
 
-### 2. Replace the handoff with a safer PayFast integration path
-Preferred implementation: **PayFast Onsite**.
+### 6. Improve customer/admin failure handling
+- If PayFast credentials are incomplete, checkout should not show PayFast as available.
+- If passphrase is missing while PayFast dashboard requires one, admin must see a warning before customers can use PayFast.
+- Customers should only ever see a clean in-app message and EFT fallback, never raw edge-function HTML, tokens, merchant details, or stack/error text.
 
-Flow:
+### 7. Verify end-to-end before claiming fixed
+- Use a sandbox branch with known PayFast sandbox credentials.
+- Test checkout from the production domain path, not only Lovable preview.
+- Confirm browser leaves the site for PayFast.
+- Confirm PayFast returns/cancels to the correct tenant route.
+- Confirm ITN marks only the matching branch/order paid.
+- Check PayFast ITN edge-function logs for `VALID` and no merchant/amount mismatch.
+
+## Intended final shape
+
 ```text
-Customer clicks Pay Online
-  -> app calls payments-create-session
-  -> Edge Function validates order/tenant/branch and signs PayFast payload
-  -> Edge Function POSTs server-to-server to PayFast /onsite/process
-  -> PayFast returns uuid
-  -> app loads PayFast onsite engine and opens PayFast payment UI
-  -> PayFast sends ITN to payfast-itn
-  -> order is marked paid only after verified ITN
+Customer clicks Place Order & Pay
+  -> app creates order
+  -> payments-create-session creates payment_attempt + signed PayFast fields
+  -> browser navigates to same-origin /payment/payfast/:attemptId
+  -> normal HTML form posts to PayFast /eng/process
+  -> PayFast handles payment
+  -> PayFast ITN confirms payment server-to-server
+  -> customer returns to order confirmation/status page
 ```
 
-Why this is better here:
-- No Supabase-hosted HTML page.
-- No auto-submit script on a raw function response.
-- No PayFast merchant form fields displayed as page source.
-- The app can show proper loading/errors.
-- ITN remains the authority for payment state.
-
-Fallback if PayFast Onsite is unavailable for the merchant account:
-- Use a first-party React route under the customer domain, e.g. `/payment/payfast-handoff/:attemptId`, to render/submit the custom PayFast form.
-- That route will be inside the actual app shell, with controlled CSP and friendly UI.
-- The passphrase still never goes to the browser.
-
-### 3. Correct PayFast signing and validation against the official docs
-- Keep a single shared PayFast helper for:
-  - PHP-style URL encoding: spaces as `+`, upper-case percent encoding.
-  - Ordered custom-integration signature, not alphabetical API ordering.
-  - Passphrase appended only when present.
-  - ITN signature verification using posted field order up to `signature`.
-- Add tests using PayFast doc-shaped examples and edge cases:
-  - URLs in `return_url`, `cancel_url`, `notify_url`.
-  - Spaces and special characters in `item_name`.
-  - With and without passphrase.
-  - Empty optional fields skipped correctly.
-
-### 4. Fix ITN/webhook confirmation
-- Change `payfast-itn` to build the canonical PayFast parameter string excluding `signature` for the `/eng/query/validate` call.
-- Add PayFast source validation using the documented hosts:
-  - `www.payfast.co.za`
-  - `w1w.payfast.co.za`
-  - `w2w.payfast.co.za`
-  - `sandbox.payfast.co.za`
-- Keep the existing tenant/branch ringfence checks:
-  - Resolve attempt by `m_payment_id`.
-  - Re-resolve credentials from that attempt’s tenant/branch.
-  - Require ITN `merchant_id` to match those credentials.
-  - Require amount to match the attempt.
-- Store safe audit details on the attempt, but never expose them to the customer.
-
-### 5. Harden tenant/branch isolation
-- Keep per-branch credentials precedence over tenant credentials.
-- Add explicit PayFast pass-through fields for audit only, e.g. `custom_str1 = tenant_id`, `custom_str2 = branch_id`, while still relying on `m_payment_id` and DB lookup for security.
-- In ITN, treat custom fields as audit corroboration, not authority.
-- Ensure a PayFast ITN for one branch cannot mark another tenant/branch order as paid.
-
-### 6. Improve customer UX for payment states
-- Add a clean in-app payment status route/state:
-  - `Starting secure payment…`
-  - `Payment window opened`
-  - `We could not start online payment. Please try again or pay by EFT.`
-  - `Payment pending confirmation` while waiting for ITN.
-- On PayFast return, do not instantly assume paid; show the order and poll/refetch until ITN updates the payment status.
-- If PayFast returns before ITN arrives, show “Awaiting payment confirmation” instead of error.
-
-### 7. Improve admin configuration checks
-- In the branch payment settings panel, show:
-  - Provider enabled/disabled.
-  - Source: branch override vs tenant default.
-  - Mode: test/live.
-  - Masked merchant ID/key.
-  - Passphrase present/missing.
-- Add preflight validation before save/use:
-  - PayFast merchant ID must be numeric and 8 chars.
-  - Merchant key required.
-  - Mode must be explicitly test or live.
-  - Warn loudly when live mode is active.
-- Add a “Test PayFast configuration” action that creates a non-destructive validation attempt or checks required fields without placing an order.
-
-### 8. Fix deployment/CSP/return URL concerns
-- Add PayFast Onsite domains to CSP where needed:
-  - `script-src` for PayFast engine.
-  - `frame-src`/`connect-src` if required by the onsite modal.
-  - Keep `form-action` PayFast support only for fallback custom integration.
-- Stop sending customers to `*.supabase.co` for visible payment pages.
-- Verify return/cancel URLs use a route that definitely works on the tenant’s customer domain.
-- If a tenant custom domain cannot serve deep links, return to the canonical Document Centre tenant route instead.
-
-### 9. Testing checklist before we call it fixed
-- Unit-test PayFast signature creation and ITN validation helpers.
-- Test `payments-create-session` for:
-  - Missing credentials.
-  - Branch override credentials.
-  - Tenant default credentials.
-  - Wrong currency.
-  - Unpaid/payable order.
-- Test PayFast sandbox end-to-end:
-  - Customer starts payment.
-  - PayFast UI opens.
-  - Cancel returns cleanly.
-  - Successful ITN marks order paid.
-  - Amount mismatch is rejected.
-  - Merchant mismatch is rejected.
-- Check Edge Function logs after each test.
-- Confirm the customer never sees raw HTML, tokens, merchant fields, or internal errors.
-
-## Files likely involved
-
-- `supabase/functions/payments-create-session/index.ts`
-- `supabase/functions/payfast-itn/index.ts`
-- `supabase/functions/payfast-redirect/index.ts` or replacement/removal path
-- `supabase/functions/_shared/payfast.ts`
-- `src/lib/payments/redirectToHostedPayment.ts`
-- Customer checkout/order detail pages that trigger Pay Now
-- Payment gateway admin UI/settings panel
-- `customHttp.yml`
-- Edge-function tests for PayFast helpers and handlers
-
-## Important note
-
-I will not claim “PayFast is fixed” after only changing code. The fix must be validated by an actual sandbox handoff plus ITN/log verification.
-
-<presentation-actions>
-  <presentation-open-history>View History</presentation-open-history>
-</presentation-actions>
-
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+This is closer to PayFast’s docs, easier to debug, and avoids exposing Supabase function URLs or relying on a serverless HTML handoff page.
