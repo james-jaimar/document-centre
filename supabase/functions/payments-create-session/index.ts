@@ -7,6 +7,7 @@ import {
   resolveGatewaysForOrder,
   readSecret,
 } from "../_shared/payments.ts";
+import { mintRedirectToken } from "../_shared/payfast.ts";
 
 const BodySchema = z.object({
   order_id: z.string().uuid(),
@@ -65,6 +66,9 @@ Deno.serve(async (req) => {
   if (!amount || amount <= 0) return json({ error: "Order has no amount due" }, 400);
 
   // Insert pending attempt up-front so the webhook/ITN can find it.
+  // Stash the user's return/cancel URLs on raw_payload.handoff so the
+  // server-rendered payfast-redirect page can rebuild the form without
+  // exposing them in the URL we hand to the browser.
   const { data: attempt, error: attemptErr } = await sb
     .from("order_payment_attempts")
     .insert({
@@ -76,6 +80,9 @@ Deno.serve(async (req) => {
       status: "pending",
       amount,
       currency: order.currency || "ZAR",
+      raw_payload: {
+        handoff: { return_url, cancel_url },
+      },
     })
     .select()
     .single();
@@ -112,122 +119,30 @@ Deno.serve(async (req) => {
     return json({ redirect_url: session.url });
   }
 
-  // PayFast
+  // PayFast — hand off via the server-rendered redirect page on Supabase.
+  // The browser navigates with a plain GET; CSP form-action on the app
+  // domain is irrelevant because the cross-origin POST originates from
+  // *.supabase.co.
   if (!creds.merchant_id || !creds.merchant_key) {
     return json({ error: "PayFast credentials incomplete" }, 500);
   }
 
-  const isSandbox = gw.mode === "test";
-  const action = isSandbox
-    ? "https://sandbox.payfast.co.za/eng/process"
-    : "https://www.payfast.co.za/eng/process";
-
+  const token = await mintRedirectToken(attempt.id);
   const projectUrl = Deno.env.get("SUPABASE_URL")!;
-  const itnUrl = `${projectUrl}/functions/v1/payfast-itn`;
+  const redirectUrl = `${projectUrl}/functions/v1/payfast-redirect?token=${encodeURIComponent(token)}`;
 
-  // PayFast: fields in fixed documented order; same array drives signature + form POST.
-  const orderedPairs: Array<[string, string]> = [
-    ["merchant_id", String(creds.merchant_id).trim()],
-    ["merchant_key", String(creds.merchant_key).trim()],
-    ["return_url", return_url],
-    ["cancel_url", cancel_url],
-    ["notify_url", itnUrl],
-    ["m_payment_id", attempt.id],
-    ["amount", amount.toFixed(2)],
-    ["item_name", `Order ${order.order_number || order.id.slice(0, 8)}`],
-  ];
-
-  const passphrase = (creds.passphrase || "").trim();
-  const { signature, baseString } = payfastSignature(orderedPairs, passphrase);
-
-  // Diagnostic logging — never logs merchant_key or passphrase in cleartext.
-  console.log("payfast.sign", JSON.stringify({
+  console.log("payfast.session", JSON.stringify({
+    attempt_id: attempt.id,
     branch_id: gw.branchId ?? null,
     tenant_id: order.tenant_id,
     mode: gw.mode,
     merchant_id: creds.merchant_id,
-    has_passphrase: !!passphrase,
-    base_string_redacted: passphrase
-      ? baseString.replace(passphrase, "***PASSPHRASE***")
-      : baseString,
-    signature,
+    has_passphrase: !!(creds.passphrase || "").trim(),
+    amount: amount.toFixed(2),
   }));
 
-  const fields: Record<string, string> = {};
-  for (const [k, v] of orderedPairs) fields[k] = v;
-  fields.signature = signature;
-
-  return json({ form_action: action, form_fields: fields });
+  return json({ redirect_url: redirectUrl });
 });
-
-function payfastSignature(
-  pairs: Array<[string, string]>,
-  passphrase: string,
-): { signature: string; baseString: string } {
-  const parts: string[] = [];
-  for (const [k, v] of pairs) {
-    if (k === "signature" || v === "" || v == null) continue;
-    parts.push(`${k}=${pfEncode(v)}`);
-  }
-  let baseString = parts.join("&");
-  if (passphrase) baseString += `&passphrase=${pfEncode(passphrase)}`;
-  return { signature: md5(baseString), baseString };
-}
-
-// PHP urlencode-compatible: spaces -> '+'; also encode ! * ' ( )
-function pfEncode(v: string): string {
-  return encodeURIComponent(v)
-    .replace(/%20/g, "+")
-    .replace(/!/g, "%21")
-    .replace(/\*/g, "%2A")
-    .replace(/'/g, "%27")
-    .replace(/\(/g, "%28")
-    .replace(/\)/g, "%29");
-}
-
-// Tiny MD5 implementation (RFC 1321) — PayFast still requires it.
-function md5(input: string): string {
-  function rh(n: number) { let s = "", j; for (j = 0; j <= 3; j++) s += ((n >> (j * 8 + 4)) & 0x0F).toString(16) + ((n >> (j * 8)) & 0x0F).toString(16); return s; }
-  function ad(x: number, y: number) { const l = (x & 0xFFFF) + (y & 0xFFFF); return (((x >> 16) + (y >> 16) + (l >> 16)) << 16) | (l & 0xFFFF); }
-  function rl(n: number, c: number) { return (n << c) | (n >>> (32 - c)); }
-  function cm(q: number, a: number, b: number, x: number, s: number, t: number) { return ad(rl(ad(ad(a, q), ad(x, t)), s), b); }
-  function ff(a: number, b: number, c: number, d: number, x: number, s: number, t: number) { return cm((b & c) | ((~b) & d), a, b, x, s, t); }
-  function gg(a: number, b: number, c: number, d: number, x: number, s: number, t: number) { return cm((b & d) | (c & (~d)), a, b, x, s, t); }
-  function hh(a: number, b: number, c: number, d: number, x: number, s: number, t: number) { return cm(b ^ c ^ d, a, b, x, s, t); }
-  function ii(a: number, b: number, c: number, d: number, x: number, s: number, t: number) { return cm(c ^ (b | (~d)), a, b, x, s, t); }
-  function c2b(s: string) {
-    const enc = new TextEncoder().encode(s);
-    const nb = ((enc.length + 8) >> 6) + 1;
-    const b: number[] = new Array(nb * 16).fill(0);
-    for (let i = 0; i < enc.length; i++) b[i >> 2] |= enc[i] << ((i % 4) * 8);
-    b[enc.length >> 2] |= 0x80 << ((enc.length % 4) * 8);
-    b[nb * 16 - 2] = enc.length * 8;
-    return b;
-  }
-  const x = c2b(input);
-  let a = 1732584193, b = -271733879, c = -1732584194, d = 271733878;
-  for (let i = 0; i < x.length; i += 16) {
-    const oa = a, ob = b, oc = c, od = d;
-    a = ff(a, b, c, d, x[i + 0], 7, -680876936); d = ff(d, a, b, c, x[i + 1], 12, -389564586); c = ff(c, d, a, b, x[i + 2], 17, 606105819); b = ff(b, c, d, a, x[i + 3], 22, -1044525330);
-    a = ff(a, b, c, d, x[i + 4], 7, -176418897); d = ff(d, a, b, c, x[i + 5], 12, 1200080426); c = ff(c, d, a, b, x[i + 6], 17, -1473231341); b = ff(b, c, d, a, x[i + 7], 22, -45705983);
-    a = ff(a, b, c, d, x[i + 8], 7, 1770035416); d = ff(d, a, b, c, x[i + 9], 12, -1958414417); c = ff(c, d, a, b, x[i + 10], 17, -42063); b = ff(b, c, d, a, x[i + 11], 22, -1990404162);
-    a = ff(a, b, c, d, x[i + 12], 7, 1804603682); d = ff(d, a, b, c, x[i + 13], 12, -40341101); c = ff(c, d, a, b, x[i + 14], 17, -1502002290); b = ff(b, c, d, a, x[i + 15], 22, 1236535329);
-    a = gg(a, b, c, d, x[i + 1], 5, -165796510); d = gg(d, a, b, c, x[i + 6], 9, -1069501632); c = gg(c, d, a, b, x[i + 11], 14, 643717713); b = gg(b, c, d, a, x[i + 0], 20, -373897302);
-    a = gg(a, b, c, d, x[i + 5], 5, -701558691); d = gg(d, a, b, c, x[i + 10], 9, 38016083); c = gg(c, d, a, b, x[i + 15], 14, -660478335); b = gg(b, c, d, a, x[i + 4], 20, -405537848);
-    a = gg(a, b, c, d, x[i + 9], 5, 568446438); d = gg(d, a, b, c, x[i + 14], 9, -1019803690); c = gg(c, d, a, b, x[i + 3], 14, -187363961); b = gg(b, c, d, a, x[i + 8], 20, 1163531501);
-    a = gg(a, b, c, d, x[i + 13], 5, -1444681467); d = gg(d, a, b, c, x[i + 2], 9, -51403784); c = gg(c, d, a, b, x[i + 7], 14, 1735328473); b = gg(b, c, d, a, x[i + 12], 20, -1926607734);
-    a = hh(a, b, c, d, x[i + 5], 4, -378558); d = hh(d, a, b, c, x[i + 8], 11, -2022574463); c = hh(c, d, a, b, x[i + 11], 16, 1839030562); b = hh(b, c, d, a, x[i + 14], 23, -35309556);
-    a = hh(a, b, c, d, x[i + 1], 4, -1530992060); d = hh(d, a, b, c, x[i + 4], 11, 1272893353); c = hh(c, d, a, b, x[i + 7], 16, -155497632); b = hh(b, c, d, a, x[i + 10], 23, -1094730640);
-    a = hh(a, b, c, d, x[i + 13], 4, 681279174); d = hh(d, a, b, c, x[i + 0], 11, -358537222); c = hh(c, d, a, b, x[i + 3], 16, -722521979); b = hh(b, c, d, a, x[i + 6], 23, 76029189);
-    a = hh(a, b, c, d, x[i + 9], 4, -640364487); d = hh(d, a, b, c, x[i + 12], 11, -421815835); c = hh(c, d, a, b, x[i + 15], 16, 530742520); b = hh(b, c, d, a, x[i + 2], 23, -995338651);
-    a = ii(a, b, c, d, x[i + 0], 6, -198630844); d = ii(d, a, b, c, x[i + 7], 10, 1126891415); c = ii(c, d, a, b, x[i + 14], 15, -1416354905); b = ii(b, c, d, a, x[i + 5], 21, -57434055);
-    a = ii(a, b, c, d, x[i + 12], 6, 1700485571); d = ii(d, a, b, c, x[i + 3], 10, -1894986606); c = ii(c, d, a, b, x[i + 10], 15, -1051523); b = ii(b, c, d, a, x[i + 1], 21, -2054922799);
-    a = ii(a, b, c, d, x[i + 8], 6, 1873313359); d = ii(d, a, b, c, x[i + 15], 10, -30611744); c = ii(c, d, a, b, x[i + 6], 15, -1560198380); b = ii(b, c, d, a, x[i + 13], 21, 1309151649);
-    a = ii(a, b, c, d, x[i + 4], 6, -145523070); d = ii(d, a, b, c, x[i + 11], 10, -1120210379); c = ii(c, d, a, b, x[i + 2], 15, 718787259); b = ii(b, c, d, a, x[i + 9], 21, -343485551);
-    a = ad(a, oa); b = ad(b, ob); c = ad(c, oc); d = ad(d, od);
-  }
-  return rh(a) + rh(b) + rh(c) + rh(d);
-}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

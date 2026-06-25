@@ -1,5 +1,9 @@
-// Shared helper to redirect the browser to a hosted payment page (Stripe Checkout
-// or PayFast). Centralised so checkout / Pay Now / reorder all behave the same.
+// Shared helper to redirect the browser to a hosted payment page (Stripe
+// Checkout or PayFast). After the 2026-06 rewrite both providers use a
+// simple `window.location.assign(redirect_url)` — for PayFast the URL is a
+// Supabase-hosted handoff page that server-renders an auto-submit form.
+// This removes the fragile in-page cross-origin POST and the 1.8s timing
+// race that produced misleading "browser blocked the redirect" errors.
 import { supabase } from "@/integrations/supabase/client";
 
 export interface StartHostedPaymentArgs {
@@ -9,7 +13,7 @@ export interface StartHostedPaymentArgs {
   cancelUrl: string;
 }
 
-/** Calls payments-create-session and performs the redirect/POST. Throws on error. */
+/** Calls payments-create-session and navigates to the returned URL. Throws on error. */
 export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<void> {
   const { data, error } = await supabase.functions.invoke("payments-create-session", {
     body: {
@@ -23,45 +27,10 @@ export async function startHostedPayment(args: StartHostedPaymentArgs): Promise<
     const msg = (error as any)?.context?.error || (error as any)?.message || "Failed to start payment";
     throw new Error(typeof msg === "string" ? msg : "Failed to start payment");
   }
-  if (args.provider === "stripe") {
-    if (!data?.redirect_url) throw new Error("Stripe session response was empty");
-    window.location.assign(data.redirect_url);
-    return;
+  if (!data?.redirect_url) {
+    throw new Error("Payment session response was empty");
   }
-  // PayFast — auto-POST a hidden form
-  if (!data?.form_action || !data?.form_fields) {
-    throw new Error("PayFast session response was empty");
-  }
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = data.form_action;
-  form.style.display = "none";
-  Object.entries(data.form_fields as Record<string, string>).forEach(([k, v]) => {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = k;
-    input.value = String(v ?? "");
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
-  const startHref = window.location.href;
-  HTMLFormElement.prototype.submit.call(form);
-  // If the browser blocks the form-action (CSP, extension, popup blocker)
-  // the page won't navigate. Surface a clear error after a short delay
-  // instead of silently leaving the user on the previous page.
-  await new Promise<void>((resolve, reject) => {
-    window.setTimeout(() => {
-      if (window.location.href === startHref) {
-        reject(
-          new Error(
-            "The browser blocked the redirect to PayFast. This is usually a Content Security Policy or browser-extension issue — please contact support.",
-          ),
-        );
-      } else {
-        resolve();
-      }
-    }, 1800);
-  });
+  window.location.assign(data.redirect_url);
 }
 
 export interface OrderOnlineProvider {
