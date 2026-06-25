@@ -90,14 +90,9 @@ Deno.serve(async (req) => {
     return htmlError("PayFast credentials incomplete", 500);
   }
 
-  // Read the original return/cancel URLs stashed on the attempt's raw_payload
-  // when the session was created (we set them there for exactly this purpose).
-  const { data: attemptRow } = await sb
-    .from("order_payment_attempts")
-    .select("raw_payload")
-    .eq("id", attemptId)
-    .maybeSingle();
-  const handoff = (attemptRow?.raw_payload as any)?.handoff ?? {};
+  // Original return/cancel URLs were stashed on the attempt's raw_payload
+  // by payments-create-session for exactly this purpose.
+  const handoff = (attempt.raw_payload as any)?.handoff ?? {};
   const returnUrl = handoff.return_url as string | undefined;
   const cancelUrl = handoff.cancel_url as string | undefined;
   if (!returnUrl || !cancelUrl) {
