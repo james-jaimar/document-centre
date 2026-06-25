@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  useTenantMembers, useDeleteTenantMember, type TenantMemberRow,
+  useTenantMembers, type TenantMemberRow,
 } from "@/hooks/useTenantMembers";
 import { useBranches } from "@/hooks/useBranches";
 import { useManageUser } from "@/hooks/useManageUser";
@@ -39,7 +39,6 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
   const { data: members, isLoading } = useTenantMembers(tenantId, appId);
   const { data: branches } = useBranches(tenantId);
   const branch = branches?.find((b) => b.id === branchId);
-  const deleteMember = useDeleteTenantMember();
   const manageUser = useManageUser();
   const qc = useQueryClient();
 
@@ -104,8 +103,15 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
   const handleRemove = async () => {
     if (!removeTarget) return;
     try {
-      await deleteMember.mutateAsync(removeTarget.id);
+      await manageUser.mutateAsync({
+        action: "remove_membership",
+        target_profile_id: removeTarget.profile_id,
+        tenant_id: removeTarget.tenant_id,
+        app_id: removeTarget.app_id,
+        membership_id: removeTarget.id,
+      });
       toast.success("Removed from branch");
+      qc.invalidateQueries({ queryKey: ["tenant-members"] });
       setRemoveTarget(null);
     } catch (e: any) { toast.error(e.message); }
   };
