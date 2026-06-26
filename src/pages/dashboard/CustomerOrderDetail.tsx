@@ -815,6 +815,15 @@ const CustomerOrderDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ReorderReviewDialog
+        sourceOrderId={reviewSourceId}
+        onCancel={() => setReviewSourceId(null)}
+        onPlaced={(res) => {
+          setReviewSourceId(null);
+          setReorderResult(res);
+          queryClient.invalidateQueries({ queryKey: ["user-orders"] });
+        }}
+      />
       <ReorderPaymentDialog
         orderId={reorderResult?.id ?? null}
         orderNumber={reorderResult?.number}
