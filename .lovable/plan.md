@@ -1,39 +1,54 @@
-## Goal
-Get PayFast handoff working end-to-end on `postnetprintcentre.com` by fixing the two root causes the live headers expose.
 
-## Root cause recap
+## Good news first
 
-**A. 404 on `/pay/payfast`**
-`curl -I https://postnetprintcentre.com/pay/payfast` returns `301 → /pay/payfast/` from S3, then the trailing-slash URL returns `404`. S3 is treating `/pay/` as a directory because no SPA-fallback rewrite covers this path. Other client routes (e.g. `/admin`, `/t/...`) work because the deployed Amplify rewrite rule matches them but does not match this new `/pay/...` route after the 301 to trailing slash.
+The PayFast fix is already 100% tenant- and branch-agnostic. Nothing in the code path is hardcoded to PostNet. Everything is driven from these tables:
 
-**B. CSP `form-action` blocks the POST**
-Live header explicitly lists `https://www.payfast.co.za` yet Chrome still reports a violation. Chromium applies `form-action` to **every URL in the form-submission redirect chain**. PayFast's `/eng/process` 302s through PayFast checkout subdomains and (for some flows) third-party hosts that are not — and cannot reliably be — kept in an allow-list. Per the CSP spec, `form-action` does **not** fall back to `default-src`, so removing the directive is the documented, safe way to allow form posts while keeping every other CSP guarantee.
+- `tenant_payment_gateways` — which providers a tenant offers (enabled/disabled, mode, label)
+- `branch_payment_gateways` — per-branch credentials override (the only place real `merchant_id`/`merchant_key`/`passphrase` live, stored via Supabase Vault secret IDs)
+- `order_payment_attempts` — every attempt is stamped with `tenant_id` and `branch_id` so ITN can ringfence
 
-## Changes
+The shared resolver `resolveGatewaysForOrder` (used by `payments-create-session`, `payments-list-providers`, `payfast-itn`) walks tenant → branch credentials for every order, regardless of tenant. The infra-level fixes we shipped apply to all tenants automatically:
 
-### 1. `customHttp.yml` — relax `form-action`
-Drop the `form-action` directive from the CSP. All other CSP restrictions (script-src, connect-src, frame-src, object-src `'none'`, base-uri `'self'`, etc.) stay exactly as they are, so XSS, clickjacking, base-tag hijack, and data-exfil paths remain locked down. This matches what every major Stripe/PayFast/Adyen integration ships.
+- CSP `form-action` removed in `customHttp.yml`
+- SPA deep-link fallback for `/pay/payfast/` in `vite.config.ts`
+- Same-origin handoff page `src/pages/PayfastHandoff.tsx`
+- Signed-form payload from `payments-create-session`
+- ITN merchant_id cross-check + `/eng/query/validate` handshake in `payfast-itn`
+- Branch subscription gate in `payments-create-session`
 
-### 2. SPA fallback for `/pay/*`
-Two complementary fixes so the route works regardless of how the user arrives:
+So no code changes are needed to "roll this out" — the engine is generic. What's left is **operational verification** plus a couple of small UX helpers so onboarding a new tenant/branch is bullet-proof.
 
-- **`src/lib/payments/redirectToHostedPayment.ts`** — navigate via React Router (`navigate("/pay/payfast")`) for the in-app path, with `window.location.assign` only as a last-resort fallback. This avoids the S3 round-trip entirely for the normal "Pay Online" click.
-- **`public/pay/payfast/index.html`** — ship a static copy of `index.html` at the exact S3 key S3 is requesting (`/pay/payfast/`). This makes hard reloads, back-button, and PayFast's `cancel_url` resolve without depending on Amplify rewrite config we can't touch from the repo. Built as a tiny build-time copy step (or committed as a stub that loads the same bundle).
+## What I'll do
 
-### 3. Lock down `payments-create-session` `cancel_url`
-Update the checkout/order pages that build `cancel_url` to point back at the order page (e.g. `/t/:slug/orders/:id`) rather than `/pay/payfast`, so PayFast's cancel flow never round-trips through the handoff page.
+### 1. Read-only audit (no DB writes)
+Query the DB and report a single table per tenant showing:
+- Tenants that have `tenant_payment_gateways.payfast.is_enabled = true`
+- For each branch under those tenants: does `branch_payment_gateways` have a `payfast` row with a `credentials_secret_id`? mode (test/live)? passphrase present?
+- Any branches that are sub-active but missing online-payment creds (so customers will only see EFT)
+- Any orphan rows (branch creds for a provider the tenant has disabled)
 
-### 4. Smoke test
-After deploy:
-- `curl -I https://postnetprintcentre.com/pay/payfast/` → expect `200` serving the SPA shell.
-- From a real order, click **Pay Online** → handoff page renders → auto-submit succeeds → land on PayFast hosted page.
-- ITN still validates and marks the attempt paid (no change to `payfast-itn`).
+Output as a markdown table in chat. You decide what to fix.
 
-## What is NOT changing
-- No edge-function changes; the signed-payload flow from `payments-create-session` stays.
-- No change to PayFast credentials handling, ringfencing, or ITN validation.
-- All non-`form-action` CSP directives remain intact.
+### 2. Tighten the "are we ready?" UX (small frontend-only changes)
+- **`PaymentGatewaysCard.tsx`** (branch admin): show a single clear "PayFast is live for customers ✓" / "PayFast not yet active ✗ — missing: passphrase / merchant_key / tenant disabled" status line, computed from the existing `payments-get-credentials-summary` response + tenant gateway flag. Today the card shows masked fields but doesn't summarise readiness.
+- **Tenant admin → Payment Gateways**: add the same readiness summary per branch in the existing branches list, so a tenant owner can see at a glance which branches are payment-ready without clicking into each one.
+
+### 3. One-page operator runbook
+Add `docs/payments-rollout.md` covering:
+- The 3-layer model (Platform → Tenant → Branch) and exactly what lives where
+- Per-tenant checklist: enable PayFast in `tenant_payment_gateways`, then per branch save credentials (merchant_id, merchant_key, **passphrase**, mode)
+- How to test against PayFast sandbox per branch
+- How ringfencing works (so future-you doesn't worry about cross-tenant leakage)
+- Common failure messages and what they mean
+
+### Out of scope (flag only, don't change)
+- Stripe rollout — same model, but no customer has asked yet; the audit will note any tenant that has Stripe enabled without creds
+- Promo codes, tenant central billing, Stripe Tax — already on your earlier "later" list
 
 ## Technical notes
-- CSP `form-action` omission is explicitly allowed by W3C CSP Level 3 §6.3.3; browsers treat the absence as "no restriction on form submissions" and do **not** consult `default-src`.
-- The `/pay/payfast/index.html` static file is ~2 KB and references the hashed Vite bundle through the existing `<script type="module" src="/assets/...">` tag emitted in the root `index.html`. We generate it in `vite.config.ts` via a small `closeBundle` hook so it always matches the latest hash.
+
+- All changes in step 2 are presentation-only; no edge function, no migration, no RLS change.
+- Step 1 uses read-only `supabase--read_query` against `tenants`, `branches`, `tenant_payment_gateways`, `branch_payment_gateways`. No secret values are read — only `credentials_secret_id` presence + mode.
+- The `payments-get-credentials-summary` function already returns `has_passphrase` / masked fields, so the readiness pill needs no new backend.
+
+After you approve, I'll run the audit first and paste the results before touching any UI.
