@@ -127,9 +127,14 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                   </SelectContent>
                 </Select>
               </div>
+              {hasStripeCoupon && (
+                <div className="md:col-span-2 rounded-md border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 p-3 text-xs text-emerald-900 dark:text-emerald-100">
+                  ✓ This plan has a Stripe-linked coupon/promotion code attached in the dashboard — it will be applied automatically at checkout. The per-branch discount fields below are ignored when a plan-level coupon exists.
+                </div>
+              )}
               <div>
-                <Label>Discount type</Label>
-                <Select value={form.discount_type} onValueChange={(v) => setForm((f) => ({ ...f, discount_type: v }))}>
+                <Label>Per-branch discount type (fallback)</Label>
+                <Select value={form.discount_type} onValueChange={(v) => setForm((f) => ({ ...f, discount_type: v }))} disabled={hasStripeCoupon}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
@@ -142,11 +147,9 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
               <div>
                 <Label>Discount value</Label>
                 <Input type="number" value={form.discount_value}
-                  disabled={form.discount_type === "none"}
+                  disabled={form.discount_type === "none" || hasStripeCoupon}
                   onChange={(e) => setForm((f) => ({ ...f, discount_value: parseFloat(e.target.value) || 0 }))} />
               </div>
-              <div>
-                <Label>Trial</Label>
                 <Select
                   value={String(form.trial_days || 0)}
                   onValueChange={(v) => setForm((f) => ({ ...f, trial_days: parseInt(v) || 0 }))}
