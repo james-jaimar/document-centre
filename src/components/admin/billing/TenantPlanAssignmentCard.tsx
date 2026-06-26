@@ -50,6 +50,8 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
   }, [current]);
 
   const { data: plans } = useBranchPlans(form.region_id || undefined);
+  const selectedPlan = (plans ?? []).find((p: any) => p.plan_slug === form.plan_slug);
+  const hasStripeCoupon = !!(selectedPlan as any)?.stripe_coupon_id || !!(selectedPlan as any)?.stripe_promotion_code_id;
 
   const submit = async () => {
     if (!form.plan_slug) { toast.error("Choose a plan"); return; }
