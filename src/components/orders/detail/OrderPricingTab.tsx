@@ -237,48 +237,88 @@ export function OrderPricingTab({ order, jobs, payments, addresses = [], adjustm
         <div className="space-y-1 border-t pt-2">
           {adjustments.map((a: any) => {
             const isRefundPending = a.status === "refund_pending";
+            const isRefundInitiated = a.status === "refund_initiated";
             const isRefunded = a.status === "refunded";
+            const lastError = a.metadata?.last_attempt_error as string | undefined;
+            const autoRefunded = a.metadata?.auto_refunded === true;
             return (
-              <div key={a.id} className="flex justify-between items-center text-xs gap-2">
-                <span className="truncate max-w-[220px] text-muted-foreground flex items-center gap-1.5">
-                  {a.description}
-                  {isRefundPending && (
-                    <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Refund pending</Badge>
-                  )}
-                  {isRefunded && (
-                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Refunded</Badge>
-                  )}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <span className="font-medium">{fmt(a.amount)}</span>
-                  {editable && isRefundPending && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 px-2 text-[10px]"
-                      onClick={async () => {
-                        const ref = window.prompt(
-                          "Reference for the refund (e.g. PayFast txn id, EFT note):",
-                          "",
-                        );
-                        try {
-                          await markRefundCompleted({ adjustment_id: a.id, payment_reference: ref ?? undefined });
-                          toast.success("Refund recorded");
-                          refresh();
-                        } catch (e: any) {
-                          toast.error(e?.message || "Failed to mark refunded");
-                        }
-                      }}
-                    >
-                      Mark refunded
-                    </Button>
-                  )}
-                  {editable && !isRefundPending && !isRefunded && (
-                    <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => removeAdj(a.id)} disabled={saving}>
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </span>
+              <div key={a.id} className="flex flex-col gap-0.5 text-xs">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="truncate max-w-[220px] text-muted-foreground flex items-center gap-1.5">
+                    {a.description}
+                    {isRefundPending && (
+                      <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Refund pending</Badge>
+                    )}
+                    {isRefundInitiated && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">Refund in flight</Badge>
+                    )}
+                    {isRefunded && (
+                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                        {autoRefunded ? "Auto-refunded" : "Refunded"}
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-medium">{fmt(a.amount)}</span>
+                    {editable && isRefundPending && (
+                      <>
+                        <Button
+                          size="sm"
+                          className="h-6 px-2 text-[10px]"
+                          disabled={saving}
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              const res = await processOnlineRefund({ adjustment_id: a.id });
+                              if (res.outcome === "manual_required") {
+                                toast.info("No online charge found — record manually.");
+                              } else if (res.outcome === "refunded") {
+                                toast.success(`Refund completed via ${res.provider}`);
+                              } else {
+                                toast.success(`Refund initiated via ${res.provider} — awaiting confirmation`);
+                              }
+                              refresh();
+                            } catch (e: any) {
+                              toast.error(e?.message || "Refund failed");
+                            } finally {
+                              setSaving(false);
+                            }
+                          }}
+                        >
+                          Refund now
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-[10px]"
+                          onClick={async () => {
+                            const ref = window.prompt(
+                              "Reference for the manual refund (e.g. EFT note, cash receipt):",
+                              "",
+                            );
+                            try {
+                              await markRefundCompleted({ adjustment_id: a.id, payment_reference: ref ?? undefined });
+                              toast.success("Refund recorded");
+                              refresh();
+                            } catch (e: any) {
+                              toast.error(e?.message || "Failed to mark refunded");
+                            }
+                          }}
+                        >
+                          Mark manual
+                        </Button>
+                      </>
+                    )}
+                    {editable && !isRefundPending && !isRefunded && !isRefundInitiated && (
+                      <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => removeAdj(a.id)} disabled={saving}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </span>
+                </div>
+                {lastError && isRefundPending && (
+                  <p className="text-[10px] text-destructive ml-0.5">Last attempt: {lastError}</p>
+                )}
               </div>
             );
           })}
