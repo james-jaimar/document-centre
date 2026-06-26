@@ -1,68 +1,90 @@
-# Auto-refunds for Stripe & PayFast
 
-Today every refund (cancel, qty reduction, fulfillment downgrade) creates an `order_adjustments` row with `status='refund_pending'` and the branch has to click **Mark refunded** after pushing money back manually. We'll wire each provider's refund API so online-paid orders refund automatically, and fall back to the manual flow only when the provider call can't be made.
+## Goal
 
-## 1. Capture provider refund handles on success
+Make the subscription onboarding follow the rules you and ChatGPT settled on:
 
-We can only refund what we can identify. Audit the success paths and make sure each `payments` row carries the IDs the provider's refund API needs:
+- Every branch gets **one** trial path — never two.
+- 14-day no-card trial = app-only entitlement, no Stripe sub.
+- 30-day card trial = Stripe Checkout subscription with 30-day trial + intro coupon.
+- "Subscribe now" = Stripe Checkout subscription with intro coupon, no trial.
+- Once the trial is consumed (or expires), the only remaining option is **Subscribe now** — the other trial card disappears.
+- After expiry, branch is locked out of the app and bounced to /billing.
 
-- **Stripe** (`stripe-order-webhook` on `checkout.session.completed`): store `payment_intent` (and `charge` id if available) on the `payments` row and in `orders.metadata.stripe.payment_intent_id`.
-- **PayFast** (`payfast-itn`): persist `pf_payment_id` (PayFast's own id) plus the `m_payment_id` we sent, on the `payments` row and `orders.metadata.payfast`.
+Most of the plumbing is already there (`branch_subscriptions`, `start-branch-trial`, `create-branch-checkout`, `trial_started_via`, `useBranchEntitlement`). This plan closes the remaining gaps.
 
-Backfill: a short SQL pass to populate these from existing webhook payloads where present, so already-paid test orders are refundable.
+---
 
-## 2. New shared refund dispatcher (edge fn `payments-refund`)
+## 1. Enforce "one trial per branch" on the server
 
-Single entrypoint called by `order-engine` whenever a `refund_pending` adjustment is created, and also callable from the **Mark refunded** button (which becomes **Refund now** for online-paid orders).
+Both Edge Functions currently allow the other trial to be re-taken.
 
-Inputs: `adjustment_id` (or `order_id` + `amount` + `reason`).
-Behaviour:
-1. Loads the order, its successful `payments` rows, and tenant/branch payment-gateway credentials (same `resolveGatewaysForOrder` helper as `payments-create-session`, so tenant ringfencing is preserved).
-2. Picks the original paying provider from the most recent succeeded payment.
-3. Calls the provider:
-   - **Stripe**: `stripe.refunds.create({ payment_intent, amount: zar*100, reason: 'requested_by_customer', metadata: { order_id, adjustment_id }})`. Idempotency-Key = `adjustment_id`.
-   - **PayFast**: `POST https://api.payfast.co.za/refunds/{pf_payment_id}` (sandbox host in sandbox mode), body `amount` (cents) + `reason` + `merchant-reference`, signed exactly like our existing `pfEncode`/`payfastSignFormPairs` helper using the tenant's passphrase. Headers: `merchant-id`, `version=v1`, `timestamp`, `signature`.
-4. On success: insert a negative `payments` row (provider = stripe/payfast, `status='refunded'`, amount = `-refundAmt`, `provider_refund_id` in metadata), update the adjustment to `status='refunded'` with `metadata.auto_refunded=true`, decrement `orders.amount_paid`, re-sync totals, log timeline `refund_completed`.
-5. On failure: leave the adjustment as `refund_pending`, write a timeline entry `refund_failed` with the provider error, surface the error to the UI so the branch can retry or fall back to manual.
+**`start-branch-trial`**
+- Reject if `branch_subscriptions.trial_started_via IS NOT NULL` OR `trial_started_at IS NOT NULL` OR `stripe_subscription_id IS NOT NULL`. Return `{ error: "trial_already_used" }`.
 
-Partial refunds and multi-payment orders are supported by passing explicit `amount` and walking payments newest-first until the refund amount is satisfied.
+**`create-branch-checkout`**
+- When `trial_days >= 30` (i.e. the 30-day card trial path), reject if `trial_started_via IS NOT NULL` OR a Stripe subscription already exists. The "Subscribe now" path (trial_days = 0) is still allowed.
 
-## 3. Async confirmation via webhooks
+No DB migration needed — `trial_started_via` already exists and is stamped by both functions.
 
-Stripe refunds can settle asynchronously (esp. bank rails). Extend `stripe-webhook` / `stripe-order-webhook` to handle `charge.refunded` and `refund.updated` — match by `metadata.adjustment_id` and only mark the adjustment `refunded` once the provider reports `succeeded`. PayFast ITN already fires on refund events; extend `payfast-itn` to detect `payment_status='REFUND'` and reconcile the same way. The initial API call optimistically marks `refund_initiated`; the webhook flips it to `refunded`.
+## 2. Hide the trial cards once a trial is consumed
 
-## 4. order-engine integration
+In `src/components/branch/BranchSubscriptionPanel.tsx`:
 
-In `cancelOrder`, `customerChangeQuantities`, `customerChangeFulfillment` (the three places that call `createRefundPendingAdjustment`):
-- After inserting the adjustment, if the order's last successful payment is Stripe or PayFast, invoke `payments-refund` server-to-server.
-- Keep the existing `refund_pending` return flag so the UI still warns the customer, but flip it to `refund_initiated` when the provider call succeeds synchronously.
+- Compute `trialConsumed = !!subscription?.trial_started_via || !!subscription?.trial_started_at || !!subscription?.stripe_subscription_id || ["expired","cancelled","past_due"].includes(subscription?.status ?? "")`.
+- If `trialConsumed`, hide both trial cards and show only the **Subscribe now** card with a note: *"Trial offers are once per branch. To continue, please activate your paid subscription."*
+- Keep the "Manage billing in Stripe" button visible whenever a Stripe customer exists.
 
-EFT / manual payments keep today's flow unchanged.
+## 3. Expiry → lock out → /billing
 
-## 5. UI changes
+`useBranchEntitlement` already returns `restricted` / `cancelled`. The customer storefront gate (`useBranchStorefrontGate`) already blocks checkout. Add:
 
-- `OrderPricingTab.tsx`: relabel button per state — **Refund automatically** (online-paid, pending), **Retry refund** (after a failed auto attempt, shows provider error), **Mark refunded** (manual/EFT only). Show "Auto-refunded via Stripe/PayFast on {date} — ref {provider_refund_id}" when complete.
-- `ManageOrderPanel` / `CancelOrderDialog`: copy update — "Your card will be refunded automatically" for online-paid orders, existing manual copy for EFT.
-- Branch admin gets a toast + timeline entry on auto-refund success/failure.
+- A 14-day no-card trial whose `trial_ends_at < now()` should resolve to `state = "restricted"`. Confirm `resolve_branch_entitlement` does this; if it currently keeps them on `trialing`, patch the SQL function to flip to `restricted` once `trial_ends_at` has passed and no Stripe sub exists.
+- In `ProtectedRoute` (or a thin wrapper used by branch admin/dashboard routes), when `useBranchSubscriptionGate` returns `billingOnly = true`, redirect any non-billing route to `…/admin/settings/billing` (or the branch billing route, whichever the branch user lands on).
 
-## 6. Safety & ringfencing
+## 4. Make sure the Stripe 30-day-trial + 3-month coupon math is right
 
-- Refund creds come from the same `branch_payment_gateways` / `tenant_payment_gateways` row that took the payment — never cross-tenant.
-- Stripe Idempotency-Key + adjustment uniqueness prevents double refunds on retries.
-- Refund amount is clamped to `min(adjustment.amount, sum(successful payments) - sum(prior refunds))`.
-- All provider responses logged to `ops_audit_log` (action `payment_refund`).
+You currently apply `plan.stripe_coupon_id` (R250 off, repeating 3 months) and `subscription_data.trial_period_days = 30` in the same Checkout Session. Stripe attaches the coupon at subscription creation, so the 3-month repeating window can start counting from day 0 — meaning the customer can lose one discounted month to the trial.
 
-## 7. Rollout
+Action:
+- Add an optional `stripe_coupon_id_with_trial` column to `platform_pricing_plans` (nullable). When `trial_days > 0` and that column is set, use it instead of `stripe_coupon_id`.
+- In Stripe, create a second coupon "R250 off, repeating 4 months" and paste its ID into that new field for the PostNet plan. That guarantees three discounted paid invoices after the 30-day trial regardless of how Stripe counts the duration.
+- Verify with a Stripe Test Clock before going live; if Stripe in fact only counts paid invoices, you can clear the field and the function falls back to the normal 3-month coupon.
 
-1. Migration: add `provider_refund_id`, `provider_payment_intent_id` columns to `payments` (nullable) + backfill from existing metadata; add `status` value `refund_initiated` handling.
-2. Ship `payments-refund` edge fn + webhook extensions.
-3. Wire order-engine to invoke it.
-4. Update UI labels and dialogs.
-5. Manual test matrix: Stripe full cancel, Stripe partial qty drop, PayFast full cancel, PayFast fulfillment downgrade, EFT (should stay manual), failed-provider retry path.
+## 5. UX copy + ZAR
 
-## Technical notes
+Sweep `BranchSubscriptionPanel.tsx` and the disclosure card for any `$` symbols; force `R` + integer rand. Replace card copy to match the ladder:
 
-- PayFast refund API requires the **live** merchant to enable refunds in their dashboard; we'll surface a clear error if the call returns "Refunds not enabled" and fall back to manual with guidance.
-- Sandbox PayFast supports refunds against sandbox payments only; tests will use the sandbox creds already saved on Test Branch.
-- Stripe refunds support partial amounts natively; we pass `amount` in minor units of the order currency.
-- No schema change to `order_adjustments` — `status='refund_initiated'` is a new value handled in code; existing `refund_pending` / `refunded` semantics preserved.
+- **14-day free trial** — *No card required. Once used, the next step is a paid subscription.*
+- **30-day free trial** — *Card required. Converts automatically after 30 days unless cancelled.*
+- **Subscribe now** — *R499/month for the first 3 months, then R749/month.*
+
+When `trialConsumed`, replace the heading with *"Your trial has been used — activate your subscription to continue."*
+
+## 6. Post-checkout & webhook sanity
+
+Already handled, just confirm:
+
+- `stripe-order-webhook` (or whichever subscription webhook you have) updates `branch_subscriptions.status`, `trial_ends_at`, `current_period_end`, `stripe_subscription_id` on `customer.subscription.created/updated/deleted`, `invoice.payment_succeeded`, `invoice.payment_failed`.
+- On `invoice.payment_failed` set `status = past_due` (grace handled by `subscription-dunning-sweep`).
+- On `customer.subscription.deleted` set `status = cancelled`.
+
+If any of the six events above isn't wired, add them in a follow-up; flag them in the implementation pass.
+
+---
+
+## Files touched
+
+- `supabase/functions/start-branch-trial/index.ts` — reject if trial already consumed.
+- `supabase/functions/create-branch-checkout/index.ts` — reject 30-day-trial path if trial consumed; honour `stripe_coupon_id_with_trial`.
+- `supabase/migrations/<new>.sql` — add `platform_pricing_plans.stripe_coupon_id_with_trial text`.
+- `src/components/branch/BranchSubscriptionPanel.tsx` — hide trial cards once consumed, refreshed copy, ZAR.
+- `src/components/ProtectedRoute.tsx` (or a small branch-route wrapper) — force redirect to /billing when entitlement is `restricted`/`cancelled`.
+- `resolve_branch_entitlement` SQL function — confirm/patch expiry flip for no-card trials.
+
+## Out of scope (call out, don't build)
+
+- Customer-facing storefront gate already exists; no changes needed.
+- Tenant central billing card on file — you said per branch, so nothing to do.
+- Promo codes feature — separate workstream when you design real codes.
+
+After approval I'll implement, then walk you through a manual test: invite → password → /choose-plan → pick 14-day → wait/cheat the clock → confirm only "Subscribe now" shows → checkout → portal.
