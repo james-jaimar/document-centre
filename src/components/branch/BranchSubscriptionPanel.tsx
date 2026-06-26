@@ -172,17 +172,24 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
               onChange={setAccepted}
             />
 
-            {trialExpired ? (
-              <Button onClick={() => handleCheckout("pay")} disabled={anyLoading || !accepted} size="lg" className="w-full">
-                {loading === "pay" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
-              </Button>
+            {trialExpired || trialConsumed ? (
+              <div className="space-y-3">
+                {trialConsumed && !trialExpired && (
+                  <p className="text-sm text-muted-foreground">
+                    Trial offers are once per branch. Activate your subscription to continue.
+                  </p>
+                )}
+                <Button onClick={() => handleCheckout("pay")} disabled={anyLoading || !accepted} size="lg" className="w-full">
+                  {loading === "pay" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Subscribe now
+                </Button>
+              </div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className={`grid gap-3 ${offer14 && offer30 ? "md:grid-cols-3" : offer14 || offer30 ? "md:grid-cols-2" : "md:grid-cols-1"}`}>
                 {offer14 && (
                   <TrialChoiceCard
-                    title="Start 14-day free trial"
-                    blurb="No card required. Full access for 14 days."
-                    cta="Start free trial"
+                    title="14-day free trial"
+                    blurb="No card required. Once used, the next step is a paid subscription."
+                    cta="Start 14-day trial"
                     loading={loading === "trial14"}
                     disabled={anyLoading || !accepted}
                     onClick={handleStartTrial14}
@@ -190,18 +197,18 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
                 )}
                 {offer30 && (
                   <TrialChoiceCard
-                    title="Start 30-day trial"
-                    blurb="Card required. Auto-charges on day 30. Cancel anytime."
-                    cta="Start trial with card"
+                    title="30-day free trial"
+                    blurb="Card required. Converts to a paid subscription after 30 days unless cancelled."
+                    cta="Start 30-day trial"
                     loading={loading === "trial30"}
                     disabled={anyLoading || !accepted}
                     onClick={() => handleCheckout("trial30")}
                   />
                 )}
                 <TrialChoiceCard
-                  title="Activate now"
-                  blurb="Pay immediately. Subscription goes live right away."
-                  cta="Pay & activate"
+                  title="Subscribe now"
+                  blurb="Start immediately on the launch offer. Cancel anytime from the Stripe billing portal."
+                  cta="Subscribe now"
                   highlight
                   loading={loading === "pay"}
                   disabled={anyLoading || !accepted}
