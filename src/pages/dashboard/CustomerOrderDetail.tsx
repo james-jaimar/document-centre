@@ -93,6 +93,8 @@ const JOB_STATUS_LABEL: Record<string, string> = {
 };
 
 import { formatPrice } from "@/lib/formatCurrency";
+import { ManageOrderPanel } from "@/components/customer/ManageOrderPanel";
+
 
 const fmt = (amount: number, currency = "ZAR") => formatPrice(Number(amount ?? 0), currency);
 
