@@ -2041,6 +2041,16 @@ Deno.serve(async (req) => {
       case "updateOrderAddress":
         response = await updateOrderAddress(admin, userId, payload);
         break;
+      case "customerChangeQuantities":
+        response = await customerChangeQuantities(admin, userId, payload);
+        break;
+      case "customerChangeFulfillment":
+        response = await customerChangeFulfillment(admin, userId, payload);
+        break;
+      case "markRefundCompleted":
+        response = await markRefundCompleted(admin, userId, payload);
+        break;
+
       default:
         return err(`Unknown action: ${action}`, 400);
     }
