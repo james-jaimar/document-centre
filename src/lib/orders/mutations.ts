@@ -322,6 +322,27 @@ export async function markRefundCompleted(payload: {
   );
 }
 
+/**
+ * Trigger a real refund through the original payment provider
+ * (Stripe `refunds.create` or PayFast `/refund`). Falls back to a manual
+ * outcome when the order wasn't paid online.
+ */
+export async function processOnlineRefund(payload: {
+  adjustment_id: string;
+  amount?: number;
+}) {
+  const { data, error } = await supabase.functions.invoke("payments-refund", {
+    body: payload,
+  });
+  if (error) throw new Error(error.message || "Refund failed");
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data as {
+    ok: true;
+    outcome: "refund_initiated" | "refunded" | "manual_required";
+    provider?: "stripe" | "payfast";
+    provider_refund_id?: string;
+  };
+
 export interface ProcessDocumentResult {
   assetId: string;
   grayscaleJobId?: string;
