@@ -58,8 +58,14 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
 
   const trialOffer: "none" | "trial_14_no_card" | "trial_30_with_card" | "both" =
     (assignedPlan?.trial_offer as any) ?? "both";
-  const offer14 = trialOffer === "trial_14_no_card" || trialOffer === "both";
-  const offer30 = trialOffer === "trial_30_with_card" || trialOffer === "both";
+  // One trial per branch: once any trial path has been taken (no-card or card),
+  // or a Stripe subscription exists, the only remaining option is paid checkout.
+  const trialConsumed =
+    !!(subscription as any)?.trial_started_via ||
+    !!subscription?.trial_started_at ||
+    !!subscription?.stripe_subscription_id;
+  const offer14 = !trialConsumed && (trialOffer === "trial_14_no_card" || trialOffer === "both");
+  const offer30 = !trialConsumed && (trialOffer === "trial_30_with_card" || trialOffer === "both");
 
   const requireAccepted = () => {
     if (!accepted || accepted.length === 0) {
