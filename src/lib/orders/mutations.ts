@@ -286,6 +286,42 @@ export async function updateOrderAddress(payload: {
   return invokeOrderEngine<{ success: boolean }>("updateOrderAddress", payload as any);
 }
 
+// ── Customer self-service order edits ───────────────────────
+
+export type CustomerEditResult = {
+  success: boolean;
+  requires_payment?: boolean;
+  credit_amount?: number;
+  changes?: string[];
+  unchanged?: boolean;
+};
+
+export async function customerChangeQuantities(payload: {
+  order_id: string;
+  job_overrides: Array<{ sequence_no: number; quantity?: number; remove?: boolean }>;
+}) {
+  return invokeOrderEngine<CustomerEditResult>("customerChangeQuantities", payload);
+}
+
+export async function customerChangeFulfillment(payload: {
+  order_id: string;
+  fulfillment_type: "delivery" | "collection";
+  delivery_amount?: number;
+  delivery_description?: string;
+}) {
+  return invokeOrderEngine<CustomerEditResult>("customerChangeFulfillment", payload);
+}
+
+export async function markRefundCompleted(payload: {
+  adjustment_id: string;
+  payment_reference?: string;
+}) {
+  return invokeOrderEngine<{ success: boolean; payment_id?: string }>(
+    "markRefundCompleted",
+    payload,
+  );
+}
+
 export interface ProcessDocumentResult {
   assetId: string;
   grayscaleJobId?: string;

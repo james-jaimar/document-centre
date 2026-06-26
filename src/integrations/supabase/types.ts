@@ -2738,7 +2738,9 @@ export type Database = {
           created_by: string | null
           description: string
           id: string
+          metadata: Json
           order_id: string
+          status: string
         }
         Insert: {
           amount?: number
@@ -2746,7 +2748,9 @@ export type Database = {
           created_by?: string | null
           description: string
           id?: string
+          metadata?: Json
           order_id: string
+          status?: string
         }
         Update: {
           amount?: number
@@ -2754,7 +2758,9 @@ export type Database = {
           created_by?: string | null
           description?: string
           id?: string
+          metadata?: Json
           order_id?: string
+          status?: string
         }
         Relationships: [
           {

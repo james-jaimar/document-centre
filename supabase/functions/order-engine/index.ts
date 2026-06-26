@@ -1211,8 +1211,26 @@ async function cancelOrder(
     }),
   ]);
 
+  // Auto-raise refund_pending adjustment so the branch sees a clear action item.
+  if (refundPending) {
+    await admin.from("order_adjustments").insert({
+      order_id,
+      description: `Refund owed — order cancelled (${reason.slice(0, 80)})`,
+      amount: -Math.abs(Number(order.amount_paid)),
+      status: "refund_pending",
+      metadata: {
+        reason,
+        raised_at: new Date().toISOString(),
+        raised_by: userId,
+        source: "order_cancelled",
+        amount_paid: order.amount_paid,
+      },
+    });
+  }
+
   return json({ success: true, refund_pending: refundPending });
 }
+
 
 // ── Admin-only order editing ────────────────────────────────
 
@@ -1515,6 +1533,290 @@ async function updateOrderAddress(
   return json({ success: true });
 }
 
+// ── Customer self-service (edit window only) ────────────────
+
+const CUSTOMER_EDIT_ADMIN_OK = new Set(["new_order", "under_review"]);
+const CUSTOMER_EDIT_JOB_OK = new Set(["new", "awaiting_payment", "proof_pending", "on_hold"]);
+
+async function loadCustomerEditableOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order_id: string,
+) {
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, customer_status, payment_status, amount_paid, total_amount, currency, fulfillment_type, ordered_by_profile_id, metadata")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (error || !order) return { error: "Order not found", order: null as any, jobs: [] as any[] };
+  if ((order as any).ordered_by_profile_id !== userId) {
+    return { error: "Only the order's customer may edit it", order: null as any, jobs: [] as any[] };
+  }
+  if (!CUSTOMER_EDIT_ADMIN_OK.has((order as any).admin_status)) {
+    return { error: "This order can no longer be changed — please message the branch", order: null as any, jobs: [] as any[] };
+  }
+  const { data: jobs } = await admin
+    .from("order_jobs")
+    .select("id, sequence_no, job_number, job_status, product_name, quantity, net_price, cost_price, gross_price")
+    .eq("order_id", order_id)
+    .order("sequence_no");
+  if ((jobs ?? []).some((j: any) => !CUSTOMER_EDIT_JOB_OK.has(j.job_status))) {
+    return { error: "Production has already started on at least one item", order: null as any, jobs: [] as any[] };
+  }
+  return { error: null, order, jobs: jobs ?? [] };
+}
+
+/** Recompute totals from current jobs+adjustments+overheads, store on orders. */
+async function syncOrderTotals(admin: ReturnType<typeof createClient>, order_id: string) {
+  const [{ data: jobs }, { data: adjs }, { data: o }] = await Promise.all([
+    admin.from("order_jobs").select("net_price").eq("order_id", order_id),
+    admin.from("order_adjustments").select("amount, status").eq("order_id", order_id),
+    admin.from("orders").select("discount_amount, delivery_amount, vat_amount, amount_paid").eq("id", order_id).single(),
+  ]);
+  const jobsTotal = (jobs ?? []).reduce((s, j: any) => s + Number(j.net_price || 0), 0);
+  const adjTotal = (adjs ?? [])
+    .filter((a: any) => a.status === "active")
+    .reduce((s, a: any) => s + Number(a.amount || 0), 0);
+  const subtotal = jobsTotal + adjTotal;
+  const total = Math.round((subtotal - Number((o as any).discount_amount || 0) + Number((o as any).delivery_amount || 0) + Number((o as any).vat_amount || 0)) * 100) / 100;
+  const paid = Number((o as any).amount_paid || 0);
+  const due = Math.round((total - paid) * 100) / 100;
+  const payment_status = paid <= 0 ? "unpaid" : paid >= total ? "paid" : "partial";
+  await admin
+    .from("orders")
+    .update({ subtotal, total_amount: total, amount_due: due, payment_status, updated_at: new Date().toISOString() })
+    .eq("id", order_id);
+  return { subtotal, total, due, paid, payment_status };
+}
+
+/** Create a refund_pending negative-amount adjustment that branch can clear. */
+async function createRefundPendingAdjustment(
+  admin: ReturnType<typeof createClient>,
+  order_id: string,
+  amount: number,
+  description: string,
+  reason: string,
+) {
+  await admin.from("order_adjustments").insert({
+    order_id,
+    description,
+    amount: -Math.abs(amount),
+    status: "refund_pending",
+    metadata: { reason, raised_at: new Date().toISOString() },
+  });
+}
+
+async function customerChangeQuantities(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, job_overrides } = payload;
+  if (!order_id || !Array.isArray(job_overrides) || !job_overrides.length) {
+    return err("order_id and job_overrides[] required");
+  }
+  const { error: e, order, jobs } = await loadCustomerEditableOrder(admin, userId, order_id);
+  if (e) return err(e, 403);
+
+  const bySeq = new Map<number, { quantity?: number; remove?: boolean }>();
+  for (const o of job_overrides) {
+    if (typeof o?.sequence_no === "number") bySeq.set(o.sequence_no, { quantity: o.quantity, remove: !!o.remove });
+  }
+
+  const remaining = jobs.filter((j: any) => !bySeq.get(j.sequence_no)?.remove);
+  if (!remaining.length) return err("Cannot remove the last item — cancel the order instead");
+
+  // Apply changes: scale price linearly by qty (mirrors reorder flow).
+  const changes: string[] = [];
+  for (const j of jobs as any[]) {
+    const ov = bySeq.get(j.sequence_no);
+    if (!ov) continue;
+    if (ov.remove) {
+      await admin.from("order_jobs").update({ job_status: "cancelled" }).eq("id", j.id);
+      changes.push(`removed ${j.job_number} (${j.product_name})`);
+      continue;
+    }
+    const newQty = ov.quantity && ov.quantity > 0 ? Math.floor(ov.quantity) : Number(j.quantity);
+    const oldQty = Number(j.quantity || 1) || 1;
+    if (newQty === oldQty) continue;
+    const scale = newQty / oldQty;
+    await admin
+      .from("order_jobs")
+      .update({
+        quantity: newQty,
+        net_price: Number(j.net_price || 0) * scale,
+        cost_price: Number(j.cost_price || 0) * scale,
+        gross_price: Number(j.gross_price || 0) * scale,
+      })
+      .eq("id", j.id);
+    changes.push(`${j.job_number}: ${oldQty} → ${newQty}`);
+  }
+
+  if (!changes.length) return json({ success: true, unchanged: true });
+
+  const before = await syncOrderTotals(admin, order_id);
+  const delta = Math.round((before.total - Number((order as any).amount_paid)) * 100) / 100;
+
+  // Negative delta on a paid order ⇒ raise refund pending for the credit.
+  let refundFlagged = false;
+  if (delta < 0 && Number((order as any).amount_paid) > 0) {
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      Math.abs(delta),
+      `Credit owed after customer quantity reduction`,
+      `Customer reduced quantities`,
+    );
+    refundFlagged = true;
+    await syncOrderTotals(admin, order_id);
+  }
+
+  await admin.from("timeline_events").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    branch_id: (order as any).branch_id,
+    order_id,
+    event_type: "customer_edited_quantities",
+    visibility: "both",
+    actor_type: "customer",
+    actor_profile_id: userId,
+    description: `Customer changed items: ${changes.join("; ")}`,
+    metadata: { changes, refund_flagged: refundFlagged },
+  });
+
+  return json({
+    success: true,
+    changes,
+    requires_payment: delta > 0.005,
+    credit_amount: refundFlagged ? Math.abs(delta) : 0,
+  });
+}
+
+async function customerChangeFulfillment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, fulfillment_type, delivery_amount, delivery_description } = payload;
+  if (!order_id || !["delivery", "collection"].includes(fulfillment_type)) {
+    return err("order_id and fulfillment_type (delivery|collection) required");
+  }
+  const { error: e, order } = await loadCustomerEditableOrder(admin, userId, order_id);
+  if (e) return err(e, 403);
+
+  const newDelivery = fulfillment_type === "collection" ? 0 : Number(delivery_amount ?? 0);
+  if (fulfillment_type === "delivery" && newDelivery < 0) return err("Delivery amount required for delivery");
+
+  const meta = ((order as any).metadata as any) ?? {};
+  if (typeof delivery_description === "string") meta.delivery_description = delivery_description;
+
+  const { error: upErr } = await admin
+    .from("orders")
+    .update({ fulfillment_type, delivery_amount: newDelivery, metadata: meta })
+    .eq("id", order_id);
+  if (upErr) return err(`Failed to update fulfillment: ${upErr.message}`);
+
+  const after = await syncOrderTotals(admin, order_id);
+  const delta = Math.round((after.total - Number((order as any).amount_paid)) * 100) / 100;
+
+  let refundFlagged = false;
+  if (delta < 0 && Number((order as any).amount_paid) > 0) {
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      Math.abs(delta),
+      `Credit owed after customer fulfillment switch`,
+      `Customer changed fulfillment method`,
+    );
+    refundFlagged = true;
+    await syncOrderTotals(admin, order_id);
+  }
+
+  await admin.from("timeline_events").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    branch_id: (order as any).branch_id,
+    order_id,
+    event_type: "customer_changed_fulfillment",
+    visibility: "both",
+    actor_type: "customer",
+    actor_profile_id: userId,
+    description: `Customer switched to ${fulfillment_type === "delivery" ? "delivery" : "collection"}`,
+    metadata: { from: (order as any).fulfillment_type, to: fulfillment_type, delivery_amount: newDelivery, refund_flagged: refundFlagged },
+  });
+
+  return json({
+    success: true,
+    requires_payment: delta > 0.005,
+    credit_amount: refundFlagged ? Math.abs(delta) : 0,
+  });
+}
+
+async function markRefundCompleted(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { adjustment_id, payment_reference } = payload;
+  if (!adjustment_id) return err("adjustment_id required");
+
+  const { data: adj } = await admin
+    .from("order_adjustments")
+    .select("id, order_id, amount, description, status, metadata")
+    .eq("id", adjustment_id)
+    .maybeSingle();
+  if (!adj) return err("Adjustment not found", 404);
+  if ((adj as any).status !== "refund_pending") return err("Adjustment is not refund_pending");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, (adj as any).order_id);
+  if (denied) return err(denied, 403);
+
+  const refundAmt = Math.abs(Number((adj as any).amount || 0));
+  // Update adjustment to refunded; insert a negative payment for the trail.
+  await admin
+    .from("order_adjustments")
+    .update({
+      status: "refunded",
+      metadata: { ...((adj as any).metadata ?? {}), refunded_at: new Date().toISOString(), refunded_by: userId, payment_reference: payment_reference || null },
+    })
+    .eq("id", adjustment_id);
+
+  const { data: payment } = await admin
+    .from("payments")
+    .insert({
+      order_id: (adj as any).order_id,
+      app_id: (order as any).app_id,
+      tenant_id: (order as any).tenant_id,
+      provider: "manual",
+      status: "refunded",
+      amount: -refundAmt,
+      currency: (order as any).currency,
+      payment_reference: payment_reference || (adj as any).description || "Refund",
+      paid_at: new Date().toISOString(),
+      metadata: { adjustment_id, source: "mark_refund_completed" },
+    })
+    .select("id")
+    .single();
+
+  // Reduce amount_paid by refund, then re-sync.
+  const newPaid = Math.max(Number((order as any).amount_paid || 0) - refundAmt, 0);
+  await admin.from("orders").update({ amount_paid: newPaid }).eq("id", (adj as any).order_id);
+  await syncOrderTotals(admin, (adj as any).order_id);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "refund_completed",
+    `Refund of R${refundAmt.toFixed(2)} marked complete (${(adj as any).description})`,
+    { adjustment_id, payment_id: payment?.id, amount: refundAmt },
+    "both",
+  );
+
+  return json({ success: true, payment_id: payment?.id });
+}
+
+
 // ── Main handler ────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -1757,6 +2059,16 @@ Deno.serve(async (req) => {
       case "updateOrderAddress":
         response = await updateOrderAddress(admin, userId, payload);
         break;
+      case "customerChangeQuantities":
+        response = await customerChangeQuantities(admin, userId, payload);
+        break;
+      case "customerChangeFulfillment":
+        response = await customerChangeFulfillment(admin, userId, payload);
+        break;
+      case "markRefundCompleted":
+        response = await markRefundCompleted(admin, userId, payload);
+        break;
+
       default:
         return err(`Unknown action: ${action}`, 400);
     }

@@ -14,7 +14,9 @@ import {
   updateJobNetPrice,
   addOrderAdjustment,
   removeOrderAdjustment,
+  markRefundCompleted,
 } from "@/lib/orders/mutations";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useQueryClient } from "@tanstack/react-query";
@@ -232,19 +234,53 @@ export function OrderPricingTab({ order, jobs, payments, addresses = [], adjustm
       {/* Manual adjustments */}
       {(adjustments.length > 0 || editable) && (
         <div className="space-y-1 border-t pt-2">
-          {adjustments.map((a: any) => (
-            <div key={a.id} className="flex justify-between items-center text-xs">
-              <span className="truncate max-w-[220px] text-muted-foreground">{a.description}</span>
-              <span className="inline-flex items-center gap-1">
-                <span className="font-medium">{fmt(a.amount)}</span>
-                {editable && (
-                  <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => removeAdj(a.id)} disabled={saving}>
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </span>
-            </div>
-          ))}
+          {adjustments.map((a: any) => {
+            const isRefundPending = a.status === "refund_pending";
+            const isRefunded = a.status === "refunded";
+            return (
+              <div key={a.id} className="flex justify-between items-center text-xs gap-2">
+                <span className="truncate max-w-[220px] text-muted-foreground flex items-center gap-1.5">
+                  {a.description}
+                  {isRefundPending && (
+                    <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Refund pending</Badge>
+                  )}
+                  {isRefunded && (
+                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Refunded</Badge>
+                  )}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="font-medium">{fmt(a.amount)}</span>
+                  {editable && isRefundPending && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={async () => {
+                        const ref = window.prompt(
+                          "Reference for the refund (e.g. PayFast txn id, EFT note):",
+                          "",
+                        );
+                        try {
+                          await markRefundCompleted({ adjustment_id: a.id, payment_reference: ref ?? undefined });
+                          toast.success("Refund recorded");
+                          refresh();
+                        } catch (e: any) {
+                          toast.error(e?.message || "Failed to mark refunded");
+                        }
+                      }}
+                    >
+                      Mark refunded
+                    </Button>
+                  )}
+                  {editable && !isRefundPending && !isRefunded && (
+                    <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => removeAdj(a.id)} disabled={saving}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </span>
+              </div>
+            );
+          })}
           {editable && (
             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAdjDialog(true)}>
               <Plus className="h-3 w-3 mr-1" /> Add line item

@@ -93,6 +93,8 @@ const JOB_STATUS_LABEL: Record<string, string> = {
 };
 
 import { formatPrice } from "@/lib/formatCurrency";
+import { ManageOrderPanel } from "@/components/customer/ManageOrderPanel";
+
 
 const fmt = (amount: number, currency = "ZAR") => formatPrice(Number(amount ?? 0), currency);
 
@@ -328,18 +330,6 @@ const CustomerOrderDetail = () => {
           <Bookmark className="h-3.5 w-3.5 mr-1.5" />
           Save as template
         </Button>
-        {["awaiting_payment", "proof_pending"].includes(order.customer_status) &&
-          ["new_order", "under_review"].includes(order.admin_status) && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setCancelOpen(true)}
-            >
-              <X className="h-3.5 w-3.5 mr-1.5" />
-              Cancel order
-            </Button>
-          )}
         {(order.po_number || order.cost_centre) && (
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             {order.po_number && <span>PO: <strong className="text-foreground">{order.po_number}</strong></span>}
@@ -347,6 +337,14 @@ const CustomerOrderDetail = () => {
           </div>
         )}
       </div>
+
+      <ManageOrderPanel
+        order={order}
+        jobs={jobs as any}
+        onAfterChange={() => queryClient.invalidateQueries({ queryKey: ["order-detail", id] })}
+      />
+
+
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}
