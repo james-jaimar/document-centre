@@ -1689,6 +1689,7 @@ async function customerChangeQuantities(
       Math.abs(delta),
       `Credit owed after customer quantity reduction`,
       `Customer reduced quantities`,
+      userId,
     );
     refundFlagged = true;
     await syncOrderTotals(admin, order_id);
