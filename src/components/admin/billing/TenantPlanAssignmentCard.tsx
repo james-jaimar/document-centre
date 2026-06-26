@@ -150,6 +150,8 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                   disabled={form.discount_type === "none" || hasStripeCoupon}
                   onChange={(e) => setForm((f) => ({ ...f, discount_value: parseFloat(e.target.value) || 0 }))} />
               </div>
+              <div>
+                <Label>Trial</Label>
                 <Select
                   value={String(form.trial_days || 0)}
                   onValueChange={(v) => setForm((f) => ({ ...f, trial_days: parseInt(v) || 0 }))}
