@@ -3597,6 +3597,8 @@ export type Database = {
           paid_at: string | null
           payment_reference: string | null
           provider: string
+          provider_payment_intent_id: string | null
+          provider_refund_id: string | null
           provider_transaction_id: string | null
           raw_payload: Json
           status: string
@@ -3614,6 +3616,8 @@ export type Database = {
           paid_at?: string | null
           payment_reference?: string | null
           provider: string
+          provider_payment_intent_id?: string | null
+          provider_refund_id?: string | null
           provider_transaction_id?: string | null
           raw_payload?: Json
           status: string
@@ -3631,6 +3635,8 @@ export type Database = {
           paid_at?: string | null
           payment_reference?: string | null
           provider?: string
+          provider_payment_intent_id?: string | null
+          provider_refund_id?: string | null
           provider_transaction_id?: string | null
           raw_payload?: Json
           status?: string

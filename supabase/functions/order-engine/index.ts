@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { processAutoRefund } from "../_shared/refunds.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1211,21 +1212,17 @@ async function cancelOrder(
     }),
   ]);
 
-  // Auto-raise refund_pending adjustment so the branch sees a clear action item.
+  // Auto-raise refund_pending adjustment (and auto-refund through the
+  // original provider) so the branch sees a clear action item.
   if (refundPending) {
-    await admin.from("order_adjustments").insert({
+    await createRefundPendingAdjustment(
+      admin,
       order_id,
-      description: `Refund owed — order cancelled (${reason.slice(0, 80)})`,
-      amount: -Math.abs(Number(order.amount_paid)),
-      status: "refund_pending",
-      metadata: {
-        reason,
-        raised_at: new Date().toISOString(),
-        raised_by: userId,
-        source: "order_cancelled",
-        amount_paid: order.amount_paid,
-      },
-    });
+      Number(order.amount_paid),
+      `Refund owed — order cancelled (${reason.slice(0, 80)})`,
+      reason,
+      userId,
+    );
   }
 
   return json({ success: true, refund_pending: refundPending });
@@ -1589,21 +1586,43 @@ async function syncOrderTotals(admin: ReturnType<typeof createClient>, order_id:
   return { subtotal, total, due, paid, payment_status };
 }
 
-/** Create a refund_pending negative-amount adjustment that branch can clear. */
+/** Create a refund_pending negative-amount adjustment, then attempt an
+ *  auto-refund through the provider that took the original payment. Falls
+ *  back to manual ("Mark refunded") if no online charge is found. */
 async function createRefundPendingAdjustment(
   admin: ReturnType<typeof createClient>,
   order_id: string,
   amount: number,
   description: string,
   reason: string,
+  userId?: string | null,
 ) {
-  await admin.from("order_adjustments").insert({
-    order_id,
-    description,
-    amount: -Math.abs(amount),
-    status: "refund_pending",
-    metadata: { reason, raised_at: new Date().toISOString() },
-  });
+  const { data: inserted } = await admin
+    .from("order_adjustments")
+    .insert({
+      order_id,
+      description,
+      amount: -Math.abs(amount),
+      status: "refund_pending",
+      metadata: { reason, raised_at: new Date().toISOString() },
+    })
+    .select("id")
+    .single();
+  const adjustmentId = (inserted as any)?.id;
+  if (adjustmentId) {
+    // Fire-and-await so the timeline + payments row are visible by the
+    // time we return; the caller already responded async to the client.
+    try {
+      await processAutoRefund(admin, {
+        adjustment_id: adjustmentId,
+        actor_id: userId ?? null,
+        reason,
+      });
+    } catch (e) {
+      console.error("auto-refund trigger failed", e);
+    }
+  }
+  return adjustmentId as string | undefined;
 }
 
 async function customerChangeQuantities(
@@ -1666,6 +1685,7 @@ async function customerChangeQuantities(
       Math.abs(delta),
       `Credit owed after customer quantity reduction`,
       `Customer reduced quantities`,
+      userId,
     );
     refundFlagged = true;
     await syncOrderTotals(admin, order_id);
@@ -1727,6 +1747,7 @@ async function customerChangeFulfillment(
       Math.abs(delta),
       `Credit owed after customer fulfillment switch`,
       `Customer changed fulfillment method`,
+      userId,
     );
     refundFlagged = true;
     await syncOrderTotals(admin, order_id);

@@ -152,6 +152,38 @@ Deno.serve(async (req) => {
       amount_paid: reportedAmount,
       amount_due: 0,
     }).eq("id", attempt.order_id);
+
+    // Persist a canonical payments row so refunds can find pf_payment_id.
+    const { data: orderRow } = await sb
+      .from("orders")
+      .select("app_id, tenant_id, currency")
+      .eq("id", attempt.order_id)
+      .maybeSingle();
+    if (orderRow) {
+      const { data: existing } = await sb
+        .from("payments")
+        .select("id")
+        .eq("order_id", attempt.order_id)
+        .eq("provider", "payfast")
+        .contains("metadata", { pf_payment_id: data["pf_payment_id"] ?? "" })
+        .maybeSingle();
+      if (!existing) {
+        await sb.from("payments").insert({
+          order_id: attempt.order_id,
+          app_id: (orderRow as any).app_id,
+          tenant_id: (orderRow as any).tenant_id,
+          provider: "payfast",
+          provider_transaction_id: data["pf_payment_id"] ?? null,
+          payment_reference: data["pf_payment_id"] ?? null,
+          status: "paid",
+          amount: reportedAmount,
+          currency: (orderRow as any).currency || "ZAR",
+          paid_at: new Date().toISOString(),
+          raw_payload: data,
+          metadata: { pf_payment_id: data["pf_payment_id"] ?? "", m_payment_id: attemptId, source: "itn" },
+        });
+      }
+    }
   } else if (status === "FAILED") {
     await sb.from("order_payment_attempts").update({
       status: "failed", raw_payload: data,
@@ -160,6 +192,40 @@ Deno.serve(async (req) => {
     await sb.from("order_payment_attempts").update({
       status: "cancelled", raw_payload: data,
     }).eq("id", attemptId);
+  } else if (status === "REFUND" || status === "REFUNDED") {
+    // PayFast async refund confirmation.
+    const pfPaymentId = data["pf_payment_id"];
+    if (pfPaymentId) {
+      const { data: refundRow } = await sb
+        .from("payments")
+        .select("id, order_id, amount, metadata")
+        .eq("order_id", attempt.order_id)
+        .eq("provider", "payfast")
+        .eq("status", "refund_initiated")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (refundRow) {
+        await sb.from("payments").update({
+          status: "refunded",
+          paid_at: new Date().toISOString(),
+          raw_payload: data,
+        }).eq("id", (refundRow as any).id);
+
+        const refundedAmt = Math.abs(Number((refundRow as any).amount || 0));
+        const { data: oRow } = await sb.from("orders").select("amount_paid").eq("id", attempt.order_id).maybeSingle();
+        const newPaid = Math.max(Number((oRow as any)?.amount_paid || 0) - refundedAmt, 0);
+        await sb.from("orders").update({ amount_paid: newPaid }).eq("id", attempt.order_id);
+
+        const adjustmentId = ((refundRow as any).metadata ?? {}).adjustment_id;
+        if (adjustmentId) {
+          await sb.from("order_adjustments").update({
+            status: "refunded",
+            metadata: { auto_refunded: true, provider: "payfast", pf_payment_id: pfPaymentId, confirmed_at: new Date().toISOString() },
+          }).eq("id", adjustmentId).eq("status", "refund_pending");
+        }
+      }
+    }
   }
 
   return new Response("ok", { status: 200 });
