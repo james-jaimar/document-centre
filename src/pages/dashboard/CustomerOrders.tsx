@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
 import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
-import { reorderOrder } from "@/lib/orders/mutations";
 import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
+import ReorderReviewDialog from "@/components/customer/ReorderReviewDialog";
 
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
