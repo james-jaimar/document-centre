@@ -320,9 +320,9 @@ const CustomerOrderDetail = () => {
 
       {/* Customer actions */}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={handleReorder} disabled={reordering}>
+        <Button size="sm" variant="outline" onClick={handleReorder}>
           <Repeat className="h-3.5 w-3.5 mr-1.5" />
-          {reordering ? "Reordering…" : "Reorder"}
+          Reorder
         </Button>
         <Button size="sm" variant="outline" onClick={() => setSaveTemplateOpen(true)}>
           <Bookmark className="h-3.5 w-3.5 mr-1.5" />
