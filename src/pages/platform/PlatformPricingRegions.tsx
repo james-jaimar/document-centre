@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Save, Plus, Trash2 } from "lucide-react";
+import { Save, Plus, Trash2, RefreshCw } from "lucide-react";
+
 
 interface Region {
   id: string;
@@ -25,6 +26,8 @@ interface Plan {
   price: number;
   sort_order: number;
   stripe_price_id: string | null;
+  stripe_coupon_id?: string | null;
+  stripe_promotion_code_id?: string | null;
   scope?: string;
   trial_offer?: "none" | "trial_14_no_card" | "trial_30_with_card" | "both";
 }
@@ -116,6 +119,8 @@ export default function PlatformPricingRegions() {
           price: p.price,
           plan_name: p.plan_name,
           stripe_price_id: p.stripe_price_id,
+          stripe_coupon_id: p.stripe_coupon_id ?? null,
+          stripe_promotion_code_id: p.stripe_promotion_code_id ?? null,
           trial_offer: p.trial_offer ?? "both",
         } as any).eq("id", p.id);
       }
@@ -137,15 +142,45 @@ export default function PlatformPricingRegions() {
   function getBranchPlan(regionId: string, slug: string) {
     return branchPlans.find((p) => p.region_id === regionId && p.plan_slug === slug);
   }
-  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name" | "trial_offer", value: any) {
+  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name" | "trial_offer" | "stripe_coupon_id" | "stripe_promotion_code_id", value: any) {
     setPlans((prev) =>
       prev.map((p) =>
         p.scope === "branch" && p.region_id === regionId && p.plan_slug === slug
-          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : (field === "trial_offer" ? value : (value || (field === "stripe_price_id" ? null : ""))) }
+          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : (field === "trial_offer" ? value : (value || (field === "stripe_price_id" || field === "stripe_coupon_id" || field === "stripe_promotion_code_id" ? null : ""))) }
           : p
       )
     );
   }
+
+  async function verifyAgainstStripe(p: Plan) {
+    if (!p.stripe_price_id && !p.stripe_coupon_id && !p.stripe_promotion_code_id) {
+      toast.error("Nothing to verify — add a price/coupon/promo code first");
+      return;
+    }
+    const { data, error } = await supabase.functions.invoke("stripe-verify-price", {
+      body: {
+        price_id: p.stripe_price_id || undefined,
+        coupon_id: p.stripe_coupon_id || undefined,
+        promotion_code_id: p.stripe_promotion_code_id || undefined,
+      },
+    });
+    if (error) return toast.error(error.message);
+    const parts: string[] = [];
+    if (data?.price) {
+      const live = parseFloat(data.price.unit_amount_decimal ?? "0");
+      const drift = Math.abs(live - Number(p.price)) > 0.005;
+      parts.push(`Stripe: ${data.price.currency} ${data.price.unit_amount_decimal} ${data.price.recurring ? `/ ${data.price.recurring.interval}` : ""}${drift ? "  ⚠ differs from stored " + p.price : "  ✓ matches"}`);
+      if (!data.price.active) parts.push("⚠ price is INACTIVE in Stripe");
+    }
+    if (data?.coupon) {
+      const c = data.coupon;
+      const off = c.percent_off ? `${c.percent_off}% off` : `${(c.amount_off / 100).toFixed(2)} ${c.currency} off`;
+      parts.push(`Coupon ${c.id}: ${off} (${c.duration}${c.duration_in_months ? ` ${c.duration_in_months}m` : ""})${c.valid ? " ✓ valid" : " ⚠ invalid"}`);
+    }
+    if (data?.promotion_code) parts.push(`Promo code ${data.promotion_code.code}${data.promotion_code.active ? " ✓ active" : " ⚠ inactive"}`);
+    toast.success(parts.join("  •  "), { duration: 10000 });
+  }
+
 
   async function addBranchPlan() {
     const slug = newBranchSlug.trim().toLowerCase().replace(/\s+/g, "_");
@@ -515,6 +550,56 @@ export default function PlatformPricingRegions() {
                               <option value="trial_30_with_card">30-day w/ card + Pay now</option>
                               <option value="none">Pay now only</option>
                             </select>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-lg border bg-card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left font-semibold">Region — Stripe Coupon / Promo Code (optional, applied at checkout)</th>
+                    {branchSlugs.map((s) => (
+                      <th key={s} className="px-4 py-3 text-left font-semibold"><div className="font-mono text-xs">{s}</div></th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {regions.map((r) => (
+                    <tr key={r.id} className="border-b last:border-0 align-top">
+                      <td className="px-4 py-2 font-medium">{FLAG_MAP[r.region_code] || ""} {r.region_code}</td>
+                      {branchSlugs.map((slug) => {
+                        const p = getBranchPlan(r.id, slug);
+                        if (!p) return <td key={slug} />;
+                        return (
+                          <td key={slug} className="px-4 py-2 space-y-1">
+                            <Input
+                              value={p.stripe_coupon_id || ""}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "stripe_coupon_id", e.target.value)}
+                              className="h-8 w-48 font-mono text-xs"
+                              placeholder="coupon_id (e.g. clEFP4tT)"
+                            />
+                            <Input
+                              value={p.stripe_promotion_code_id || ""}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "stripe_promotion_code_id", e.target.value)}
+                              className="h-8 w-48 font-mono text-xs"
+                              placeholder="promo code id (promo_...)"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => verifyAgainstStripe(p)}
+                              disabled={!p.stripe_price_id && !p.stripe_coupon_id && !p.stripe_promotion_code_id}
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" /> Verify with Stripe
+                            </Button>
                           </td>
                         );
                       })}

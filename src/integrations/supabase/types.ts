@@ -3727,7 +3727,9 @@ export type Database = {
           region_id: string
           scope: string
           sort_order: number
+          stripe_coupon_id: string | null
           stripe_price_id: string | null
+          stripe_promotion_code_id: string | null
           trial_offer: string
           updated_at: string
         }
@@ -3740,7 +3742,9 @@ export type Database = {
           region_id: string
           scope?: string
           sort_order?: number
+          stripe_coupon_id?: string | null
           stripe_price_id?: string | null
+          stripe_promotion_code_id?: string | null
           trial_offer?: string
           updated_at?: string
         }
@@ -3753,7 +3757,9 @@ export type Database = {
           region_id?: string
           scope?: string
           sort_order?: number
+          stripe_coupon_id?: string | null
           stripe_price_id?: string | null
+          stripe_promotion_code_id?: string | null
           trial_offer?: string
           updated_at?: string
         }

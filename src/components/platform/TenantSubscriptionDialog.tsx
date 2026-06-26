@@ -99,14 +99,15 @@ export function TenantSubscriptionDialog({ open, onOpenChange, tenant, subscript
     enabled: open,
   });
 
-  // Fetch plans for selected region (all plans, not just Stripe-linked)
+  // Fetch TENANT-scoped plans only (branch plans are assigned per-branch elsewhere)
   const { data: plans, isLoading: plansLoading } = useQuery({
-    queryKey: ["platform_pricing_plans", "assign", selectedRegionId],
+    queryKey: ["platform_pricing_plans", "assign-tenant", selectedRegionId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("platform_pricing_plans")
         .select("*")
         .eq("region_id", selectedRegionId!)
+        .eq("scope", "tenant")
         .order("sort_order");
       if (error) throw error;
       return data as PricingPlan[];
