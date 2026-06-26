@@ -470,14 +470,10 @@ const CustomerOrders = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!tpl.source_order_id || reorderingId === tpl.source_order_id}
+                      disabled={!tpl.source_order_id}
                       onClick={() => tpl.source_order_id && handleReorder(tpl.source_order_id)}
                     >
-                      {reorderingId === tpl.source_order_id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                      ) : (
-                        <Repeat className="h-3.5 w-3.5 mr-1.5" />
-                      )}
+                      <Repeat className="h-3.5 w-3.5 mr-1.5" />
                       Re-order
                     </Button>
                     <button
