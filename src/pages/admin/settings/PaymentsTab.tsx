@@ -72,6 +72,9 @@ export function PaymentsTab() {
 
       {tenantId && <PaymentGatewaysCard scope="tenant" scopeId={tenantId} />}
 
+      {tenantId && <BranchPaymentReadinessCard tenantId={tenantId} />}
+
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" /> Payment Methods</CardTitle>
