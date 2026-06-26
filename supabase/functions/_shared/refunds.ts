@@ -247,7 +247,7 @@ export async function processAutoRefund(
     return { ok: false, outcome: "error", provider, error: `No ${provider} credentials configured for this tenant/branch` };
   }
 
-  try {
+  try { /* PROVIDER_TRY */
     let providerRefundId: string | null = null;
     let providerStatus: "succeeded" | "pending" = "pending";
     let rawProviderPayload: any = {};
