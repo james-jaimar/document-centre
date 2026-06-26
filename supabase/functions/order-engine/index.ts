@@ -1751,6 +1751,7 @@ async function customerChangeFulfillment(
       Math.abs(delta),
       `Credit owed after customer fulfillment switch`,
       `Customer changed fulfillment method`,
+      userId,
     );
     refundFlagged = true;
     await syncOrderTotals(admin, order_id);
