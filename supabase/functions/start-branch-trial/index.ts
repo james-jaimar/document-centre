@@ -64,13 +64,21 @@ Deno.serve(async (req) => {
   }
 
   // Check prior state to know if this call actually starts the trial
-  const { data: prior } = await sb.from("branch_subscriptions")
-    .select("trial_started_at, assigned_plan_slug, trial_days, region_id").eq("branch_id", branch.id).maybeSingle();
+  const { data: prior } = await sb.from("branch_subscriptions" as any)
+    .select("trial_started_at, assigned_plan_slug, trial_days, region_id, trial_started_via, stripe_subscription_id").eq("branch_id", branch.id).maybeSingle();
 
   // Only stamp if a plan is assigned (no plan → nothing to trial)
-  if (!prior?.assigned_plan_slug) {
+  if (!(prior as any)?.assigned_plan_slug) {
     return new Response(JSON.stringify({ ok: true, skipped: "no_plan" }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Enforce one-trial-per-branch. Once a trial has been started (either path)
+  // or a Stripe subscription exists, the only remaining option is paid checkout.
+  if ((prior as any)?.trial_started_via || (prior as any)?.trial_started_at || (prior as any)?.stripe_subscription_id) {
+    return new Response(JSON.stringify({ error: "trial_already_used", message: "This branch has already used its trial. Please subscribe to continue." }), {
+      status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
@@ -78,7 +86,7 @@ Deno.serve(async (req) => {
   const { data: plan } = await sb.from("platform_pricing_plans")
     .select("trial_offer")
     .eq("region_id", (prior as any).region_id)
-    .eq("plan_slug", prior.assigned_plan_slug)
+    .eq("plan_slug", (prior as any).assigned_plan_slug)
     .maybeSingle();
   const trialOffer = (plan as any)?.trial_offer ?? "both";
   if (trialOffer !== "trial_14_no_card" && trialOffer !== "both") {
