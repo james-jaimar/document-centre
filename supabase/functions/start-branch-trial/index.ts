@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
   const { data: plan } = await sb.from("platform_pricing_plans")
     .select("trial_offer")
     .eq("region_id", (prior as any).region_id)
-    .eq("plan_slug", prior.assigned_plan_slug)
+    .eq("plan_slug", (prior as any).assigned_plan_slug)
     .maybeSingle();
   const trialOffer = (plan as any)?.trial_offer ?? "both";
   if (trialOffer !== "trial_14_no_card" && trialOffer !== "both") {
