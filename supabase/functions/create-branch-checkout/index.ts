@@ -149,18 +149,29 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // One trial per branch — a 30-day card trial is only available if no trial
+    // has been started before and no Stripe subscription exists yet.
+    if (priorTrialUsed) {
+      return new Response(JSON.stringify({ error: "trial_already_used", message: "This branch has already used its trial. Please subscribe instead." }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     sessionParams.subscription_data!.trial_period_days = trialDays;
     await supabaseAdmin.from("branch_subscriptions" as any)
       .update({ trial_started_via: "stripe_30" })
       .eq("branch_id", branch.id);
   }
 
-  // Discount priority: (1) plan-level Stripe promotion code, (2) plan-level Stripe coupon,
+  // Discount priority: (1) plan-level Stripe promotion code, (2) plan-level Stripe coupon
+  //   (with a separate "_with_trial" override when a 30-day trial is attached so the
+  //   repeating discount window isn't eaten by the trial month),
   // (3) per-branch ad-hoc discount fields, (4) allow customer-typed promotion codes.
+  const couponForThisSession =
+    trialDays > 0 && planCouponIdWithTrial ? planCouponIdWithTrial : planCouponId;
   if (planPromoCodeId) {
     sessionParams.discounts = [{ promotion_code: planPromoCodeId }];
-  } else if (planCouponId) {
-    sessionParams.discounts = [{ coupon: planCouponId }];
+  } else if (couponForThisSession) {
+    sessionParams.discounts = [{ coupon: couponForThisSession }];
   } else if (discountType && discountValue > 0) {
     try {
       let couponParams: Stripe.CouponCreateParams;
