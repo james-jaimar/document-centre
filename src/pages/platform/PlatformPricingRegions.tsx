@@ -142,15 +142,45 @@ export default function PlatformPricingRegions() {
   function getBranchPlan(regionId: string, slug: string) {
     return branchPlans.find((p) => p.region_id === regionId && p.plan_slug === slug);
   }
-  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name" | "trial_offer", value: any) {
+  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name" | "trial_offer" | "stripe_coupon_id" | "stripe_promotion_code_id", value: any) {
     setPlans((prev) =>
       prev.map((p) =>
         p.scope === "branch" && p.region_id === regionId && p.plan_slug === slug
-          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : (field === "trial_offer" ? value : (value || (field === "stripe_price_id" ? null : ""))) }
+          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : (field === "trial_offer" ? value : (value || (field === "stripe_price_id" || field === "stripe_coupon_id" || field === "stripe_promotion_code_id" ? null : ""))) }
           : p
       )
     );
   }
+
+  async function verifyAgainstStripe(p: Plan) {
+    if (!p.stripe_price_id && !p.stripe_coupon_id && !p.stripe_promotion_code_id) {
+      toast.error("Nothing to verify — add a price/coupon/promo code first");
+      return;
+    }
+    const { data, error } = await supabase.functions.invoke("stripe-verify-price", {
+      body: {
+        price_id: p.stripe_price_id || undefined,
+        coupon_id: p.stripe_coupon_id || undefined,
+        promotion_code_id: p.stripe_promotion_code_id || undefined,
+      },
+    });
+    if (error) return toast.error(error.message);
+    const parts: string[] = [];
+    if (data?.price) {
+      const live = parseFloat(data.price.unit_amount_decimal ?? "0");
+      const drift = Math.abs(live - Number(p.price)) > 0.005;
+      parts.push(`Stripe: ${data.price.currency} ${data.price.unit_amount_decimal} ${data.price.recurring ? `/ ${data.price.recurring.interval}` : ""}${drift ? "  ⚠ differs from stored " + p.price : "  ✓ matches"}`);
+      if (!data.price.active) parts.push("⚠ price is INACTIVE in Stripe");
+    }
+    if (data?.coupon) {
+      const c = data.coupon;
+      const off = c.percent_off ? `${c.percent_off}% off` : `${(c.amount_off / 100).toFixed(2)} ${c.currency} off`;
+      parts.push(`Coupon ${c.id}: ${off} (${c.duration}${c.duration_in_months ? ` ${c.duration_in_months}m` : ""})${c.valid ? " ✓ valid" : " ⚠ invalid"}`);
+    }
+    if (data?.promotion_code) parts.push(`Promo code ${data.promotion_code.code}${data.promotion_code.active ? " ✓ active" : " ⚠ inactive"}`);
+    toast.success(parts.join("  •  "), { duration: 10000 });
+  }
+
 
   async function addBranchPlan() {
     const slug = newBranchSlug.trim().toLowerCase().replace(/\s+/g, "_");
