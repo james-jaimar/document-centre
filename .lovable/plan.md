@@ -1,96 +1,90 @@
-## Problem
 
-Clicking **Reorder** today calls the `reorderOrder` engine action which **immediately creates a brand-new live order** with the original line items, prices and delivery details copied verbatim. The only UI is a payment dialog (and even that is skipped when no online gateway is available — the customer is silently redirected to the new order detail page).
+# Customer post-order self-service
 
-There is no:
-- Review screen
-- Quantity editing
-- Per-item removal
-- Delivery address / fulfillment choice
-- Notes / PO change
-- Confirm / cancel step
+Give the customer a sensible "I just placed this order, let me change it" surface — until the branch approves the order. After approval, everything becomes a request to the branch.
 
-This is not what customers expect from a "Reorder" button on an e-commerce platform.
+## Rules (agreed)
 
-## Industry-standard reorder UX
+- **Edit window**: open while `admin_status` is `new_order` or `under_review`. Locks the moment branch sets `approved` (or anything later) and for any job already in production.
+- **Quantity**: auto re-price against the *current* rate card. Increase ⇒ generate a top-up payment link (same gateway used originally). Decrease ⇒ create a credit/refund-pending record for the branch to action.
+- **Delivery flip**: Collect ⇄ Deliver allowed in-window. System re-quotes delivery using existing `quoteShipping` logic against the customer's saved address; difference handled the same way as qty (top-up or credit).
+- **Cancel + refund (hybrid)**:
+  - Unpaid → cancel immediately, no money moves.
+  - Paid online, within edit window, no job started → auto-refund via gateway (Stripe refund API / PayFast refund endpoint).
+  - Paid online, outside window or partial production → mark `cancelled` + `refund_pending`, branch handles in dashboard and clicks "Mark refunded".
+  - EFT / on-account → always flag for branch (no auto refund possible).
 
-Looking at how Amazon ("Buy it again"), Mimeo, Vistaprint, Moo and Shopify handle reorder, the consistent pattern is:
+## Customer-side UI
 
-1. **Reorder ≠ Place Order.** Click → items are cloned into the cart (or a "review" state), not submitted.
-2. Customer lands on a **Review & Confirm** screen showing every line item with thumbnail, spec summary, qty editor, unit + line price, and a "Remove" action.
-3. Delivery method / address and notes are editable before checkout.
-4. Totals (subtotal, delivery, VAT, total) recalculate live.
-5. Explicit **Place Order** button → then payment step.
-6. An "Edit in cart" escape hatch for deeper changes (e.g. swapping a binding option).
-7. Out-of-stock / discontinued / price-changed items are flagged with an inline warning before checkout.
-
-## Proposed flow
+New **"Manage order"** panel on `CustomerOrderDetail.tsx`, only visible while editable:
 
 ```text
-[Reorder button]
-       │
-       ▼
-reorderOrder (server)            ← now returns a DRAFT order, not a live one
-       │
-       ▼
-Review & Confirm modal/page      ← new UI
-  • line items (qty editable, removable)
-  • delivery address / method
-  • notes, PO, cost centre
-  • live totals
-  • price-change & availability warnings
-       │
-       ├── "Edit in cart" ──► /cart (existing)
-       ├── "Cancel"       ──► discard draft
-       └── "Place order"  ──► submit + existing ReorderPaymentDialog
+┌─ Manage this order ────────────────────────────┐
+│  ⏱ You can change this order until the branch  │
+│     approves it.                               │
+│                                                │
+│  [ Change quantities ]                         │
+│  [ Switch to delivery / collection ]           │
+│  [ Update delivery address ]                   │
+│  [ Cancel order ]                              │
+└────────────────────────────────────────────────┘
 ```
 
-## Scope of changes
+- **Change quantities** → reuse `ReorderReviewDialog` styling: per-job qty stepper + remove, live re-price preview, "Confirm changes" → returns `{ delta_amount, requires_payment, credit_amount }`.
+- **Switch fulfillment** → toggle + address picker + live delivery quote + delta summary.
+- **Cancel** → confirmation dialog with reason; shows refund treatment ("R450 will be refunded to your card automatically" / "Branch will arrange your refund").
 
-### Backend (`supabase/functions/order-engine/index.ts`)
+After any change that requires a top-up, customer is handed straight to the existing PayFast/Stripe handoff (`redirectToHostedPayment`). Credits show as a `order_adjustments` row with negative amount + status `refund_pending`.
 
-- Split `reorderOrder` into two steps:
-  1. `reorderOrder` → clones jobs + addresses into a **draft** order (`admin_status = 'cart'` / `order_status = 'draft'`, same model used by the regular cart flow), re-prices each job against the **current** rate card, and returns the draft `order_id` plus a `changes[]` array (e.g. `{ job_id, change: "price_increased", old: 120, new: 135 }`, `{ change: "option_unavailable", … }`).
-  2. `submitReorder` (new action, or reuse the existing cart-checkout submit path) → flips the draft to a live order once the customer confirms.
-- Permissions and tenant/branch ringfencing stay exactly as today.
+## Branch-side UI
 
-### New review UI
+On `BranchOrderDetail.tsx`, surface in the order header:
+- Badge **"Customer edit in progress"** when a change request is mid-flight.
+- Badge **"Refund outstanding — R xxx"** for any `refund_pending` adjustment, with a **"Mark refunded"** action that writes a `payments` row (negative) and clears the flag.
+- Timeline events for every customer-side change.
 
-- New component `src/components/customer/ReorderReviewDialog.tsx` (modal on desktop, full-screen sheet on mobile) containing:
-  - Header: "Review your reorder — Order #INV-xxxx"
-  - Line item rows: thumbnail, product family, spec summary (size, pages, binding, finish), qty stepper, unit price, line total, remove (×).
-  - Delivery block: current address + "Change" link → opens existing address picker.
-  - Fulfillment choice (Collect / Deliver) when the branch supports both.
-  - Notes, PO, cost centre fields, pre-filled from source order.
-  - Warning banners for any `changes[]` entries returned by the server.
-  - Totals panel (subtotal, delivery, VAT, total).
-  - Footer: **Cancel** · **Edit in cart** · **Place Order**.
-- Component is mounted from both existing entry points: `CustomerOrders.tsx` and `CustomerOrderDetail.tsx`, replacing the current "fire and forget" handler.
-- On **Place Order**, call the submit action, then hand the resulting live order to the existing `ReorderPaymentDialog` (no change to the payment leg — that part is working).
+## Backend (`supabase/functions/order-engine/index.ts`)
 
-### Hooks / data plumbing
+New actions, all guarded by `assertCustomerOwnsOrder` + `assertOrderEditable` (status check):
 
-- `reorderOrder` mutation in `src/lib/orders/mutations.ts` updated to return the new draft + changes payload.
-- New `submitReorder` mutation alongside it.
-- Reuse `useOrderBuilder` / cart hooks where they already model qty edits and removal so we don't reinvent pricing.
+1. `customerUpdateJobQuantities({ order_id, job_overrides[] })`
+   - Re-price each affected job against the current `resolveRateCard` for that branch.
+   - Recompute order totals (`order_pricing_snapshots` rewritten — still the live order, not a snapshot lock yet because approval hasn't happened).
+   - Diff `total_amount` against `total_paid`:
+     - delta > 0 → create `order_payment_attempts` row, return `{ checkout_url }`.
+     - delta < 0 → insert `order_adjustments` (credit, `status='refund_pending'`).
+   - Emit `timeline_events` `customer_edited_quantities`.
 
-### Edge cases handled
+2. `customerChangeFulfillment({ order_id, fulfillment_type, address_id? })`
+   - Re-quote delivery via existing `quoteShipping` helper.
+   - Update `orders.fulfillment_type`, `order_addresses` row, `delivery_amount`.
+   - Same delta/top-up/credit logic as above.
 
-- Source order had items that are now disabled at branch level → flagged + auto-removed with a notice.
-- Source price differs from current price → flagged inline; total reflects current price.
-- Source delivery address has been deleted → falls back to customer's default with a "please confirm address" warning.
-- Customer abandons the modal → draft remains in their cart so they can return to it (same as any other cart).
+3. `customerCancelOrder({ order_id, reason })`
+   - If unpaid → set `cancelled`, done.
+   - If paid online + in-window + no job past `new` → call new helper `refundPayment({ gateway, payment_id, amount })`:
+     - Stripe: `stripe.refunds.create`.
+     - PayFast: POST to `/refunds/<pf_payment_id>` with merchant creds (existing creds resolver).
+   - Otherwise → set `cancelled` + insert `refund_pending` adjustment for branch.
+   - Always notify branch via existing email outbox event `order_cancelled_by_customer`.
 
-### Out of scope (explicitly not changing)
+4. `markRefundCompleted({ adjustment_id })` (branch/admin only) — clears refund flag, inserts negative `payments` row.
 
-- The payment dialog and PayFast/Stripe handoff — they already work correctly.
-- The admin-side reorder/duplicate flow (different surface, different requirements).
-- The `Buy it again` carousel on the dashboard — left as is for this pass.
+## Helpers / shared code
 
-## Deliverables
+- `src/lib/orders/editability.ts` — single source of truth `isCustomerEditable(order)` reused by UI + engine.
+- `supabase/functions/_shared/refunds.ts` — `refundStripe` / `refundPayfast` wrappers used by both the new cancel path and the future "Mark refunded" automation.
 
-1. `order-engine`: `reorderOrder` returns draft + changes; new `submitReorder` action.
-2. `src/components/customer/ReorderReviewDialog.tsx` (new).
-3. `src/lib/orders/mutations.ts`: updated typings + new submit helper.
-4. `src/pages/dashboard/CustomerOrders.tsx` and `CustomerOrderDetail.tsx`: wire the new dialog in front of the existing payment dialog.
-5. Light copy/UX polish: button label "Reorder" stays; CTA inside dialog reads "Place Order".
+## Out of scope
+
+- Editing the *spec* of a job (paper, binding, page count). Too risky post-production-prep; stays admin-only.
+- Partial cancel of individual jobs. Falls under "change quantities → remove line".
+- Timing/scheduling changes — not in use today.
+- Tenant-level refund policy configuration (flat hybrid rule for now; can be made per-tenant later if needed).
+
+## Files touched
+
+- New: `src/components/customer/ManageOrderPanel.tsx`, `ChangeQuantitiesDialog.tsx`, `ChangeFulfillmentDialog.tsx`, `CustomerCancelDialog.tsx`, `src/lib/orders/editability.ts`.
+- Edit: `src/pages/dashboard/CustomerOrderDetail.tsx`, `src/pages/branch/BranchOrderDetail.tsx`, `src/lib/orders/mutations.ts`, `supabase/functions/order-engine/index.ts`.
+- New: `supabase/functions/_shared/refunds.ts`.
+- Migration: add `status` + `metadata` columns to `order_adjustments` (for `refund_pending` flag) if not already present.
