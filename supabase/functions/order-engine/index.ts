@@ -986,14 +986,21 @@ async function reorderOrder(
   userId: string,
   payload: any
 ) {
-  const { order_id } = payload;
+  const {
+    order_id,
+    dry_run = false,
+    job_overrides,
+    notes_customer: notesOverride,
+    po_number: poOverride,
+    cost_centre: costCentreOverride,
+  } = payload;
   if (!order_id) return err("Missing order_id");
 
   // Load source order + jobs + delivery address
   const { data: source, error: sErr } = await admin
     .from("orders")
     .select(
-      "id, app_id, tenant_id, branch_id, ordered_by_profile_id, customer_email, customer_name, company_name, currency, fulfillment_type, po_number, cost_centre, notes_customer, metadata, date_required, turnaround_time_text"
+      "id, app_id, tenant_id, branch_id, ordered_by_profile_id, customer_email, customer_name, company_name, currency, fulfillment_type, po_number, cost_centre, notes_customer, metadata, date_required, turnaround_time_text, order_number"
     )
     .eq("id", order_id)
     .single();
@@ -1005,7 +1012,7 @@ async function reorderOrder(
     if (denied) return err(denied, 403);
   }
 
-  const [{ data: jobs }, { data: addresses }] = await Promise.all([
+  const [{ data: jobsRaw }, { data: addresses }] = await Promise.all([
     admin
       .from("order_jobs")
       .select(
@@ -1019,7 +1026,59 @@ async function reorderOrder(
       .eq("order_id", order_id),
   ]);
 
-  if (!jobs?.length) return err("No items to reorder");
+  if (!jobsRaw?.length) return err("No items to reorder");
+
+  // Apply customer overrides (qty change, removal). Re-price by scaling the
+  // snapshot unit price by the new quantity so totals stay consistent.
+  const overridesBySeq = new Map<number, { quantity?: number; remove?: boolean }>();
+  if (Array.isArray(job_overrides)) {
+    for (const o of job_overrides) {
+      if (o && typeof o.sequence_no === "number") {
+        overridesBySeq.set(o.sequence_no, { quantity: o.quantity, remove: o.remove });
+      }
+    }
+  }
+
+  const jobs = (jobsRaw as any[])
+    .filter((j) => !overridesBySeq.get(j.sequence_no)?.remove)
+    .map((j) => {
+      const o = overridesBySeq.get(j.sequence_no);
+      const origQty = Number(j.quantity || 0) || 1;
+      const newQty = o?.quantity && o.quantity > 0 ? Math.floor(o.quantity) : origQty;
+      if (newQty === origQty) return j;
+      const scale = newQty / origQty;
+      return {
+        ...j,
+        quantity: newQty,
+        net_price: Number(j.net_price || 0) * scale,
+        cost_price: Number(j.cost_price || 0) * scale,
+        gross_price: Number(j.gross_price || 0) * scale,
+      };
+    });
+
+  if (!jobs.length) return err("No items remain after removals");
+
+  const delivery = (addresses ?? []).find((a: any) => a.address_type === "delivery");
+  const billing = (addresses ?? []).find((a: any) => a.address_type === "billing");
+  const subtotal = jobs.reduce((s, j) => s + Number(j.net_price ?? 0), 0);
+
+  if (dry_run) {
+    return json({
+      preview: true,
+      source_order_id: source.id,
+      source_order_number: source.order_number,
+      currency: source.currency || "ZAR",
+      fulfillment_type: source.fulfillment_type,
+      branch_id: source.branch_id,
+      notes_customer: source.notes_customer,
+      po_number: source.po_number,
+      cost_centre: source.cost_centre,
+      jobs,
+      delivery_address: delivery || null,
+      billing_address: billing || null,
+      subtotal,
+    });
+  }
 
   // Resolve app slug for createOrderWithJobs
   const { data: app } = await admin
@@ -1028,10 +1087,6 @@ async function reorderOrder(
     .eq("id", source.app_id)
     .single();
   if (!app) return err("App not found", 404);
-
-  const subtotal = (jobs as any[]).reduce((s, j) => s + Number(j.net_price ?? 0), 0);
-  const delivery = (addresses ?? []).find((a: any) => a.address_type === "delivery");
-  const billing = (addresses ?? []).find((a: any) => a.address_type === "billing");
 
   const payloadOut = {
     app_slug: app.slug,
@@ -1045,9 +1100,9 @@ async function reorderOrder(
     },
     order: {
       source_channel: "reorder",
-      notes_customer: source.notes_customer,
-      po_number: source.po_number,
-      cost_centre: source.cost_centre,
+      notes_customer: notesOverride ?? source.notes_customer,
+      po_number: poOverride ?? source.po_number,
+      cost_centre: costCentreOverride ?? source.cost_centre,
       metadata: { ...(source.metadata || {}), reordered_from: order_id },
     },
     pricing: {

@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
 import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
-import { reorderOrder } from "@/lib/orders/mutations";
 import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
+import ReorderReviewDialog from "@/components/customer/ReorderReviewDialog";
 
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
@@ -129,21 +129,13 @@ const CustomerOrders = () => {
   const { data: unreadMap = {} } = useUnreadMessagesCustomer();
   const savedOrders = useCustomerSavedOrders();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reviewSourceId, setReviewSourceId] = useState<string | null>(null);
   const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
 
-  const handleReorder = useCallback(async (sourceOrderId: string) => {
-    setReorderingId(sourceOrderId);
-    try {
-      const res = await reorderOrder({ order_id: sourceOrderId });
-      toast.success(`Order ${res.order_number} created`);
-      setReorderResult({ id: res.order_id, number: res.order_number, currency: (res as any).currency });
-    } catch (e: any) {
-      toast.error("Failed to reorder", { description: e.message });
-    } finally {
-      setReorderingId(null);
-    }
+  const handleReorder = useCallback((sourceOrderId: string) => {
+    setReviewSourceId(sourceOrderId);
   }, []);
+
 
 
   // Visible orders:
@@ -478,14 +470,10 @@ const CustomerOrders = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!tpl.source_order_id || reorderingId === tpl.source_order_id}
+                      disabled={!tpl.source_order_id}
                       onClick={() => tpl.source_order_id && handleReorder(tpl.source_order_id)}
                     >
-                      {reorderingId === tpl.source_order_id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                      ) : (
-                        <Repeat className="h-3.5 w-3.5 mr-1.5" />
-                      )}
+                      <Repeat className="h-3.5 w-3.5 mr-1.5" />
                       Re-order
                     </Button>
                     <button
@@ -506,6 +494,15 @@ const CustomerOrders = () => {
           </TabsContent>
         </Tabs>
       )}
+      <ReorderReviewDialog
+        sourceOrderId={reviewSourceId}
+        onCancel={() => setReviewSourceId(null)}
+        onPlaced={(res) => {
+          setReviewSourceId(null);
+          setReorderResult(res);
+          queryClient.invalidateQueries({ queryKey: ["user-orders"] });
+        }}
+      />
       <ReorderPaymentDialog
         orderId={reorderResult?.id ?? null}
         orderNumber={reorderResult?.number}

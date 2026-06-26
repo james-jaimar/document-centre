@@ -1,54 +1,96 @@
+## Problem
 
-## Good news first
+Clicking **Reorder** today calls the `reorderOrder` engine action which **immediately creates a brand-new live order** with the original line items, prices and delivery details copied verbatim. The only UI is a payment dialog (and even that is skipped when no online gateway is available — the customer is silently redirected to the new order detail page).
 
-The PayFast fix is already 100% tenant- and branch-agnostic. Nothing in the code path is hardcoded to PostNet. Everything is driven from these tables:
+There is no:
+- Review screen
+- Quantity editing
+- Per-item removal
+- Delivery address / fulfillment choice
+- Notes / PO change
+- Confirm / cancel step
 
-- `tenant_payment_gateways` — which providers a tenant offers (enabled/disabled, mode, label)
-- `branch_payment_gateways` — per-branch credentials override (the only place real `merchant_id`/`merchant_key`/`passphrase` live, stored via Supabase Vault secret IDs)
-- `order_payment_attempts` — every attempt is stamped with `tenant_id` and `branch_id` so ITN can ringfence
+This is not what customers expect from a "Reorder" button on an e-commerce platform.
 
-The shared resolver `resolveGatewaysForOrder` (used by `payments-create-session`, `payments-list-providers`, `payfast-itn`) walks tenant → branch credentials for every order, regardless of tenant. The infra-level fixes we shipped apply to all tenants automatically:
+## Industry-standard reorder UX
 
-- CSP `form-action` removed in `customHttp.yml`
-- SPA deep-link fallback for `/pay/payfast/` in `vite.config.ts`
-- Same-origin handoff page `src/pages/PayfastHandoff.tsx`
-- Signed-form payload from `payments-create-session`
-- ITN merchant_id cross-check + `/eng/query/validate` handshake in `payfast-itn`
-- Branch subscription gate in `payments-create-session`
+Looking at how Amazon ("Buy it again"), Mimeo, Vistaprint, Moo and Shopify handle reorder, the consistent pattern is:
 
-So no code changes are needed to "roll this out" — the engine is generic. What's left is **operational verification** plus a couple of small UX helpers so onboarding a new tenant/branch is bullet-proof.
+1. **Reorder ≠ Place Order.** Click → items are cloned into the cart (or a "review" state), not submitted.
+2. Customer lands on a **Review & Confirm** screen showing every line item with thumbnail, spec summary, qty editor, unit + line price, and a "Remove" action.
+3. Delivery method / address and notes are editable before checkout.
+4. Totals (subtotal, delivery, VAT, total) recalculate live.
+5. Explicit **Place Order** button → then payment step.
+6. An "Edit in cart" escape hatch for deeper changes (e.g. swapping a binding option).
+7. Out-of-stock / discontinued / price-changed items are flagged with an inline warning before checkout.
 
-## What I'll do
+## Proposed flow
 
-### 1. Read-only audit (no DB writes)
-Query the DB and report a single table per tenant showing:
-- Tenants that have `tenant_payment_gateways.payfast.is_enabled = true`
-- For each branch under those tenants: does `branch_payment_gateways` have a `payfast` row with a `credentials_secret_id`? mode (test/live)? passphrase present?
-- Any branches that are sub-active but missing online-payment creds (so customers will only see EFT)
-- Any orphan rows (branch creds for a provider the tenant has disabled)
+```text
+[Reorder button]
+       │
+       ▼
+reorderOrder (server)            ← now returns a DRAFT order, not a live one
+       │
+       ▼
+Review & Confirm modal/page      ← new UI
+  • line items (qty editable, removable)
+  • delivery address / method
+  • notes, PO, cost centre
+  • live totals
+  • price-change & availability warnings
+       │
+       ├── "Edit in cart" ──► /cart (existing)
+       ├── "Cancel"       ──► discard draft
+       └── "Place order"  ──► submit + existing ReorderPaymentDialog
+```
 
-Output as a markdown table in chat. You decide what to fix.
+## Scope of changes
 
-### 2. Tighten the "are we ready?" UX (small frontend-only changes)
-- **`PaymentGatewaysCard.tsx`** (branch admin): show a single clear "PayFast is live for customers ✓" / "PayFast not yet active ✗ — missing: passphrase / merchant_key / tenant disabled" status line, computed from the existing `payments-get-credentials-summary` response + tenant gateway flag. Today the card shows masked fields but doesn't summarise readiness.
-- **Tenant admin → Payment Gateways**: add the same readiness summary per branch in the existing branches list, so a tenant owner can see at a glance which branches are payment-ready without clicking into each one.
+### Backend (`supabase/functions/order-engine/index.ts`)
 
-### 3. One-page operator runbook
-Add `docs/payments-rollout.md` covering:
-- The 3-layer model (Platform → Tenant → Branch) and exactly what lives where
-- Per-tenant checklist: enable PayFast in `tenant_payment_gateways`, then per branch save credentials (merchant_id, merchant_key, **passphrase**, mode)
-- How to test against PayFast sandbox per branch
-- How ringfencing works (so future-you doesn't worry about cross-tenant leakage)
-- Common failure messages and what they mean
+- Split `reorderOrder` into two steps:
+  1. `reorderOrder` → clones jobs + addresses into a **draft** order (`admin_status = 'cart'` / `order_status = 'draft'`, same model used by the regular cart flow), re-prices each job against the **current** rate card, and returns the draft `order_id` plus a `changes[]` array (e.g. `{ job_id, change: "price_increased", old: 120, new: 135 }`, `{ change: "option_unavailable", … }`).
+  2. `submitReorder` (new action, or reuse the existing cart-checkout submit path) → flips the draft to a live order once the customer confirms.
+- Permissions and tenant/branch ringfencing stay exactly as today.
 
-### Out of scope (flag only, don't change)
-- Stripe rollout — same model, but no customer has asked yet; the audit will note any tenant that has Stripe enabled without creds
-- Promo codes, tenant central billing, Stripe Tax — already on your earlier "later" list
+### New review UI
 
-## Technical notes
+- New component `src/components/customer/ReorderReviewDialog.tsx` (modal on desktop, full-screen sheet on mobile) containing:
+  - Header: "Review your reorder — Order #INV-xxxx"
+  - Line item rows: thumbnail, product family, spec summary (size, pages, binding, finish), qty stepper, unit price, line total, remove (×).
+  - Delivery block: current address + "Change" link → opens existing address picker.
+  - Fulfillment choice (Collect / Deliver) when the branch supports both.
+  - Notes, PO, cost centre fields, pre-filled from source order.
+  - Warning banners for any `changes[]` entries returned by the server.
+  - Totals panel (subtotal, delivery, VAT, total).
+  - Footer: **Cancel** · **Edit in cart** · **Place Order**.
+- Component is mounted from both existing entry points: `CustomerOrders.tsx` and `CustomerOrderDetail.tsx`, replacing the current "fire and forget" handler.
+- On **Place Order**, call the submit action, then hand the resulting live order to the existing `ReorderPaymentDialog` (no change to the payment leg — that part is working).
 
-- All changes in step 2 are presentation-only; no edge function, no migration, no RLS change.
-- Step 1 uses read-only `supabase--read_query` against `tenants`, `branches`, `tenant_payment_gateways`, `branch_payment_gateways`. No secret values are read — only `credentials_secret_id` presence + mode.
-- The `payments-get-credentials-summary` function already returns `has_passphrase` / masked fields, so the readiness pill needs no new backend.
+### Hooks / data plumbing
 
-After you approve, I'll run the audit first and paste the results before touching any UI.
+- `reorderOrder` mutation in `src/lib/orders/mutations.ts` updated to return the new draft + changes payload.
+- New `submitReorder` mutation alongside it.
+- Reuse `useOrderBuilder` / cart hooks where they already model qty edits and removal so we don't reinvent pricing.
+
+### Edge cases handled
+
+- Source order had items that are now disabled at branch level → flagged + auto-removed with a notice.
+- Source price differs from current price → flagged inline; total reflects current price.
+- Source delivery address has been deleted → falls back to customer's default with a "please confirm address" warning.
+- Customer abandons the modal → draft remains in their cart so they can return to it (same as any other cart).
+
+### Out of scope (explicitly not changing)
+
+- The payment dialog and PayFast/Stripe handoff — they already work correctly.
+- The admin-side reorder/duplicate flow (different surface, different requirements).
+- The `Buy it again` carousel on the dashboard — left as is for this pass.
+
+## Deliverables
+
+1. `order-engine`: `reorderOrder` returns draft + changes; new `submitReorder` action.
+2. `src/components/customer/ReorderReviewDialog.tsx` (new).
+3. `src/lib/orders/mutations.ts`: updated typings + new submit helper.
+4. `src/pages/dashboard/CustomerOrders.tsx` and `CustomerOrderDetail.tsx`: wire the new dialog in front of the existing payment dialog.
+5. Light copy/UX polish: button label "Reorder" stays; CTA inside dialog reads "Place Order".

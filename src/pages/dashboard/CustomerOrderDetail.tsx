@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
-import { sendMessage, reorderOrder } from "@/lib/orders/mutations";
+import { sendMessage } from "@/lib/orders/mutations";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
 import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
+import ReorderReviewDialog from "@/components/customer/ReorderReviewDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -161,25 +162,17 @@ const CustomerOrderDetail = () => {
   };
 
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [reordering, setReordering] = useState(false);
+  const [reviewSourceId, setReviewSourceId] = useState<string | null>(null);
   const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const savedOrders = useCustomerSavedOrders();
 
-  const handleReorder = async () => {
+  const handleReorder = () => {
     if (!id) return;
-    setReordering(true);
-    try {
-      const res = await reorderOrder({ order_id: id });
-      toast.success(`New order ${res.order_number} created`);
-      setReorderResult({ id: res.order_id, number: res.order_number, currency: (res as any).currency ?? order?.currency });
-    } catch (e: any) {
-      toast.error("Failed to reorder", { description: e.message });
-    } finally {
-      setReordering(false);
-    }
+    setReviewSourceId(id);
   };
+
 
   const handlePayNow = async () => {
     if (!order) return;
@@ -327,9 +320,9 @@ const CustomerOrderDetail = () => {
 
       {/* Customer actions */}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={handleReorder} disabled={reordering}>
+        <Button size="sm" variant="outline" onClick={handleReorder}>
           <Repeat className="h-3.5 w-3.5 mr-1.5" />
-          {reordering ? "Reordering…" : "Reorder"}
+          Reorder
         </Button>
         <Button size="sm" variant="outline" onClick={() => setSaveTemplateOpen(true)}>
           <Bookmark className="h-3.5 w-3.5 mr-1.5" />
@@ -822,6 +815,15 @@ const CustomerOrderDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ReorderReviewDialog
+        sourceOrderId={reviewSourceId}
+        onCancel={() => setReviewSourceId(null)}
+        onPlaced={(res) => {
+          setReviewSourceId(null);
+          setReorderResult(res);
+          queryClient.invalidateQueries({ queryKey: ["user-orders"] });
+        }}
+      />
       <ReorderPaymentDialog
         orderId={reorderResult?.id ?? null}
         orderNumber={reorderResult?.number}

@@ -179,11 +179,52 @@ export async function cancelOrder(payload: { order_id: string; reason: string })
   return invokeOrderEngine<{ success: boolean; refund_pending: boolean }>("cancelOrder", payload);
 }
 
-export async function reorderOrder(payload: { order_id: string }) {
+export type ReorderJobPreview = {
+  sequence_no: number;
+  product_name: string;
+  product_category: string | null;
+  job_name: string | null;
+  quantity: number;
+  unit_label: string | null;
+  net_price: number;
+  gross_price: number;
+  vat_rate: number;
+  product_snapshot?: any;
+  configuration?: any;
+};
+
+export type ReorderPreview = {
+  preview: true;
+  source_order_id: string;
+  source_order_number: string;
+  currency: string;
+  fulfillment_type: string | null;
+  branch_id: string | null;
+  notes_customer: string | null;
+  po_number: string | null;
+  cost_centre: string | null;
+  jobs: ReorderJobPreview[];
+  delivery_address: any | null;
+  billing_address: any | null;
+  subtotal: number;
+};
+
+export async function reorderPreview(order_id: string): Promise<ReorderPreview> {
+  return invokeOrderEngine<ReorderPreview>("reorderOrder", { order_id, dry_run: true });
+}
+
+export async function reorderOrder(payload: {
+  order_id: string;
+  job_overrides?: Array<{ sequence_no: number; quantity?: number; remove?: boolean }>;
+  notes_customer?: string | null;
+  po_number?: string | null;
+  cost_centre?: string | null;
+}) {
   return invokeOrderEngine<{
     order_id: string;
     order_number: string;
     jobs: Array<{ id: string; job_number: string; sequence_no: number }>;
+    currency?: string;
   }>("reorderOrder", payload);
 }
 
