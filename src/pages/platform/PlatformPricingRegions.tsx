@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Save, Plus, Trash2 } from "lucide-react";
+import { Save, Plus, Trash2, RefreshCw } from "lucide-react";
+
 
 interface Region {
   id: string;
