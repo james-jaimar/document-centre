@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
+import { BranchPaymentReadinessCard } from "@/components/payments/BranchPaymentReadinessCard";
 import { toast } from "sonner";
 import { Save, Banknote, CreditCard, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
