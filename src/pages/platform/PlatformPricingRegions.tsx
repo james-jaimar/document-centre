@@ -119,6 +119,8 @@ export default function PlatformPricingRegions() {
           price: p.price,
           plan_name: p.plan_name,
           stripe_price_id: p.stripe_price_id,
+          stripe_coupon_id: p.stripe_coupon_id ?? null,
+          stripe_promotion_code_id: p.stripe_promotion_code_id ?? null,
           trial_offer: p.trial_offer ?? "both",
         } as any).eq("id", p.id);
       }
