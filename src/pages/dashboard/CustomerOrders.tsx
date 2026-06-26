@@ -129,21 +129,13 @@ const CustomerOrders = () => {
   const { data: unreadMap = {} } = useUnreadMessagesCustomer();
   const savedOrders = useCustomerSavedOrders();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reviewSourceId, setReviewSourceId] = useState<string | null>(null);
   const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
 
-  const handleReorder = useCallback(async (sourceOrderId: string) => {
-    setReorderingId(sourceOrderId);
-    try {
-      const res = await reorderOrder({ order_id: sourceOrderId });
-      toast.success(`Order ${res.order_number} created`);
-      setReorderResult({ id: res.order_id, number: res.order_number, currency: (res as any).currency });
-    } catch (e: any) {
-      toast.error("Failed to reorder", { description: e.message });
-    } finally {
-      setReorderingId(null);
-    }
+  const handleReorder = useCallback((sourceOrderId: string) => {
+    setReviewSourceId(sourceOrderId);
   }, []);
+
 
 
   // Visible orders:
