@@ -12,4 +12,12 @@ customHeaders:
       - key: 'Permissions-Policy'
         value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()'
       - key: 'Content-Security-Policy'
-        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://embed.tawk.to https://*.tawk.to https://cdn.jsdelivr.net https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://embed.tawk.to https://*.tawk.to; font-src 'self' data: https://fonts.gstatic.com https://embed.tawk.to https://*.tawk.to; img-src 'self' data: blob: https:; media-src 'self' blob: https:; worker-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tawk.to wss://*.tawk.to https://cdn.jsdelivr.net https://*.s3.af-south-1.amazonaws.com https://s3.af-south-1.amazonaws.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; frame-src https://*.tawk.to; object-src 'none'; base-uri 'self'; form-action 'self' https://www.payfast.co.za https://sandbox.payfast.co.za https://payfast.co.za https://*.payfast.co.za;"
+        # NOTE: `form-action` is intentionally omitted. PayFast's hosted
+        # checkout 302s through several PayFast subdomains (and sometimes
+        # 3rd-party PSP hosts) that we cannot maintain in an allow-list.
+        # Per CSP L3 §6.3.3, omitting `form-action` does NOT fall back to
+        # `default-src` — it means "no form-action restriction" while every
+        # other directive (script-src, connect-src, base-uri, object-src,
+        # frame-src, etc.) stays in force. Do not re-add a form-action list
+        # without first confirming the full PayFast redirect chain.
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://embed.tawk.to https://*.tawk.to https://cdn.jsdelivr.net https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://embed.tawk.to https://*.tawk.to; font-src 'self' data: https://fonts.gstatic.com https://embed.tawk.to https://*.tawk.to; img-src 'self' data: blob: https:; media-src 'self' blob: https:; worker-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tawk.to wss://*.tawk.to https://cdn.jsdelivr.net https://*.s3.af-south-1.amazonaws.com https://s3.af-south-1.amazonaws.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; frame-src https://*.tawk.to; object-src 'none'; base-uri 'self';"
