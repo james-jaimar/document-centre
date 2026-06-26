@@ -1211,8 +1211,26 @@ async function cancelOrder(
     }),
   ]);
 
+  // Auto-raise refund_pending adjustment so the branch sees a clear action item.
+  if (refundPending) {
+    await admin.from("order_adjustments").insert({
+      order_id,
+      description: `Refund owed — order cancelled (${reason.slice(0, 80)})`,
+      amount: -Math.abs(Number(order.amount_paid)),
+      status: "refund_pending",
+      metadata: {
+        reason,
+        raised_at: new Date().toISOString(),
+        raised_by: userId,
+        source: "order_cancelled",
+        amount_paid: order.amount_paid,
+      },
+    });
+  }
+
   return json({ success: true, refund_pending: refundPending });
 }
+
 
 // ── Admin-only order editing ────────────────────────────────
 
