@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
-import { sendMessage, reorderOrder } from "@/lib/orders/mutations";
+import { sendMessage } from "@/lib/orders/mutations";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
 import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
+import ReorderReviewDialog from "@/components/customer/ReorderReviewDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
