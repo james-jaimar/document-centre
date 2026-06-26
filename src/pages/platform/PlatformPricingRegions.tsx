@@ -558,6 +558,56 @@ export default function PlatformPricingRegions() {
                 </tbody>
               </table>
             </div>
+
+            <div className="rounded-lg border bg-card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left font-semibold">Region — Stripe Coupon / Promo Code (optional, applied at checkout)</th>
+                    {branchSlugs.map((s) => (
+                      <th key={s} className="px-4 py-3 text-left font-semibold"><div className="font-mono text-xs">{s}</div></th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {regions.map((r) => (
+                    <tr key={r.id} className="border-b last:border-0 align-top">
+                      <td className="px-4 py-2 font-medium">{FLAG_MAP[r.region_code] || ""} {r.region_code}</td>
+                      {branchSlugs.map((slug) => {
+                        const p = getBranchPlan(r.id, slug);
+                        if (!p) return <td key={slug} />;
+                        return (
+                          <td key={slug} className="px-4 py-2 space-y-1">
+                            <Input
+                              value={p.stripe_coupon_id || ""}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "stripe_coupon_id", e.target.value)}
+                              className="h-8 w-48 font-mono text-xs"
+                              placeholder="coupon_id (e.g. clEFP4tT)"
+                            />
+                            <Input
+                              value={p.stripe_promotion_code_id || ""}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "stripe_promotion_code_id", e.target.value)}
+                              className="h-8 w-48 font-mono text-xs"
+                              placeholder="promo code id (promo_...)"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => verifyAgainstStripe(p)}
+                              disabled={!p.stripe_price_id && !p.stripe_coupon_id && !p.stripe_promotion_code_id}
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" /> Verify with Stripe
+                            </Button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </div>
