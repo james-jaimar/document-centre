@@ -23,6 +23,7 @@ export interface BranchSubscription {
   trial_ends_at: string | null;
   trial_started_at: string | null;
   trial_status: "not_started" | "active" | "expired" | "converted" | string;
+  trial_started_via: "no_card_14" | "stripe_30" | null;
   cancelled_at: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
