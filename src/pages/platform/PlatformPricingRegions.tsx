@@ -165,21 +165,47 @@ export default function PlatformPricingRegions() {
       },
     });
     if (error) return toast.error(error.message);
+
     const parts: string[] = [];
+    let dbUpdates: Record<string, any> = {};
+
     if (data?.price) {
       const live = parseFloat(data.price.unit_amount_decimal ?? "0");
       const drift = Math.abs(live - Number(p.price)) > 0.005;
-      parts.push(`Stripe: ${data.price.currency} ${data.price.unit_amount_decimal} ${data.price.recurring ? `/ ${data.price.recurring.interval}` : ""}${drift ? "  ⚠ differs from stored " + p.price : "  ✓ matches"}`);
-      if (!data.price.active) parts.push("⚠ price is INACTIVE in Stripe");
+      if (drift) {
+        dbUpdates.price = live;
+        parts.push(`Price updated R${p.price} → R${live.toFixed(2)} (${data.price.currency})`);
+      } else {
+        parts.push(`Price R${live.toFixed(2)} ✓ in sync`);
+      }
+      if (!data.price.active) parts.push("⚠ price INACTIVE in Stripe");
     }
     if (data?.coupon) {
       const c = data.coupon;
       const off = c.percent_off ? `${c.percent_off}% off` : `${(c.amount_off / 100).toFixed(2)} ${c.currency} off`;
-      parts.push(`Coupon ${c.id}: ${off} (${c.duration}${c.duration_in_months ? ` ${c.duration_in_months}m` : ""})${c.valid ? " ✓ valid" : " ⚠ invalid"}`);
+      parts.push(`Coupon ${c.id}: ${off}${c.valid ? " ✓" : " ⚠ invalid"}`);
     }
-    if (data?.promotion_code) parts.push(`Promo code ${data.promotion_code.code}${data.promotion_code.active ? " ✓ active" : " ⚠ inactive"}`);
-    toast.success(parts.join("  •  "), { duration: 10000 });
+    if (data?.promotion_code) {
+      parts.push(`Promo ${data.promotion_code.code}${data.promotion_code.active ? " ✓" : " ⚠ inactive"}`);
+    }
+
+    // Persist drift back to DB so every consumer sees the live price
+    if (Object.keys(dbUpdates).length > 0) {
+      const { error: upErr } = await supabase
+        .from("platform_pricing_plans")
+        .update(dbUpdates)
+        .eq("id", p.id);
+      if (upErr) {
+        toast.error(`Stripe checked OK but DB update failed: ${upErr.message}`);
+        return;
+      }
+      // Reflect in local state immediately
+      setPlans((prev) => prev.map((pl) => (pl.id === p.id ? { ...pl, ...dbUpdates } : pl)));
+    }
+
+    toast.success(parts.join("  •  ") || "Verified", { duration: 8000 });
   }
+
 
 
   async function addBranchPlan() {
