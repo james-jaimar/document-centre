@@ -38,10 +38,10 @@ Deno.serve(async (req) => {
   let body: { price_id?: string; coupon_id?: string; promotion_code_id?: string };
   try { body = await req.json(); } catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
 
-  const out: any = { price: null, product: null, coupon: null, promotion_code: null };
+  const out: any = { price: null, product: null, coupon: null, promotion_code: null, errors: {} };
 
-  try {
-    if (body.price_id) {
+  if (body.price_id) {
+    try {
       const price = await stripe.prices.retrieve(body.price_id, { expand: ["product"] });
       out.price = {
         id: price.id,
@@ -53,8 +53,13 @@ Deno.serve(async (req) => {
       };
       const product = price.product as Stripe.Product;
       out.product = { id: product.id, name: product.name, active: product.active };
+    } catch (e: any) {
+      out.errors.price = e?.message ?? "Price lookup failed";
     }
-    if (body.coupon_id) {
+  }
+
+  if (body.coupon_id) {
+    try {
       const coupon = await stripe.coupons.retrieve(body.coupon_id);
       out.coupon = {
         id: coupon.id,
@@ -66,13 +71,43 @@ Deno.serve(async (req) => {
         duration_in_months: coupon.duration_in_months,
         valid: coupon.valid,
       };
+    } catch (couponErr: any) {
+      // Fallback: maybe the user pasted a Promotion Code ID instead of a Coupon ID
+      try {
+        const list = await stripe.promotionCodes.list({ code: body.coupon_id, limit: 1 });
+        const pc = list.data[0] ?? (body.coupon_id.startsWith("promo_") ? await stripe.promotionCodes.retrieve(body.coupon_id) : null);
+        if (pc) {
+          out.promotion_code = { id: pc.id, code: pc.code, active: pc.active, coupon_id: typeof pc.coupon === "string" ? pc.coupon : pc.coupon.id };
+          const couponId = typeof pc.coupon === "string" ? pc.coupon : pc.coupon.id;
+          const coupon = await stripe.coupons.retrieve(couponId);
+          out.coupon = {
+            id: coupon.id,
+            name: coupon.name,
+            percent_off: coupon.percent_off,
+            amount_off: coupon.amount_off,
+            currency: coupon.currency?.toUpperCase() ?? null,
+            duration: coupon.duration,
+            duration_in_months: coupon.duration_in_months,
+            valid: coupon.valid,
+            resolved_via: "promotion_code",
+          };
+        } else {
+          out.errors.coupon = couponErr?.message ?? "Coupon lookup failed";
+        }
+      } catch (pcErr: any) {
+        out.errors.coupon = `${couponErr?.message ?? "Coupon lookup failed"} (promo fallback: ${pcErr?.message ?? "not found"})`;
+      }
     }
-    if (body.promotion_code_id) {
+  }
+
+  if (body.promotion_code_id && !out.promotion_code) {
+    try {
       const pc = await stripe.promotionCodes.retrieve(body.promotion_code_id);
       out.promotion_code = { id: pc.id, code: pc.code, active: pc.active, coupon_id: typeof pc.coupon === "string" ? pc.coupon : pc.coupon.id };
+    } catch (e: any) {
+      out.errors.promotion_code = e?.message ?? "Promotion code lookup failed";
     }
-    return new Response(JSON.stringify(out), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message ?? "Stripe lookup failed" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
+
+  return new Response(JSON.stringify(out), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 });
