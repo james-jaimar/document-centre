@@ -62,7 +62,6 @@ const PlatformTenants = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Tenant | null>(null);
-  const [subTenant, setSubTenant] = useState<Tenant | null>(null);
   const [paymentsTenant, setPaymentsTenant] = useState<Tenant | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
