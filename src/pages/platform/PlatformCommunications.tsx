@@ -368,14 +368,25 @@ function TemplatesTab() {
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
         {/* Templates list */}
         <div className="hidden lg:flex flex-col min-h-0">
-          <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b">Templates</div>
+          <div className="flex items-center justify-between px-3 py-1.5 border-b">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Templates</span>
+            <NewTemplateButton onCreated={(slug) => { load().then(() => setSelectedSlug(slug)); }} />
+          </div>
           <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
             {templates.map(t => (
-              <button key={t.slug} onClick={() => setSelectedSlug(t.slug)}
-                className={`w-full text-left px-2 py-1.5 rounded text-sm ${selectedSlug === t.slug ? "bg-primary/10 font-medium" : "hover:bg-muted"}`}>
-                <div className="truncate">{t.name}</div>
-                {t.is_system && <Badge variant="outline" className="mt-0.5 text-[10px] h-4 px-1">system</Badge>}
-              </button>
+              <div key={t.slug}
+                className={`group flex items-center rounded ${selectedSlug === t.slug ? "bg-primary/10" : "hover:bg-muted"}`}>
+                <button onClick={() => setSelectedSlug(t.slug)}
+                  className={`flex-1 text-left px-2 py-1.5 text-sm ${selectedSlug === t.slug ? "font-medium" : ""}`}>
+                  <div className="truncate">{t.name}</div>
+                  {t.is_system && <Badge variant="outline" className="mt-0.5 text-[10px] h-4 px-1">system</Badge>}
+                </button>
+                <TemplateRowActions
+                  template={t}
+                  onChange={() => load()}
+                  onDeleted={() => { setSelectedSlug(""); load(); }}
+                />
+              </div>
             ))}
           </div>
         </div>
