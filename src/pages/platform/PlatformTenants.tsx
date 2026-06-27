@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
 import { PlatformTenantPaymentsDialog } from "@/components/platform/PlatformTenantPaymentsDialog";
 import { toast } from "sonner";
 import { Building2, Pencil, ArrowRight, ExternalLink, CreditCard, Plus, Globe } from "lucide-react";
