@@ -333,12 +333,6 @@ function TemplatesTab() {
     });
   };
 
-  const handleTokenClick = (token: string) => {
-    // If raw-HTML mode is on, insert into the HTML textarea. Otherwise append
-    // the token into the rich-text body (tiptap accepts inserted text just fine).
-    if (rawMode) return insertTokenIntoTextarea(htmlRef, "body_html", token);
-    setDraft({ ...(draft ?? {}), body_html: `${draft?.body_html ?? ""}{{${token}}}` });
-  };
 
   const previewVars = defaultPreviewVars();
   const previewHtml = draft?.body_html
