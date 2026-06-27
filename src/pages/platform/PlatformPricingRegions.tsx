@@ -528,13 +528,24 @@ export default function PlatformPricingRegions() {
                       {branchSlugs.map((slug) => {
                         const p = getBranchPlan(r.id, slug);
                         return (
-                          <td key={slug} className="px-4 py-2">
+                          <td key={slug} className="px-4 py-2 space-y-1">
                             <Input
                               value={p?.stripe_price_id || ""}
                               onChange={(e) => setBranchPlanField(r.id, slug, "stripe_price_id", e.target.value)}
                               className="h-8 w-48 font-mono text-xs"
                               placeholder="price_..."
                             />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => p && verifyAgainstStripe(p)}
+                              disabled={!p?.stripe_price_id}
+                              title="Fetch live price from Stripe and update the DB"
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" /> Verify with Stripe
+                            </Button>
                           </td>
                         );
                       })}
