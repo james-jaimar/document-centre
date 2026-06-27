@@ -1,30 +1,51 @@
-## Goal
-Fix the "Edge Function returned a non-2xx status code" toast that appears when clicking **Sign in with Microsoft** on the renamed demo branch, and make sure the underlying authorize call actually succeeds for a Branch Manager.
+# Fix deep-link 404s on both Amplify domains
 
-## Why we can't pinpoint it yet
-`supabase.functions.invoke()` returns a generic error string on any non-2xx and discards the JSON body, so the toast tells us nothing about what `microsoft-oauth-connect` actually returned. The function logs currently show only a `booted` entry — the failed request rotated out before I could inspect it. I need to read the actual JSON response.
+## What I confirmed (no guessing)
 
-## Changes
+I curled both domains:
 
-### 1. Surface the real error in the popup helpers (frontend only)
-In `src/components/branch/BranchEmailAccountsPanel.tsx`, `src/pages/admin/settings/EmailAccountsTab.tsx`, and `src/pages/platform/settings/PlatformEmailTab.tsx`, replace the bare `supabase.functions.invoke(fnName, …)` call inside `runOAuthPopup` with a `fetch()` to the function URL that:
-- reads the response body even on non-2xx,
-- shows the server's `error` string in the toast (e.g. `Forbidden`, `tenant_id required`, `Microsoft OAuth not configured`).
+- `https://document-centre.com/branch/settings/` → **HTTP 404** (body 2817 bytes, served from S3 via CloudFront)
+- `https://postnetprintcentre.com/branch/settings/` → **HTTP 404** (identical etag, same body)
+- `https://postnetprintcentre.com/branch/settings` (no trailing slash) → **301** to `/branch/settings/` (then 404)
 
-This is the same pattern already used in other admin edge-function calls in this repo and is the single most useful change — every future "non-2xx" toast will then state the actual reason.
+Both domains are attached to the same Amplify app (`document-centre`, main branch) — your first screenshot confirms it. They share the same Rewrites table, so whatever we fix here fixes both. **No CloudFront console work needed** — Amplify owns the CloudFront distribution under the hood.
 
-### 2. Defensive guard on the authorize call
-In the same three files, before invoking, assert that `tenantId` is set and (for branch panels) `branchId` is set; if not, toast `"Branch context not loaded — refresh and try again"` and abort. This rules out a stale React context after the rename.
+## Why it's broken
 
-### 3. Verify Branch Manager permissions for the demo branch
-Read-only SQL check (no migration) against `tenant_memberships` for the signed-in `hello@printmypics.co` user against the demo branch id, to confirm the role is `owner | admin | manager`. If the membership row is missing or has a non-matching role, that's the actual fix and we add the correct row — separate follow-up after step 1 tells us which branch_id the popup is sending.
+Your current second rule is:
 
-### 4. Re-test
-After (1) and (2) ship, click **Sign in with Microsoft** again. The toast will now read e.g. `Forbidden` or `Microsoft OAuth not configured` or `Token exchange failed: invalid_client`, and we fix the specific cause in a follow-up turn (most likely either a membership-role gap or a missing redirect URI in the Entra app registration for the new branch host).
+```
+Source: /<*>     Target: /index.html     Type: 404 (Rewrite)
+```
 
-## Files touched
-- `src/components/branch/BranchEmailAccountsPanel.tsx`
-- `src/pages/admin/settings/EmailAccountsTab.tsx`
-- `src/pages/platform/settings/PlatformEmailTab.tsx`
+In Amplify, **type `404`** means "serve the target body but return HTTP **404** as the status". That's why the browser still renders the SPA shell (so the page often *looks* fine) but the response status is 404 — which is what shows up in the console, breaks crawlers, breaks `fetch()`-style health checks, and looks bad on hard refresh.
 
-No edge-function or DB changes in this pass.
+The standard SPA fallback needs **type `200` (Rewrite)** — same body, but status 200 so React Router takes over cleanly.
+
+## The fix — 3 clicks in Amplify
+
+In **Hosting → Rewrites and redirects → Manage redirects**:
+
+1. **Keep** the existing logo rule exactly as-is (must stay first so logos aren't swallowed by the SPA rule):
+   ```
+   /logo/<*>  →  https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/tenant-logo/<*>   200 (Rewrite)
+   ```
+2. **Edit** the second rule (`/<*>` → `/index.html` `404`):
+   - Source address: `</^[^.]+$|\.(?!(css|gif|ico|jpg|jpeg|js|png|txt|svg|woff|woff2|ttf|map|json|webmanifest)$)([^.]+$)/>`
+   - Target address: `/index.html`
+   - Type: **200 (Rewrite)**
+3. **Save**.
+
+The regex source excludes real asset extensions (so missing PNGs etc. still return real 404s instead of being masked by index.html) and catches every SPA path including ones with trailing slashes like `/branch/settings/`.
+
+## How I'll verify (after you save)
+
+I'll re-curl both URLs and confirm they return `HTTP/2 200` with the SPA HTML. If anything still 404s I'll dig further before changing anything else.
+
+## What does NOT need to change
+
+- No code edits in this repo.
+- No `customHttp.yml` change (that's headers/CSP, not routing).
+- No `vite.config.ts` change.
+- No CloudFront distribution settings.
+- No second Amplify app.
