@@ -1,67 +1,33 @@
-# Plan: Platform Onboarding CMS
+## Two fixes for Platform Communications
 
-## Goal
-Give platform admins a single screen to send branded "Welcome to your store" emails to one or many branches, where each recipient gets their store URL, their username (branch email) and a one-time password-set link. First login forces a new password.
+### 1. "Dry run failed / CORS" — function isn't deployed
 
-## What already exists (reuse, don't rebuild)
-- `invite-member` Edge Function — creates the auth user (if needed), upserts the `branch_manager` membership, generates a Supabase recovery link, and sends a branded HTML email via `send-email`.
-- `provision-branch-admins` Edge Function — bulk-creates `branch_manager` accounts for every branch in a tenant from `branches.email` (no email sent).
-- `/reset-password` page (`ResetPassword.tsx`) — handles the recovery link, forces a new password before access.
-- `send-email` + tenant branding (logo, primary colour, portal name) already wired into `invite-member`.
+`send-branch-welcome-campaign` is missing from `supabase/config.toml`, so Supabase never deploys it. The browser hits a non-existent endpoint, gets no CORS headers back, and shows "Failed to send a request to the Edge Function / blocked by CORS".
 
-Net new code is mainly the CMS UI plus a small "campaign" Edge Function that loops branches and reuses the invite pipeline.
+**Fix:** Register the function in `supabase/config.toml` under `[functions]` with `verify_jwt = false` (matches the pattern of every other admin-callable function in this project; auth is enforced inside the function via `getUser()` + `user_roles` check).
 
-## What's new
+### 2. Custom domain not being used for store URL / action link
 
-### 1. Templates table (DB)
-`platform_email_templates`:
-- `id`, `slug` (e.g. `branch_welcome`), `name`, `subject`, `body_html`, `body_text`, `is_system`, timestamps.
-- Seed one template: **Branch Welcome** with merge tokens `{{branch_name}}`, `{{contact_name}}`, `{{store_url}}`, `{{login_email}}`, `{{action_link}}`, `{{tenant_name}}`, `{{portal_name}}`.
-- RLS: platform admins only; service role full.
-- GRANTs included per project rules.
+`tenants.custom_domain` is already populated (e.g. `postnetprintcenter.com`) and used by `send-order-email`, but the Communications flow ignores it. Currently `resolveAppOrigin` only checks `tenant_settings.branding.portal_url` → global `app_url` → caller origin. The campaign also prefixes `/t/<slug>` to the store URL, which is wrong when the tenant has its own domain.
 
-### 2. Campaign log (DB)
-`platform_email_campaigns` + `platform_email_campaign_recipients`:
-- Campaign: tenant_id, template_slug, subject snapshot, created_by, counts, status.
-- Recipient: branch_id, email, status (`queued`/`sent`/`failed`/`skipped_no_email`/`skipped_already_active`), error, sent_at, action_link_expires_at.
-- Lets us answer "who got the welcome email, when, did they click".
+**Fix — backend (`supabase/functions/_shared/buildAuthLink.ts`):**
+- In `resolveAppOrigin`, before checking `portal_url`, look up `tenants.custom_domain` for the given `tenantId`. If set, return `https://<custom_domain>` as the origin.
+- Return a small flag (or a second helper) so callers know the origin is a tenant-owned domain and should NOT prepend `/t/<slug>` for paths.
 
-### 3. Edge Function: `send-branch-welcome-campaign`
-Platform-admin gated. Input: `{ tenant_id, template_slug, branch_ids[], dry_run? }`. For each branch:
-1. Ensure auth user + `branch_manager` membership exist (reuse `provision-branch-admins` logic, inline).
-2. Generate a Supabase recovery link pointed at `/{tenant-slug}/reset-password`. This IS the temp-login mechanism — no plaintext temp password is ever shown or stored (industry standard; matches what Supabase, Auth0, Cognito all do).
-3. Render the chosen template with merge tokens, send through `send-email` using tenant branding.
-4. Write a row to `platform_email_campaign_recipients`.
+**Fix — campaign (`supabase/functions/send-branch-welcome-campaign/index.ts`):**
+- When the resolved origin came from `custom_domain`, build:
+  - `store_url` = `https://<custom_domain>/<branch_slug>` (no `/t/<tenant_slug>` prefix)
+  - `action_link` = same origin, no `/t/<slug>` prefix passed to `buildAppVerifyLink`
+- Otherwise keep the existing `/t/<slug>` behaviour for platform-hosted tenants.
 
-Notes:
-- "Temporary password" UX is delivered as a one-time set-password link rather than a plaintext password in the email — safer, no need to transmit/store secrets, and `/reset-password` already forces a brand-new password. I'll call this out in the UI copy ("one-time secure login link") so it's clear that's the temp-login mechanism.
-- Idempotent: re-sending to a branch that already has an active login is allowed (re-issues a fresh recovery link) and logged as `re_sent`.
+**Fix — UI preview (`src/pages/platform/PlatformCommunications.tsx`):**
+- When the selected tenant has `custom_domain`, render the preview's `store_url` as `https://<custom_domain>` (no `/t/<slug>`), so the preview matches what recipients will actually see.
+- This requires reading `custom_domain` alongside the tenant in the existing tenants query.
 
-### 4. Platform UI: `/platform/communications`
-New page `PlatformCommunications.tsx` with three tabs:
-- **Compose** — pick tenant → checkbox list of branches (shows branch name, contact email, "has logged in?" badge) → pick template → live preview with the first branch's merge values → "Send to N branches" / "Dry run".
-- **Templates** — list/edit `platform_email_templates`. Monaco-lite textarea + token cheatsheet + preview pane.
-- **History** — campaigns list, drill into recipients with status pills and error messages; "Resend to failed".
+### Files to edit
+- `supabase/config.toml` — register `send-branch-welcome-campaign`
+- `supabase/functions/_shared/buildAuthLink.ts` — custom-domain lookup + tenant-owned-origin signal
+- `supabase/functions/send-branch-welcome-campaign/index.ts` — use signal to drop `/t/<slug>` prefix
+- `src/pages/platform/PlatformCommunications.tsx` — preview uses custom domain when set
 
-Add nav entry under Platform → Communications. (Existing `PlatformSentMail` stays as the raw outbox log.)
-
-### 5. Forced password set on first login
-Already enforced — the recovery link lands on `/reset-password` which requires `updateUser({ password })` before continuing. No change needed beyond confirming the redirect target in the campaign function matches `invite-member`'s pattern (`{appOrigin}/t/{slug}/reset-password`).
-
-## Out of scope (flag for later)
-- True marketing campaigns / list segmentation / unsubscribe handling — this is operational onboarding, not marketing. Suggest a dedicated marketing tool if/when needed.
-- Scheduled sends, A/B testing, open/click tracking pixels.
-- Per-tenant template overrides (platform-level only for now).
-
-## Technical notes
-- All new tables get `GRANT` blocks + RLS in the same migration.
-- Edge Function uses `verify_jwt` default, validates platform admin via `user_roles`.
-- Merge-token renderer is a tiny `{{token}}` replace — no template engine dependency.
-- Recovery link generation already proven in `invite-member`; extract into `_shared/inviteLink.ts` so both functions share it.
-
-## Deliverables
-1. Migration: `platform_email_templates`, `platform_email_campaigns`, `platform_email_campaign_recipients` + grants/RLS + seed template.
-2. `_shared/inviteLink.ts` (refactor from `invite-member`).
-3. Edge Function `send-branch-welcome-campaign`.
-4. `src/pages/platform/PlatformCommunications.tsx` + child components (Compose / Templates / History) + nav entry.
-5. Hooks: `usePlatformEmailTemplates`, `usePlatformEmailCampaigns`.
+No DB migrations, no UI restructure. After this, "Dry run" will execute and the preview/email links will read `https://postnetprintcenter.com/...` for PostNet.
