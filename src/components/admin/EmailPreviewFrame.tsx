@@ -7,15 +7,17 @@ interface EmailPreviewFrameProps {
   html: string;
   /** Optional banner shown above the iframe (e.g. "1-hour sign-in link"). */
   note?: React.ReactNode;
+  /** When true, the iframe fills the available height instead of capping at 640px. */
+  fill?: boolean;
 }
 
-export function EmailPreviewFrame({ subject, html, note }: EmailPreviewFrameProps) {
+export function EmailPreviewFrame({ subject, html, note, fill = false }: EmailPreviewFrameProps) {
   const [mode, setMode] = useState<"desktop" | "mobile">("desktop");
-  const width = mode === "desktop" ? 640 : 380;
+  const maxWidth = mode === "desktop" ? 640 : 380;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <div className={fill ? "flex flex-col h-full min-h-0" : "space-y-3"}>
+      <div className="flex items-center justify-between gap-3 pb-2">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">Subject</div>
           <div className="text-sm font-medium truncate">{subject}</div>
@@ -34,12 +36,23 @@ export function EmailPreviewFrame({ subject, html, note }: EmailPreviewFrameProp
 
       {note}
 
-      <div className="border rounded-md bg-[#f5f5f7] overflow-auto flex justify-center p-3 max-h-[640px]">
+      <div
+        className={`bg-[#f5f5f7] flex justify-center overflow-auto ${
+          fill ? "flex-1 min-h-0" : "border rounded-md p-3 max-h-[640px]"
+        }`}
+      >
         <iframe
           title="Email preview"
           srcDoc={html}
           sandbox=""
-          style={{ width, height: 620, border: "0", background: "transparent" }}
+          style={{
+            width: "100%",
+            maxWidth,
+            height: "100%",
+            minHeight: fill ? undefined : 620,
+            border: 0,
+            background: "transparent",
+          }}
         />
       </div>
     </div>
