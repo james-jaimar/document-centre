@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranches } from "@/hooks/useBranches";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
