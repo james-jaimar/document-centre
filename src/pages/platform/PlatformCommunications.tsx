@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Send, Save, Megaphone, AlertCircle } from "lucide-react";
+import { Loader2, Send, Save, Megaphone, AlertCircle, Code2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { RichTextEditor } from "@/components/admin/RichTextEditor";
+import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
+import {
+  applyMergeTokens, defaultPreviewVars, renderEmailShell,
+} from "@/lib/email/renderEmailPreview";
 
 interface Tenant { id: string; name: string; slug: string | null; custom_domain: string | null; }
 interface Branch { id: string; name: string; email: string | null; trading_name: string | null; }
@@ -31,10 +37,6 @@ interface CampaignRecipient {
 
 const TOKENS_ACTIVATION = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
 const TOKENS_MARKETING = ["branch_name", "contact_name", "tenant_name", "activation_link"];
-
-function renderPreview(tpl: string, vars: Record<string, string>) {
-  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
-}
 
 export default function PlatformCommunications() {
   const { toast } = useToast();
@@ -245,21 +247,23 @@ function ComposeTab() {
 
       <Card>
         <CardHeader><CardTitle className="text-base">Preview</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           {template ? (
-            <>
-              <div className="text-xs text-muted-foreground">Subject</div>
-              <div className="text-sm font-medium">{renderPreview(template.subject, previewVars)}</div>
-              <div className="text-xs text-muted-foreground mt-3">Body</div>
-              <div className="border rounded-md p-4 bg-white text-sm max-h-[500px] overflow-auto"
-                   dangerouslySetInnerHTML={{ __html: renderPreview(template.body_html, previewVars) }} />
-              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded p-2">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                {kind === "marketing"
-                  ? "Marketing pitch — no credentials are sent. Recipients land on /activate/<slug> and request the sign-in email themselves."
-                  : "The action link is a one-time sign-in link, valid for 1 hour. Recipients land on /welcome and must set a brand-new password before they can sign in."}
-              </div>
-            </>
+            <EmailPreviewFrame
+              subject={applyMergeTokens(template.subject, previewVars)}
+              html={renderEmailShell({
+                portalName: tenant?.name ?? "Document Centre",
+                bodyHtml: applyMergeTokens(template.body_html, previewVars),
+              })}
+              note={
+                <div className="flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded p-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                  {kind === "marketing"
+                    ? "Marketing pitch — no credentials are sent. Recipients land on /activate/<slug> and request the sign-in email themselves."
+                    : "The action link is a one-time sign-in link, valid for 1 hour. Recipients land on /welcome and must set a brand-new password before they can sign in."}
+                </div>
+              }
+            />
           ) : <div className="text-sm text-muted-foreground">Select a template.</div>}
         </CardContent>
       </Card>
@@ -273,6 +277,9 @@ function TemplatesTab() {
   const [selectedSlug, setSelectedSlug] = useState<string>("");
   const [draft, setDraft] = useState<Partial<Template> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [rawMode, setRawMode] = useState(false);
+  const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const htmlRef = useRef<HTMLTextAreaElement | null>(null);
 
   const load = async () => {
     const { data } = await supabase.from("platform_email_templates").select("*").order("name");
@@ -298,8 +305,49 @@ function TemplatesTab() {
     load();
   };
 
+  const tokens = useMemo(
+    () => (draft?.kind === "marketing" ? TOKENS_MARKETING : TOKENS_ACTIVATION),
+    [draft?.kind],
+  );
+
+  const insertTokenIntoTextarea = (
+    ref: React.RefObject<HTMLTextAreaElement>,
+    field: "body_text" | "body_html",
+    token: string,
+  ) => {
+    const el = ref.current;
+    const snippet = `{{${token}}}`;
+    if (!el || !draft) {
+      setDraft({ ...draft, [field]: `${(draft as any)?.[field] ?? ""}${snippet}` } as any);
+      return;
+    }
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const next = el.value.slice(0, start) + snippet + el.value.slice(end);
+    setDraft({ ...draft, [field]: next } as any);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + snippet.length, start + snippet.length);
+    });
+  };
+
+  const handleTokenClick = (token: string) => {
+    // If raw-HTML mode is on, insert into the HTML textarea. Otherwise append
+    // the token into the rich-text body (tiptap accepts inserted text just fine).
+    if (rawMode) return insertTokenIntoTextarea(htmlRef, "body_html", token);
+    setDraft({ ...(draft ?? {}), body_html: `${draft?.body_html ?? ""}{{${token}}}` });
+  };
+
+  const previewVars = defaultPreviewVars();
+  const previewHtml = draft?.body_html
+    ? renderEmailShell({
+        portalName: "Document Centre",
+        bodyHtml: applyMergeTokens(draft.body_html, previewVars),
+      })
+    : "";
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_minmax(0,1fr)] gap-6">
       <Card>
         <CardHeader><CardTitle className="text-base">Templates</CardTitle></CardHeader>
         <CardContent className="space-y-1">
@@ -314,35 +362,95 @@ function TemplatesTab() {
       </Card>
 
       {draft && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">{draft.name}</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <Label>Name</Label>
-              <Input value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} />
-            </div>
-            <div>
-              <Label>Subject</Label>
-              <Input value={draft.subject ?? ""} onChange={e => setDraft({ ...draft, subject: e.target.value })} />
-            </div>
-            <div>
-              <Label>HTML body</Label>
-              <Textarea rows={14} className="font-mono text-xs"
-                value={draft.body_html ?? ""} onChange={e => setDraft({ ...draft, body_html: e.target.value })} />
-            </div>
-            <div>
-              <Label>Plain-text body (fallback)</Label>
-              <Textarea rows={6} className="font-mono text-xs"
-                value={draft.body_text ?? ""} onChange={e => setDraft({ ...draft, body_text: e.target.value })} />
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Merge tokens: {(draft.kind === "marketing" ? TOKENS_MARKETING : TOKENS_ACTIVATION).map(t => <code key={t} className="mx-1 px-1 bg-muted rounded">{`{{${t}}}`}</code>)}
-            </div>
-            <Button onClick={save} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />} Save
-            </Button>
-          </CardContent>
-        </Card>
+        <>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-base">{draft.name}</CardTitle>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Code2 className="h-3.5 w-3.5" />
+                  Edit raw HTML
+                  <Switch checked={rawMode} onCheckedChange={setRawMode} />
+                </label>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label>Name</Label>
+                <Input value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} />
+              </div>
+              <div>
+                <Label>Subject</Label>
+                <Input value={draft.subject ?? ""} onChange={e => setDraft({ ...draft, subject: e.target.value })} />
+              </div>
+              <div>
+                <Label>Email body</Label>
+                {rawMode ? (
+                  <Textarea ref={htmlRef} rows={14} className="font-mono text-xs"
+                    value={draft.body_html ?? ""}
+                    onChange={e => setDraft({ ...draft, body_html: e.target.value })} />
+                ) : (
+                  <RichTextEditor
+                    value={draft.body_html ?? ""}
+                    onChange={(html) => setDraft({ ...draft, body_html: html })}
+                  />
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {rawMode
+                    ? "Raw HTML mode — paste pre-designed email HTML here. The shell (logo, card background) is added automatically when sent."
+                    : "Use the toolbar for formatting. Need a styled button or pasted HTML? Flip on Edit raw HTML."}
+                </p>
+              </div>
+              <div>
+                <Label>Plain-text body (fallback)</Label>
+                <Textarea ref={textRef} rows={6} className="font-mono text-xs"
+                  value={draft.body_text ?? ""} onChange={e => setDraft({ ...draft, body_text: e.target.value })} />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                <div className="mb-1">Click to insert a merge token:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {tokens.map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => handleTokenClick(t)}
+                      className="px-2 py-0.5 rounded bg-muted hover:bg-muted/70 font-mono text-[11px] border"
+                      title={`Insert {{${t}}} into the email body`}
+                    >
+                      {`{{${t}}}`}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2">
+                  Insert into plain-text fallback:{" "}
+                  {tokens.map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => insertTokenIntoTextarea(textRef, "body_text", t)}
+                      className="mx-0.5 px-1.5 py-0.5 rounded bg-muted hover:bg-muted/70 font-mono text-[11px] border"
+                    >
+                      {`{{${t}}}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Button onClick={save} disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />} Save
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Live preview</CardTitle></CardHeader>
+            <CardContent>
+              <EmailPreviewFrame
+                subject={applyMergeTokens(draft.subject ?? "", previewVars)}
+                html={previewHtml}
+              />
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );
