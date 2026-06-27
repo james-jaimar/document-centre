@@ -194,6 +194,8 @@ function AppRoutes() {
       <Route path="/t/:slug/:branchSlug/auth/verify" element={<AuthVerify />} />
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/t/:slug/welcome" element={<Welcome />} />
+      <Route path="/activate/:slug" element={<Activate />} />
+      <Route path="/t/:slug/activate/:slug" element={<Activate />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/t/:slug/reset-password" element={<ResetPassword />} />
       <Route path="/t/:slug/:branchSlug/reset-password" element={<ResetPassword />} />
