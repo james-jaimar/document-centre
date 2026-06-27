@@ -209,7 +209,7 @@ const PlatformTenants = () => {
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Created {new Date(t.created_at).toLocaleDateString()}</span>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setSubTenant(t)}>
+                    <Button variant="ghost" size="sm" onClick={() => { setOverrideTenantId(t.id); navigate(buildAdminPath("/admin/settings?tab=billing", t.id)); }} title="Manage subscription in Tenant Settings">
                       <CreditCard size={14} className="mr-1" /> Subscription
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setPaymentsTenant(t)}>
