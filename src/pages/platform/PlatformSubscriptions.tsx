@@ -51,7 +51,9 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
-import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
+import { useNavigate } from "react-router-dom";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
