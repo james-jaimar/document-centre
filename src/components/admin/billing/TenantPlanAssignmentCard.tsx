@@ -16,6 +16,8 @@ import { useTenantPlanAssignment, useAssignTenantPlan } from "@/hooks/useTenantP
 interface Props { tenantId: string }
 
 export function TenantPlanAssignmentCard({ tenantId }: Props) {
+  const qc = useQueryClient();
+  const [verifying, setVerifying] = useState(false);
   const { data: current, isLoading } = useTenantPlanAssignment(tenantId);
   const assign = useAssignTenantPlan();
 
