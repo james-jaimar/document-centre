@@ -10,6 +10,7 @@ import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
 import { injectTracking } from "../_shared/emailTracking.ts";
+import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -139,11 +140,15 @@ Deno.serve(async (req) => {
 
         const subject = renderTemplate(template.subject, vars, false);
         const htmlBody = renderTemplate(template.body_html, vars, true);
-        const textBody = template.body_text ? renderTemplate(template.body_text, vars, false) : "";
+        const textBody = template.body_text
+          ? renderTemplate(template.body_text, vars, false)
+          : htmlToText(htmlBody);
+        const preheader = deriveSnippet(textBody)
+          || `Activate your ${b.name} storefront on ${tenant.name}.`;
 
         // Wrap in Document Centre branded shell (marketing = platform-branded, not tenant)
         const html = renderBrandedEmail({
-          preheader: `Activate your ${escapeHtml(b.name)} storefront`,
+          preheader,
           heading: subject,
           bodyHtml: htmlBody,
         });
