@@ -2158,6 +2158,54 @@ export type Database = {
         }
         Relationships: []
       }
+      email_tracking_events: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          ip_hash: string | null
+          recipient_id: string | null
+          url: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          ip_hash?: string | null
+          recipient_id?: string | null
+          url?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          ip_hash?: string | null
+          recipient_id?: string | null
+          url?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_tracking_events_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_tracking_events_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaign_recipients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       imposition_templates: {
         Row: {
           bleed_mm: number
@@ -3801,37 +3849,118 @@ export type Database = {
           },
         ]
       }
+      platform_campaign_triggers: {
+        Row: {
+          action_template_slug: string
+          campaign_id: string | null
+          condition: string
+          created_at: string
+          created_by: string | null
+          delay_hours: number
+          enabled: boolean
+          id: string
+          max_follow_ups: number
+          template_slug: string | null
+          updated_at: string
+        }
+        Insert: {
+          action_template_slug: string
+          campaign_id?: string | null
+          condition: string
+          created_at?: string
+          created_by?: string | null
+          delay_hours?: number
+          enabled?: boolean
+          id?: string
+          max_follow_ups?: number
+          template_slug?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action_template_slug?: string
+          campaign_id?: string | null
+          condition?: string
+          created_at?: string
+          created_by?: string | null
+          delay_hours?: number
+          enabled?: boolean
+          id?: string
+          max_follow_ups?: number
+          template_slug?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_campaign_triggers_action_template_slug_fkey"
+            columns: ["action_template_slug"]
+            isOneToOne: false
+            referencedRelation: "platform_email_templates"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "platform_campaign_triggers_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_email_campaign_recipients: {
         Row: {
           action_link: string | null
+          activated_at: string | null
           branch_id: string | null
           campaign_id: string
+          click_count: number
           created_at: string
           email: string | null
           error: string | null
+          first_clicked_at: string | null
+          first_opened_at: string | null
+          follow_up_count: number
           id: string
+          last_clicked_url: string | null
+          last_follow_up_at: string | null
+          open_count: number
           sent_at: string | null
           status: string
         }
         Insert: {
           action_link?: string | null
+          activated_at?: string | null
           branch_id?: string | null
           campaign_id: string
+          click_count?: number
           created_at?: string
           email?: string | null
           error?: string | null
+          first_clicked_at?: string | null
+          first_opened_at?: string | null
+          follow_up_count?: number
           id?: string
+          last_clicked_url?: string | null
+          last_follow_up_at?: string | null
+          open_count?: number
           sent_at?: string | null
           status: string
         }
         Update: {
           action_link?: string | null
+          activated_at?: string | null
           branch_id?: string | null
           campaign_id?: string
+          click_count?: number
           created_at?: string
           email?: string | null
           error?: string | null
+          first_clicked_at?: string | null
+          first_opened_at?: string | null
+          follow_up_count?: number
           id?: string
+          last_clicked_url?: string | null
+          last_follow_up_at?: string | null
+          open_count?: number
           sent_at?: string | null
           status?: string
         }

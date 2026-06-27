@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
         .update({ consumed_at: now }).eq("id", row.id);
       if (row.campaign_recipient_id) {
         await admin.from("platform_email_campaign_recipients")
-          .update({ status: "completed" }).eq("id", row.campaign_recipient_id);
+          .update({ status: "completed", activated_at: now }).eq("id", row.campaign_recipient_id);
       }
     }
     return json({ ok: true, already: !!row.consumed_at });

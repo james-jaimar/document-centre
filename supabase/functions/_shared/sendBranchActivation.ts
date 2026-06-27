@@ -8,6 +8,7 @@
 // can attach campaign / request metadata).
 
 import { resolveAppOriginDetailed } from "./buildAuthLink.ts";
+import { injectTracking } from "./emailTracking.ts";
 
 function escapeHtml(s: string) {
   return String(s).replace(/[&<>"']/g, (c) =>
@@ -45,6 +46,7 @@ export interface SendActivationInput {
   templateSlug: string;               // platform_email_templates.slug (kind=activation)
   callerOrigin: string | null;
   provisionedBy?: string | null;      // user id for audit (optional)
+  tracking?: { campaignId: string; recipientId: string } | null;
 }
 
 export interface SendActivationResult {
@@ -176,10 +178,14 @@ ${logoBlock}
 </td></tr></table>
 </td></tr></table></body></html>`;
 
+  const finalHtml = input.tracking
+    ? await injectTracking(html, input.tracking.campaignId, input.tracking.recipientId)
+    : html;
+
   const sendResp = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-    body: JSON.stringify({ to: email, subject, html, text: textBody ?? undefined }),
+    body: JSON.stringify({ to: email, subject, html: finalHtml, text: textBody ?? undefined }),
   });
   if (!sendResp.ok) {
     const t = await sendResp.text();

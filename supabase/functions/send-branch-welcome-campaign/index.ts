@@ -7,6 +7,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
+import { injectTracking } from "../_shared/emailTracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -252,31 +253,42 @@ ${logoBlock}
           continue;
         }
 
+        // Pre-insert recipient row so we have an id for open/click tracking
+        const recipientStatus = isReturningUser ? "sent_existing_user" : "sent";
+        const { data: recipientRow, error: rcptErr } = await admin
+          .from("platform_email_campaign_recipients")
+          .insert({
+            campaign_id: campaignId, branch_id: b.id, email,
+            status: "pending", action_link: actionLink,
+          })
+          .select("id")
+          .single();
+        if (rcptErr || !recipientRow) throw new Error(`recipient_insert: ${rcptErr?.message}`);
+
+        const trackedHtml = await injectTracking(html, campaignId!, recipientRow.id);
+
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-          body: JSON.stringify({ to: email, subject, html, text: textBody ?? undefined }),
+          body: JSON.stringify({ to: email, subject, html: trackedHtml, text: textBody ?? undefined }),
         });
         if (!sendResp.ok) {
           const t = await sendResp.text();
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: `send-email ${sendResp.status}: ${t}`,
+          }).eq("id", recipientRow.id);
           throw new Error(`send-email ${sendResp.status}: ${t}`);
         }
 
         sent++;
-        const recipientStatus = isReturningUser ? "sent_existing_user" : "sent";
-        const { data: recipientRow } = await admin
-          .from("platform_email_campaign_recipients")
-          .insert({
-            campaign_id: campaignId, branch_id: b.id, email,
-            status: recipientStatus, action_link: actionLink, sent_at: new Date().toISOString(),
-          })
-          .select("id")
-          .single();
+        await admin.from("platform_email_campaign_recipients").update({
+          status: recipientStatus, sent_at: new Date().toISOString(),
+        }).eq("id", recipientRow.id);
 
         // Persist the opaque onboarding token so /welcome can exchange it later.
         await admin.from("platform_onboarding_tokens").insert({
           token: opaqueToken,
-          campaign_recipient_id: recipientRow?.id ?? null,
+          campaign_recipient_id: recipientRow.id,
           tenant_id,
           branch_id: b.id,
           profile_id: profileId,
