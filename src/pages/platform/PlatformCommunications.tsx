@@ -34,6 +34,9 @@ interface Campaign {
 interface CampaignRecipient {
   id: string; branch_id: string | null; email: string | null;
   status: string; error: string | null; sent_at: string | null;
+  first_opened_at?: string | null; open_count?: number;
+  first_clicked_at?: string | null; click_count?: number;
+  last_clicked_url?: string | null; activated_at?: string | null;
 }
 
 const TOKENS_ACTIVATION = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
