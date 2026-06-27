@@ -279,6 +279,7 @@ function TemplatesTab() {
   const [draft, setDraft] = useState<Partial<Template> | null>(null);
   const [saving, setSaving] = useState(false);
   const [rawMode, setRawMode] = useState(false);
+  const [tokenTarget, setTokenTarget] = useState<"body" | "text">("body");
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const htmlRef = useRef<HTMLTextAreaElement | null>(null);
 
