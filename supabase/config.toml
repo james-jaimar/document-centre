@@ -7,6 +7,10 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.complete-onboarding-token]
     verify_jwt = false
+  [functions.get-activation-page]
+    verify_jwt = false
+  [functions.request-activation-email]
+    verify_jwt = false
   [functions.pdf-api]
     verify_jwt = false
   [functions.s3-storage]
