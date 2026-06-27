@@ -15,6 +15,27 @@ import { useTenantPlanAssignment, useAssignTenantPlan } from "@/hooks/useTenantP
 
 interface Props { tenantId: string }
 
+async function getFunctionErrorMessage(error: any, fallback = "Verify failed") {
+  const response = error?.context;
+  if (response && typeof response.json === "function") {
+    try {
+      const body = await response.json();
+      return body?.error || body?.message || error?.message || fallback;
+    } catch {
+      // Response body may already be consumed by Supabase.
+    }
+  }
+  if (response && typeof response.text === "function") {
+    try {
+      const text = await response.text();
+      if (text) return text;
+    } catch {
+      // Response body may already be consumed by Supabase.
+    }
+  }
+  return error?.message || fallback;
+}
+
 export function TenantPlanAssignmentCard({ tenantId }: Props) {
   const qc = useQueryClient();
   const [verifying, setVerifying] = useState(false);
@@ -84,12 +105,13 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
     try {
       const { data, error } = await supabase.functions.invoke("stripe-verify-price", {
         body: {
+          tenant_id: tenantId,
           price_id: p.stripe_price_id || undefined,
           coupon_id: p.stripe_coupon_id || undefined,
           promotion_code_id: p.stripe_promotion_code_id || undefined,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getFunctionErrorMessage(error));
       const parts: string[] = [];
       const updates: Record<string, any> = {};
       if ((data as any)?.price) {
