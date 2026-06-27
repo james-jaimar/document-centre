@@ -8,6 +8,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import { injectTracking } from "../_shared/emailTracking.ts";
+import { buildEmailLogoUrl } from "../_shared/tenantEmailLogo.ts";
+import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -235,18 +237,32 @@ Deno.serve(async (req) => {
 
         // Wrap body in tenant-branded shell using same style as invite emails
         const primary = (typeof brandMap.primary_color === "string" && brandMap.primary_color) || "#1a1a2e";
-        const logoUrl = typeof brandMap.email_logo_url === "string" ? brandMap.email_logo_url
-                      : typeof brandMap.logo_url === "string" ? brandMap.logo_url : null;
+        const logoUrl = await buildEmailLogoUrl(admin, tenant_id, brandMap);
         const logoBlock = logoUrl
-          ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
+          ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;border:0;outline:none;text-decoration:none;display:block;" />`
           : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
+
+        // Preheader controls Outlook's inbox preview snippet. Without it the
+        // client falls back to the first visible text — which used to be the
+        // logo's <img src=...> URL.
+        const bodyTextForSnippet = template.body_text
+          ? renderTemplate(template.body_text, vars, false)
+          : htmlToText(htmlBody);
+        const preheader = deriveSnippet(bodyTextForSnippet)
+          || `${portalName} — your store ${b.name} is ready. Set your password and sign in.`;
+        const preheaderBlock = `<div style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:#f5f5f7;">${escapeHtml(preheader)}</div>
+<div style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:#f5f5f7;">&#847; &zwnj; &nbsp; &#8199; &#8203; &#847; &zwnj; &nbsp; &#8199; &#8203; &#847; &zwnj; &nbsp; &#8199; &#8203;</div>`;
+
         const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+${preheaderBlock}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:40px 16px;"><tr><td align="center">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,0.06);"><tr><td>
 ${logoBlock}
 <div style="font-size:15px;line-height:1.6;color:#333;">${htmlBody}</div>
 </td></tr></table>
 </td></tr></table></body></html>`;
+
+        const finalText = textBody ?? htmlToText(htmlBody);
 
         if (dryRun) {
           results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, action_link: actionLink, returning_user: isReturningUser });
@@ -270,7 +286,7 @@ ${logoBlock}
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-          body: JSON.stringify({ to: email, subject, html: trackedHtml, text: textBody ?? undefined }),
+          body: JSON.stringify({ to: email, subject, html: trackedHtml, text: finalText || undefined }),
         });
         if (!sendResp.ok) {
           const t = await sendResp.text();
