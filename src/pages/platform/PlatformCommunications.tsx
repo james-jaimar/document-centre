@@ -159,6 +159,21 @@ function ComposeTab() {
         <CardHeader><CardTitle className="text-base">Recipients</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div>
+            <Label>Campaign type</Label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              <button type="button" onClick={() => setKind("marketing")}
+                className={`text-left border rounded-md p-3 text-xs ${kind === "marketing" ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+                <div className="font-medium text-sm">Marketing pitch</div>
+                <div className="text-muted-foreground mt-1">No credentials. Sends a sales email with a per-branch activation link. The branch self-requests their sign-in email.</div>
+              </button>
+              <button type="button" onClick={() => setKind("activation")}
+                className={`text-left border rounded-md p-3 text-xs ${kind === "activation" ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+                <div className="font-medium text-sm">Direct activation</div>
+                <div className="text-muted-foreground mt-1">Sends the secure sign-in link directly. Use when you've already spoken to the branch.</div>
+              </button>
+            </div>
+          </div>
+          <div>
             <Label>Tenant</Label>
             <Select value={tenantId} onValueChange={setTenantId}>
               <SelectTrigger><SelectValue placeholder="Select tenant" /></SelectTrigger>
@@ -172,7 +187,7 @@ function ComposeTab() {
             <Select value={templateSlug} onValueChange={setTemplateSlug}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {templates.map(t => <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>)}
+                {filteredTemplates.map(t => <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
