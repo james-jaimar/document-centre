@@ -1,22 +1,40 @@
-## Root cause
+## What the logs show
 
-The "Refresh from Stripe" button calls the `stripe-verify-price` Edge Function, which is gated on `is_platform_admin`. Tenant admins (the audience for `TenantPlanAssignmentCard` on `/admin/settings?tab=billing`) fail that check → function returns **403** → the client sees "Edge Function returned a non-2xx status code".
+The request is reaching the deployed `stripe-verify-price` Edge Function, but it is returning **403 Forbidden** before Stripe is called.
 
-No actual Stripe call is ever attempted, which is why the function logs only show `booted` with no error.
+The important detail from the database is that `tenant_memberships` does **not** have a `user_id` column and does **not** use `Owner/Admin` roles. It uses:
 
-## Fix
+```text
+profile_id
+role: admin | branch_manager | customer
+is_active
+```
 
-Broaden the auth gate on `stripe-verify-price` so tenant admins can also call it (it's read-only on Stripe, so this is safe). Keep platform-admin access intact.
+So the current permission check is looking for the wrong membership shape, which means the tenant admin is being rejected even though they should be allowed to refresh Stripe data.
 
-1. In `supabase/functions/stripe-verify-price/index.ts`:
-   - Replace the strict `is_platform_admin` check with: allow if user is a platform admin **OR** is an Owner/Admin in at least one tenant (`tenant_memberships` with role in `Owner`, `Admin`).
-   - Return 403 only if neither check passes.
-   - Keep all existing Stripe lookup logic and per-field error reporting.
+## Plan
 
-2. Surface the real status when it does fail. In `TenantPlanAssignmentCard.refreshFromStripe` and `PlatformPricingRegions.verifyAgainstStripe`, when `supabase.functions.invoke` returns an `error`, also try to read `error.context?.body`/response JSON so toast shows the actual reason (e.g. "Forbidden", "No such coupon") instead of the generic wrapper message.
+1. **Fix the Edge Function permission gate**
+   - Update `supabase/functions/stripe-verify-price/index.ts` to check `tenant_memberships.profile_id = user.id`.
+   - Allow active tenant admin roles that actually exist in this project, especially `admin`.
+   - Keep platform-admin access unchanged.
+   - Return a clear 403 body if the user is neither platform admin nor tenant admin.
 
-3. Verify by clicking "Refresh from Stripe" as a tenant admin on the PostNet tenant — expect the toast to show the live R749 price and the `clEFP4tT` coupon status.
+2. **Make the permission check tenant-scoped**
+   - Include `tenant_id` in the frontend request from `TenantPlanAssignmentCard`.
+   - In the Edge Function, if `tenant_id` is supplied, only allow admins of that tenant.
+   - Keep platform users able to verify pricing from the platform pricing page without being tied to a tenant.
 
-## Out of scope
+3. **Improve error messages in the UI**
+   - In `TenantPlanAssignmentCard.tsx`, when `supabase.functions.invoke()` fails, extract the response body from `error.context` where available.
+   - Show the actual reason, e.g. `Forbidden — tenant admin only`, instead of only `Edge Function returned a non-2xx status code`.
+   - Apply the same pattern to `PlatformPricingRegions.tsx` if needed, so both refresh buttons are diagnosable.
 
-No DB schema changes. No changes to checkout, trial, or assignment logic. Platform-side `PlatformPricingRegions` verify button keeps working unchanged.
+4. **Deploy and verify**
+   - Deploy `stripe-verify-price`.
+   - Test the function call as the current preview user.
+   - Confirm the response is no longer 403 and either returns Stripe price/coupon data or a real Stripe-specific error such as an invalid coupon/promotion-code ID.
+
+## Expected result
+
+Clicking **Refresh from Stripe** on Tenant Settings → Billing should stop failing with the generic non-2xx toast and should either sync the R749 price or show the exact Stripe issue if the coupon/promo code is still mismatched.

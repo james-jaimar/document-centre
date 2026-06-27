@@ -1,5 +1,5 @@
 // Read-only Stripe verifier. Returns live price / coupon / promo-code data for
-// platform admins and tenant Owners/Admins. Uses direct fetch against the
+// platform admins and tenant admins. Uses direct fetch against the
 // Stripe REST API to avoid Stripe-SDK Deno-compat issues.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
@@ -35,25 +35,37 @@ Deno.serve(async (req) => {
   const { data: { user } } = await supabaseUser.auth.getUser();
   if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-  // Allow platform admins OR tenant Owners/Admins (read-only Stripe lookup is safe).
+  let body: { price_id?: string; coupon_id?: string; promotion_code_id?: string; tenant_id?: string };
+  try { body = await req.json(); } catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
+
+  // Allow platform admins OR active tenant admins (read-only Stripe lookup is safe).
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data: isPlatformAdmin } = await admin.rpc("is_platform_admin", { _user_id: user.id });
-  let allowed = !!isPlatformAdmin;
+  const { data: platformRole } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("role", "platform_admin")
+    .maybeSingle();
+  let allowed = !!platformRole;
   if (!allowed) {
-    const { data: memberships } = await admin
+    let membershipQuery = admin
       .from("tenant_memberships")
       .select("role")
-      .eq("user_id", user.id)
-      .in("role", ["Owner", "Admin"])
+      .eq("profile_id", user.id)
+      .eq("is_active", true)
+      .in("role", ["owner", "admin", "Owner", "Admin"])
       .limit(1);
+
+    if (body.tenant_id) {
+      membershipQuery = membershipQuery.eq("tenant_id", body.tenant_id);
+    }
+
+    const { data: memberships } = await membershipQuery;
     allowed = !!(memberships && memberships.length > 0);
   }
   if (!allowed) {
-    return new Response(JSON.stringify({ error: "Forbidden — platform or tenant admin only" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Forbidden — platform admin or active tenant admin only" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
-
-  let body: { price_id?: string; coupon_id?: string; promotion_code_id?: string };
-  try { body = await req.json(); } catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
 
   const out: any = { price: null, product: null, coupon: null, promotion_code: null, errors: {} };
 

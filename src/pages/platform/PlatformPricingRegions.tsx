@@ -36,6 +36,27 @@ const FLAG_MAP: Record<string, string> = {
   US: "🇺🇸", UK: "🇬🇧", EU: "🇪🇺", AU: "🇦🇺", ZA: "🇿🇦",
 };
 
+async function getFunctionErrorMessage(error: any, fallback = "Verify failed") {
+  const response = error?.context;
+  if (response && typeof response.json === "function") {
+    try {
+      const body = await response.json();
+      return body?.error || body?.message || error?.message || fallback;
+    } catch {
+      // Response body may already be consumed by Supabase.
+    }
+  }
+  if (response && typeof response.text === "function") {
+    try {
+      const text = await response.text();
+      if (text) return text;
+    } catch {
+      // Response body may already be consumed by Supabase.
+    }
+  }
+  return error?.message || fallback;
+}
+
 export default function PlatformPricingRegions() {
   const [regions, setRegions] = useState<Region[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -164,7 +185,7 @@ export default function PlatformPricingRegions() {
         promotion_code_id: p.stripe_promotion_code_id || undefined,
       },
     });
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(await getFunctionErrorMessage(error));
 
     const parts: string[] = [];
     let dbUpdates: Record<string, any> = {};
