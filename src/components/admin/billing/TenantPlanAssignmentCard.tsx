@@ -73,6 +73,58 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
     }
   };
 
+  const refreshFromStripe = async () => {
+    if (!selectedPlan) { toast.error("Pick a plan first"); return; }
+    const p: any = selectedPlan;
+    if (!p.stripe_price_id && !p.stripe_coupon_id && !p.stripe_promotion_code_id) {
+      toast.error("This plan has no Stripe IDs to verify yet.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("stripe-verify-price", {
+        body: {
+          price_id: p.stripe_price_id || undefined,
+          coupon_id: p.stripe_coupon_id || undefined,
+          promotion_code_id: p.stripe_promotion_code_id || undefined,
+        },
+      });
+      if (error) throw error;
+      const parts: string[] = [];
+      const updates: Record<string, any> = {};
+      if ((data as any)?.price) {
+        const live = parseFloat((data as any).price.unit_amount_decimal ?? "0");
+        const stored = Number(p.price) || 0;
+        if (Math.abs(live - stored) > 0.005) {
+          updates.price = live;
+          parts.push(`Price ${stored} → ${live.toFixed(2)} ${(data as any).price.currency}`);
+        } else {
+          parts.push(`Price ${live.toFixed(2)} ✓ in sync`);
+        }
+        if (!(data as any).price.active) parts.push("⚠ price INACTIVE in Stripe");
+      }
+      if ((data as any)?.coupon) {
+        const c = (data as any).coupon;
+        parts.push(`Coupon ${c.id}${c.valid ? " ✓" : " ⚠ invalid"}`);
+      }
+      if (Object.keys(updates).length > 0) {
+        const { error: upErr } = await supabase
+          .from("platform_pricing_plans")
+          .update(updates as any)
+          .eq("id", p.id);
+        if (upErr) throw upErr;
+        qc.invalidateQueries({ queryKey: ["branch_plans"] });
+        qc.invalidateQueries({ queryKey: ["platform_pricing_plans"] });
+      }
+      toast.success(parts.join("  •  ") || "Verified", { duration: 8000 });
+    } catch (e: any) {
+      toast.error(e.message || "Verify failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+
   return (
     <Card>
       <CardHeader>
