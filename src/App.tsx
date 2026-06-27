@@ -405,6 +405,11 @@ function AppRoutes() {
             <PlatformSentMail />
           </ProtectedRoute>
         } />
+        <Route path="/platform/communications" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformCommunications />
+          </ProtectedRoute>
+        } />
         <Route path="/platform/demo" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformDemoActivity />
