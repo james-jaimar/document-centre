@@ -123,6 +123,7 @@ import PlatformDocumentCentreStorage from "@/pages/platform/PlatformDocumentCent
 import PlatformDocumentCentreConfig from "@/pages/platform/PlatformDocumentCentreConfig";
 import PlatformDocumentCentreAudit from "@/pages/platform/PlatformDocumentCentreAudit";
 import PlatformSentMail from "@/pages/platform/PlatformSentMail";
+import PlatformCommunications from "@/pages/platform/PlatformCommunications";
 
 const queryClient = new QueryClient({
   defaultOptions: {
