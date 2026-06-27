@@ -107,6 +107,13 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
         const c = (data as any).coupon;
         parts.push(`Coupon ${c.id}${c.valid ? " ✓" : " ⚠ invalid"}`);
       }
+      if ((data as any)?.promotion_code) {
+        const pc = (data as any).promotion_code;
+        parts.push(`Promo ${pc.code}${pc.active ? " ✓" : " ⚠ inactive"}`);
+      }
+      if ((data as any)?.errors && Object.keys((data as any).errors).length > 0) {
+        for (const [k, v] of Object.entries((data as any).errors)) parts.push(`⚠ ${k}: ${v}`);
+      }
       if (Object.keys(updates).length > 0) {
         const { error: upErr } = await supabase
           .from("platform_pricing_plans")

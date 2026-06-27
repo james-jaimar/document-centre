@@ -188,6 +188,9 @@ export default function PlatformPricingRegions() {
     if (data?.promotion_code) {
       parts.push(`Promo ${data.promotion_code.code}${data.promotion_code.active ? " ✓" : " ⚠ inactive"}`);
     }
+    if (data?.errors && Object.keys(data.errors).length > 0) {
+      for (const [k, v] of Object.entries(data.errors)) parts.push(`⚠ ${k}: ${v}`);
+    }
 
     // Persist drift back to DB so every consumer sees the live price
     if (Object.keys(dbUpdates).length > 0) {
