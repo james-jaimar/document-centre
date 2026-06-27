@@ -193,7 +193,7 @@ export default function PlatformPricingRegions() {
     if (Object.keys(dbUpdates).length > 0) {
       const { error: upErr } = await supabase
         .from("platform_pricing_plans")
-        .update(dbUpdates)
+        .update(dbUpdates as any)
         .eq("id", p.id);
       if (upErr) {
         toast.error(`Stripe checked OK but DB update failed: ${upErr.message}`);
