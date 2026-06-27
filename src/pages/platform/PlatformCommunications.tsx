@@ -42,13 +42,14 @@ export default function PlatformCommunications() {
   const { toast } = useToast();
   const [tab, setTab] = useState("compose");
 
+  const isTemplates = tab === "templates";
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`py-4 space-y-4 ${isTemplates ? "px-4" : "px-6 max-w-7xl mx-auto"}`}>
       <div className="flex items-center gap-3">
         <Megaphone className="h-6 w-6 text-primary" />
         <div>
-          <h1 className="text-2xl font-semibold">Communications</h1>
-          <p className="text-sm text-muted-foreground">Send branded welcome emails and one-time logins to branches.</p>
+          <h1 className="text-xl font-semibold">Communications</h1>
+          <p className="text-xs text-muted-foreground">Send branded welcome emails and one-time logins to branches.</p>
         </div>
       </div>
 
@@ -58,9 +59,9 @@ export default function PlatformCommunications() {
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
-        <TabsContent value="compose" className="mt-6"><ComposeTab /></TabsContent>
-        <TabsContent value="templates" className="mt-6"><TemplatesTab /></TabsContent>
-        <TabsContent value="history" className="mt-6"><HistoryTab /></TabsContent>
+        <TabsContent value="compose" className="mt-4"><ComposeTab /></TabsContent>
+        <TabsContent value="templates" className="mt-4"><TemplatesTab /></TabsContent>
+        <TabsContent value="history" className="mt-4"><HistoryTab /></TabsContent>
       </Tabs>
     </div>
   );
