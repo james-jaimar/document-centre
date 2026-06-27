@@ -1,0 +1,279 @@
+// Platform Communications: bulk-send a templated welcome email to one or
+// many branches in a tenant. For each branch we ensure a branch_manager
+// auth user + membership exist, generate a one-time recovery link (the
+// "temp login"), render the chosen template with merge tokens, and send
+// via the branded `send-email` function. All results are logged into
+// platform_email_campaigns / platform_email_campaign_recipients.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function randomPassword() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
+  );
+}
+
+function renderTemplate(tpl: string, vars: Record<string, string>, isHtml: boolean) {
+  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => {
+    const v = vars[k] ?? "";
+    return isHtml ? escapeHtml(v) : v;
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
+
+    const userClient = createClient(url, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user: caller }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !caller) return json({ error: "Unauthorized" }, 401);
+
+    const admin = createClient(url, serviceKey);
+
+    const { data: roleRow } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", caller.id)
+      .eq("role", "platform_admin")
+      .maybeSingle();
+    if (!roleRow) return json({ error: "Forbidden: platform admin required" }, 403);
+
+    const body = await req.json().catch(() => ({}));
+    const tenant_id = String(body.tenant_id ?? "").trim();
+    const template_slug = String(body.template_slug ?? "").trim();
+    const branch_ids: string[] = Array.isArray(body.branch_ids) ? body.branch_ids : [];
+    const dryRun = body.dry_run === true;
+
+    if (!tenant_id) return json({ error: "tenant_id required" }, 400);
+    if (!template_slug) return json({ error: "template_slug required" }, 400);
+    if (!branch_ids.length) return json({ error: "branch_ids required" }, 400);
+
+    const { data: template, error: tplErr } = await admin
+      .from("platform_email_templates")
+      .select("*")
+      .eq("slug", template_slug)
+      .maybeSingle();
+    if (tplErr || !template) return json({ error: "Template not found" }, 404);
+
+    const { data: tenant } = await admin
+      .from("tenants")
+      .select("id, app_id, name, slug")
+      .eq("id", tenant_id)
+      .maybeSingle();
+    if (!tenant) return json({ error: "Tenant not found" }, 404);
+
+    const { data: brandSettings } = await admin
+      .from("tenant_settings")
+      .select("setting_key, setting_value")
+      .eq("tenant_id", tenant_id)
+      .eq("category", "branding");
+    const brandMap: Record<string, any> = {};
+    for (const r of (brandSettings ?? []) as any[]) brandMap[r.setting_key] = r.setting_value;
+    const portalName = (typeof brandMap.portal_name === "string" && brandMap.portal_name) || tenant.name;
+
+    const { data: branches } = await admin
+      .from("branches")
+      .select("id, name, email, slug, url_slug, trading_name")
+      .eq("tenant_id", tenant_id)
+      .in("id", branch_ids);
+
+    const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
+    const appOrigin = await resolveAppOrigin(admin, tenant_id, callerOrigin);
+    if (!appOrigin) return json({ error: "Could not resolve app origin" }, 500);
+
+    // Create campaign header (skip in dry-run)
+    let campaignId: string | null = null;
+    if (!dryRun) {
+      const { data: campaign, error: campErr } = await admin
+        .from("platform_email_campaigns")
+        .insert({
+          tenant_id,
+          template_slug,
+          subject_snapshot: template.subject,
+          body_html_snapshot: template.body_html,
+          body_text_snapshot: template.body_text,
+          total_recipients: branches?.length ?? 0,
+          created_by: caller.id,
+          status: "running",
+        })
+        .select("id")
+        .single();
+      if (campErr) return json({ error: `Campaign create failed: ${campErr.message}` }, 500);
+      campaignId = campaign.id;
+    }
+
+    const results: any[] = [];
+    let sent = 0, failed = 0, skipped = 0;
+
+    for (const b of branches ?? []) {
+      const email = (b.email ?? "").trim().toLowerCase();
+      const contactName = b.trading_name || b.name;
+      const branchSlug = b.url_slug || b.slug || "";
+      const storeUrl = `${appOrigin}/t/${tenant.slug ?? ""}${branchSlug ? `/${branchSlug}` : ""}`;
+
+      if (!email) {
+        skipped++;
+        results.push({ branch_id: b.id, branch: b.name, status: "skipped_no_email" });
+        if (campaignId) await admin.from("platform_email_campaign_recipients").insert({
+          campaign_id: campaignId, branch_id: b.id, email: null, status: "skipped_no_email",
+        });
+        continue;
+      }
+
+      try {
+        // Ensure user + membership exist
+        let profileId: string | null = null;
+        const { data: existingProfile } = await admin
+          .from("profiles").select("id").ilike("email", email).maybeSingle();
+        if (existingProfile) {
+          profileId = existingProfile.id;
+        } else {
+          const { data: created, error: createErr } = await admin.auth.admin.createUser({
+            email, password: randomPassword(), email_confirm: true,
+            user_metadata: { provisioned_for_branch: b.id, provisioned_by: caller.id },
+          });
+          if (createErr && !createErr.message?.toLowerCase().includes("already")) {
+            throw new Error(`createUser: ${createErr.message}`);
+          }
+          if (created?.user) {
+            profileId = created.user.id;
+          } else {
+            const { data: list } = await admin.auth.admin.listUsers();
+            const ex = list?.users?.find((u: any) => u.email?.toLowerCase() === email);
+            if (!ex) throw new Error("Could not locate or create auth user");
+            profileId = ex.id;
+          }
+          await admin.from("profiles").upsert(
+            { id: profileId, email, display_name: b.name },
+            { onConflict: "id" }
+          );
+        }
+
+        const { data: existingMembership } = await admin
+          .from("tenant_memberships")
+          .select("id")
+          .eq("profile_id", profileId!)
+          .eq("tenant_id", tenant_id)
+          .eq("app_id", tenant.app_id)
+          .maybeSingle();
+        if (!existingMembership) {
+          await admin.from("tenant_memberships").insert({
+            profile_id: profileId,
+            tenant_id, app_id: tenant.app_id,
+            role: "branch_manager", branch_id: b.id, is_active: true,
+          });
+        }
+
+        // Generate recovery link
+        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo: `${appOrigin}${tenant.slug ? `/t/${tenant.slug}` : ""}/reset-password` },
+        });
+        if (linkErr) throw new Error(`generateLink: ${linkErr.message}`);
+        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", tenant.slug);
+        if (!actionLink) throw new Error("Failed to build action link");
+
+        const vars: Record<string, string> = {
+          branch_name: b.name,
+          contact_name: contactName,
+          store_url: storeUrl,
+          login_email: email,
+          action_link: actionLink,
+          tenant_name: tenant.name,
+          portal_name: portalName,
+        };
+
+        const subject = renderTemplate(template.subject, vars, false);
+        const htmlBody = renderTemplate(template.body_html, vars, true);
+        const textBody = template.body_text ? renderTemplate(template.body_text, vars, false) : null;
+
+        // Wrap body in tenant-branded shell using same style as invite emails
+        const primary = (typeof brandMap.primary_color === "string" && brandMap.primary_color) || "#1a1a2e";
+        const logoUrl = typeof brandMap.email_logo_url === "string" ? brandMap.email_logo_url
+                      : typeof brandMap.logo_url === "string" ? brandMap.logo_url : null;
+        const logoBlock = logoUrl
+          ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
+          : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
+        const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:40px 16px;"><tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,0.06);"><tr><td>
+${logoBlock}
+<div style="font-size:15px;line-height:1.6;color:#333;">${htmlBody}</div>
+</td></tr></table>
+</td></tr></table></body></html>`;
+
+        if (dryRun) {
+          results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, action_link: actionLink });
+          continue;
+        }
+
+        const sendResp = await fetch(`${url}/functions/v1/send-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
+          body: JSON.stringify({ to: email, subject, html, text: textBody ?? undefined }),
+        });
+        if (!sendResp.ok) {
+          const t = await sendResp.text();
+          throw new Error(`send-email ${sendResp.status}: ${t}`);
+        }
+
+        sent++;
+        await admin.from("platform_email_campaign_recipients").insert({
+          campaign_id: campaignId, branch_id: b.id, email,
+          status: "sent", action_link: actionLink, sent_at: new Date().toISOString(),
+        });
+        results.push({ branch_id: b.id, branch: b.name, email, status: "sent" });
+      } catch (e) {
+        failed++;
+        const msg = (e as Error).message ?? "unknown";
+        if (!dryRun && campaignId) {
+          await admin.from("platform_email_campaign_recipients").insert({
+            campaign_id: campaignId, branch_id: b.id, email, status: "failed", error: msg,
+          });
+        }
+        results.push({ branch_id: b.id, branch: b.name, email, status: "failed", error: msg });
+      }
+    }
+
+    if (campaignId) {
+      await admin.from("platform_email_campaigns").update({
+        sent_count: sent, failed_count: failed, skipped_count: skipped, status: "completed",
+      }).eq("id", campaignId);
+    }
+
+    return json({ campaign_id: campaignId, dry_run: dryRun, totals: { sent, failed, skipped }, results });
+  } catch (e) {
+    console.error("send-branch-welcome-campaign error:", e);
+    return json({ error: (e as Error).message ?? "Internal error" }, 500);
+  }
+});

@@ -88,6 +88,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform/audit-log", icon: <History size={20} />, label: "Audit Log" },
       { to: "/platform/document-centre", icon: <Activity size={20} />, label: "Document Centre" },
       { to: "/platform/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
+      { to: "/platform/communications", icon: <Mail size={20} />, label: "Communications" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },
