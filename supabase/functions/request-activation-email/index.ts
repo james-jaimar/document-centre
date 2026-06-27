@@ -122,6 +122,13 @@ Deno.serve(async (req) => {
       purpose: "branch_activation",
     });
 
+    // Mark the most recent marketing-campaign recipient for this branch as activated
+    // so "not_activated" follow-up triggers stop firing.
+    await admin.from("platform_email_campaign_recipients")
+      .update({ activated_at: new Date().toISOString() })
+      .eq("branch_id", page.branch_id)
+      .is("activated_at", null);
+
     await audit("sent", true);
     return json({ ok: true, code: "sent_if_valid" });
   } catch (e) {
