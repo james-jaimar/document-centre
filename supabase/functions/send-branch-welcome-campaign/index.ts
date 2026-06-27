@@ -6,7 +6,7 @@
 // platform_email_campaigns / platform_email_campaign_recipients.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
+import { resolveAppOriginDetailed, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
