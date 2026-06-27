@@ -9,6 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
+import { injectTracking } from "../_shared/emailTracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
