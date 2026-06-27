@@ -154,21 +154,33 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Insert recipient row first so we have an id for tracking
+        const { data: rcpt, error: rcptErr } = await admin
+          .from("platform_email_campaign_recipients").insert({
+            campaign_id: campaignId, branch_id: b.id, email,
+            status: "pending", action_link: activationLink,
+          }).select("id").single();
+        if (rcptErr || !rcpt) throw new Error(`recipient_insert: ${rcptErr?.message}`);
+
+        const trackedHtml = await injectTracking(html, campaignId!, rcpt.id);
+
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-          body: JSON.stringify({ to: email, subject, html, text }),
+          body: JSON.stringify({ to: email, subject, html: trackedHtml, text }),
         });
         if (!sendResp.ok) {
           const t = await sendResp.text();
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: `send-email ${sendResp.status}: ${t}`,
+          }).eq("id", rcpt.id);
           throw new Error(`send-email ${sendResp.status}: ${t}`);
         }
 
         sent++;
-        await admin.from("platform_email_campaign_recipients").insert({
-          campaign_id: campaignId, branch_id: b.id, email,
-          status: "sent", action_link: activationLink, sent_at: new Date().toISOString(),
-        });
+        await admin.from("platform_email_campaign_recipients").update({
+          status: "sent", sent_at: new Date().toISOString(),
+        }).eq("id", rcpt.id);
         results.push({ branch_id: b.id, branch: b.name, email, status: "sent", activation_link: activationLink });
       } catch (e) {
         failed++;
