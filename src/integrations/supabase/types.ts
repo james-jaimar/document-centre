@@ -3866,6 +3866,76 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_onboarding_tokens: {
+        Row: {
+          branch_id: string | null
+          campaign_recipient_id: string | null
+          consumed_at: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          last_used_at: string | null
+          profile_id: string | null
+          purpose: string
+          tenant_id: string | null
+          token: string
+          use_count: number
+        }
+        Insert: {
+          branch_id?: string | null
+          campaign_recipient_id?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          last_used_at?: string | null
+          profile_id?: string | null
+          purpose?: string
+          tenant_id?: string | null
+          token: string
+          use_count?: number
+        }
+        Update: {
+          branch_id?: string | null
+          campaign_recipient_id?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          last_used_at?: string | null
+          profile_id?: string | null
+          purpose?: string
+          tenant_id?: string | null
+          token?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_onboarding_tokens_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_onboarding_tokens_campaign_recipient_id_fkey"
+            columns: ["campaign_recipient_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaign_recipients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_onboarding_tokens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_pricing_plans: {
         Row: {
           created_at: string

@@ -15,6 +15,7 @@ import Auth from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
 import AuthVerify from "@/pages/AuthVerify";
 import ResetPassword from "@/pages/ResetPassword";
+import Welcome from "@/pages/Welcome";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
@@ -190,6 +191,8 @@ function AppRoutes() {
       <Route path="/auth/verify" element={<AuthVerify />} />
       <Route path="/t/:slug/auth/verify" element={<AuthVerify />} />
       <Route path="/t/:slug/:branchSlug/auth/verify" element={<AuthVerify />} />
+      <Route path="/welcome" element={<Welcome />} />
+      <Route path="/t/:slug/welcome" element={<Welcome />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/t/:slug/reset-password" element={<ResetPassword />} />
       <Route path="/t/:slug/:branchSlug/reset-password" element={<ResetPassword />} />

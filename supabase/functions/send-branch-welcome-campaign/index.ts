@@ -6,7 +6,7 @@
 // platform_email_campaigns / platform_email_campaign_recipients.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { resolveAppOriginDetailed, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
+import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -198,15 +198,23 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Generate recovery link
-        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-          type: "recovery",
-          email,
-          options: { redirectTo: `${appOrigin}${slugPrefix ? `/t/${slugPrefix}` : ""}/reset-password` },
-        });
-        if (linkErr) throw new Error(`generateLink: ${linkErr.message}`);
-        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", slugPrefix);
-        if (!actionLink) throw new Error("Failed to build action link");
+        // Detect whether this email already manages other branches across the system.
+        const { count: otherMembershipCount } = await admin
+          .from("tenant_memberships")
+          .select("id", { count: "exact", head: true })
+          .eq("profile_id", profileId!)
+          .neq("branch_id", b.id);
+        const isReturningUser = (otherMembershipCount ?? 0) > 0;
+
+        // Mint our own opaque onboarding token (reusable for 1 hour, single
+        // consumption on password set). The browser hits /welcome?token=... which
+        // exchanges it for a fresh Supabase recovery URL on every click.
+        const tokenBytes = new Uint8Array(32);
+        crypto.getRandomValues(tokenBytes);
+        const opaqueToken = btoa(String.fromCharCode(...tokenBytes))
+          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+        const actionLink = `${appOrigin}${slugPrefix ? `/t/${slugPrefix}` : ""}/welcome?token=${encodeURIComponent(opaqueToken)}`;
 
         const vars: Record<string, string> = {
           branch_name: b.name,
@@ -216,6 +224,8 @@ Deno.serve(async (req) => {
           action_link: actionLink,
           tenant_name: tenant.name,
           portal_name: portalName,
+          is_returning_user: isReturningUser ? "true" : "false",
+          existing_branch_count: String(otherMembershipCount ?? 0),
         };
 
         const subject = renderTemplate(template.subject, vars, false);
@@ -238,7 +248,7 @@ ${logoBlock}
 </td></tr></table></body></html>`;
 
         if (dryRun) {
-          results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, action_link: actionLink });
+          results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, action_link: actionLink, returning_user: isReturningUser });
           continue;
         }
 
@@ -253,11 +263,27 @@ ${logoBlock}
         }
 
         sent++;
-        await admin.from("platform_email_campaign_recipients").insert({
-          campaign_id: campaignId, branch_id: b.id, email,
-          status: "sent", action_link: actionLink, sent_at: new Date().toISOString(),
+        const recipientStatus = isReturningUser ? "sent_existing_user" : "sent";
+        const { data: recipientRow } = await admin
+          .from("platform_email_campaign_recipients")
+          .insert({
+            campaign_id: campaignId, branch_id: b.id, email,
+            status: recipientStatus, action_link: actionLink, sent_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
+
+        // Persist the opaque onboarding token so /welcome can exchange it later.
+        await admin.from("platform_onboarding_tokens").insert({
+          token: opaqueToken,
+          campaign_recipient_id: recipientRow?.id ?? null,
+          tenant_id,
+          branch_id: b.id,
+          profile_id: profileId,
+          email,
+          purpose: "branch_welcome",
         });
-        results.push({ branch_id: b.id, branch: b.name, email, status: "sent" });
+        results.push({ branch_id: b.id, branch: b.name, email, status: recipientStatus });
       } catch (e) {
         failed++;
         const msg = (e as Error).message ?? "unknown";
