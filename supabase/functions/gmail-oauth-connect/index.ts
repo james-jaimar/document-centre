@@ -43,7 +43,7 @@ async function assertAuthorized(
   if (isTenantAdmin) return true;
   if (branchId) {
     return tm.some(
-      (m: any) => m.branch_id === branchId && ["owner", "admin", "manager"].includes(m.role),
+      (m: any) => m.branch_id === branchId && ["owner", "admin", "branch_manager"].includes(m.role),
     );
   }
   return false;
