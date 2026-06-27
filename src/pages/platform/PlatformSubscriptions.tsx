@@ -103,7 +103,8 @@ export default function PlatformSubscriptions() {
 
   const [assignDialog, setAssignDialog] = useState<Tenant | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("starter");
-  const [subTenant, setSubTenant] = useState<Tenant | null>(null);
+  const navigate = useNavigate();
+  const { setOverrideTenantId } = useTenantContext();
 
   // Promo codes state
   const [promoDialog, setPromoDialog] = useState<PromoCode | null | "new">(null);
