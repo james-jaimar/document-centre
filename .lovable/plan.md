@@ -1,51 +1,39 @@
-# Fix deep-link 404s on both Amplify domains
+# Fix 403 Forbidden on Microsoft (and Gmail) OAuth connect — wrong role name in allow-list
 
-## What I confirmed (no guessing)
+## What's actually happening
 
-I curled both domains:
+The verbose invoker is now correctly surfacing the function's real error body: `"Forbidden"`. That string is only produced inside `assertAuthorized()` in the OAuth connect functions when the caller isn't a platform admin and doesn't match the branch/tenant role allow-list.
 
-- `https://document-centre.com/branch/settings/` → **HTTP 404** (body 2817 bytes, served from S3 via CloudFront)
-- `https://postnetprintcentre.com/branch/settings/` → **HTTP 404** (identical etag, same body)
-- `https://postnetprintcentre.com/branch/settings` (no trailing slash) → **301** to `/branch/settings/` (then 404)
+I checked the data:
 
-Both domains are attached to the same Amplify app (`document-centre`, main branch) — your first screenshot confirms it. They share the same Rewrites table, so whatever we fix here fixes both. **No CloudFront console work needed** — Amplify owns the CloudFront distribution under the hood.
+- The DB role enum used in `tenant_memberships.role` is `branch_manager` (confirmed by `SELECT DISTINCT role FROM tenant_memberships`).
+- Both `supabase/functions/microsoft-oauth-connect/index.ts` (line 71) and `supabase/functions/gmail-oauth-connect/index.ts` (line 46) check the branch-scoped membership against `["owner", "admin", "manager"]`.
+- `"manager"` doesn't exist — the real value is `"branch_manager"`. So every branch-scoped user (e.g. `hello@printmypics.co` on the PostNet Demo Branch, the actual branch manager who's meant to set up the mailbox) fails the check and gets `403 Forbidden`.
 
-## Why it's broken
+Platform admins (you, `james@jaimar.dev`) still pass through the earlier `platform_admin` short-circuit, which is why you've been able to use it from the platform side. The 403 you just hit is from a branch-scoped session.
 
-Your current second rule is:
+## The fix
 
+Change the branch-scoped allow-list in both functions to use the real role name. One-line change in two files:
+
+```diff
+- (m: any) => m.branch_id === branchId && ["owner", "admin", "manager"].includes(m.role),
++ (m: any) => m.branch_id === branchId && ["owner", "admin", "branch_manager"].includes(m.role),
 ```
-Source: /<*>     Target: /index.html     Type: 404 (Rewrite)
-```
 
-In Amplify, **type `404`** means "serve the target body but return HTTP **404** as the status". That's why the browser still renders the SPA shell (so the page often *looks* fine) but the response status is 404 — which is what shows up in the console, breaks crawlers, breaks `fetch()`-style health checks, and looks bad on hard refresh.
+Files:
+- `supabase/functions/microsoft-oauth-connect/index.ts` (line 71)
+- `supabase/functions/gmail-oauth-connect/index.ts` (line 46)
 
-The standard SPA fallback needs **type `200` (Rewrite)** — same body, but status 200 so React Router takes over cleanly.
+No DB changes, no UI changes, no config changes. Edge Functions auto-deploy on save, so the fix is live immediately.
 
-## The fix — 3 clicks in Amplify
+## How I'll verify
 
-In **Hosting → Rewrites and redirects → Manage redirects**:
+1. After the deploy lands, you click **Sign in with Microsoft** again from the branch settings panel — the popup should reach the Microsoft consent screen instead of toasting "Forbidden".
+2. I'll tail `microsoft-oauth-connect` logs to confirm the authorize call now reaches the function body (it currently doesn't even log because it short-circuits before any `console.log`).
 
-1. **Keep** the existing logo rule exactly as-is (must stay first so logos aren't swallowed by the SPA rule):
-   ```
-   /logo/<*>  →  https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/tenant-logo/<*>   200 (Rewrite)
-   ```
-2. **Edit** the second rule (`/<*>` → `/index.html` `404`):
-   - Source address: `</^[^.]+$|\.(?!(css|gif|ico|jpg|jpeg|js|png|txt|svg|woff|woff2|ttf|map|json|webmanifest)$)([^.]+$)/>`
-   - Target address: `/index.html`
-   - Type: **200 (Rewrite)**
-3. **Save**.
+## What I'm NOT touching
 
-The regex source excludes real asset extensions (so missing PNGs etc. still return real 404s instead of being masked by index.html) and catches every SPA path including ones with trailing slashes like `/branch/settings/`.
-
-## How I'll verify (after you save)
-
-I'll re-curl both URLs and confirm they return `HTTP/2 200` with the SPA HTML. If anything still 404s I'll dig further before changing anything else.
-
-## What does NOT need to change
-
-- No code edits in this repo.
-- No `customHttp.yml` change (that's headers/CSP, not routing).
-- No `vite.config.ts` change.
-- No CloudFront distribution settings.
-- No second Amplify app.
+- `assertAuthorized` for tenant-wide checks (`branch_id IS NULL`) stays scoped to `owner`/`admin` — branch managers shouldn't be able to set up tenant-wide mailboxes.
+- Platform-admin short-circuit stays as-is.
+- No changes to `oauth-callback` or any other function.
