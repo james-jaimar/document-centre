@@ -17,18 +17,20 @@ interface Branch { id: string; name: string; email: string | null; trading_name:
 interface Template {
   id: string; slug: string; name: string; description: string | null;
   subject: string; body_html: string; body_text: string | null; is_system: boolean;
+  kind?: "activation" | "marketing" | null;
 }
 interface Campaign {
   id: string; tenant_id: string | null; template_slug: string; subject_snapshot: string;
   total_recipients: number; sent_count: number; failed_count: number; skipped_count: number;
-  status: string; created_at: string;
+  status: string; created_at: string; kind?: "activation" | "marketing" | null;
 }
 interface CampaignRecipient {
   id: string; branch_id: string | null; email: string | null;
   status: string; error: string | null; sent_at: string | null;
 }
 
-const TOKENS = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
+const TOKENS_ACTIVATION = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
+const TOKENS_MARKETING = ["branch_name", "contact_name", "tenant_name", "activation_link"];
 
 function renderPreview(tpl: string, vars: Record<string, string>) {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
