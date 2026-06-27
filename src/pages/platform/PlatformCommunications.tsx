@@ -519,6 +519,15 @@ function HistoryTab() {
     })();
   }, [selected]);
 
+  const stats = useMemo(() => {
+    const sent = recipients.filter(r => r.status === "sent" || r.status === "sent_existing_user" || r.status === "completed").length;
+    const opened = recipients.filter(r => !!r.first_opened_at).length;
+    const clicked = recipients.filter(r => !!r.first_clicked_at).length;
+    const activated = recipients.filter(r => !!r.activated_at || r.status === "completed").length;
+    const pct = (n: number) => sent ? Math.round((n / sent) * 100) : 0;
+    return { sent, opened, clicked, activated, openRate: pct(opened), clickRate: pct(clicked), actRate: pct(activated) };
+  }, [recipients]);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
@@ -548,14 +557,29 @@ function HistoryTab() {
 
       <Card>
         <CardHeader><CardTitle className="text-base">Recipients</CardTitle></CardHeader>
-        <CardContent className="space-y-1 max-h-[600px] overflow-auto">
+        <CardContent className="space-y-3 max-h-[600px] overflow-auto">
           {!selected && <div className="text-sm text-muted-foreground">Select a campaign.</div>}
+          {selected && (
+            <div className="grid grid-cols-4 gap-2">
+              <StatBox label="Sent" value={stats.sent} icon={<Send className="h-3.5 w-3.5" />} />
+              <StatBox label="Opened" value={`${stats.opened} (${stats.openRate}%)`} icon={<Eye className="h-3.5 w-3.5" />} />
+              <StatBox label="Clicked" value={`${stats.clicked} (${stats.clickRate}%)`} icon={<MousePointerClick className="h-3.5 w-3.5" />} />
+              <StatBox label="Activated" value={`${stats.activated} (${stats.actRate}%)`} icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
+            </div>
+          )}
           {recipients.map(r => (
             <div key={r.id} className="flex items-center justify-between gap-2 text-xs p-2 border-b last:border-0">
-              <span className="truncate">{r.email ?? "(no email)"}</span>
-              <div className="flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-medium">{r.email ?? "(no email)"}</div>
+                <div className="text-[11px] text-muted-foreground flex gap-2 mt-0.5">
+                  {r.first_opened_at && <span title={r.first_opened_at}><Eye className="h-3 w-3 inline" /> {r.open_count}</span>}
+                  {r.first_clicked_at && <span title={r.last_clicked_url ?? ""}><MousePointerClick className="h-3 w-3 inline" /> {r.click_count}</span>}
+                  {r.activated_at && <span className="text-emerald-700"><CheckCircle2 className="h-3 w-3 inline" /> activated</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
                 {r.error && <span className="text-red-700 truncate max-w-[200px]" title={r.error}>{r.error}</span>}
-                <Badge variant={r.status === "sent" ? "default" : r.status === "failed" ? "destructive" : "secondary"}>
+                <Badge variant={r.status === "sent" || r.status === "completed" ? "default" : r.status === "failed" ? "destructive" : "secondary"}>
                   {r.status}
                 </Badge>
               </div>
@@ -564,5 +588,288 @@ function HistoryTab() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function StatBox({ label, value, icon }: { label: string; value: number | string; icon: React.ReactNode }) {
+  return (
+    <div className="border rounded p-2 bg-muted/30">
+      <div className="text-[10px] uppercase text-muted-foreground flex items-center gap-1">{icon} {label}</div>
+      <div className="text-base font-semibold mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+// ============= Template CRUD =============
+
+function slugify(s: string) {
+  return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60);
+}
+
+function NewTemplateButton({ onCreated }: { onCreated: (slug: string) => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"marketing" | "activation">("marketing");
+  const [saving, setSaving] = useState(false);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    let slug = slugify(name);
+    if (!slug) slug = `template_${Date.now()}`;
+    // Ensure unique
+    const { data: existing } = await supabase.from("platform_email_templates").select("slug").eq("slug", slug).maybeSingle();
+    if (existing) slug = `${slug}_${Date.now().toString(36)}`;
+    const { error } = await supabase.from("platform_email_templates").insert({
+      slug, name: name.trim(), kind, is_system: false,
+      subject: "New email subject",
+      body_html: "<p>Hi {{contact_name}},</p><p>Write your message here.</p>",
+      body_text: "Hi {{contact_name}},\n\nWrite your message here.",
+    });
+    setSaving(false);
+    if (error) { toast({ title: "Create failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Template created" });
+    setOpen(false); setName(""); onCreated(slug);
+  };
+
+  return (
+    <>
+      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setOpen(true)}>
+        <Plus className="h-3.5 w-3.5 mr-1" /> New
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>New template</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Name</Label>
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Follow-up after 3 days" />
+            </div>
+            <div>
+              <Label className="text-xs">Kind</Label>
+              <Select value={kind} onValueChange={(v: any) => setKind(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="marketing">Marketing (no credentials)</SelectItem>
+                  <SelectItem value="activation">Activation (sign-in link)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={create} disabled={saving || !name.trim()}>
+              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null} Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function TemplateRowActions({
+  template, onChange, onDeleted,
+}: { template: Template; onChange: () => void; onDeleted: () => void }) {
+  const { toast } = useToast();
+  const duplicate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSlug = `${template.slug}_copy_${Date.now().toString(36)}`;
+    const { error } = await supabase.from("platform_email_templates").insert({
+      slug: newSlug, name: `${template.name} (copy)`, kind: template.kind ?? "activation",
+      subject: template.subject, body_html: template.body_html, body_text: template.body_text,
+      description: template.description, is_system: false,
+    });
+    if (error) { toast({ title: "Duplicate failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Duplicated" }); onChange();
+  };
+  const del = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (template.is_system) { toast({ title: "Cannot delete system template", variant: "destructive" }); return; }
+    if (!confirm(`Delete template "${template.name}"? This cannot be undone.`)) return;
+    const { error } = await supabase.from("platform_email_templates").delete().eq("id", template.id);
+    if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Deleted" }); onDeleted();
+  };
+  return (
+    <div className="opacity-0 group-hover:opacity-100 flex items-center pr-1">
+      <button onClick={duplicate} title="Duplicate" className="p-1 hover:bg-background rounded">
+        <Copy className="h-3 w-3" />
+      </button>
+      {!template.is_system && (
+        <button onClick={del} title="Delete" className="p-1 hover:bg-background rounded text-destructive">
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ============= Triggers =============
+
+interface CampaignTrigger {
+  id: string;
+  campaign_id: string | null;
+  template_slug: string | null;
+  condition: "not_opened" | "not_clicked" | "not_activated";
+  delay_hours: number;
+  action_template_slug: string;
+  enabled: boolean;
+  max_follow_ups: number;
+}
+
+function TriggersTab() {
+  const { toast } = useToast();
+  const [triggers, setTriggers] = useState<CampaignTrigger[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [showNew, setShowNew] = useState(false);
+  const [draft, setDraft] = useState<Partial<CampaignTrigger>>({
+    condition: "not_opened", delay_hours: 72, max_follow_ups: 1, enabled: true,
+  });
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const { data: t } = await supabase.from("platform_campaign_triggers").select("*").order("created_at", { ascending: false });
+    setTriggers((t ?? []) as CampaignTrigger[]);
+    const { data: tpl } = await supabase.from("platform_email_templates").select("*").order("name");
+    setTemplates((tpl ?? []) as Template[]);
+  };
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!draft.action_template_slug) { toast({ title: "Pick a follow-up template", variant: "destructive" }); return; }
+    if (!draft.template_slug && !draft.campaign_id) { toast({ title: "Pick a source template (applies to all campaigns)", variant: "destructive" }); return; }
+    setBusy(true);
+    const { error } = await supabase.from("platform_campaign_triggers").insert({
+      template_slug: draft.template_slug ?? null,
+      campaign_id: null,
+      condition: draft.condition!,
+      delay_hours: draft.delay_hours!,
+      action_template_slug: draft.action_template_slug,
+      max_follow_ups: draft.max_follow_ups ?? 1,
+      enabled: draft.enabled ?? true,
+    });
+    setBusy(false);
+    if (error) { toast({ title: "Failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Trigger created" });
+    setShowNew(false); setDraft({ condition: "not_opened", delay_hours: 72, max_follow_ups: 1, enabled: true });
+    load();
+  };
+
+  const toggle = async (t: CampaignTrigger) => {
+    await supabase.from("platform_campaign_triggers").update({ enabled: !t.enabled }).eq("id", t.id);
+    load();
+  };
+  const del = async (t: CampaignTrigger) => {
+    if (!confirm("Delete this trigger?")) return;
+    await supabase.from("platform_campaign_triggers").delete().eq("id", t.id);
+    load();
+  };
+
+  const runNow = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke("process-campaign-triggers", { body: {} });
+    setBusy(false);
+    if (error) { toast({ title: "Run failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Trigger sweep complete", description: `Processed ${data?.processed ?? 0} · Dispatched ${data?.dispatched ?? 0}` });
+  };
+
+  const tplName = (slug: string | null) => templates.find(t => t.slug === slug)?.name ?? slug ?? "—";
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Follow-up triggers</CardTitle>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={runNow} disabled={busy}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              Run sweep now
+            </Button>
+            <Button size="sm" onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5 mr-1" /> New trigger</Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground mb-3">
+          Triggers automatically send a follow-up email when a recipient has not opened, clicked, or activated within the delay window.
+          The sweep runs every 30 minutes automatically.
+        </p>
+        <div className="space-y-2">
+          {triggers.length === 0 && <div className="text-sm text-muted-foreground">No triggers yet.</div>}
+          {triggers.map(t => (
+            <div key={t.id} className="border rounded p-3 flex items-center gap-3">
+              <Switch checked={t.enabled} onCheckedChange={() => toggle(t)} />
+              <div className="flex-1 text-sm">
+                <div>
+                  When recipients of <span className="font-medium">{tplName(t.template_slug)}</span> have
+                  {" "}<Badge variant="outline">{t.condition.replace("_", " ")}</Badge>{" "}
+                  after <span className="font-medium">{t.delay_hours}h</span>,
+                  send <span className="font-medium">{tplName(t.action_template_slug)}</span>
+                  {" "}(max {t.max_follow_ups})
+                </div>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => del(t)}><Trash2 className="h-3.5 w-3.5" /></Button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+
+      <Dialog open={showNew} onOpenChange={setShowNew}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>New follow-up trigger</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">For campaigns using this source template</Label>
+              <Select value={draft.template_slug ?? ""} onValueChange={(v) => setDraft({ ...draft, template_slug: v })}>
+                <SelectTrigger><SelectValue placeholder="Pick template" /></SelectTrigger>
+                <SelectContent>
+                  {templates.map(t => <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Condition</Label>
+                <Select value={draft.condition} onValueChange={(v: any) => setDraft({ ...draft, condition: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_opened">Not opened</SelectItem>
+                    <SelectItem value="not_clicked">Not clicked</SelectItem>
+                    <SelectItem value="not_activated">Not activated</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Delay (hours)</Label>
+                <Input type="number" min={1} value={draft.delay_hours ?? 72}
+                  onChange={e => setDraft({ ...draft, delay_hours: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Follow-up template to send</Label>
+              <Select value={draft.action_template_slug ?? ""} onValueChange={(v) => setDraft({ ...draft, action_template_slug: v })}>
+                <SelectTrigger><SelectValue placeholder="Pick follow-up template" /></SelectTrigger>
+                <SelectContent>
+                  {templates.map(t => <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Max follow-ups per recipient (1–2)</Label>
+              <Input type="number" min={1} max={2} value={draft.max_follow_ups ?? 1}
+                onChange={e => setDraft({ ...draft, max_follow_ups: Number(e.target.value) })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
+            <Button onClick={create} disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null} Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
