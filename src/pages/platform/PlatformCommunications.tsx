@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Send, Save, Megaphone, AlertCircle, Code2 } from "lucide-react";
+import { Loader2, Send, Save, Megaphone, AlertCircle, Code2, Plus, Copy, Trash2, Eye, MousePointerClick, CheckCircle2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
 import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
@@ -57,10 +58,12 @@ export default function PlatformCommunications() {
         <TabsList>
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="triggers">Triggers</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="compose" className="mt-4"><ComposeTab /></TabsContent>
         <TabsContent value="templates" className="mt-4"><TemplatesTab /></TabsContent>
+        <TabsContent value="triggers" className="mt-4"><TriggersTab /></TabsContent>
         <TabsContent value="history" className="mt-4"><HistoryTab /></TabsContent>
       </Tabs>
     </div>
