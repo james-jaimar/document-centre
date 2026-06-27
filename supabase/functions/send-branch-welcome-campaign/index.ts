@@ -6,7 +6,7 @@
 // platform_email_campaigns / platform_email_campaign_recipients.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
+import { resolveAppOriginDetailed, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -107,8 +107,11 @@ Deno.serve(async (req) => {
       .in("id", branch_ids);
 
     const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
-    const appOrigin = await resolveAppOrigin(admin, tenant_id, callerOrigin);
-    if (!appOrigin) return json({ error: "Could not resolve app origin" }, 500);
+    const resolved = await resolveAppOriginDetailed(admin, tenant_id, callerOrigin);
+    if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
+    const appOrigin = resolved.origin;
+    const tenantOwned = resolved.isTenantOwnedDomain;
+    const slugPrefix = tenantOwned ? null : (tenant.slug ?? null);
 
     // Create campaign header (skip in dry-run)
     let campaignId: string | null = null;
@@ -138,7 +141,9 @@ Deno.serve(async (req) => {
       const email = (b.email ?? "").trim().toLowerCase();
       const contactName = b.trading_name || b.name;
       const branchSlug = b.url_slug || b.slug || "";
-      const storeUrl = `${appOrigin}/t/${tenant.slug ?? ""}${branchSlug ? `/${branchSlug}` : ""}`;
+      const storeUrl = tenantOwned
+        ? `${appOrigin}${branchSlug ? `/${branchSlug}` : ""}`
+        : `${appOrigin}/t/${tenant.slug ?? ""}${branchSlug ? `/${branchSlug}` : ""}`;
 
       if (!email) {
         skipped++;
@@ -197,10 +202,10 @@ Deno.serve(async (req) => {
         const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
           type: "recovery",
           email,
-          options: { redirectTo: `${appOrigin}${tenant.slug ? `/t/${tenant.slug}` : ""}/reset-password` },
+          options: { redirectTo: `${appOrigin}${slugPrefix ? `/t/${slugPrefix}` : ""}/reset-password` },
         });
         if (linkErr) throw new Error(`generateLink: ${linkErr.message}`);
-        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", tenant.slug);
+        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", slugPrefix);
         if (!actionLink) throw new Error("Failed to build action link");
 
         const vars: Record<string, string> = {

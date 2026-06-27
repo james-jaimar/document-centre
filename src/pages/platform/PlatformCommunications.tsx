@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Send, Save, Megaphone, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-interface Tenant { id: string; name: string; slug: string | null; }
+interface Tenant { id: string; name: string; slug: string | null; custom_domain: string | null; }
 interface Branch { id: string; name: string; email: string | null; trading_name: string | null; }
 interface Template {
   id: string; slug: string; name: string; description: string | null;
@@ -75,7 +75,7 @@ function ComposeTab() {
 
   useEffect(() => {
     (async () => {
-      const { data: t } = await supabase.from("tenants").select("id, name, slug").order("name");
+      const { data: t } = await supabase.from("tenants").select("id, name, slug, custom_domain").order("name");
       setTenants((t ?? []) as Tenant[]);
       const { data: tpl } = await supabase.from("platform_email_templates").select("*").order("name");
       setTemplates((tpl ?? []) as Template[]);
@@ -100,7 +100,9 @@ function ComposeTab() {
   const previewVars: Record<string, string> = {
     branch_name: firstBranch?.name ?? "Sample Branch",
     contact_name: firstBranch?.trading_name || firstBranch?.name || "there",
-    store_url: tenant?.slug ? `https://document-centre.com/t/${tenant.slug}` : "https://example.com",
+    store_url: tenant?.custom_domain
+      ? `https://${tenant.custom_domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`
+      : tenant?.slug ? `https://document-centre.com/t/${tenant.slug}` : "https://example.com",
     login_email: firstBranch?.email ?? "branch@example.com",
     action_link: "https://example.com/reset-password?token=…",
     tenant_name: tenant?.name ?? "Your Tenant",

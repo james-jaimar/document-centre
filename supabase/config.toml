@@ -1,6 +1,8 @@
 project_id = "lcvdhtaqoumyokjqaqfw"
 
 [functions]
+  [functions.send-branch-welcome-campaign]
+    verify_jwt = false
   [functions.pdf-api]
     verify_jwt = false
   [functions.s3-storage]
