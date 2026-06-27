@@ -17,18 +17,20 @@ interface Branch { id: string; name: string; email: string | null; trading_name:
 interface Template {
   id: string; slug: string; name: string; description: string | null;
   subject: string; body_html: string; body_text: string | null; is_system: boolean;
+  kind?: "activation" | "marketing" | null;
 }
 interface Campaign {
   id: string; tenant_id: string | null; template_slug: string; subject_snapshot: string;
   total_recipients: number; sent_count: number; failed_count: number; skipped_count: number;
-  status: string; created_at: string;
+  status: string; created_at: string; kind?: "activation" | "marketing" | null;
 }
 interface CampaignRecipient {
   id: string; branch_id: string | null; email: string | null;
   status: string; error: string | null; sent_at: string | null;
 }
 
-const TOKENS = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
+const TOKENS_ACTIVATION = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
+const TOKENS_MARKETING = ["branch_name", "contact_name", "tenant_name", "activation_link"];
 
 function renderPreview(tpl: string, vars: Record<string, string>) {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
@@ -64,12 +66,13 @@ export default function PlatformCommunications() {
 
 function ComposeTab() {
   const { toast } = useToast();
+  const [kind, setKind] = useState<"marketing" | "activation">("marketing");
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState<string>("");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [templateSlug, setTemplateSlug] = useState<string>("branch_welcome");
+  const [templateSlug, setTemplateSlug] = useState<string>("marketing_branch_offer");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -82,6 +85,12 @@ function ComposeTab() {
     })();
   }, []);
 
+  // When kind changes, swap default template
+  useEffect(() => {
+    const first = templates.find(t => (t.kind ?? "activation") === kind);
+    if (first) setTemplateSlug(first.slug);
+  }, [kind, templates]);
+
   useEffect(() => {
     if (!tenantId) { setBranches([]); setSelected(new Set()); return; }
     (async () => {
@@ -93,6 +102,7 @@ function ComposeTab() {
     })();
   }, [tenantId]);
 
+  const filteredTemplates = templates.filter(t => (t.kind ?? "activation") === kind);
   const template = templates.find(t => t.slug === templateSlug);
   const firstBranch = branches.find(b => selected.has(b.id)) ?? branches[0];
   const tenant = tenants.find(t => t.id === tenantId);
@@ -104,7 +114,10 @@ function ComposeTab() {
       ? `https://${tenant.custom_domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`
       : tenant?.slug ? `https://document-centre.com/t/${tenant.slug}` : "https://example.com",
     login_email: firstBranch?.email ?? "branch@example.com",
-    action_link: "https://example.com/reset-password?token=…",
+    action_link: "https://example.com/welcome?token=…",
+    activation_link: tenant?.custom_domain
+      ? `https://${tenant.custom_domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}/activate/sample-slug`
+      : "https://example.com/activate/sample-slug",
     tenant_name: tenant?.name ?? "Your Tenant",
     portal_name: tenant?.name ?? "Your Portal",
   };
@@ -124,7 +137,8 @@ function ComposeTab() {
       toast({ title: "Pick a tenant, template, and at least one branch", variant: "destructive" }); return;
     }
     setSending(true); setResult(null);
-    const { data, error } = await supabase.functions.invoke("send-branch-welcome-campaign", {
+    const fn = kind === "marketing" ? "send-branch-marketing-campaign" : "send-branch-welcome-campaign";
+    const { data, error } = await supabase.functions.invoke(fn, {
       body: { tenant_id: tenantId, template_slug: templateSlug, branch_ids: Array.from(selected), dry_run: dryRun },
     });
     setSending(false);
@@ -145,6 +159,21 @@ function ComposeTab() {
         <CardHeader><CardTitle className="text-base">Recipients</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div>
+            <Label>Campaign type</Label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              <button type="button" onClick={() => setKind("marketing")}
+                className={`text-left border rounded-md p-3 text-xs ${kind === "marketing" ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+                <div className="font-medium text-sm">Marketing pitch</div>
+                <div className="text-muted-foreground mt-1">No credentials. Sends a sales email with a per-branch activation link. The branch self-requests their sign-in email.</div>
+              </button>
+              <button type="button" onClick={() => setKind("activation")}
+                className={`text-left border rounded-md p-3 text-xs ${kind === "activation" ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+                <div className="font-medium text-sm">Direct activation</div>
+                <div className="text-muted-foreground mt-1">Sends the secure sign-in link directly. Use when you've already spoken to the branch.</div>
+              </button>
+            </div>
+          </div>
+          <div>
             <Label>Tenant</Label>
             <Select value={tenantId} onValueChange={setTenantId}>
               <SelectTrigger><SelectValue placeholder="Select tenant" /></SelectTrigger>
@@ -158,7 +187,7 @@ function ComposeTab() {
             <Select value={templateSlug} onValueChange={setTemplateSlug}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {templates.map(t => <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>)}
+                {filteredTemplates.map(t => <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -226,7 +255,9 @@ function ComposeTab() {
                    dangerouslySetInnerHTML={{ __html: renderPreview(template.body_html, previewVars) }} />
               <div className="flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded p-2">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                The action link is a one-time recovery link. Recipients land on /reset-password and must set a brand-new password before they can sign in.
+                {kind === "marketing"
+                  ? "Marketing pitch — no credentials are sent. Recipients land on /activate/<slug> and request the sign-in email themselves."
+                  : "The action link is a one-time sign-in link, valid for 1 hour. Recipients land on /welcome and must set a brand-new password before they can sign in."}
               </div>
             </>
           ) : <div className="text-sm text-muted-foreground">Select a template.</div>}
@@ -305,7 +336,7 @@ function TemplatesTab() {
                 value={draft.body_text ?? ""} onChange={e => setDraft({ ...draft, body_text: e.target.value })} />
             </div>
             <div className="text-xs text-muted-foreground">
-              Merge tokens: {TOKENS.map(t => <code key={t} className="mx-1 px-1 bg-muted rounded">{`{{${t}}}`}</code>)}
+              Merge tokens: {(draft.kind === "marketing" ? TOKENS_MARKETING : TOKENS_ACTIVATION).map(t => <code key={t} className="mx-1 px-1 bg-muted rounded">{`{{${t}}}`}</code>)}
             </div>
             <Button onClick={save} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />} Save
@@ -348,9 +379,12 @@ function HistoryTab() {
           {campaigns.map(c => (
             <button key={c.id} onClick={() => setSelected(c.id)}
               className={`w-full text-left p-3 rounded border ${selected === c.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-medium truncate">{c.subject_snapshot}</div>
-                <div className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {c.kind && <Badge variant="outline" className="text-[10px]">{c.kind}</Badge>}
+                  <div className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</div>
+                </div>
               </div>
               <div className="text-xs text-muted-foreground mt-1 flex gap-3">
                 <span>Total: {c.total_recipients}</span>

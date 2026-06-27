@@ -3666,6 +3666,33 @@ export type Database = {
           },
         ]
       }
+      platform_activation_requests: {
+        Row: {
+          created_at: string
+          email_confirmed: boolean
+          id: string
+          ip_hash: string | null
+          result: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          email_confirmed?: boolean
+          id?: string
+          ip_hash?: string | null
+          result: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          email_confirmed?: boolean
+          id?: string
+          ip_hash?: string | null
+          result?: string
+          slug?: string
+        }
+        Relationships: []
+      }
       platform_admin_audit: {
         Row: {
           action: string
@@ -3716,6 +3743,63 @@ export type Database = {
           user_agent?: string | null
         }
         Relationships: []
+      }
+      platform_branch_activation_pages: {
+        Row: {
+          app_id: string | null
+          branch_id: string
+          contact_email: string
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          slug: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          app_id?: string | null
+          branch_id: string
+          contact_email: string
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          slug: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string | null
+          branch_id?: string
+          contact_email?: string
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          slug?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_branch_activation_pages_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: true
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_branch_activation_pages_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       platform_email_campaign_recipients: {
         Row: {
@@ -3776,6 +3860,7 @@ export type Database = {
           created_by: string | null
           failed_count: number
           id: string
+          kind: string
           sent_count: number
           skipped_count: number
           status: string
@@ -3791,6 +3876,7 @@ export type Database = {
           created_by?: string | null
           failed_count?: number
           id?: string
+          kind?: string
           sent_count?: number
           skipped_count?: number
           status?: string
@@ -3806,6 +3892,7 @@ export type Database = {
           created_by?: string | null
           failed_count?: number
           id?: string
+          kind?: string
           sent_count?: number
           skipped_count?: number
           status?: string
@@ -3833,6 +3920,7 @@ export type Database = {
           description: string | null
           id: string
           is_system: boolean
+          kind: string
           name: string
           slug: string
           subject: string
@@ -3846,6 +3934,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_system?: boolean
+          kind?: string
           name: string
           slug: string
           subject: string
@@ -3859,6 +3948,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_system?: boolean
+          kind?: string
           name?: string
           slug?: string
           subject?: string
