@@ -3717,6 +3717,155 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_email_campaign_recipients: {
+        Row: {
+          action_link: string | null
+          branch_id: string | null
+          campaign_id: string
+          created_at: string
+          email: string | null
+          error: string | null
+          id: string
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          action_link?: string | null
+          branch_id?: string | null
+          campaign_id: string
+          created_at?: string
+          email?: string | null
+          error?: string | null
+          id?: string
+          sent_at?: string | null
+          status: string
+        }
+        Update: {
+          action_link?: string | null
+          branch_id?: string | null
+          campaign_id?: string
+          created_at?: string
+          email?: string | null
+          error?: string | null
+          id?: string
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_email_campaign_recipients_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_email_campaign_recipients_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_email_campaigns: {
+        Row: {
+          body_html_snapshot: string
+          body_text_snapshot: string | null
+          created_at: string
+          created_by: string | null
+          failed_count: number
+          id: string
+          sent_count: number
+          skipped_count: number
+          status: string
+          subject_snapshot: string
+          template_slug: string
+          tenant_id: string | null
+          total_recipients: number
+        }
+        Insert: {
+          body_html_snapshot: string
+          body_text_snapshot?: string | null
+          created_at?: string
+          created_by?: string | null
+          failed_count?: number
+          id?: string
+          sent_count?: number
+          skipped_count?: number
+          status?: string
+          subject_snapshot: string
+          template_slug: string
+          tenant_id?: string | null
+          total_recipients?: number
+        }
+        Update: {
+          body_html_snapshot?: string
+          body_text_snapshot?: string | null
+          created_at?: string
+          created_by?: string | null
+          failed_count?: number
+          id?: string
+          sent_count?: number
+          skipped_count?: number
+          status?: string
+          subject_snapshot?: string
+          template_slug?: string
+          tenant_id?: string | null
+          total_recipients?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_email_campaigns_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_email_templates: {
+        Row: {
+          body_html: string
+          body_text: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_system: boolean
+          name: string
+          slug: string
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          body_html: string
+          body_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          name: string
+          slug: string
+          subject: string
+          updated_at?: string
+        }
+        Update: {
+          body_html?: string
+          body_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          name?: string
+          slug?: string
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       platform_pricing_plans: {
         Row: {
           created_at: string
