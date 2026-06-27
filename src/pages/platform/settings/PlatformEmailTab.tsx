@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { usePlatformEmailAccounts, type PlatformEmailAccount } from "@/hooks/usePlatformEmailAccounts";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,16 +25,17 @@ export function PlatformEmailTab() {
   const connectMicrosoft = async () => {
     setConnecting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("microsoft-oauth-connect", {
-        body: { action: "authorize", scope: "platform" },
-      });
-      if (error || (data as any)?.error) {
-        toast.error(error?.message || (data as any)?.error);
+      const result = await invokeEdgeFunctionVerbose<{ authorize_url: string }>(
+        "microsoft-oauth-connect",
+        { action: "authorize", scope: "platform" },
+      );
+      if (!result.ok || !result.data?.authorize_url) {
+        toast.error(result.error || "Microsoft authorize failed");
         setConnecting(false);
         return;
       }
       const popup = window.open(
-        (data as any).authorize_url,
+        result.data.authorize_url,
         "microsoft-oauth-connect-oauth",
         "width=600,height=700,scrollbars=yes",
       );
