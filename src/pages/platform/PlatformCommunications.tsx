@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Send, Save, Megaphone, AlertCircle } from "lucide-react";
+import { Loader2, Send, Save, Megaphone, AlertCircle, Code2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { RichTextEditor } from "@/components/admin/RichTextEditor";
+import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
+import {
+  applyMergeTokens, defaultPreviewVars, renderEmailShell,
+} from "@/lib/email/renderEmailPreview";
 
 interface Tenant { id: string; name: string; slug: string | null; custom_domain: string | null; }
 interface Branch { id: string; name: string; email: string | null; trading_name: string | null; }
@@ -31,10 +37,6 @@ interface CampaignRecipient {
 
 const TOKENS_ACTIVATION = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
 const TOKENS_MARKETING = ["branch_name", "contact_name", "tenant_name", "activation_link"];
-
-function renderPreview(tpl: string, vars: Record<string, string>) {
-  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
-}
 
 export default function PlatformCommunications() {
   const { toast } = useToast();
