@@ -379,9 +379,12 @@ function HistoryTab() {
           {campaigns.map(c => (
             <button key={c.id} onClick={() => setSelected(c.id)}
               className={`w-full text-left p-3 rounded border ${selected === c.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-medium truncate">{c.subject_snapshot}</div>
-                <div className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {c.kind && <Badge variant="outline" className="text-[10px]">{c.kind}</Badge>}
+                  <div className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</div>
+                </div>
               </div>
               <div className="text-xs text-muted-foreground mt-1 flex gap-3">
                 <span>Total: {c.total_recipients}</span>
