@@ -509,15 +509,8 @@ export default function PlatformSubscriptions() {
         </TabsContent>
       </Tabs>
 
-      {/* Assign Subscription Dialog (reuses the shared component) */}
-      {subTenant && (
-        <TenantSubscriptionDialog
-          open={!!subTenant}
-          onOpenChange={(open) => !open && setSubTenant(null)}
-          tenant={subTenant}
-          subscription={subByTenant[subTenant.id]}
-        />
-      )}
+
+
 
       {/* Promo Code Create/Edit Dialog */}
       <Dialog open={!!promoDialog} onOpenChange={() => setPromoDialog(null)}>
