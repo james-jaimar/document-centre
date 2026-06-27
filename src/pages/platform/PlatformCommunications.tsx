@@ -348,45 +348,74 @@ function TemplatesTab() {
       })
     : "";
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_minmax(0,1fr)] gap-6">
-      <Card>
-        <CardHeader><CardTitle className="text-base">Templates</CardTitle></CardHeader>
-        <CardContent className="space-y-1">
-          {templates.map(t => (
-            <button key={t.slug} onClick={() => setSelectedSlug(t.slug)}
-              className={`w-full text-left p-2 rounded text-sm ${selectedSlug === t.slug ? "bg-primary/10 font-medium" : "hover:bg-muted"}`}>
-              {t.name}
-              {t.is_system && <Badge variant="outline" className="ml-2 text-xs">system</Badge>}
-            </button>
-          ))}
-        </CardContent>
-      </Card>
+  const handleTokenClick = (token: string) => {
+    if (tokenTarget === "text") return insertTokenIntoTextarea(textRef, "body_text", token);
+    if (rawMode) return insertTokenIntoTextarea(htmlRef, "body_html", token);
+    setDraft({ ...(draft ?? {}), body_html: `${draft?.body_html ?? ""}{{${token}}}` });
+  };
 
-      {draft && (
-        <>
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-base">{draft.name}</CardTitle>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+  return (
+    <div className="border rounded-lg bg-card overflow-hidden h-[calc(100vh-12rem)] min-h-[560px] flex flex-col">
+      {/* Mobile/narrow: template picker */}
+      <div className="lg:hidden border-b p-2">
+        <Select value={selectedSlug} onValueChange={setSelectedSlug}>
+          <SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger>
+          <SelectContent>
+            {templates.map(t => (
+              <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
+        {/* Templates list */}
+        <div className="hidden lg:flex flex-col min-h-0">
+          <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b">Templates</div>
+          <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
+            {templates.map(t => (
+              <button key={t.slug} onClick={() => setSelectedSlug(t.slug)}
+                className={`w-full text-left px-2 py-1.5 rounded text-sm ${selectedSlug === t.slug ? "bg-primary/10 font-medium" : "hover:bg-muted"}`}>
+                <div className="truncate">{t.name}</div>
+                {t.is_system && <Badge variant="outline" className="mt-0.5 text-[10px] h-4 px-1">system</Badge>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Editor */}
+        {draft ? (
+          <div className="flex flex-col min-h-0">
+            {/* Sticky toolbar */}
+            <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-muted/30">
+              <div className="text-sm font-medium truncate">{draft.name}</div>
+              <div className="flex items-center gap-3 shrink-0">
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Code2 className="h-3.5 w-3.5" />
-                  Edit raw HTML
+                  Raw HTML
                   <Switch checked={rawMode} onCheckedChange={setRawMode} />
                 </label>
+                <Button size="sm" onClick={save} disabled={saving}>
+                  {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                  Save
+                </Button>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <Label>Name</Label>
-                <Input value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} />
+            </div>
+
+            <div className="flex-1 overflow-auto p-3 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Name</Label>
+                  <Input value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} />
+                </div>
+                <div>
+                  <Label className="text-xs">Subject</Label>
+                  <Input value={draft.subject ?? ""} onChange={e => setDraft({ ...draft, subject: e.target.value })} />
+                </div>
               </div>
+
               <div>
-                <Label>Subject</Label>
-                <Input value={draft.subject ?? ""} onChange={e => setDraft({ ...draft, subject: e.target.value })} />
-              </div>
-              <div>
-                <Label>Email body</Label>
+                <Label className="text-xs">Email body</Label>
                 {rawMode ? (
                   <Textarea ref={htmlRef} rows={14} className="font-mono text-xs"
                     value={draft.body_html ?? ""}
@@ -397,63 +426,62 @@ function TemplatesTab() {
                     onChange={(html) => setDraft({ ...draft, body_html: html })}
                   />
                 )}
-                <p className="text-xs text-muted-foreground mt-1">
-                  {rawMode
-                    ? "Raw HTML mode — paste pre-designed email HTML here. The shell (logo, card background) is added automatically when sent."
-                    : "Use the toolbar for formatting. Need a styled button or pasted HTML? Flip on Edit raw HTML."}
-                </p>
               </div>
+
               <div>
-                <Label>Plain-text body (fallback)</Label>
-                <Textarea ref={textRef} rows={6} className="font-mono text-xs"
+                <Label className="text-xs">Plain-text body (fallback)</Label>
+                <Textarea ref={textRef} rows={5} className="font-mono text-xs"
                   value={draft.body_text ?? ""} onChange={e => setDraft({ ...draft, body_text: e.target.value })} />
               </div>
-              <div className="text-xs text-muted-foreground">
-                <div className="mb-1">Click to insert a merge token:</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {tokens.map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => handleTokenClick(t)}
-                      className="px-2 py-0.5 rounded bg-muted hover:bg-muted/70 font-mono text-[11px] border"
-                      title={`Insert {{${t}}} into the email body`}
-                    >
-                      {`{{${t}}}`}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2">
-                  Insert into plain-text fallback:{" "}
-                  {tokens.map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => insertTokenIntoTextarea(textRef, "body_text", t)}
-                      className="mx-0.5 px-1.5 py-0.5 rounded bg-muted hover:bg-muted/70 font-mono text-[11px] border"
-                    >
-                      {`{{${t}}}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Button onClick={save} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />} Save
-              </Button>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader><CardTitle className="text-base">Live preview</CardTitle></CardHeader>
-            <CardContent>
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
+                <span className="text-xs text-muted-foreground">Insert token into</span>
+                <div className="flex items-center gap-0.5 border rounded-md p-0.5">
+                  <button type="button" onClick={() => setTokenTarget("body")}
+                    className={`px-2 py-0.5 text-xs rounded ${tokenTarget === "body" ? "bg-secondary" : "hover:bg-muted"}`}>
+                    Body
+                  </button>
+                  <button type="button" onClick={() => setTokenTarget("text")}
+                    className={`px-2 py-0.5 text-xs rounded ${tokenTarget === "text" ? "bg-secondary" : "hover:bg-muted"}`}>
+                    Plain-text
+                  </button>
+                </div>
+                {tokens.map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => handleTokenClick(t)}
+                    className="px-2 py-0.5 rounded bg-muted hover:bg-muted/70 font-mono text-[11px] border"
+                    title={`Insert {{${t}}}`}
+                  >
+                    {`{{${t}}}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center text-sm text-muted-foreground p-6">
+            Select a template
+          </div>
+        )}
+
+        {/* Live preview */}
+        {draft && (
+          <div className="flex flex-col min-h-0 bg-background">
+            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b">
+              Live preview
+            </div>
+            <div className="flex-1 min-h-0 p-3">
               <EmailPreviewFrame
+                fill
                 subject={applyMergeTokens(draft.subject ?? "", previewVars)}
                 html={previewHtml}
               />
-            </CardContent>
-          </Card>
-        </>
-      )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
