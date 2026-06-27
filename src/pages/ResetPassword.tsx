@@ -83,6 +83,17 @@ const ResetPassword = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+      // If this came from a reusable welcome link, mark the onboarding token consumed.
+      const welcomeToken = searchParams.get("welcome_token");
+      if (welcomeToken) {
+        try {
+          await supabase.functions.invoke("complete-onboarding-token", {
+            body: { token: welcomeToken },
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
       toast.success("Password updated successfully. Please sign in with your new password.");
       await supabase.auth.signOut();
       const m = window.location.pathname.match(/^\/t\/([^/]+)(?:\/([^/]+))?/);
