@@ -140,17 +140,23 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
     providerLabel: string,
     setConnecting: (v: boolean) => void,
   ) => {
+    if (!tenantId || !branchId) {
+      toast.error("Branch context not loaded — refresh and try again");
+      return;
+    }
     setConnecting(true);
     try {
-      const { data, error } = await supabase.functions.invoke(fnName, {
-        body: { action: "authorize", tenant_id: tenantId, branch_id: branchId },
+      const result = await invokeEdgeFunctionVerbose<{ authorize_url: string }>(fnName, {
+        action: "authorize",
+        tenant_id: tenantId,
+        branch_id: branchId,
       });
-      if (error || data?.error) {
-        toast.error(error?.message || data?.error);
+      if (!result.ok || !result.data?.authorize_url) {
+        toast.error(result.error || `${providerLabel} authorize failed`);
         setConnecting(false);
         return;
       }
-      const popup = window.open(data.authorize_url, `${fnName}-oauth`, "width=600,height=700,scrollbars=yes");
+      const popup = window.open(result.data.authorize_url, `${fnName}-oauth`, "width=600,height=700,scrollbars=yes");
       const pollInterval = setInterval(async () => {
         if (popup?.closed) {
           clearInterval(pollInterval);
