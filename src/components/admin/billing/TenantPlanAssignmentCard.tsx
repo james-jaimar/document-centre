@@ -6,8 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Building2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Loader2, Building2, RefreshCw } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useBranchPlans } from "@/hooks/useBranchSubscriptions";
@@ -16,6 +16,8 @@ import { useTenantPlanAssignment, useAssignTenantPlan } from "@/hooks/useTenantP
 interface Props { tenantId: string }
 
 export function TenantPlanAssignmentCard({ tenantId }: Props) {
+  const qc = useQueryClient();
+  const [verifying, setVerifying] = useState(false);
   const { data: current, isLoading } = useTenantPlanAssignment(tenantId);
   const assign = useAssignTenantPlan();
 
@@ -71,6 +73,58 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
     }
   };
 
+  const refreshFromStripe = async () => {
+    if (!selectedPlan) { toast.error("Pick a plan first"); return; }
+    const p: any = selectedPlan;
+    if (!p.stripe_price_id && !p.stripe_coupon_id && !p.stripe_promotion_code_id) {
+      toast.error("This plan has no Stripe IDs to verify yet.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("stripe-verify-price", {
+        body: {
+          price_id: p.stripe_price_id || undefined,
+          coupon_id: p.stripe_coupon_id || undefined,
+          promotion_code_id: p.stripe_promotion_code_id || undefined,
+        },
+      });
+      if (error) throw error;
+      const parts: string[] = [];
+      const updates: Record<string, any> = {};
+      if ((data as any)?.price) {
+        const live = parseFloat((data as any).price.unit_amount_decimal ?? "0");
+        const stored = Number(p.price) || 0;
+        if (Math.abs(live - stored) > 0.005) {
+          updates.price = live;
+          parts.push(`Price ${stored} → ${live.toFixed(2)} ${(data as any).price.currency}`);
+        } else {
+          parts.push(`Price ${live.toFixed(2)} ✓ in sync`);
+        }
+        if (!(data as any).price.active) parts.push("⚠ price INACTIVE in Stripe");
+      }
+      if ((data as any)?.coupon) {
+        const c = (data as any).coupon;
+        parts.push(`Coupon ${c.id}${c.valid ? " ✓" : " ⚠ invalid"}`);
+      }
+      if (Object.keys(updates).length > 0) {
+        const { error: upErr } = await supabase
+          .from("platform_pricing_plans")
+          .update(updates as any)
+          .eq("id", p.id);
+        if (upErr) throw upErr;
+        qc.invalidateQueries({ queryKey: ["branch_plans"] });
+        qc.invalidateQueries({ queryKey: ["platform_pricing_plans"] });
+      }
+      toast.success(parts.join("  •  ") || "Verified", { duration: 8000 });
+    } catch (e: any) {
+      toast.error(e.message || "Verify failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+
   return (
     <Card>
       <CardHeader>
@@ -111,7 +165,21 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                 </Select>
               </div>
               <div>
-                <Label>Branch plan</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Branch plan</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={refreshFromStripe}
+                    disabled={!selectedPlan || verifying}
+                    title="Pull live price/coupon from Stripe and update the database"
+                  >
+                    {verifying ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Refresh from Stripe
+                  </Button>
+                </div>
                 <Select value={form.plan_slug} onValueChange={(v) => setForm((f) => ({ ...f, plan_slug: v }))}>
                   <SelectTrigger><SelectValue placeholder="Choose plan" /></SelectTrigger>
                   <SelectContent>

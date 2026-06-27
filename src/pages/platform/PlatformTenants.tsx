@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
 import { PlatformTenantPaymentsDialog } from "@/components/platform/PlatformTenantPaymentsDialog";
 import { toast } from "sonner";
 import { Building2, Pencil, ArrowRight, ExternalLink, CreditCard, Plus, Globe } from "lucide-react";
@@ -63,7 +62,6 @@ const PlatformTenants = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Tenant | null>(null);
-  const [subTenant, setSubTenant] = useState<Tenant | null>(null);
   const [paymentsTenant, setPaymentsTenant] = useState<Tenant | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
@@ -211,7 +209,7 @@ const PlatformTenants = () => {
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Created {new Date(t.created_at).toLocaleDateString()}</span>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setSubTenant(t)}>
+                    <Button variant="ghost" size="sm" onClick={() => { setOverrideTenantId(t.id); navigate(buildAdminPath("/admin/settings?tab=billing", t.id)); }} title="Manage subscription in Tenant Settings">
                       <CreditCard size={14} className="mr-1" /> Subscription
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setPaymentsTenant(t)}>
@@ -363,14 +361,7 @@ const PlatformTenants = () => {
         </DialogContent>
       </Dialog>
 
-      {subTenant && (
-        <TenantSubscriptionDialog
-          open={!!subTenant}
-          onOpenChange={(open) => !open && setSubTenant(null)}
-          tenant={subTenant}
-          subscription={subByTenant[subTenant.id]}
-        />
-      )}
+
 
       {paymentsTenant && (
         <PlatformTenantPaymentsDialog
