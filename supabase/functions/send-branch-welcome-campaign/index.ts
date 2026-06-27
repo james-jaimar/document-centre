@@ -248,7 +248,7 @@ ${logoBlock}
 </td></tr></table></body></html>`;
 
         if (dryRun) {
-          results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, action_link: actionLink });
+          results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, action_link: actionLink, returning_user: isReturningUser });
           continue;
         }
 
@@ -263,11 +263,27 @@ ${logoBlock}
         }
 
         sent++;
-        await admin.from("platform_email_campaign_recipients").insert({
-          campaign_id: campaignId, branch_id: b.id, email,
-          status: "sent", action_link: actionLink, sent_at: new Date().toISOString(),
+        const recipientStatus = isReturningUser ? "sent_existing_user" : "sent";
+        const { data: recipientRow } = await admin
+          .from("platform_email_campaign_recipients")
+          .insert({
+            campaign_id: campaignId, branch_id: b.id, email,
+            status: recipientStatus, action_link: actionLink, sent_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
+
+        // Persist the opaque onboarding token so /welcome can exchange it later.
+        await admin.from("platform_onboarding_tokens").insert({
+          token: opaqueToken,
+          campaign_recipient_id: recipientRow?.id ?? null,
+          tenant_id,
+          branch_id: b.id,
+          profile_id: profileId,
+          email,
+          purpose: "branch_welcome",
         });
-        results.push({ branch_id: b.id, branch: b.name, email, status: "sent" });
+        results.push({ branch_id: b.id, branch: b.name, email, status: recipientStatus });
       } catch (e) {
         failed++;
         const msg = (e as Error).message ?? "unknown";
