@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef } from "react";
 import { Outlet, Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
+import { useBranchSubscription, useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { AlertCircle } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
@@ -15,15 +16,9 @@ function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
   const gate = useBranchSubscriptionGate(branchId);
   if (!branchId || gate.loading) return null;
-  // Active/trialing — no banner. Grace shows a soft warning to all roles.
-  // Restricted/cancelled (grace expired) shows a strong banner to all roles, including
-  // owners/admins, since they're the ones who must restore billing.
   const isAdmin = membershipRole === "owner" || membershipRole === "admin";
   if (gate.state === "active" || gate.state === "trialing") return null;
-  if (gate.state === "grace" && !isAdmin) {
-    // Staff don't need the soft-grace warning — admins do.
-    return null;
-  }
+  if (gate.state === "grace" && !isAdmin) return null;
   const tone =
     gate.state === "grace"
       ? "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200"
@@ -50,22 +45,40 @@ export default function BranchLayout() {
   useDocumentBranding(tenantId, tenantName, "Branch Portal");
   const qc = useQueryClient();
   const startedRef = useRef<string | null>(null);
+  const { data: sub, isLoading: subLoading } = useBranchSubscription(branchId);
 
-  // Stamp trial_started_at on first authenticated load for this branch
+  // Stamp trial_started_at on first authenticated load — but only when the
+  // branch has never started a trial and has no Stripe subscription. Otherwise
+  // the edge function correctly returns 409 (trial_already_used) and the call
+  // is just console noise.
   useEffect(() => {
-    if (!branchId || startedRef.current === branchId) return;
+    if (!branchId || subLoading) return;
+    if (startedRef.current === branchId) return;
+    // Nothing to start: no plan assigned, trial already started, already
+    // subscribed via Stripe, or trial already consumed.
+    if (
+      !sub ||
+      !sub.assigned_plan_slug ||
+      sub.trial_started_at ||
+      sub.trial_started_via ||
+      sub.stripe_subscription_id
+    ) {
+      startedRef.current = branchId;
+      return;
+    }
     startedRef.current = branchId;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      try {
-        await supabase.functions.invoke("start-branch-trial", { body: { branch_id: branchId } });
+      const res = await invokeEdgeFunctionVerbose("start-branch-trial", { branch_id: branchId });
+      if (res.ok) {
         qc.invalidateQueries({ queryKey: ["branch_subscriptions"] });
-      } catch (e) {
-        console.warn("start-branch-trial failed (non-fatal):", e);
+      } else if (res.status !== 409) {
+        // 409 = trial_already_used (benign — race with another tab/login).
+        console.warn("start-branch-trial failed (non-fatal):", res.error);
       }
     })();
-  }, [branchId, qc]);
+  }, [branchId, subLoading, sub, qc]);
 
 
   const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
