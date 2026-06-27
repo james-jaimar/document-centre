@@ -1,50 +1,93 @@
-## Problems to fix
 
-1. **Welcome link burns on first click.** Supabase recovery `token_hash` is a single-use OTP — verifying it once invalidates it, even if the user never finishes setting a password. The user wants the link to stay usable for the full 1-hour window until the password reset is actually completed.
-2. **Multi-branch owners aren't modelled in the campaign.** `send-branch-welcome-campaign` looks up the profile by email and only adds a membership for the targeted branch, but the welcome copy/landing assumes "your branch" singular. If the same email already runs another branch, the new membership is silently added with no acknowledgement, and the email/UX still talks as if they're a brand-new user.
+## Goal
 
-## Solution overview
+Split the current single "welcome + reset password" email into a **two-prong onboarding flow**:
 
-Stop handing Supabase OTPs directly to the user. Instead, mint our own opaque campaign token, store it server-side, and exchange it for a fresh Supabase recovery session on every click — until the user completes password setup, at which point we mark our token consumed.
+1. **Prong 1 — Marketing email** (bulk-sendable, no credentials, no auth token). Branded "Document Centre", pitches the offer, and links to a per-branch **Activation page** where the recipient requests their own sign-in email.
+2. **Prong 2 — Activation email** (transactional, one recipient, triggered by the recipient themselves). Carries the reusable `/welcome?token=…` magic-link bridge we already built and lands them in the password-set / sign-in flow.
 
-### 1. New table `platform_onboarding_tokens`
+This keeps marketing reach separated from credential delivery (better deliverability, no leaked links forwarded around the branch), while still using all the onboarding token plumbing already in place.
 
-Columns: `token` (random 32-byte url-safe, unique), `campaign_recipient_id` fk, `tenant_id`, `branch_id`, `profile_id`, `email`, `expires_at` (default `now() + 1 hour`), `consumed_at`, `last_used_at`, `use_count`, `created_at`. RLS: no anon/auth access (only service role / edge functions).
+## What changes
 
-### 2. Edge function changes
+### 1. New table `platform_branch_activation_pages`
 
-- **`send-branch-welcome-campaign`**: instead of calling `auth.admin.generateLink` and emailing the Supabase verify URL, insert a row into `platform_onboarding_tokens` and email a link like `https://<origin>/welcome?token=<opaque>`. Store the opaque token (not the Supabase OTP) on the campaign recipient row for audit.
-- **New `redeem-onboarding-token`** (public, `verify_jwt = false`): accepts `{ token }`, validates it's not consumed and `expires_at > now()`, bumps `use_count`/`last_used_at`, then calls `auth.admin.generateLink({ type: 'recovery', email })` server-side and returns the freshly-minted `action_link` (or the parsed `token_hash` + redirect path). The caller's browser then navigates to that URL — single-use Supabase OTP is fine because we mint a new one every click.
-- **New `complete-onboarding-token`**: called from `ResetPassword.tsx` immediately after `supabase.auth.updateUser({ password })` succeeds; marks `consumed_at = now()` so further clicks on the same welcome link return "already completed".
+One row per branch we want to be able to onboard. Columns:
 
-### 3. New page `/welcome`
+- `id`, `tenant_id`, `branch_id` (unique), `app_id`
+- `slug` — short opaque url-safe token used in the marketing link (`/activate/<slug>`); decoupled from branch slug so we can rotate without disrupting branch URLs
+- `contact_email`, `contact_name` (snapshot at creation; can be overridden per-send)
+- `is_active` (default true) — lets us disable a page without deleting
+- `created_at`, `created_by`
 
-Replaces the direct Supabase verify URL. On mount it POSTs the `token` to `redeem-onboarding-token`, then `window.location.replace`s to the returned Supabase action link (which lands on `/auth/verify` → `/reset-password?recovery=1` exactly as today). Failure states: `expired`, `already_completed`, `not_found` — each with its own copy and a "Go to sign in" button. `AuthVerify.tsx` keeps its current error UI for the rare case the freshly-minted OTP fails.
+RLS: service role + platform admin only. Public read happens through an edge function, never direct.
 
-### 4. `ResetPassword.tsx`
+### 2. New edge function `get-activation-page` (public, no JWT)
 
-Read `?welcome_token=<opaque>` (passed through by `/welcome` → action_link → verify → reset). After a successful password update, call `complete-onboarding-token` with that token (best-effort, ignore failure). Without this, the welcome link would simply expire after 1 hour, which is acceptable but less precise.
+Input: `{ slug }`. Returns the public-safe payload the activation landing page needs:
 
-### 5. Multi-branch owners
+- `tenant_name`, `tenant_logo_url`, `branch_name`, `branch_city`
+- `contact_name_masked` (e.g. "John D.") and `contact_email_masked` (e.g. "j••••@postnet.co.za") — so the visitor can confirm they're the right person without us leaking the full address to anyone who guesses a slug
+- `is_active`, `already_completed` (true once the branch has an active manager who has signed in)
 
-- `send-branch-welcome-campaign`: after profile lookup, detect whether the email already has any `tenant_memberships`. Pass `existing_memberships_count` into the template var set (`is_returning_user = "true"|"false"`, `existing_branch_count`).
-- Update the seeded `welcome_branch_manager` template to render a short "You already manage other branches — this link adds {{branch_name}} to your account" line when `is_returning_user` is truthy. Plain-text fallback included.
-- If the email already has a Supabase user **and** a session-capable password, switch the link copy from "set your password" to "open {{branch_name}}". Implementation: still mint the same opaque token, but the redeem function chooses `type: 'magiclink'` instead of `recovery` when the profile already has `last_sign_in_at`. Lands them straight in `/t/<slug>/<branch>` instead of `/reset-password`.
-- Membership insert already de-dupes via existence check — keep, but log the "added new branch to existing user" event into `platform_email_campaign_recipients.status` as `sent_existing_user` for visibility in the History tab.
+### 3. New edge function `request-activation-email` (public, no JWT, rate-limited)
 
-### 6. Communications History UI
+Input: `{ slug, confirm_email }`. Behaviour:
 
-Show per-recipient `use_count` and `consumed_at` from the new token table (joined view) so the platform admin can see "clicked 3×, completed" vs "never clicked".
+- Looks up the activation page; 404 if missing/inactive
+- **Confirm-email check**: `confirm_email` (typed by the user) must match the stored `contact_email` (case-insensitive). If it doesn't match, return a generic "we'll be in touch" response — never reveal the real address. This is the guardrail you asked for: marketing email goes to the listed contact, and only that contact can trigger the activation email.
+- Rate limit: max 3 sends per slug per hour, max 1 per slug per 60 seconds (tracked in a small `platform_activation_requests` audit table with `slug`, `ip_hash`, `created_at`).
+- On success: reuses the existing `send-branch-welcome-campaign` core logic (extracted into a shared helper `_shared/sendBranchActivation.ts`) to mint a `platform_onboarding_tokens` row and email the `/welcome?token=…` link via the existing branded transactional template.
 
-## Out of scope
+### 4. New `platform_activation_requests` table (audit + rate-limit)
 
-- No change to Supabase auth template or the underlying `auth-email-hook`.
-- No change to PayFast / billing flows.
-- No retroactive migration of already-sent campaigns — existing recipient rows keep their old single-use links.
+`id, slug, ip_hash (sha256 of ip + daily salt), email_confirmed (bool), result (enum: sent / mismatch / rate_limited / inactive / completed), created_at`. RLS: service role only. Used by `request-activation-email` for throttling and by the History tab for visibility.
+
+### 5. CMS changes in `PlatformCommunications.tsx`
+
+Add a third tab structure:
+
+- **Marketing tab** (new): pick recipients (same picker as today), pick the marketing template, pick a "campaign name". On send:
+  - For each recipient branch, upsert a `platform_branch_activation_pages` row (idempotent — reuse the existing slug if one already exists for that branch).
+  - Send the marketing email via the existing `send-email` infrastructure. The email body merge field `{{activation_link}}` resolves to `https://<tenant_domain_or_app_origin>/activate/<slug>` (custom-domain aware via the same `resolveAppOriginDetailed` helper).
+  - Record one row per recipient in `platform_email_campaigns` / `platform_email_campaign_recipients` with `kind = 'marketing'`.
+- **Activation tab** (renamed from today's Compose): the existing direct-send-welcome flow. Kept for cases where we want to push the activation email ourselves without a marketing step (e.g. sales-call follow-up).
+- **Templates tab**: gains a `kind` selector (`marketing` | `activation`). Seeds two new defaults:
+  - `marketing_branch_offer` — Document Centre branded, pitches the offer, big CTA "Activate Your Branch" → `{{activation_link}}`.
+  - `activation_branch_manager` — the existing branded welcome email, slightly reworded ("You requested this — here's your sign-in link").
+- **History tab**: shows campaign `kind`, plus per-recipient counts from `platform_activation_requests` (requested N×, last requested at, sent at) joined with `platform_onboarding_tokens` (clicks, completed).
+
+### 6. New public page `/activate/:slug` (`src/pages/Activate.tsx`)
+
+Lightweight, branded with the tenant's logo + colours (looked up from `get-activation-page`). Content:
+
+- "Activate your branch" heading with tenant + branch name
+- A short "Confirm it's you" instruction explaining we'll email a sign-in link to the address on file
+- Single input: "Confirm your email address" + Submit button
+- Calls `request-activation-email`
+- Success state: "Check your inbox — the link is valid for 1 hour and works as many times as you need until you've set your password"
+- Mismatch / rate-limited / inactive / already-completed states with their own copy. Mismatch always shows the same generic "we'll get back to you" message to avoid email enumeration.
+
+Route added in `App.tsx`, custom-domain aware (works at both `document-centre.com/activate/...` and `postnetprintcentre.com/activate/...`).
+
+### 7. Shared helper `supabase/functions/_shared/sendBranchActivation.ts`
+
+Extracts the "mint opaque token + render activation email + send via `send-email`" path out of `send-branch-welcome-campaign` so both that function and `request-activation-email` use it. No behavioural change to the existing direct-send flow.
+
+### 8. Custom domain awareness
+
+Both the marketing email's `{{activation_link}}` and the activation email's `/welcome?token=…` go through `resolveAppOriginDetailed` so PostNet emails land on `postnetprintcentre.com` and 3@1 emails land on their domain when configured, falling back to `/t/<slug>` on the platform domain.
 
 ## Technical notes
 
-- Opaque token format: `crypto.getRandomValues(32 bytes)` → base64url. Stored as-is (high-entropy, no need to hash for this threat model, but we can hash with sha256 if you'd prefer — say the word).
-- `redeem-onboarding-token` is the only place that calls `auth.admin.generateLink`; service role key never leaves the edge runtime.
-- 1-hour window enforced by `expires_at` check in the redeem function, independent of Supabase's own OTP TTL (which restarts on each mint).
-- Rate-limit: cap `use_count` at, say, 20 to stop abuse if a link leaks.
+- Marketing send remains a server-side bulk loop; the credential-bearing activation email is **only ever** triggered by the recipient confirming their own email on the activation page. No bulk activation sends from the marketing tab.
+- Confirm-email check is constant-time string compare; failure response is identical to success for timing-safe enumeration resistance, but we still record the real outcome in the audit table.
+- Reusing `platform_onboarding_tokens` means the 1-hour / 20-uses / single-completion semantics already shipped apply verbatim.
+- Activation pages do not expire. If a branch later changes contact, platform admin edits the row and the same slug keeps working with the new contact email.
+- No changes to PayFast, subscriptions, billing, or Stripe paths.
+
+## Out of scope
+
+- DKIM/SPF tuning for the new marketing template (existing Document Centre sender domain already covers it).
+- Drip / follow-up marketing sends — single-shot only for now.
+- Migrating already-sent campaign history into the new `kind` column beyond defaulting old rows to `activation`.
