@@ -16,6 +16,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import AuthVerify from "@/pages/AuthVerify";
 import ResetPassword from "@/pages/ResetPassword";
 import Welcome from "@/pages/Welcome";
+import Activate from "@/pages/Activate";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
