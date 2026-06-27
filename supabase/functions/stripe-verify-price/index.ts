@@ -40,15 +40,20 @@ Deno.serve(async (req) => {
 
   // Allow platform admins OR active tenant admins (read-only Stripe lookup is safe).
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data: isPlatformAdmin } = await admin.rpc("is_platform_admin", { _user_id: user.id });
-  let allowed = !!isPlatformAdmin;
+  const { data: platformRole } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("role", "platform_admin")
+    .maybeSingle();
+  let allowed = !!platformRole;
   if (!allowed) {
     let membershipQuery = admin
       .from("tenant_memberships")
       .select("role")
       .eq("profile_id", user.id)
       .eq("is_active", true)
-      .in("role", ["admin"])
+      .in("role", ["owner", "admin", "Owner", "Admin"])
       .limit(1);
 
     if (body.tenant_id) {
