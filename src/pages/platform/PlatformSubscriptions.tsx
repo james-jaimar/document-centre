@@ -386,11 +386,11 @@ export default function PlatformSubscriptions() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setSubTenant(tenant)}
-                                  title="Assign subscription"
+                                  onClick={() => { setOverrideTenantId(tenant.id); navigate(buildAdminPath("/admin/settings?tab=billing", tenant.id)); }}
+                                  title="Open tenant billing"
                                 >
                                   <ArrowUpCircle className="h-4 w-4 mr-1" />
-                                  Assign
+                                  Open billing
                                 </Button>
                                 {sub && (sub.status === "active" || sub.billing_status === "paid" || sub.billing_status === "free") && (
                                   <Button
