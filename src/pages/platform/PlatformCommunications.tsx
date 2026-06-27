@@ -255,7 +255,9 @@ function ComposeTab() {
                    dangerouslySetInnerHTML={{ __html: renderPreview(template.body_html, previewVars) }} />
               <div className="flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded p-2">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                The action link is a one-time recovery link. Recipients land on /reset-password and must set a brand-new password before they can sign in.
+                {kind === "marketing"
+                  ? "Marketing pitch — no credentials are sent. Recipients land on /activate/<slug> and request the sign-in email themselves."
+                  : "The action link is a one-time sign-in link, valid for 1 hour. Recipients land on /welcome and must set a brand-new password before they can sign in."}
               </div>
             </>
           ) : <div className="text-sm text-muted-foreground">Select a template.</div>}
