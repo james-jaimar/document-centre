@@ -66,12 +66,13 @@ export default function PlatformCommunications() {
 
 function ComposeTab() {
   const { toast } = useToast();
+  const [kind, setKind] = useState<"marketing" | "activation">("marketing");
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState<string>("");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [templateSlug, setTemplateSlug] = useState<string>("branch_welcome");
+  const [templateSlug, setTemplateSlug] = useState<string>("marketing_branch_offer");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -84,6 +85,12 @@ function ComposeTab() {
     })();
   }, []);
 
+  // When kind changes, swap default template
+  useEffect(() => {
+    const first = templates.find(t => (t.kind ?? "activation") === kind);
+    if (first) setTemplateSlug(first.slug);
+  }, [kind, templates]);
+
   useEffect(() => {
     if (!tenantId) { setBranches([]); setSelected(new Set()); return; }
     (async () => {
@@ -95,6 +102,7 @@ function ComposeTab() {
     })();
   }, [tenantId]);
 
+  const filteredTemplates = templates.filter(t => (t.kind ?? "activation") === kind);
   const template = templates.find(t => t.slug === templateSlug);
   const firstBranch = branches.find(b => selected.has(b.id)) ?? branches[0];
   const tenant = tenants.find(t => t.id === tenantId);
@@ -106,7 +114,10 @@ function ComposeTab() {
       ? `https://${tenant.custom_domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`
       : tenant?.slug ? `https://document-centre.com/t/${tenant.slug}` : "https://example.com",
     login_email: firstBranch?.email ?? "branch@example.com",
-    action_link: "https://example.com/reset-password?token=…",
+    action_link: "https://example.com/welcome?token=…",
+    activation_link: tenant?.custom_domain
+      ? `https://${tenant.custom_domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}/activate/sample-slug`
+      : "https://example.com/activate/sample-slug",
     tenant_name: tenant?.name ?? "Your Tenant",
     portal_name: tenant?.name ?? "Your Portal",
   };
@@ -126,7 +137,8 @@ function ComposeTab() {
       toast({ title: "Pick a tenant, template, and at least one branch", variant: "destructive" }); return;
     }
     setSending(true); setResult(null);
-    const { data, error } = await supabase.functions.invoke("send-branch-welcome-campaign", {
+    const fn = kind === "marketing" ? "send-branch-marketing-campaign" : "send-branch-welcome-campaign";
+    const { data, error } = await supabase.functions.invoke(fn, {
       body: { tenant_id: tenantId, template_slug: templateSlug, branch_ids: Array.from(selected), dry_run: dryRun },
     });
     setSending(false);
