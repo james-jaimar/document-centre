@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { usePlatformEmailAccounts, type PlatformEmailAccount } from "@/hooks/usePlatformEmailAccounts";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
