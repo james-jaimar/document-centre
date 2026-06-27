@@ -307,7 +307,7 @@ function TemplatesTab() {
                 value={draft.body_text ?? ""} onChange={e => setDraft({ ...draft, body_text: e.target.value })} />
             </div>
             <div className="text-xs text-muted-foreground">
-              Merge tokens: {TOKENS.map(t => <code key={t} className="mx-1 px-1 bg-muted rounded">{`{{${t}}}`}</code>)}
+              Merge tokens: {(draft.kind === "marketing" ? TOKENS_MARKETING : TOKENS_ACTIVATION).map(t => <code key={t} className="mx-1 px-1 bg-muted rounded">{`{{${t}}}`}</code>)}
             </div>
             <Button onClick={save} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />} Save
