@@ -69,6 +69,10 @@ export function Body() {
         damages. Custom service-level agreements, including financial remedies, are available
         only on request and on separately agreed commercial terms.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function ServiceLevel() {
+  return <LegalDocPage slug="sla" Fallback={Body} />;
 }
