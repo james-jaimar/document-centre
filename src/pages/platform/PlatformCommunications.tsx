@@ -474,6 +474,16 @@ function TemplatesTab() {
                 )}
               </div>
 
+              {draft.kind === "marketing" && (
+                <div className="text-xs rounded-md border border-amber-200 bg-amber-50 text-amber-900 p-2 flex items-start gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    Drop <code className="font-mono">{"{{activation_link}}"}</code> anywhere in the body. At send time each recipient gets a unique per-branch activation URL (auto-created if one doesn't exist yet) — no CSV or external merge required.
+                  </span>
+                </div>
+              )}
+
+
               <div>
                 <Label className="text-xs">Plain-text body (fallback)</Label>
                 <Textarea ref={textRef} rows={5} className="font-mono text-xs"
