@@ -246,6 +246,19 @@ function ComposeTab() {
             </div>
           )}
 
+          {kind === "marketing" && selected.size > 0 && (
+            <div className="text-xs border rounded-md p-2 bg-muted/30 text-muted-foreground">
+              {existingPagesCount >= selected.size ? (
+                <>All {selected.size} selected branches already have activation pages — links will be reused.</>
+              ) : (
+                <>
+                  {existingPagesCount} of {selected.size} selected branches already have activation pages.{" "}
+                  {selected.size - existingPagesCount} new page{selected.size - existingPagesCount === 1 ? "" : "s"} will be created automatically at send time and merged into <code className="font-mono">{"{{activation_link}}"}</code>.
+                </>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size}>
               {sending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Dry run
@@ -258,33 +271,7 @@ function ComposeTab() {
 
           {result && (
             <div className="border rounded-md p-3 bg-muted/40 text-sm space-y-2 max-h-72 overflow-auto">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">Results</div>
-                {result.results?.some((r: any) => r.activation_link) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      const rows = (result.results ?? []).filter((r: any) => r.activation_link);
-                      const header = "branch_name,contact_email,activation_url\n";
-                      const csv = header + rows.map((r: any) =>
-                        [r.branch, r.email ?? "", r.activation_link]
-                          .map((v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`)
-                          .join(",")
-                      ).join("\n");
-                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `activation-links-${new Date().toISOString().slice(0,10)}.csv`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    Download CSV
-                  </Button>
-                )}
-              </div>
+              <div className="font-medium">Results</div>
               {result.results?.map((r: any, i: number) => (
                 <div key={i} className="flex items-center justify-between gap-2 text-xs border-b last:border-0 py-1">
                   <span className="truncate">{r.branch} {r.email ? `· ${r.email}` : ""}</span>
@@ -295,6 +282,7 @@ function ComposeTab() {
               ))}
             </div>
           )}
+
 
         </CardContent>
       </Card>
