@@ -325,6 +325,7 @@ export type Database = {
           created_at: string
           credentials_secret_id: string | null
           id: string
+          is_enabled: boolean
           mode: string
           provider: string
           updated_at: string
@@ -334,6 +335,7 @@ export type Database = {
           created_at?: string
           credentials_secret_id?: string | null
           id?: string
+          is_enabled?: boolean
           mode?: string
           provider: string
           updated_at?: string
@@ -343,6 +345,7 @@ export type Database = {
           created_at?: string
           credentials_secret_id?: string | null
           id?: string
+          is_enabled?: boolean
           mode?: string
           provider?: string
           updated_at?: string

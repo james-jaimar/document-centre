@@ -262,15 +262,19 @@ Deno.serve(async (req) => {
     const brand = hexToRgb(tBranding.primary_color ?? tBranding.brand_color ?? tenant?.brand_color);
     const brandSoft = tint(brand, 0.85);
 
-    // Online payment gateway: branch override, else tenant
+    // Online payment gateway: branch override, else tenant.
+    // Branch is_enabled=false hard-opts the branch out for that provider.
     let payOnlineEnabled = false;
+    const branchOptOuts = new Set<string>();
     if (q.branch_id) {
       const { data: bGw } = await supa
         .from("branch_payment_gateways")
-        .select("provider, mode, credentials_secret_id")
-        .eq("branch_id", q.branch_id)
-        .not("credentials_secret_id", "is", null);
-      payOnlineEnabled = !!bGw?.length;
+        .select("provider, mode, credentials_secret_id, is_enabled")
+        .eq("branch_id", q.branch_id);
+      for (const row of bGw ?? []) {
+        if (row.is_enabled === false) branchOptOuts.add(row.provider as string);
+        else if (row.credentials_secret_id) payOnlineEnabled = true;
+      }
     }
     if (!payOnlineEnabled) {
       const { data: tGw } = await supa
@@ -279,7 +283,7 @@ Deno.serve(async (req) => {
         .eq("tenant_id", q.tenant_id)
         .eq("is_enabled", true)
         .not("credentials_secret_id", "is", null);
-      payOnlineEnabled = !!tGw?.length;
+      payOnlineEnabled = !!(tGw ?? []).some((g) => !branchOptOuts.has(g.provider as string));
     }
 
     // Terms

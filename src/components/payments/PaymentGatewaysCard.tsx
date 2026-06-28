@@ -13,6 +13,7 @@ import {
   useSavePaymentCredentials,
   useBranchPaymentGateways,
   useToggleTenantGatewayEnabled,
+  useToggleBranchGatewayEnabled,
   usePaymentCredentialsSummary,
   type GatewayMode,
   type GatewayProvider,
@@ -76,6 +77,8 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
             scope === "branch"
               ? (branchOverride?.mode as GatewayMode | undefined) ?? tg?.mode ?? "test"
               : tg?.mode ?? "test";
+          // Branch defaults to enabled when no row exists yet.
+          const branchEnabled = branchOverride ? branchOverride.is_enabled !== false : true;
           return (
             <ProviderRow
               key={provider}
@@ -84,6 +87,7 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
               scopeId={scopeId}
               tenantGateway={tg}
               isEnabledAtTenant={!!tg?.is_enabled}
+              isEnabledAtBranch={branchEnabled}
               persistedMode={persistedMode}
               hasCreds={hasCreds}
               tenantHasCreds={tenantHasCreds}
@@ -109,6 +113,7 @@ interface RowProps {
   scopeId: string;
   tenantGateway?: TenantPaymentGateway;
   isEnabledAtTenant: boolean;
+  isEnabledAtBranch: boolean;
   persistedMode: GatewayMode;
   hasCreds: boolean;
   tenantHasCreds: boolean;
@@ -117,10 +122,11 @@ interface RowProps {
 }
 
 function ProviderRow({
-  provider, scope, scopeId, isEnabledAtTenant, persistedMode, hasCreds, tenantHasCreds,
+  provider, scope, scopeId, isEnabledAtTenant, isEnabledAtBranch, persistedMode, hasCreds, tenantHasCreds,
   displayLabel, onToggleEnabled,
 }: RowProps) {
   const save = useSavePaymentCredentials();
+  const toggleBranch = useToggleBranchGatewayEnabled();
   const summaryQ = usePaymentCredentialsSummary(scope, scopeId, provider, hasCreds);
 
   const [mode, setMode] = useState<GatewayMode>(persistedMode);
@@ -164,11 +170,27 @@ function ProviderRow({
 
   const webhookUrl = `${SUPABASE_FUNCTIONS_BASE}/${provider === "stripe" ? "stripe-order-webhook" : "payfast-itn"}`;
   const disabledAtTenant = scope === "tenant" && !isEnabledAtTenant;
+  const disabledAtBranch = scope === "branch" && !isEnabledAtBranch;
+  const liveActive = hasCreds && (scope === "tenant" || isEnabledAtTenant) && !disabledAtBranch && persistedMode === "live";
+  const sandboxActive = hasCreds && (scope === "tenant" || isEnabledAtTenant) && !disabledAtBranch && persistedMode === "test";
   const modeChanged = mode !== persistedMode;
   const summary = summaryQ.data;
 
+  const handleToggleBranch = (next: boolean) => {
+    toggleBranch.mutate(
+      { branchId: scopeId, provider, isEnabled: next, mode: persistedMode },
+      {
+        onSuccess: () =>
+          toast.success(next
+            ? `${provider} enabled for this branch`
+            : `${provider} disabled for this branch — credentials kept`),
+        onError: (e: any) => toast.error(e?.message ?? "Could not update"),
+      },
+    );
+  };
+
   return (
-    <div className={`rounded-lg border p-4 space-y-3 ${disabledAtTenant ? "opacity-60" : ""}`}>
+    <div className={`rounded-lg border p-4 space-y-3 ${disabledAtTenant || disabledAtBranch ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <CreditCard className="h-4 w-4" />
@@ -178,7 +200,7 @@ function ProviderRow({
           ) : (
             <Badge variant="outline">Not configured</Badge>
           )}
-          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && persistedMode === "live" && (
+          {liveActive && (
             provider === "payfast" && summary?.payfast && !summary.payfast.has_passphrase ? (
               <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
                 <AlertTriangle className="h-3 w-3" />
@@ -190,9 +212,14 @@ function ProviderRow({
               </Badge>
             )
           )}
-          {hasCreds && (scope === "tenant" || isEnabledAtTenant) && persistedMode === "test" && (
+          {sandboxActive && (
             <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
               Sandbox — test mode
+            </Badge>
+          )}
+          {disabledAtBranch && (
+            <Badge variant="outline" className="text-muted-foreground">
+              Disabled at branch — not accepting online payments
             </Badge>
           )}
           {hasCreds && scope === "branch" && !isEnabledAtTenant && (
@@ -200,7 +227,7 @@ function ProviderRow({
               Disabled at tenant level
             </Badge>
           )}
-          {scope === "branch" && !tenantHasCreds && !hasCreds && (
+          {scope === "branch" && !tenantHasCreds && !hasCreds && isEnabledAtBranch && (
             <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
               <AlertTriangle className="h-3 w-3" />
               Add your merchant credentials to accept this method
@@ -214,20 +241,35 @@ function ProviderRow({
               <Switch checked={isEnabledAtTenant} onCheckedChange={onToggleEnabled} />
             </div>
           )}
-          <Select value={mode} onValueChange={(v) => setMode(v as GatewayMode)} disabled={disabledAtTenant}>
+          {scope === "branch" && isEnabledAtTenant && (
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Enabled</Label>
+              <Switch
+                checked={isEnabledAtBranch}
+                disabled={toggleBranch.isPending}
+                onCheckedChange={handleToggleBranch}
+              />
+            </div>
+          )}
+          <Select
+            value={mode}
+            onValueChange={(v) => setMode(v as GatewayMode)}
+            disabled={disabledAtTenant || disabledAtBranch}
+          >
             <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="test">Sandbox</SelectItem>
               <SelectItem value="live">Live</SelectItem>
             </SelectContent>
           </Select>
-          {modeChanged && hasCreds && (
+          {modeChanged && hasCreds && !disabledAtBranch && (
             <Button size="sm" variant="outline" onClick={() => handleSave({ modeOnly: true })} disabled={save.isPending}>
               Save mode
             </Button>
           )}
         </div>
       </div>
+
 
       {disabledAtTenant ? (
         <p className="text-xs text-muted-foreground">
