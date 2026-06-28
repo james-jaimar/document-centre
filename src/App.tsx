@@ -466,6 +466,16 @@ function AppRoutes() {
             <PlatformLegalStatus />
           </ProtectedRoute>
         } />
+        <Route path="/platform/legal" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformLegalDocuments />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/legal/:slug" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformLegalEditor />
+          </ProtectedRoute>
+        } />
         <Route path="/platform/audit-log" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformAuditLog />
