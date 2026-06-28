@@ -289,32 +289,13 @@ export default function CustomerAccount() {
 
 
         <TabsContent value="security">
-          <Card className="p-4 md:p-6 max-w-md space-y-4">
-            <h3 className="font-semibold">Change password</h3>
-            <div>
-              <Label htmlFor="pwd-new">New password</Label>
-              <Input
-                id="pwd-new"
-                type="password"
-                value={pwd.next}
-                onChange={(e) => setPwd({ ...pwd, next: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="pwd-confirm">Confirm password</Label>
-              <Input
-                id="pwd-confirm"
-                type="password"
-                value={pwd.confirm}
-                onChange={(e) => setPwd({ ...pwd, confirm: e.target.value })}
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button onClick={handleChangePassword} disabled={pwdSaving}>
-                {pwdSaving ? "Updating…" : "Update password"}
-              </Button>
-            </div>
-          </Card>
+          <SecurityPanel
+            user={user}
+            pwd={pwd}
+            setPwd={setPwd}
+            pwdSaving={pwdSaving}
+            handleChangePassword={handleChangePassword}
+          />
         </TabsContent>
       </Tabs>
     </div>
