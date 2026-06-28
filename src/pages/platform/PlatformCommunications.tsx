@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
 import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import {
   applyMergeTokens, defaultPreviewVars, renderEmailShell,
 } from "@/lib/email/renderEmailPreview";
@@ -166,19 +167,35 @@ function ComposeTab() {
       if (!ok) return;
     }
     setSending(true); setResult(null);
+    const selectedCount = selected.size;
     const fn = kind === "marketing" ? "send-branch-marketing-campaign" : "send-branch-welcome-campaign";
-    const { data, error } = await supabase.functions.invoke(fn, {
-      body: { tenant_id: tenantId, template_slug: templateSlug, branch_ids: Array.from(selected), dry_run: dryRun },
+    const response = await invokeEdgeFunctionVerbose(fn, {
+      tenant_id: tenantId,
+      template_slug: templateSlug,
+      branch_ids: Array.from(selected),
+      dry_run: dryRun,
     });
     setSending(false);
-    if (error) {
-      toast({ title: dryRun ? "Dry run failed" : "Send failed", description: error.message, variant: "destructive" });
+    if (!response.ok || !response.data) {
+      toast({ title: dryRun ? "Dry run failed" : "Send failed", description: response.error ?? "No response from email sender", variant: "destructive" });
+      return;
+    }
+    const data = response.data as any;
+    const totals = data.totals ?? { sent: 0, failed: 0, skipped: 0 };
+    const resolvedTotal = Number(totals.sent ?? 0) + Number(totals.failed ?? 0) + Number(totals.skipped ?? 0);
+    if (selectedCount > 0 && resolvedTotal === 0) {
+      setResult(data);
+      toast({
+        title: dryRun ? "Dry run found no recipients" : "Send found no recipients",
+        description: "The selected branch could not be matched by the email sender. Refresh the page and try again.",
+        variant: "destructive",
+      });
       return;
     }
     setResult(data);
     toast({
       title: dryRun ? "Dry run complete" : "Campaign sent",
-      description: `Sent ${data.totals.sent} · Failed ${data.totals.failed} · Skipped ${data.totals.skipped}`,
+      description: `Sent ${totals.sent} · Failed ${totals.failed} · Skipped ${totals.skipped}`,
     });
   };
 
@@ -274,8 +291,11 @@ function ComposeTab() {
               <div className="font-medium">Results</div>
               {result.results?.map((r: any, i: number) => (
                 <div key={i} className="flex items-center justify-between gap-2 text-xs border-b last:border-0 py-1">
-                  <span className="truncate">{r.branch} {r.email ? `· ${r.email}` : ""}</span>
-                  <Badge variant={r.status === "sent" || r.status === "dry_run_ok" ? "default" : r.status === "failed" ? "destructive" : "secondary"}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{r.branch} {r.email ? `· ${r.email}` : ""}</span>
+                    {r.error && <span className="block truncate text-destructive">{r.error}</span>}
+                  </span>
+                  <Badge variant={r.status === "sent" || r.status === "dry_run_ok" ? "default" : r.status === "failed" || String(r.status).startsWith("skipped_branch") ? "destructive" : "secondary"}>
                     {r.status}
                   </Badge>
                 </div>

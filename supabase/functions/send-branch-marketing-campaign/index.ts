@@ -68,10 +68,27 @@ Deno.serve(async (req) => {
       .from("tenants").select("id, app_id, name, slug").eq("id", tenant_id).maybeSingle();
     if (!tenant) return json({ error: "Tenant not found" }, 404);
 
-    const { data: branches } = await admin
+    const { data: branches, error: branchesErr } = await admin
       .from("branches")
-      .select("id, name, email, slug, url_slug, trading_name, app_id")
+      .select("id, name, email, slug, url_slug, trading_name")
       .eq("tenant_id", tenant_id).in("id", branch_ids);
+
+    if (branchesErr) {
+      return json({ error: `Branch lookup failed: ${branchesErr.message}` }, 500);
+    }
+
+    const resolvedBranches = branches ?? [];
+    const resolvedBranchIds = new Set(resolvedBranches.map((branch: any) => branch.id));
+    const missingBranchIds = branch_ids.filter((id) => !resolvedBranchIds.has(id));
+
+    if (!resolvedBranches.length) {
+      return json({
+        error: "No selected branches could be found for this tenant. Refresh the Communications page and try again.",
+        requested_count: branch_ids.length,
+        found_count: 0,
+        missing_branch_ids: missingBranchIds,
+      }, 400);
+    }
 
     const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
     const resolved = await resolveAppOriginDetailed(admin, tenant_id, callerOrigin);
@@ -86,7 +103,7 @@ Deno.serve(async (req) => {
           subject_snapshot: template.subject,
           body_html_snapshot: template.body_html,
           body_text_snapshot: template.body_text,
-          total_recipients: branches?.length ?? 0,
+          total_recipients: resolvedBranches.length,
           created_by: caller.id, status: "running",
           kind: "marketing",
         }).select("id").single();
@@ -97,7 +114,15 @@ Deno.serve(async (req) => {
     const results: any[] = [];
     let sent = 0, failed = 0, skipped = 0;
 
-    for (const b of branches ?? []) {
+    for (const missingId of missingBranchIds) {
+      skipped++;
+      results.push({ branch_id: missingId, branch: "Unknown branch", status: "skipped_branch_not_found", error: "Branch was not found for the selected tenant" });
+      if (campaignId) await admin.from("platform_email_campaign_recipients").insert({
+        campaign_id: campaignId, branch_id: null, email: null, status: "skipped_branch_not_found", error: `Branch ${missingId} was not found for tenant ${tenant_id}`,
+      });
+    }
+
+    for (const b of resolvedBranches) {
       const email = (b.email ?? "").trim().toLowerCase();
       const contactName = b.trading_name || b.name;
       if (!email) {
@@ -118,7 +143,7 @@ Deno.serve(async (req) => {
         if (!pageSlug) {
           pageSlug = mintSlug();
           await admin.from("platform_branch_activation_pages").insert({
-            tenant_id, branch_id: b.id, app_id: b.app_id ?? tenant.app_id,
+            tenant_id, branch_id: b.id, app_id: tenant.app_id,
             slug: pageSlug, contact_email: email, contact_name: contactName,
             created_by: caller.id,
           });
