@@ -84,6 +84,20 @@ function ComposeTab() {
   const [templateSlug, setTemplateSlug] = useState<string>("marketing_branch_offer");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [existingPagesCount, setExistingPagesCount] = useState<number>(0);
+
+  // Count how many selected branches already have an activation page
+  useEffect(() => {
+    if (kind !== "marketing" || selected.size === 0) { setExistingPagesCount(0); return; }
+    const ids = Array.from(selected);
+    (async () => {
+      const { count } = await supabase
+        .from("platform_branch_activation_pages")
+        .select("id", { count: "exact", head: true })
+        .in("branch_id", ids);
+      setExistingPagesCount(count ?? 0);
+    })();
+  }, [kind, selected]);
 
   useEffect(() => {
     (async () => {
