@@ -64,7 +64,7 @@ const PlatformTenants = () => {
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [paymentsTenant, setPaymentsTenant] = useState<Tenant | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
+  const [form, setForm] = useState({ name: "", slug: "", logo_url: "", country_code: "ZA" });
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE);
 
   // Subscription lookup by tenant_id
@@ -87,8 +87,14 @@ const PlatformTenants = () => {
 
   const openEdit = (t: Tenant) => {
     setEditing(t);
-    setForm({ name: t.name, slug: t.slug, logo_url: t.logo_url || "" });
+    setForm({
+      name: t.name,
+      slug: t.slug,
+      logo_url: t.logo_url || "",
+      country_code: ((t as any).country_code as string) || "ZA",
+    });
   };
+
 
   const handleManage = (tenantId: string) => {
     setOverrideTenantId(tenantId);
@@ -103,12 +109,14 @@ const PlatformTenants = () => {
         name: form.name,
         slug: form.slug,
         logo_url: form.logo_url || null,
-      });
+        country_code: form.country_code,
+      } as any);
       toast.success("Tenant updated");
       setEditing(null);
     } catch (err: any) {
       toast.error(err.message);
     }
+
   };
 
   // Auto-generate slug from name
@@ -136,16 +144,18 @@ const PlatformTenants = () => {
         app_id: createForm.app_id,
         logo_url: createForm.logo_url || null,
         country: createForm.country,
+        country_code: ["ZA", "US", "GB", "AU"].includes(createForm.country) ? createForm.country : "ZA",
         default_currency: createForm.default_currency,
         timezone: createForm.timezone,
         is_active: createForm.is_active,
-      });
+      } as any);
       toast.success("Tenant created");
       setCreating(false);
       setCreateForm(EMPTY_CREATE);
     } catch (err: any) {
       toast.error(err.message);
     }
+
   };
 
   return (
@@ -248,7 +258,19 @@ const PlatformTenants = () => {
               <Label>Logo URL</Label>
               <Input value={form.logo_url} onChange={(e) => setForm({ ...form, logo_url: e.target.value })} placeholder="https://..." />
             </div>
+            <div>
+              <Label>Country (storefront flag)</Label>
+              <Select value={form.country_code} onValueChange={(v) => setForm({ ...form, country_code: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ZA">🇿🇦 South Africa</SelectItem>
+                  <SelectItem value="US">🇺🇸 United States</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Shown as a flag in the customer header.</p>
+            </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={updateTenant.isPending}>

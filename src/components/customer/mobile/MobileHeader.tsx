@@ -9,6 +9,8 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { isAnonymousUser } from "@/lib/tenantSignOut";
 import MobileNavSheet from "./MobileNavSheet";
+import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
+
 
 export default function MobileHeader() {
   const [open, setOpen] = useState(false);
@@ -57,6 +59,10 @@ export default function MobileHeader() {
             <span className="truncate text-sm font-semibold text-foreground">{portalName}</span>
           )}
         </Link>
+
+        <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />
+
+
 
         <Link
           to={tenantPath("cart")}

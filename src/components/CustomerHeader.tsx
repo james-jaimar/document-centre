@@ -19,6 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import MessagesBell from "@/components/customer/MessagesBell";
+import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
+
 
 export default function CustomerHeader() {
   const { slug, tenantPath } = useTenantSlug();
@@ -201,6 +203,10 @@ export default function CustomerHeader() {
           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </button>
       ) : null}
+
+      <CountryFlagBadge countryCode={tenant?.country_code} />
+
+
 
 
       <nav className="hidden md:flex items-center gap-7 mx-auto">

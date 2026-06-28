@@ -5976,6 +5976,7 @@ export type Database = {
           billing_email: string | null
           billing_notes: string | null
           country: string
+          country_code: string
           created_at: string
           custom_domain: string | null
           default_currency: string
@@ -6015,6 +6016,7 @@ export type Database = {
           billing_email?: string | null
           billing_notes?: string | null
           country?: string
+          country_code?: string
           created_at?: string
           custom_domain?: string | null
           default_currency?: string
@@ -6054,6 +6056,7 @@ export type Database = {
           billing_email?: string | null
           billing_notes?: string | null
           country?: string
+          country_code?: string
           created_at?: string
           custom_domain?: string | null
           default_currency?: string
