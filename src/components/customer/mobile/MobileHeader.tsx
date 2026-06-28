@@ -9,6 +9,8 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { isAnonymousUser } from "@/lib/tenantSignOut";
 import MobileNavSheet from "./MobileNavSheet";
+import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
+
 
 export default function MobileHeader() {
   const [open, setOpen] = useState(false);
