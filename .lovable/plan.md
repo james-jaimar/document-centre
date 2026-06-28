@@ -1,21 +1,37 @@
 ## Problem
 
-Amplify's `npm ci` is failing with `EUSAGE — Missing: ... from lock file` for ~25 transitive dependencies (archiver-utils, compress-commons, crc32-stream, glob, mkdirp, rimraf, etc.). These are all transitive deps of `exceljs` / `archiver`, which were pulled in for the new branch Reports Excel export.
+`branch-financial-reports` edge function returns **500** ("Edge Function returned a non-2xx status code") on every call. The Reports UI is wired up correctly — the backend is failing.
 
-`npm ci` requires `package.json` and `package-lock.json` to be perfectly in sync. The recent install was done with bun (which updated `bun.lockb`), but `package-lock.json` was never regenerated — so npm sees package.json declaring deps whose transitive tree is not represented in the lockfile, and refuses to install.
+## Root cause
+
+In `supabase/functions/branch-financial-reports/index.ts`, the branch lookup selects a non-existent column:
+
+```ts
+.from("branches")
+.select("id, tenant_id, name, slug, currency")
+```
+
+The `branches` table has **no `currency` column** (verified via `information_schema.columns`). Currency lives on `orders` and `payments`, not on the branch row. PostgREST rejects the select and the function throws before any auth/data logic runs.
+
+Several downstream lines also reference `branch.currency` as a fallback (e.g. `branch.currency ?? "ZAR"` in three places, plus `summary.currency`).
 
 ## Fix
 
-Regenerate `package-lock.json` so it matches the current `package.json` (and the bun lockfile state), then commit it. The Amplify build will then succeed on the next deploy.
+Single edge-function edit — no UI, no DB migration:
 
-Steps:
+1. Drop `currency` from the `branches` select list.
+2. Derive a report-level currency from the data instead:
+   - Prefer the most common `currency` from the period's payments/orders.
+   - Fall back to `"ZAR"` (matches existing default) when there are no rows.
+3. Replace every `branch.currency ?? "ZAR"` with that resolved currency (or just `"ZAR"`) so per-payment / per-order `currency` continues to flow through unchanged.
 
-1. Run `npm install --package-lock-only --ignore-scripts` at the project root to rebuild `package-lock.json` from `package.json` without touching `node_modules` or running postinstall scripts.
-2. Verify with `npm ci --dry-run` that there are no more "Missing from lock file" errors.
-3. Leave `bun.lockb` untouched — it stays as the local dev lockfile; Amplify uses npm.
+That's it — the 401-unauthorised path I hit via curl confirms the auth wall is fine; the 500 is purely the bad select.
 
-No application code, no Amplify config, no dependency versions change. Only `package-lock.json` is regenerated.
+## Verification
 
-## Why not switch Amplify to bun
+- Re-invoke the function from the Reports page on Demo Branch — expect 200 with empty arrays (no payments/orders in window).
+- Check `branch-financial-reports` logs for the absence of the previous error.
 
-Switching the Amplify install command to `bun install` would also fix it, but it's a bigger change (build image, cache key, lockfile-of-record) and we don't need it — keeping npm as the CI installer and just refreshing the lockfile is the minimal, safe fix.
+## Out of scope
+
+No changes to `Reports.tsx`, no schema changes, no other functions.
