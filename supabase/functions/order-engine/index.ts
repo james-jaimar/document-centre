@@ -1235,6 +1235,7 @@ async function fetchOrderForAdmin(
   admin: ReturnType<typeof createClient>,
   userId: string,
   order_id: string,
+  opts: { adminOnly?: boolean } = {},
 ) {
   const { data: order, error } = await admin
     .from("orders")
@@ -1242,10 +1243,12 @@ async function fetchOrderForAdmin(
     .eq("id", order_id)
     .maybeSingle();
   if (error || !order) return { error: "Order not found", order: null };
-  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
+  const adminOnly = opts.adminOnly !== false;
+  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly });
   if (denied) return { error: denied, order: null };
   return { error: null, order };
 }
+
 
 async function logTimeline(
   admin: ReturnType<typeof createClient>,
