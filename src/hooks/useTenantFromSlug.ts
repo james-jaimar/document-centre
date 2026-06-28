@@ -9,7 +9,9 @@ interface SlugTenant {
   logo_url: string | null;
   custom_domain: string | null;
   is_demo: boolean;
+  country_code: string | null;
 }
+
 
 const CACHE_PREFIX = "tenant:";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -61,7 +63,8 @@ export function useTenantFromSlug() {
     const fetchOnce = async () => {
       const { data, error: err } = await supabase
         .from("tenants")
-        .select("id, name, slug, logo_url, custom_domain, is_demo")
+        .select("id, name, slug, logo_url, custom_domain, is_demo, country_code")
+
         .eq("slug", slug)
         .eq("is_active", true)
         .maybeSingle();
