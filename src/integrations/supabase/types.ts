@@ -5768,6 +5768,47 @@ export type Database = {
           },
         ]
       }
+      tenant_demo_gate: {
+        Row: {
+          cookie_days: number
+          created_at: string
+          disclaimer_html: string
+          enabled: boolean
+          headline: string
+          password_hash: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          cookie_days?: number
+          created_at?: string
+          disclaimer_html?: string
+          enabled?: boolean
+          headline?: string
+          password_hash?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          cookie_days?: number
+          created_at?: string
+          disclaimer_html?: string
+          enabled?: boolean
+          headline?: string
+          password_hash?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_demo_gate_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_memberships: {
         Row: {
           app_id: string
@@ -6704,6 +6745,7 @@ export type Database = {
         }
         Returns: string
       }
+      resolve_demo_gate: { Args: { p_tenant_id: string }; Returns: Json }
       resolve_product_options: {
         Args: {
           p_branch_id?: string
