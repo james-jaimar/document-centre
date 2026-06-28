@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { toast } from "@/hooks/use-toast";
 import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
-import { useBranchContext } from "@/contexts/BranchContext";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface Props {
   open: boolean;
@@ -21,7 +21,7 @@ interface Props {
 
 export function AddCustomerDialog({ open, onOpenChange }: Props) {
   const { tenantId, branchId } = useTenantContext();
-  const { branches } = useBranchContext();
+  const { branches } = useBranch();
   const qc = useQueryClient();
   const { startImpersonation } = useImpersonation();
 
@@ -53,22 +53,23 @@ export function AddCustomerDialog({ open, onOpenChange }: Props) {
       const res = await invokeEdgeFunctionVerbose<{
         ok: boolean; profile_id: string; created: boolean; warning?: string;
       }>("create-customer", {
-        body: {
-          email: e,
-          tenant_id: tenantId,
-          branch_id: branchId ?? null,
-          first_name: firstName.trim() || null,
-          last_name: lastName.trim() || null,
-          phone: phone.trim() || null,
-          send_invite: sendInvite,
-        },
+        email: e,
+        tenant_id: tenantId,
+        branch_id: branchId ?? null,
+        first_name: firstName.trim() || null,
+        last_name: lastName.trim() || null,
+        phone: phone.trim() || null,
+        send_invite: sendInvite,
       });
-      if (!res?.ok || !res.profile_id) throw new Error("Customer creation failed");
+      if (!res.ok || !res.data?.profile_id) {
+        throw new Error(res.error || "Customer creation failed");
+      }
+      const payload = res.data;
 
       toast({
-        title: res.created ? "Customer added" : "Existing customer linked to your branch",
+        title: payload.created ? "Customer added" : "Existing customer linked to your branch",
         description: sendInvite
-          ? (res.warning ? `Saved, but invite email failed: ${res.warning}` : "Welcome email sent.")
+          ? (payload.warning ? `Saved, but invite email failed: ${payload.warning}` : "Welcome email sent.")
           : "No invite email sent.",
       });
 
@@ -77,7 +78,7 @@ export function AddCustomerDialog({ open, onOpenChange }: Props) {
       if (impersonateAfter) {
         const path = branchSlug ? `/${branchSlug}` : "/";
         await startImpersonation({
-          target_profile_id: res.profile_id,
+          target_profile_id: payload.profile_id,
           tenant_id: tenantId,
           branch_id: branchId ?? null,
           return_to: window.location.pathname + window.location.search,
