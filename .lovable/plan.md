@@ -1,44 +1,49 @@
-## Goal
-Add a public "Request activation" landing page that PostNet branches can hit from the marketing email, plus a way to mint per-branch activation links in bulk so the email merge field resolves to the right URL per recipient.
+## Good news — this already works
 
-## How it ties together
-The `/activate/:slug` flow, `get-activation-page` and `request-activation-email` Edge Functions, and the `platform_branch_activation_pages` table already exist. We just need to:
-1. Make that page reachable on the PostNet custom domain, publicly (bypassing the demo gate).
-2. Generate one `platform_branch_activation_pages` row per PostNet branch.
-3. Give you the merge-field URL to drop into the marketing email.
+The marketing campaign flow you're looking at already does exactly what you described. When you select branches and hit **Send** (or **Dry run**) in **Platform → Communications → Marketing**:
 
-## Plan
+1. For every selected branch, the backend checks `platform_branch_activation_pages` for that branch.
+2. If a row exists → it reuses the existing slug.
+3. If not → it mints a new opaque slug, creates the row, and stores it.
+4. It then substitutes `{{activation_link}}` in your template with `https://<tenant-domain>/activate/<slug>` — unique per branch.
+5. Sends through the in-app email tool (your own Communications infra), one email per branch, with per-recipient tracking + the unsubscribe footer.
 
-### 1. Public route on custom domains
-- Ensure `/activate/:slug` is registered on tenant hosts (custom domain + `/t/:slug`) and rendered **outside** the `DemoGateGuard` wrapper, so recipients never hit the password screen first.
-- Use the resolved tenant's branding (logo, primary colour) already returned by `get-activation-page` — no change needed there.
+So if you put `{{activation_link}}` in the marketing template body and select all 500 branches, every recipient gets their own per-branch link, auto-created on the fly. No CSV / external merge needed.
 
-### 2. Bulk-generate activation pages for PostNet branches
-- Add a small Platform admin action: "Generate activation links for all branches of this tenant".
-- For each PostNet branch with a contact email on file:
-  - Create a `platform_branch_activation_pages` row if one doesn't exist (idempotent by `branch_id`).
-  - Slug pattern: `<branch-slug>-<6char-nano>` (URL-safe, unguessable, branch-readable).
-  - `is_active = true`.
-- Show the resulting table in the UI (branch name, contact email, full activation URL, copy button, CSV export) so you can paste the per-branch URL into your campaign tool's merge data.
-- Skips branches that already have an active page; reports any branches missing a contact email so you can fix and re-run.
+The only token you need in the template is `{{activation_link}}`. Other available tokens: `{{branch_name}}`, `{{contact_name}}`, `{{tenant_name}}`.
 
-### 3. Marketing-email merge field
-- Each campaign recipient gets `{{activation_url}}` = `https://postnetprintcenter.com/activate/<slug>` from the CSV/merge data exported in step 2.
-- Email body: replace your current "see the demo" link with two clear links — *Browse the demo* (password: postnet) and *Activate my branch* ({{activation_url}}).
+## What I'd like to add (small UX polish)
 
-### 4. Page behaviour (already built — keeping current behaviour as you asked)
-- Visitor lands on `/activate/<slug>` → sees branded page with masked contact email and branch name.
-- Enters their email to confirm match → success state: "Check your inbox — link sent to j••••••@postnet.co.za".
-- Existing rate limiting (1/min, 3/hour per slug) and generic-response anti-enumeration stay as-is.
+To make this obvious in the UI so you don't have to take my word for it:
 
-## Technical notes
-- Routing change: in `src/App.tsx`, move the `/activate/:slug` route so it resolves on tenant-host renders without being wrapped by `<DemoGateGuard>`. The route already exists at the root level; we just need to mirror it for custom-domain rendering and confirm `SubdomainRouter` doesn't fall through to the gate for this path.
-- Bulk-generate: new Edge Function `bulk-generate-activation-pages` (platform-admin only) taking `tenant_id`, returning the created/skipped rows. Slug uses `nanoid`-style suffix for uniqueness.
-- New UI: small panel under Platform → Tenants → PostNet (or wherever the existing activation-pages list lives) with a "Generate for all branches" button and the resulting table with copy/CSV export.
-- No schema changes — `platform_branch_activation_pages` already has everything we need.
+### 1. Inline hint on the template editor
+Under the body field when editing a **marketing** template, show a one-line callout:
 
-## What you'll do after this ships
-1. Click "Generate activation links" on the PostNet tenant.
-2. Export the CSV (branch name, contact email, activation URL).
-3. Drop the CSV into your mail-merge tool with `{{activation_url}}` mapped to the URL column.
-4. Send the campaign.
+> Use `{{activation_link}}` anywhere in the body — each recipient gets a unique per-branch activation URL, auto-created at send time.
+
+Plus a "Insert {{activation_link}}" button next to the existing token chips.
+
+### 2. Pre-send confirmation banner
+On the **Send campaign** screen, after selecting branches, show:
+
+> Sending to 500 branches. 487 already have activation pages; 13 new pages will be created and linked automatically.
+
+(Computed by counting existing rows in `platform_branch_activation_pages` for the selected branch_ids.)
+
+### 3. Validation
+If the selected marketing template's body does **not** contain `{{activation_link}}`, show a warning before send:
+
+> This template doesn't include `{{activation_link}}`. Recipients won't get an activation URL. Send anyway?
+
+### 4. Drop the CSV export confusion
+Remove the "Download CSV" button I added earlier — it was solving a problem you don't have, since the in-app sender already handles per-recipient substitution. Keeps the UI clean.
+
+## What I won't change
+- The backend (`send-branch-marketing-campaign`) — already correct.
+- The token name — staying as `{{activation_link}}` (matches what's already wired).
+- The activation page itself (`/activate/:slug`) — already public, already bypasses the demo gate on custom domains.
+
+## After this ships
+1. Open your marketing template, make sure `{{activation_link}}` is in the body where you want the CTA.
+2. Pick tenant **PostNet**, select all branches.
+3. Hit **Send**. Each branch gets its own unique link, minted on demand.
