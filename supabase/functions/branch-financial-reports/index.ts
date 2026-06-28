@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
         payment_reference: p.payment_reference ?? null,
         status: p.status,
         amount: num(p.amount),
-        currency: p.currency ?? branch.currency ?? "ZAR",
+        currency: p.currency ?? "ZAR",
         paid_at: p.paid_at,
       };
     });
@@ -255,7 +255,7 @@ Deno.serve(async (req) => {
       paid_in_period: paidForOrder,
       refunded_in_period: refundedForOrder,
       net_in_period: paidForOrder - refundedForOrder,
-      currency: o.currency ?? branch.currency ?? "ZAR",
+      currency: o.currency ?? "ZAR",
       is_demo: !!o.is_demo,
     };
   });
@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
   const accrualTotal = billable.reduce((s, o) => s + o.total_amount, 0);
 
   const summary = {
-    currency: branch.currency ?? "ZAR",
+    currency: "ZAR",
     cash: {
       gross: cashGross,
       refunds: cashRefunds,
