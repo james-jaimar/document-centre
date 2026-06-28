@@ -44,6 +44,7 @@ import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 import MobileUpload from "@/pages/MobileUpload";
 import MicrosoftCallbackResult from "@/pages/oauth/MicrosoftCallbackResult";
 import PayfastHandoff from "@/pages/PayfastHandoff";
+import ImpersonationConsume from "@/pages/ImpersonationConsume";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
@@ -225,6 +226,9 @@ function AppRoutes() {
 
       {/* PayFast handoff — same-origin page that renders the signed form */}
       <Route path="/pay/payfast" element={<PayfastHandoff />} />
+
+      {/* Impersonation handoff — opened in a new tab by staff */}
+      <Route path="/impersonation/consume" element={<ImpersonationConsume />} />
 
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
       <Route path="/t/:slug" element={<CustomerLayout />}>
