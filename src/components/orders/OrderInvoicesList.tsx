@@ -47,18 +47,39 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   const handleDownload = async (inv: Invoice) => {
+    setBusyId(inv.id);
     try {
       await downloadInvoice(inv.id, `${inv.invoice_number}.pdf`);
+      await load();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleView = async (inv: Invoice) => {
+    setBusyId(inv.id);
     try {
       await viewInvoice(inv.id, `${inv.invoice_number}.pdf`);
+      await load();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSend = async (inv: Invoice) => {
+    setSendingId(inv.id);
+    try {
+      await sendInvoiceEmail(inv.id, orderId);
+      toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} sent to customer`);
+      await load();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSendingId(null);
     }
   };
 
