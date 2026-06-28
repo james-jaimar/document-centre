@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { TenantProvider } from "@/hooks/useTenantContext";
+import { ImpersonationProvider } from "@/contexts/ImpersonationContext";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { useGAPageViews } from "@/hooks/useGAPageViews";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
@@ -510,7 +512,9 @@ const App = () => (
         <SubdomainWrapper>
           <AuthProvider>
             <TenantProvider>
-              <AppRoutes />
+              <ImpersonationProvider>
+                <AppRoutes />
+              </ImpersonationProvider>
             </TenantProvider>
           </AuthProvider>
         </SubdomainWrapper>

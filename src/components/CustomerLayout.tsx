@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
@@ -186,6 +187,7 @@ function CustomerLayoutInner() {
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
+      <ImpersonationBanner />
       <BranchPicker />
       {/* Header — full width across the top */}
       <CustomerHeader />
