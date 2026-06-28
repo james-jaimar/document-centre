@@ -1,6 +1,5 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
 interface Sub {
   name: string;
