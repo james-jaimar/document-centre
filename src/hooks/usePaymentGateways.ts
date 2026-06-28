@@ -21,6 +21,7 @@ export interface BranchPaymentGateway {
   provider: GatewayProvider;
   credentials_secret_id: string | null;
   mode: GatewayMode;
+  is_enabled: boolean;
 }
 
 export function useTenantPaymentGateways(tenantId: string | null | undefined) {
@@ -68,6 +69,8 @@ export interface SaveCredentialsInput {
   merchant_id?: string;
   merchant_key?: string;
   passphrase?: string;
+  // Branch scope only
+  is_enabled?: boolean;
 }
 
 export function useSavePaymentCredentials() {
