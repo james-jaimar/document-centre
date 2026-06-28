@@ -320,12 +320,18 @@ Deno.serve(async (req) => {
     const brand = hexToRgb(branding.primary_color ?? branding.brand_color ?? tenant?.brand_color);
     const brandSoft = tint(brand, 0.85);
 
-    // Issue invoice number
-    const { data: invNum, error: inErr } = await admin.rpc("issue_invoice_number", {
-      p_tenant_id: order.tenant_id,
-      p_app_id: order.app_id,
-    });
-    if (inErr || !invNum) return json({ error: `invoice number: ${inErr?.message}` }, 500);
+    // Issue invoice number (or reuse existing on refresh)
+    let invNum: string;
+    if (existingInvoice) {
+      invNum = existingInvoice.invoice_number;
+    } else {
+      const { data: issued, error: inErr } = await admin.rpc("issue_invoice_number", {
+        p_tenant_id: order.tenant_id,
+        p_app_id: order.app_id,
+      });
+      if (inErr || !issued) return json({ error: `invoice number: ${inErr?.message}` }, 500);
+      invNum = issued as string;
+    }
 
     const billingAddress = (addresses || []).find((a: any) => a.address_type === "billing") || null;
     const deliveryAddress = (addresses || []).find((a: any) => a.address_type === "delivery") || null;
