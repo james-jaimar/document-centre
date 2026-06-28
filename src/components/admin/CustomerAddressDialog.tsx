@@ -60,12 +60,12 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit address" : "Add address"}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 flex-1 overflow-y-auto pr-1 -mr-1">
           <div className="space-y-1">
             <Label>Label</Label>
             <Input placeholder="e.g. Head Office" value={form.label ?? ""} onChange={(e) => handle("label", e.target.value)} />
