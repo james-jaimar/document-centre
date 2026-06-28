@@ -23,8 +23,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { UserPlus, MoreVertical, Trash2, KeyRound, Lock, Mail, UserX, UserCheck, Users, Loader2 } from "lucide-react";
+import { UserPlus, MoreVertical, Trash2, KeyRound, Lock, Mail, UserX, UserCheck, Users, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { displayName } from "@/components/admin/MembersTable";
@@ -62,10 +63,15 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
   const [last, setLast] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [inviteRole, setInviteRole] = useState<"store_operator" | "branch_manager">("store_operator");
   const [sendEmail, setSendEmail] = useState(true);
   const [inviting, setInviting] = useState(false);
 
-  const resetInvite = () => { setFirst(""); setLast(""); setEmail(""); setPhone(""); setSendEmail(true); };
+  // Role-change confirmation
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{ member: TenantMemberRow; to: "branch_manager" | "store_operator" } | null>(null);
+  const [changingRole, setChangingRole] = useState(false);
+
+  const resetInvite = () => { setFirst(""); setLast(""); setEmail(""); setPhone(""); setInviteRole("store_operator"); setSendEmail(true); };
 
   const submitInvite = async () => {
     if (!first.trim() || !last.trim() || !email.trim()) {
@@ -82,21 +88,43 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
           phone: phone.trim() || null,
           tenant_id: tenantId,
           app_id: appId,
-          role: "store_operator",
+          role: inviteRole,
           branch_id: branchId,
           send_email: sendEmail,
         },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      toast.success(sendEmail ? "Invitation sent" : "Operator added");
+      toast.success(sendEmail ? "Invitation sent" : "Staff member added");
       qc.invalidateQueries({ queryKey: ["tenant-members"] });
       resetInvite();
       setInviteOpen(false);
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to add operator");
+      toast.error(e?.message ?? "Failed to add staff member");
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleRoleChange = async () => {
+    if (!roleChangeTarget) return;
+    setChangingRole(true);
+    try {
+      await manageUser.mutateAsync({
+        action: "update_membership_role",
+        target_profile_id: roleChangeTarget.member.profile_id,
+        tenant_id: roleChangeTarget.member.tenant_id,
+        app_id: roleChangeTarget.member.app_id,
+        branch_id: branchId,
+        membership_id: roleChangeTarget.member.id,
+        new_role: roleChangeTarget.to,
+      });
+      qc.invalidateQueries({ queryKey: ["tenant-members"] });
+      setRoleChangeTarget(null);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setChangingRole(false);
     }
   };
 
