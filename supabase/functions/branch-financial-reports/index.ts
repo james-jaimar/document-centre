@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
 
   const { data: branch, error: branchErr } = await sb
     .from("branches")
-    .select("id, tenant_id, name, slug, currency")
+    .select("id, tenant_id, name, slug")
     .eq("id", branchId)
     .maybeSingle();
   if (branchErr) return json({ error: branchErr.message }, 500);
