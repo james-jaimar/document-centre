@@ -1,49 +1,28 @@
-## Good news — this already works
+## Plan: fix Platform Communications email sending
 
-The marketing campaign flow you're looking at already does exactly what you described. When you select branches and hit **Send** (or **Dry run**) in **Platform → Communications → Marketing**:
+I found the likely failure point: the marketing campaign rows are being created with `total_recipients = 0`, and no recipient rows are created, even though the UI says “1 selected”. That means the Edge Function is receiving branch IDs, but its branch lookup returns no rows, so it finishes as “Campaign sent” with `Sent 0 · Failed 0 · Skipped 0` instead of surfacing an error.
 
-1. For every selected branch, the backend checks `platform_branch_activation_pages` for that branch.
-2. If a row exists → it reuses the existing slug.
-3. If not → it mints a new opaque slug, creates the row, and stores it.
-4. It then substitutes `{{activation_link}}` in your template with `https://<tenant-domain>/activate/<slug>` — unique per branch.
-5. Sends through the in-app email tool (your own Communications infra), one email per branch, with per-recipient tracking + the unsubscribe footer.
+### What I’ll change
 
-So if you put `{{activation_link}}` in the marketing template body and select all 500 branches, every recipient gets their own per-branch link, auto-created on the fly. No CSV / external merge needed.
+1. **Harden the marketing send Edge Function**
+   - Validate that the selected branch IDs actually resolve to branches for the selected tenant.
+   - If zero branches resolve, return a clear error instead of creating an empty successful campaign.
+   - If only some selected branches resolve, include a clear skipped/missing result so the UI is honest.
+   - Remove/repair the invalid `app_id` assumption in the branch query path so it cannot silently break on branches where that field is not present.
 
-The only token you need in the template is `{{activation_link}}`. Other available tokens: `{{branch_name}}`, `{{contact_name}}`, `{{tenant_name}}`.
+2. **Improve the Communications page send feedback**
+   - Use the verbose Edge Function caller so server error details show in the toast instead of generic Supabase messages.
+   - Treat `sent=0, failed=0, skipped=0` as a failure state when branches were selected.
+   - Show per-recipient errors in the Results panel, not just a badge.
 
-## What I'd like to add (small UX polish)
+3. **Add a quick dry-run sanity guard**
+   - Dry run should report the exact selected branch count and activation link generation result.
+   - If it cannot resolve selected branches, it should fail visibly before a real send.
 
-To make this obvious in the UI so you don't have to take my word for it:
+4. **Deploy and verify the Edge Function**
+   - Deploy `send-branch-marketing-campaign` after the code change.
+   - Check recent campaigns/logs again to confirm a selected Demo branch now produces either a queued/sent result or a concrete error message.
 
-### 1. Inline hint on the template editor
-Under the body field when editing a **marketing** template, show a one-line callout:
+### Expected outcome
 
-> Use `{{activation_link}}` anywhere in the body — each recipient gets a unique per-branch activation URL, auto-created at send time.
-
-Plus a "Insert {{activation_link}}" button next to the existing token chips.
-
-### 2. Pre-send confirmation banner
-On the **Send campaign** screen, after selecting branches, show:
-
-> Sending to 500 branches. 487 already have activation pages; 13 new pages will be created and linked automatically.
-
-(Computed by counting existing rows in `platform_branch_activation_pages` for the selected branch_ids.)
-
-### 3. Validation
-If the selected marketing template's body does **not** contain `{{activation_link}}`, show a warning before send:
-
-> This template doesn't include `{{activation_link}}`. Recipients won't get an activation URL. Send anyway?
-
-### 4. Drop the CSV export confusion
-Remove the "Download CSV" button I added earlier — it was solving a problem you don't have, since the in-app sender already handles per-recipient substitution. Keeps the UI clean.
-
-## What I won't change
-- The backend (`send-branch-marketing-campaign`) — already correct.
-- The token name — staying as `{{activation_link}}` (matches what's already wired).
-- The activation page itself (`/activate/:slug`) — already public, already bypasses the demo gate on custom domains.
-
-## After this ships
-1. Open your marketing template, make sure `{{activation_link}}` is in the body where you want the CTA.
-2. Pick tenant **PostNet**, select all branches.
-3. Hit **Send**. Each branch gets its own unique link, minted on demand.
+Clicking **Send to 1 branch** will no longer produce a misleading “Campaign sent / Sent 0” result. It will either actually create the recipient/send the email, or show the real reason it could not send.
