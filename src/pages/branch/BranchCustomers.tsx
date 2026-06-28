@@ -159,6 +159,12 @@ export default function BranchCustomers() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => handleImpersonate(c)}
+                            disabled={!c.email}
+                          >
+                            <LogIn className="h-4 w-4 mr-2" /> Log in as customer
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setEditTarget(c)}>
                             <Pencil className="h-4 w-4 mr-2" /> Edit contact details
                           </DropdownMenuItem>
@@ -198,6 +204,8 @@ export default function BranchCustomers() {
           }}
         />
       )}
+
+      <AddCustomerDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
 }
