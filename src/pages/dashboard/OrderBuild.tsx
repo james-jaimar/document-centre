@@ -308,10 +308,21 @@ export default function OrderBuild() {
     setDirty(JSON.stringify(spec) !== initialSpecRef.current);
   }, [spec]);
 
-  // Calculate total page count from sections
+  // Calculate total page count from sections.
+  // CRITICAL: dedupe by document_id so loose-sheet products (flyers, posters,
+  // brochures) that reference the SAME PDF from both `front_cover` and
+  // `back_cover` sections aren't counted twice. Counting twice inflates
+  // `spec.page_count` and causes the pricing engine — when it falls back to
+  // the spec-level page_count (no per-section list saved) — to bill double
+  // the clicks (e.g. a 2-page duplex flyer billed as 4 pages = 2 clicks
+  // instead of 1).
   useEffect(() => {
+    const seenDocs = new Set<string>();
     const totalPages = sections.reduce((sum, section) => {
-      const doc = documents.find((d) => d.id === section.document_id);
+      const docId = section.document_id;
+      if (!docId || seenDocs.has(docId)) return sum;
+      seenDocs.add(docId);
+      const doc = documents.find((d) => d.id === docId);
       return sum + (doc?.page_count ?? 0);
     }, 0);
     setSpec((prev) => ({ ...prev, page_count: totalPages }));

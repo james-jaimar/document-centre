@@ -841,11 +841,16 @@ Deno.serve(async (req) => {
       });
       yR -= rowH + 4;
     };
-    totalRow("Subtotal (Exclusive)", fmtMoney(subAmt, currency));
+    const taxInclusive = !!financial.tax_inclusive;
+    const taxRateForLabel = Number(financial.tax_rate ?? 15);
+    totalRow(taxInclusive ? "Subtotal (Inclusive)" : "Subtotal (Exclusive)", fmtMoney(subAmt, currency));
     if (discAmt > 0) totalRow("Discount", `-${fmtMoney(discAmt, currency)}`);
     if (delAmt > 0) totalRow("Delivery", fmtMoney(delAmt, currency));
     const vatLabel = (financial.tax_label as string) || "VAT";
-    totalRow(vatLabel, fmtMoney(vatAmt, currency));
+    const vatRowLabel = taxInclusive
+      ? `${vatLabel} included (${taxRateForLabel.toFixed(2)}%)`
+      : `${vatLabel} (${taxRateForLabel.toFixed(2)}%)`;
+    totalRow(vatRowLabel, fmtMoney(vatAmt, currency));
     yR -= 4;
     totalRow("Total", fmtMoney(totalAmt, currency), { bold: true, size: 12, color: brand });
     if (paidAmt > 0) totalRow("Paid", fmtMoney(paidAmt, currency));

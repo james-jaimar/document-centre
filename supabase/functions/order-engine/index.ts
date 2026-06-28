@@ -411,6 +411,14 @@ async function createOrderWithJobs(
     ]);
   }
 
+  // Recompute totals from authoritative jobs + tenant tax config so VAT and
+  // amount_due are populated even if the client didn't provide them.
+  try {
+    await syncOrderTotals(admin, newOrder.id);
+  } catch (e) {
+    console.warn("[order-engine] syncOrderTotals (post-create) failed", e);
+  }
+
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
@@ -1571,22 +1579,71 @@ async function syncOrderTotals(admin: ReturnType<typeof createClient>, order_id:
   const [{ data: jobs }, { data: adjs }, { data: o }] = await Promise.all([
     admin.from("order_jobs").select("net_price").eq("order_id", order_id),
     admin.from("order_adjustments").select("amount, status").eq("order_id", order_id),
-    admin.from("orders").select("discount_amount, delivery_amount, vat_amount, amount_paid").eq("id", order_id).single(),
+    admin.from("orders").select("tenant_id, branch_id, discount_amount, delivery_amount, vat_amount, amount_paid, metadata").eq("id", order_id).single(),
   ]);
   const jobsTotal = (jobs ?? []).reduce((s, j: any) => s + Number(j.net_price || 0), 0);
   const adjTotal = (adjs ?? [])
     .filter((a: any) => a.status === "active")
     .reduce((s, a: any) => s + Number(a.amount || 0), 0);
-  const subtotal = jobsTotal + adjTotal;
-  const total = Math.round((subtotal - Number((o as any).discount_amount || 0) + Number((o as any).delivery_amount || 0) + Number((o as any).vat_amount || 0)) * 100) / 100;
+  const subtotal = Math.round((jobsTotal + adjTotal) * 100) / 100;
+  const discount = Number((o as any).discount_amount || 0);
+  const delivery = Number((o as any).delivery_amount || 0);
+  const taxable = Math.round((subtotal - discount + delivery) * 100) / 100;
+
+  // Resolve tax config from tenant + branch financial settings.
+  // Branch overrides tenant. Mirrors src/lib/tax/resolveBranchTax.ts.
+  let taxEnabled = false;
+  let taxRate = 0;
+  let taxInclusive = false;
+  const tenantId = (o as any).tenant_id as string | null;
+  const branchId = (o as any).branch_id as string | null;
+  if (tenantId) {
+    const [{ data: tRows }, { data: bRows }] = await Promise.all([
+      admin.from("tenant_settings").select("setting_key, setting_value").eq("tenant_id", tenantId).eq("category", "financial"),
+      branchId
+        ? admin.from("branch_settings").select("setting_key, setting_value").eq("branch_id", branchId).eq("category", "financial")
+        : Promise.resolve({ data: [] as any[] } as any),
+    ]);
+    const toMap = (rows: any[] | null | undefined) => {
+      const m: Record<string, unknown> = {};
+      for (const r of rows ?? []) m[r.setting_key] = r.setting_value;
+      return m;
+    };
+    const t = toMap(tRows as any[]);
+    const b = toMap(bRows as any[]);
+    const pick = (k: string) => (b[k] !== undefined && b[k] !== null ? b[k] : t[k]);
+    taxRate = Number(pick("tax_rate") ?? 0) || 0;
+    const enabledRaw = pick("tax_enabled");
+    taxEnabled = (enabledRaw === undefined || enabledRaw === null ? taxRate > 0 : !!enabledRaw) && taxRate > 0;
+    taxInclusive = !!pick("tax_inclusive");
+  }
+
+  // Compute VAT. Respect a manual override flag set in orders.metadata.
+  const manualVatOverride = !!((o as any).metadata?.vat_override);
+  let vat = Number((o as any).vat_amount || 0);
+  if (!manualVatOverride) {
+    if (!taxEnabled || taxable <= 0) {
+      vat = 0;
+    } else if (taxInclusive) {
+      const net = taxable / (1 + taxRate / 100);
+      vat = Math.round((taxable - net) * 100) / 100;
+    } else {
+      vat = Math.round(taxable * (taxRate / 100) * 100) / 100;
+    }
+  }
+
+  // Inclusive: VAT is already inside `taxable`. Exclusive: add on top.
+  const total = taxInclusive
+    ? taxable
+    : Math.round((taxable + vat) * 100) / 100;
   const paid = Number((o as any).amount_paid || 0);
   const due = Math.round((total - paid) * 100) / 100;
   const payment_status = paid <= 0 ? "unpaid" : paid >= total ? "paid" : "partial";
   await admin
     .from("orders")
-    .update({ subtotal, total_amount: total, amount_due: due, payment_status, updated_at: new Date().toISOString() })
+    .update({ subtotal, vat_amount: vat, total_amount: total, amount_due: due, payment_status, updated_at: new Date().toISOString() })
     .eq("id", order_id);
-  return { subtotal, total, due, paid, payment_status };
+  return { subtotal, vat, total, due, paid, payment_status };
 }
 
 /** Create a refund_pending negative-amount adjustment, then attempt an
