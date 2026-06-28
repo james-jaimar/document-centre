@@ -905,33 +905,63 @@ Deno.serve(async (req) => {
     const pdfBytes = await pdf.save();
 
     /* ─── Upload + records ─── */
-    const path = `invoices/${order.tenant_id}/${order.order_number || order.id}/${invNum}.pdf`;
+    const path = existingInvoice?.storage_path
+      || `invoices/${order.tenant_id}/${order.order_number || order.id}/${invNum}.pdf`;
     const upload = await admin.storage
       .from("documents")
       .upload(path, pdfBytes, { contentType: "application/pdf", upsert: true });
     if (upload.error) return json({ error: `upload: ${upload.error.message}` }, 500);
 
-    const { data: inv, error: iErr } = await admin
-      .from("order_invoices")
-      .insert({
+    let invId: string | null = null;
+    if (existingInvoice) {
+      // Refresh in place — preserve invoice_number, update totals + issued_at + audit.
+      const prevMeta = (existingInvoice.metadata ?? {}) as Record<string, unknown>;
+      const history = Array.isArray(prevMeta.regeneration_history) ? prevMeta.regeneration_history : [];
+      const { error: uErr } = await admin
+        .from("order_invoices")
+        .update({
+          storage_bucket: "documents",
+          storage_path: path,
+          total_amount: order.total_amount,
+          amount_paid: order.amount_paid,
+          currency: order.currency,
+          issued_at: new Date().toISOString(),
+          metadata: {
+            ...prevMeta,
+            regenerated_at: new Date().toISOString(),
+            regeneration_history: [
+              ...history,
+              { at: new Date().toISOString(), total: order.total_amount, paid: order.amount_paid },
+            ].slice(-10),
+          },
+        })
+        .eq("id", existingInvoice.id);
+      if (uErr) return json({ error: `update: ${uErr.message}` }, 500);
+      invId = existingInvoice.id;
+    } else {
+      const { data: inv, error: iErr } = await admin
+        .from("order_invoices")
+        .insert({
+          app_id: order.app_id, tenant_id: order.tenant_id, order_id,
+          invoice_number: invNum, kind, storage_bucket: "documents", storage_path: path,
+          total_amount: order.total_amount, amount_paid: order.amount_paid, currency: order.currency,
+        })
+        .select("id").single();
+      if (iErr) return json({ error: `insert: ${iErr.message}` }, 500);
+      invId = inv?.id ?? null;
+
+      await admin.from("order_documents").insert({
         app_id: order.app_id, tenant_id: order.tenant_id, order_id,
-        invoice_number: invNum, kind, storage_bucket: "documents", storage_path: path,
-        total_amount: order.total_amount, amount_paid: order.amount_paid, currency: order.currency,
-      })
-      .select("id").single();
-    if (iErr) return json({ error: `insert: ${iErr.message}` }, 500);
+        document_type: kind === "credit_note" ? "credit_note" : kind === "receipt" ? "receipt" : "invoice",
+        title: `${kind === "credit_note" ? "Credit Note" : kind === "proforma" ? "Proforma Invoice" : kind === "receipt" ? "Receipt" : "Tax Invoice"} ${invNum}`,
+        file_name: `${invNum}.pdf`, storage_bucket: "documents", storage_path: path,
+        mime_type: "application/pdf", file_size_bytes: pdfBytes.byteLength,
+        is_customer_visible: true, source_app_managed: true, created_by: u.user?.id ?? null,
+        metadata: { invoice_id: invId, kind },
+      });
+    }
 
-    await admin.from("order_documents").insert({
-      app_id: order.app_id, tenant_id: order.tenant_id, order_id,
-      document_type: kind === "credit_note" ? "credit_note" : kind === "receipt" ? "receipt" : "invoice",
-      title: `${kind === "credit_note" ? "Credit Note" : kind === "proforma" ? "Proforma Invoice" : kind === "receipt" ? "Receipt" : "Tax Invoice"} ${invNum}`,
-      file_name: `${invNum}.pdf`, storage_bucket: "documents", storage_path: path,
-      mime_type: "application/pdf", file_size_bytes: pdfBytes.byteLength,
-      is_customer_visible: true, source_app_managed: true, created_by: u.user.id,
-      metadata: { invoice_id: inv?.id, kind },
-    });
-
-    return json({ success: true, invoice_id: inv?.id, invoice_number: invNum, storage_path: path });
+    return json({ success: true, invoice_id: invId, invoice_number: invNum, storage_path: path, refreshed: !!existingInvoice });
   } catch (e) {
     console.error("generate-invoice-pdf error:", e);
     return json({ error: (e as Error).message }, 500);
