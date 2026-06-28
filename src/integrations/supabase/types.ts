@@ -4178,6 +4178,92 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_legal_documents: {
+        Row: {
+          created_at: string
+          draft_html: string | null
+          draft_updated_at: string | null
+          draft_updated_by: string | null
+          effective_date: string | null
+          published_at: string | null
+          published_by: string | null
+          published_html: string | null
+          published_version: number
+          slug: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          draft_html?: string | null
+          draft_updated_at?: string | null
+          draft_updated_by?: string | null
+          effective_date?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          published_html?: string | null
+          published_version?: number
+          slug: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          draft_html?: string | null
+          draft_updated_at?: string | null
+          draft_updated_by?: string | null
+          effective_date?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          published_html?: string | null
+          published_version?: number
+          slug?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_legal_versions: {
+        Row: {
+          created_at: string
+          effective_date: string | null
+          html: string
+          id: string
+          published_at: string
+          published_by: string | null
+          slug: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          effective_date?: string | null
+          html: string
+          id?: string
+          published_at?: string
+          published_by?: string | null
+          slug: string
+          version: number
+        }
+        Update: {
+          created_at?: string
+          effective_date?: string | null
+          html?: string
+          id?: string
+          published_at?: string
+          published_by?: string | null
+          slug?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_legal_versions_slug_fkey"
+            columns: ["slug"]
+            isOneToOne: false
+            referencedRelation: "platform_legal_documents"
+            referencedColumns: ["slug"]
+          },
+        ]
+      }
       platform_onboarding_tokens: {
         Row: {
           branch_id: string | null
