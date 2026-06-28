@@ -23,8 +23,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { UserPlus, MoreVertical, Trash2, KeyRound, Lock, Mail, UserX, UserCheck, Users, Loader2 } from "lucide-react";
+import { UserPlus, MoreVertical, Trash2, KeyRound, Lock, Mail, UserX, UserCheck, Users, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { displayName } from "@/components/admin/MembersTable";
@@ -62,10 +63,15 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
   const [last, setLast] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [inviteRole, setInviteRole] = useState<"store_operator" | "branch_manager">("store_operator");
   const [sendEmail, setSendEmail] = useState(true);
   const [inviting, setInviting] = useState(false);
 
-  const resetInvite = () => { setFirst(""); setLast(""); setEmail(""); setPhone(""); setSendEmail(true); };
+  // Role-change confirmation
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{ member: TenantMemberRow; to: "branch_manager" | "store_operator" } | null>(null);
+  const [changingRole, setChangingRole] = useState(false);
+
+  const resetInvite = () => { setFirst(""); setLast(""); setEmail(""); setPhone(""); setInviteRole("store_operator"); setSendEmail(true); };
 
   const submitInvite = async () => {
     if (!first.trim() || !last.trim() || !email.trim()) {
@@ -82,21 +88,43 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
           phone: phone.trim() || null,
           tenant_id: tenantId,
           app_id: appId,
-          role: "store_operator",
+          role: inviteRole,
           branch_id: branchId,
           send_email: sendEmail,
         },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      toast.success(sendEmail ? "Invitation sent" : "Operator added");
+      toast.success(sendEmail ? "Invitation sent" : "Staff member added");
       qc.invalidateQueries({ queryKey: ["tenant-members"] });
       resetInvite();
       setInviteOpen(false);
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to add operator");
+      toast.error(e?.message ?? "Failed to add staff member");
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleRoleChange = async () => {
+    if (!roleChangeTarget) return;
+    setChangingRole(true);
+    try {
+      await manageUser.mutateAsync({
+        action: "update_membership_role",
+        target_profile_id: roleChangeTarget.member.profile_id,
+        tenant_id: roleChangeTarget.member.tenant_id,
+        app_id: roleChangeTarget.member.app_id,
+        branch_id: branchId,
+        membership_id: roleChangeTarget.member.id,
+        new_role: roleChangeTarget.to,
+      });
+      qc.invalidateQueries({ queryKey: ["tenant-members"] });
+      setRoleChangeTarget(null);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setChangingRole(false);
     }
   };
 
@@ -164,11 +192,11 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
         <div>
           <CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4" /> Branch Staff</CardTitle>
           <CardDescription>
-            Manage the people who work at {branch?.name || "this branch"}. Store operators handle day-to-day orders and production.
+            Manage the people who work at {branch?.name || "this branch"}. Branch managers configure the shop; store operators run day-to-day orders, refunds and fulfillment.
           </CardDescription>
         </div>
         <Button onClick={() => setInviteOpen(true)}>
-          <UserPlus className="h-4 w-4 mr-1" /> Invite store operator
+          <UserPlus className="h-4 w-4 mr-1" /> Invite staff
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -176,7 +204,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : filtered.length === 0 ? (
           <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-            No branch staff yet. Invite your first store operator above.
+            No branch staff yet. Invite your first manager or operator above.
           </div>
         ) : (
           <Table>
@@ -228,11 +256,18 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
-                        {m.role !== "branch_manager" && (
-                          <DropdownMenuItem onClick={() => setRemoveTarget(m)} className="text-destructive">
-                            <Trash2 size={14} className="mr-2" /> Remove from branch
+                        {m.role === "store_operator" ? (
+                          <DropdownMenuItem onClick={() => setRoleChangeTarget({ member: m, to: "branch_manager" })}>
+                            <ShieldCheck size={14} className="mr-2" /> Promote to manager
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => setRoleChangeTarget({ member: m, to: "store_operator" })}>
+                            <ShieldOff size={14} className="mr-2" /> Demote to operator
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem onClick={() => setRemoveTarget(m)} className="text-destructive">
+                          <Trash2 size={14} className="mr-2" /> Remove from branch
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -247,9 +282,9 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
       <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) resetInvite(); setInviteOpen(o); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><UserPlus size={18} /> Invite store operator</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><UserPlus size={18} /> Invite branch staff</DialogTitle>
             <DialogDescription>
-              They'll be scoped to this branch only and can handle the day-to-day order workflow.
+              They'll be scoped to this branch only. Choose the right level of access below.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
@@ -271,6 +306,21 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
               <Label>Phone</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
             </div>
+            <div>
+              <Label>Role *</Label>
+              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="store_operator">Store Operator — orders, refunds, fulfillment</SelectItem>
+                  <SelectItem value="branch_manager">Branch Manager — full branch control</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {inviteRole === "branch_manager"
+                  ? "Can change branch settings, staff, payment gateways and subscription."
+                  : "Locked out of branch settings, staff, payment gateways and subscription."}
+              </p>
+            </div>
             <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
               <Switch checked={sendEmail} onCheckedChange={setSendEmail} className="mt-0.5" />
               <div className="space-y-0.5">
@@ -283,11 +333,40 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
             <Button variant="outline" onClick={() => { resetInvite(); setInviteOpen(false); }}>Cancel</Button>
             <Button onClick={submitInvite} disabled={inviting}>
               {inviting && <Loader2 size={14} className="mr-2 animate-spin" />}
-              {sendEmail ? "Send invitation" : "Add operator"}
+              {sendEmail ? "Send invitation" : "Add staff"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Promote / demote confirmation */}
+      <AlertDialog open={!!roleChangeTarget} onOpenChange={() => !changingRole && setRoleChangeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {roleChangeTarget?.to === "branch_manager" ? "Promote to Branch Manager?" : "Demote to Store Operator?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {roleChangeTarget && (
+                <>
+                  <strong>{displayName(roleChangeTarget.member)}</strong>{" "}
+                  {roleChangeTarget.to === "branch_manager"
+                    ? "will gain full control of branch settings, staff, payment gateways and subscription."
+                    : "will lose access to branch settings, staff, payment gateways and subscription. They keep full order, refund, discount and fulfillment access."}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changingRole}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRoleChange} disabled={changingRole}>
+              {changingRole && <Loader2 size={14} className="mr-2 animate-spin" />}
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
 
       {/* Confirm action */}
       <AlertDialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
