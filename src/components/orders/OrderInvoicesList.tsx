@@ -118,19 +118,19 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)}>
-                      <Eye className="h-3 w-3" />
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)} disabled={busyId === inv.id}>
+                      {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>View PDF</TooltipContent>
+                  <TooltipContent>{busyId === inv.id ? "Refreshing…" : "View PDF"}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(inv)}>
-                      <Download className="h-3 w-3" />
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(inv)} disabled={busyId === inv.id}>
+                      {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Download PDF</TooltipContent>
+                  <TooltipContent>{busyId === inv.id ? "Refreshing…" : "Download PDF"}</TooltipContent>
                 </Tooltip>
               </div>
             </div>
