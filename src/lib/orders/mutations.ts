@@ -15,7 +15,26 @@ async function invokeOrderEngine<T = unknown>(
   });
 
   if (error) {
-    throw new Error(error.message || `order-engine ${action} failed`);
+    // Supabase's FunctionsHttpError swallows the response body — recover it
+    // from error.context so the toast shows the actual reason (e.g. role
+    // denial, validation message, or the step that failed).
+    let detail = "";
+    try {
+      const ctx: any = (error as any)?.context;
+      if (ctx && typeof ctx.text === "function") {
+        const raw = await ctx.text();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            detail = parsed?.error || parsed?.message || raw;
+            if (parsed?.step) detail += ` (step: ${parsed.step})`;
+          } catch {
+            detail = raw;
+          }
+        }
+      }
+    } catch { /* noop */ }
+    throw new Error(detail || error.message || `order-engine ${action} failed`);
   }
 
   if (data?.error) {
