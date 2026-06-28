@@ -81,20 +81,25 @@ export async function resolveGatewaysForOrder(orderId: string): Promise<{
     let mode: "test" | "live" = t.mode;
     let source: "branch" | "tenant" = "tenant";
 
-    // Branch override (and the ONLY way to obtain credentials if tenant has none)
+    // Branch override (and the ONLY way to obtain credentials if tenant has none).
+    // A branch can also hard-opt-out via is_enabled=false even when the tenant is on.
+    let branchOptedOut = false;
     if (order.branch_id) {
       const { data: bpg } = await sb
         .from("branch_payment_gateways")
-        .select("credentials_secret_id, mode")
+        .select("credentials_secret_id, mode, is_enabled")
         .eq("branch_id", order.branch_id)
         .eq("provider", t.provider)
         .maybeSingle();
-      if (bpg?.credentials_secret_id) {
+      if (bpg && bpg.is_enabled === false) {
+        branchOptedOut = true;
+      } else if (bpg?.credentials_secret_id) {
         secretId = bpg.credentials_secret_id;
         mode = bpg.mode;
         source = "branch";
       }
     }
+    if (branchOptedOut) continue;
 
     // No credentials anywhere — skip this provider for this order.
     if (!secretId) continue;

@@ -16,6 +16,8 @@ const SaveSchema = z.object({
   merchant_id: z.string().optional(),
   merchant_key: z.string().optional(),
   passphrase: z.string().optional(),
+  // Branch scope: allow toggling provider on/off without changing creds
+  is_enabled: z.boolean().optional(),
 });
 
 Deno.serve(async (req) => {
