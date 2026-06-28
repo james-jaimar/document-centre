@@ -29,6 +29,7 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -46,18 +47,26 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   const handleDownload = async (inv: Invoice) => {
+    setBusyId(inv.id);
     try {
       await downloadInvoice(inv.id, `${inv.invoice_number}.pdf`);
+      await load();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleView = async (inv: Invoice) => {
+    setBusyId(inv.id);
     try {
       await viewInvoice(inv.id, `${inv.invoice_number}.pdf`);
+      await load();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -66,12 +75,14 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
     try {
       await sendInvoiceEmail(inv.id, orderId);
       toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} sent to customer`);
+      await load();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
       setSendingId(null);
     }
   };
+
 
   return (
     <div className="rounded-lg border bg-card">
@@ -107,19 +118,19 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)}>
-                      <Eye className="h-3 w-3" />
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)} disabled={busyId === inv.id}>
+                      {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>View PDF</TooltipContent>
+                  <TooltipContent>{busyId === inv.id ? "Refreshing…" : "View PDF"}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(inv)}>
-                      <Download className="h-3 w-3" />
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(inv)} disabled={busyId === inv.id}>
+                      {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Download PDF</TooltipContent>
+                  <TooltipContent>{busyId === inv.id ? "Refreshing…" : "Download PDF"}</TooltipContent>
                 </Tooltip>
               </div>
             </div>

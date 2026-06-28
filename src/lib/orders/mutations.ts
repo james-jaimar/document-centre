@@ -83,11 +83,50 @@ async function accessDocument(
   }
 }
 
+/**
+ * Check whether a stored invoice PDF matches the order's current totals.
+ * If stale (and refreshable), call generate-invoice-pdf in refresh mode so
+ * the on-disk PDF reflects the latest totals, VAT, delivery, payments etc.
+ * Receipts and credit notes are immutable snapshots and never refreshed.
+ */
+export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
+  const { data: inv } = await supabase
+    .from("order_invoices")
+    .select("id, kind, order_id, total_amount, amount_paid, issued_at")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (!inv) return;
+  if (!["invoice", "proforma"].includes(inv.kind)) return;
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("total_amount, amount_paid, updated_at")
+    .eq("id", inv.order_id)
+    .maybeSingle();
+  if (!order) return;
+
+  const eq = (a: any, b: any) => Number(a ?? 0).toFixed(2) === Number(b ?? 0).toFixed(2);
+  const stale =
+    !eq(inv.total_amount, order.total_amount) ||
+    (inv.kind === "invoice" && !eq(inv.amount_paid, order.amount_paid)) ||
+    (order.updated_at && inv.issued_at && new Date(order.updated_at) > new Date(inv.issued_at));
+
+  if (!stale) return;
+
+  const { data, error } = await supabase.functions.invoke("generate-invoice-pdf", {
+    body: { invoice_id: invoiceId },
+  });
+  if (error) throw new Error(error.message || "Failed to refresh invoice PDF");
+  if ((data as any)?.error) throw new Error((data as any).error);
+}
+
 export async function downloadInvoice(invoiceId: string, fileName: string) {
+  await ensureInvoiceFresh(invoiceId);
   return accessDocument("invoice", invoiceId, fileName, "attachment");
 }
 
 export async function viewInvoice(invoiceId: string, fileName: string) {
+  await ensureInvoiceFresh(invoiceId);
   return accessDocument("invoice", invoiceId, fileName, "inline");
 }
 
@@ -255,6 +294,7 @@ export async function generateInvoice(payload: {
 }
 
 export async function sendInvoiceEmail(invoiceId: string, orderId: string) {
+  await ensureInvoiceFresh(invoiceId);
   const { data, error } = await supabase.functions.invoke("send-order-email", {
     body: { order_id: orderId, event_key: "invoice_sent", invoice_id: invoiceId, force: true },
   });
