@@ -117,30 +117,57 @@ Deno.serve(async (req) => {
       "update_email",
       "resend_invite",
     ];
+    // Branch-manager-only elevated actions on staff at their own branch.
+    const BRANCH_MANAGER_STAFF_ACTIONS: Action[] = [
+      "set_password",
+      "disable_account",
+      "enable_account",
+      "remove_membership",
+    ];
     let isAuthorisedBranchStaff = false;
     if (
       !isPlatformAdmin &&
       !isTenantAdmin &&
       branch_id &&
-      tenant_id &&
-      BRANCH_ALLOWED_ACTIONS.includes(action)
+      tenant_id
     ) {
       const { data: bm } = await admin
         .from("tenant_memberships")
         .select("role")
         .eq("profile_id", caller.id)
         .eq("tenant_id", tenant_id)
+        .eq("branch_id", branch_id)
         .eq("is_active", true)
         .in("role", ["owner", "admin", "sales", "accounts", "production", "branch_manager", "store_operator"])
         .maybeSingle();
       if (bm) {
-        const { data: belongs } = await admin.rpc("profile_belongs_to_branch", {
-          _profile_id: target_profile_id,
-          _branch_id: branch_id,
-        });
-        if (belongs === true) isAuthorisedBranchStaff = true;
+        if (BRANCH_ALLOWED_ACTIONS.includes(action)) {
+          const { data: belongs } = await admin.rpc("profile_belongs_to_branch", {
+            _profile_id: target_profile_id,
+            _branch_id: branch_id,
+          });
+          if (belongs === true) isAuthorisedBranchStaff = true;
+        } else if (
+          bm.role === "branch_manager" &&
+          BRANCH_MANAGER_STAFF_ACTIONS.includes(action) &&
+          app_id &&
+          target_profile_id !== caller.id
+        ) {
+          // Verify target is a staff member at THIS branch (branch_manager or store_operator).
+          const { data: targetMembership } = await admin
+            .from("tenant_memberships")
+            .select("role")
+            .eq("profile_id", target_profile_id)
+            .eq("tenant_id", tenant_id)
+            .eq("app_id", app_id)
+            .eq("branch_id", branch_id)
+            .in("role", ["branch_manager", "store_operator"])
+            .maybeSingle();
+          if (targetMembership) isAuthorisedBranchStaff = true;
+        }
       }
     }
+
 
     if (!isPlatformAdmin && !isTenantAdmin && !isAuthorisedBranchStaff) {
       return err("Forbidden", 403);
