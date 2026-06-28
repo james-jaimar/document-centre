@@ -77,17 +77,20 @@ export function AddCustomerDialog({ open, onOpenChange }: Props) {
 
       if (impersonateAfter) {
         const path = branchSlug ? `/${branchSlug}` : "/";
-        await startImpersonation({
-          target_profile_id: payload.profile_id,
-          tenant_id: tenantId,
-          branch_id: branchId ?? null,
-          return_to: window.location.pathname + window.location.search,
-          redirect_to: path,
-        });
-      } else {
-        reset();
-        onOpenChange(false);
+        try {
+          await startImpersonation({
+            target_profile_id: payload.profile_id,
+            tenant_id: tenantId,
+            branch_id: branchId ?? null,
+            return_to: window.location.pathname + window.location.search,
+            redirect_to: path,
+          });
+        } catch (e: any) {
+          toast({ title: "Could not log in as customer", description: e?.message, variant: "destructive" });
+        }
       }
+      reset();
+      onOpenChange(false);
     } catch (err: any) {
       toast({ title: "Failed to add customer", description: err?.message, variant: "destructive" });
     } finally {
