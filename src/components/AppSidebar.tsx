@@ -84,6 +84,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform/demo", icon: <Sparkles size={20} />, label: "Demo Activity" },
       { to: "/platform/subscriptions", icon: <CreditCard size={20} />, label: "Tenant Subscriptions" },
       { to: "/platform/branch-subscriptions", icon: <CreditCard size={20} />, label: "Branch Subscriptions" },
+      { to: "/platform/legal", icon: <FileText size={20} />, label: "Legal Documents" },
       { to: "/platform/legal-status", icon: <ShieldCheck size={20} />, label: "Legal Status" },
       { to: "/platform/audit-log", icon: <History size={20} />, label: "Audit Log" },
       { to: "/platform/document-centre", icon: <Activity size={20} />, label: "Document Centre" },

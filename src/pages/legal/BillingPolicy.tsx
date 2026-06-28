@@ -1,11 +1,9 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
-export default function BillingPolicy() {
-  const v = LEGAL_DOCS.billing;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         This Billing &amp; Cancellation Policy applies to subscriptions to the Document Centre
         platform paid through our payment processor, Stripe Payments Europe, Limited
@@ -117,6 +115,10 @@ export default function BillingPolicy() {
         date so we can investigate. Please contact us before initiating a chargeback with your
         card issuer — we are usually able to resolve billing questions directly and quickly.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function BillingPolicy() {
+  return <LegalDocPage slug="billing" Fallback={Body} />;
 }

@@ -1,12 +1,10 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 import { SUPPORT_SCOPE } from "@/lib/legal/supportScope";
 
-export default function ServiceLevel() {
-  const v = LEGAL_DOCS.sla;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         This document describes the target availability of the Document Centre Service and the
         support we provide as part of a paid subscription. It is provided in good faith as a
@@ -71,6 +69,10 @@ export default function ServiceLevel() {
         damages. Custom service-level agreements, including financial remedies, are available
         only on request and on separately agreed commercial terms.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function ServiceLevel() {
+  return <LegalDocPage slug="sla" Fallback={Body} />;
 }

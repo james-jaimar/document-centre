@@ -1,11 +1,9 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
-export default function CookiePolicy() {
-  const v = LEGAL_DOCS.cookies;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         This Cookie Policy explains how {E.legalName} uses cookies and similar technologies on
         the Document Centre marketing website, admin portal and customer storefronts.
@@ -65,6 +63,10 @@ export default function CookiePolicy() {
         Questions about this Cookie Policy can be sent to{" "}
         <a href={`mailto:${E.dpoEmail}`}>{E.dpoEmail}</a>.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function CookiePolicy() {
+  return <LegalDocPage slug="cookies" Fallback={Body} />;
 }

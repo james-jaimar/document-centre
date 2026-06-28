@@ -1,6 +1,5 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
 interface Sub {
   name: string;
@@ -61,11 +60,9 @@ const SUBS: Sub[] = [
     link: "https://policies.google.com/privacy",
   },
 ];
-
-export default function SubProcessors() {
-  const v = LEGAL_DOCS.subprocessors;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         {E.legalName} engages the following sub-processors to help us provide the Document
         Centre Service. This list is incorporated into our <a href="/legal/dpa">Data Processing
@@ -115,6 +112,10 @@ export default function SubProcessors() {
         Sub-processor questions can be sent to{" "}
         <a href={`mailto:${E.dpoEmail}`}>{E.dpoEmail}</a>.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function SubProcessors() {
+  return <LegalDocPage slug="subprocessors" Fallback={Body} />;
 }

@@ -1,11 +1,9 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
-export default function AcceptableUsePolicy() {
-  const v = LEGAL_DOCS.aup;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         This Acceptable Use Policy ("AUP") applies to every user of the Document Centre Service,
         whether you are a subscribing print shop ("Tenant"), a member of a Tenant's team, or an
@@ -85,6 +83,10 @@ export default function AcceptableUsePolicy() {
         law-enforcement or regulatory authorities. We are not obliged to monitor user content
         but reserve the right to do so where reasonable.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function AcceptableUsePolicy() {
+  return <LegalDocPage slug="aup" Fallback={Body} />;
 }
