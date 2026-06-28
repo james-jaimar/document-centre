@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranches } from "@/hooks/useBranches";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
+import { isBranchManagerRole } from "@/lib/auth/branchPermissions";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
@@ -31,7 +32,14 @@ const ROLE_LABELS: Record<string, string> = {
   store_operator: "Store Operator",
 };
 
-const BRANCH_NAV = [
+type BranchNavItem = {
+  to: string;
+  icon: JSX.Element;
+  label: string;
+  managerOnly?: boolean;
+};
+
+const BRANCH_NAV: BranchNavItem[] = [
   { to: "/branch", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
   { to: "/branch/orders", icon: <ClipboardList size={20} />, label: "Orders" },
   { to: "/branch/quotes", icon: <FileText size={20} />, label: "Quotes" },
@@ -41,7 +49,7 @@ const BRANCH_NAV = [
 
   { to: "/branch/delivery", icon: <Truck size={20} />, label: "Delivery" },
   { to: "/branch/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
-  { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings" },
+  { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings", managerOnly: true },
 ];
 
 export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?: number } = {}) {
@@ -54,6 +62,8 @@ export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCou
   const branchLabel = branch?.name ?? "Branch";
   const roleLabel = membershipRole ? ROLE_LABELS[membershipRole] ?? membershipRole : "Branch Staff";
   const [collapsed, setCollapsed] = useState(false);
+  const canSeeManagerOnly = isBranchManagerRole(membershipRole);
+  const navItems = BRANCH_NAV.filter((item) => !item.managerOnly || canSeeManagerOnly);
 
   const isActive = (path: string) => {
     if (path === "/branch") return location.pathname === path;
@@ -122,7 +132,7 @@ export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCou
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">
         <div className="flex flex-col gap-0.5">
-          {BRANCH_NAV.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(item.to);
             const showBadge = item.to === "/branch/orders" && unreadOrderCount > 0;
             return (
