@@ -282,9 +282,9 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
       <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) resetInvite(); setInviteOpen(o); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><UserPlus size={18} /> Invite store operator</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><UserPlus size={18} /> Invite branch staff</DialogTitle>
             <DialogDescription>
-              They'll be scoped to this branch only and can handle the day-to-day order workflow.
+              They'll be scoped to this branch only. Choose the right level of access below.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
@@ -306,6 +306,21 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
               <Label>Phone</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
             </div>
+            <div>
+              <Label>Role *</Label>
+              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="store_operator">Store Operator — orders, refunds, fulfillment</SelectItem>
+                  <SelectItem value="branch_manager">Branch Manager — full branch control</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {inviteRole === "branch_manager"
+                  ? "Can change branch settings, staff, payment gateways and subscription."
+                  : "Locked out of branch settings, staff, payment gateways and subscription."}
+              </p>
+            </div>
             <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
               <Switch checked={sendEmail} onCheckedChange={setSendEmail} className="mt-0.5" />
               <div className="space-y-0.5">
@@ -318,11 +333,40 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
             <Button variant="outline" onClick={() => { resetInvite(); setInviteOpen(false); }}>Cancel</Button>
             <Button onClick={submitInvite} disabled={inviting}>
               {inviting && <Loader2 size={14} className="mr-2 animate-spin" />}
-              {sendEmail ? "Send invitation" : "Add operator"}
+              {sendEmail ? "Send invitation" : "Add staff"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Promote / demote confirmation */}
+      <AlertDialog open={!!roleChangeTarget} onOpenChange={() => !changingRole && setRoleChangeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {roleChangeTarget?.to === "branch_manager" ? "Promote to Branch Manager?" : "Demote to Store Operator?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {roleChangeTarget && (
+                <>
+                  <strong>{displayName(roleChangeTarget.member)}</strong>{" "}
+                  {roleChangeTarget.to === "branch_manager"
+                    ? "will gain full control of branch settings, staff, payment gateways and subscription."
+                    : "will lose access to branch settings, staff, payment gateways and subscription. They keep full order, refund, discount and fulfillment access."}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changingRole}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRoleChange} disabled={changingRole}>
+              {changingRole && <Loader2 size={14} className="mr-2 animate-spin" />}
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
 
       {/* Confirm action */}
       <AlertDialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
