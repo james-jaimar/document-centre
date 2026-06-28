@@ -72,6 +72,11 @@ export function OrderWorkflowPanel({ order }: Props) {
   const [showDispatchForm, setShowDispatchForm] = useState(false);
   const [carrier, setCarrier] = useState(order.tracking_carrier ?? "");
   const [trackingNo, setTrackingNo] = useState(order.tracking_number ?? "");
+  const [fulfillmentDialogOpen, setFulfillmentDialogOpen] = useState(false);
+
+  const fulfillmentChangeable = !["ready_for_dispatch", "dispatched", "completed", "cancelled"].includes(order.admin_status);
+  const currentDeliveryAddress = (order.addresses || []).find((a: any) => a.address_type === "delivery") ?? null;
+
 
   const isDelivery = order.fulfillment_type === "delivery";
   const isCollection = order.fulfillment_type === "collection";
