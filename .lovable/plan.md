@@ -1,33 +1,36 @@
-## Diagnosis
+## Problem
 
-"Failed to send a request to the Edge Function" with **zero invocation logs** on `demo-gate-set-password` means the function isn't booting — the request never reaches our handler. The root cause is the `https://deno.land/x/bcrypt@v0.4.1/mod.ts` import: it uses Node-style sync APIs that frequently fail to cold-start in Supabase's Deno edge runtime (and it's been deprecated in favor of Web Crypto). Both `demo-gate-set-password` and `demo-gate-unlock` import it, so unlock would fail the same way once a password existed.
+On the custom domain `postnetprintcenter.com`, the demo gate never appears — the storefront loads normally, even in an incognito window. The `/t/:slug` path-based variant works because the route has a `:slug` param; on the custom domain the slug only exists in `TenantSlugContext` (set by `SubdomainWrapper`), and the guard's own tenant lookup is unreliable for anonymous visitors.
 
-The "enabled before password was set" state is harmless — the DB row just has `enabled=true, password_hash=null`. The guard treats that as "not configured" and the admin UI already warns about it.
+## Root cause
+
+`DemoGateGuard` resolves the tenant by re-querying `tenants` with `.eq("slug", slug)` from the anon client. On the custom-domain root route this query returns `null` for unauthenticated visitors (anon RLS on `tenants` doesn't expose the row by slug the way the host-resolver edge path does). When `tenantId` is `null`, the guard short-circuits to `return <>{children}</>`, so visitors go straight to the storefront and never see the password screen.
 
 ## Fix
 
-Replace bcrypt with **PBKDF2 via Web Crypto** (`crypto.subtle`), which is built into the Deno runtime — no remote import, no cold-start risk.
+Stop re-querying `tenants` inside the guard. The tenant id is already resolved upstream and is available in two places:
 
-### Changes
+1. `useSubdomainTenant()` (from `SubdomainRouter`) exposes the matched tenant id on custom domains and `{slug}.document-centre.com`.
+2. `useTenantContext()` exposes `tenantId` for both subdomain and `/t/:slug` paths once the slug is known.
 
-1. **`supabase/functions/demo-gate-set-password/index.ts`**
-   - Remove the `bcrypt` import.
-   - Add a small `hashPassword(password)` helper: random 16-byte salt + PBKDF2-SHA256 (200k iterations) → store as `pbkdf2$sha256$200000$<saltB64>$<hashB64>`.
-   - Store that string in `password_hash` (column is already `text`).
+Rewrite `DemoGateGuard` to:
 
-2. **`supabase/functions/demo-gate-unlock/index.ts`**
-   - Remove the `bcrypt` import.
-   - Add matching `verifyPassword(password, stored)` that parses the stored string, re-derives, and constant-time compares.
+- Take `tenantId` from `useTenantContext()` first, falling back to a `tenants` lookup by slug only when context hasn't resolved yet (path-based `/t/:slug` before context settles).
+- Keep the existing bypass logic (platform admin, tenant staff, unlocked cookie).
+- Keep the `useDemoGateConfig` RPC call (it's `SECURITY DEFINER` and safe for anon).
+- Render `<DemoGatePage>` whenever `config.enabled` is true and none of the bypasses match.
 
-3. **No DB migration needed** — `password_hash` is text and no password has been successfully saved yet, so there's no legacy bcrypt hash to migrate.
+No changes to edge functions, DB, admin UI, or routing wiring in `App.tsx` — the guard is already wrapped around both the `/t/:slug` route and the custom-domain root route. This is purely a fix to how the guard discovers the tenant id on custom domains.
 
-4. **No `config.toml` change needed** — Lovable auto-deploys edge functions; the functions already exist on the platform, they're just crashing on import.
+## Verification
 
-### Verification
+1. In an incognito window, visit `https://postnetprintcenter.com/` → expect the demo gate (headline, disclaimer, password field) instead of the storefront.
+2. Enter the password, accept the disclaimer → unlocked, storefront loads, cookie persists for the configured days.
+3. Visit `/t/postnet` in incognito on the platform domain → gate still appears (path-based flow unchanged).
+4. Sign in as a tenant staff member or platform admin → gate is bypassed on both hosts.
 
-After redeploy: click **Set password** → expect a `200` log entry on `demo-gate-set-password` and the "Password updated" toast. Then toggle the gate on, open `/t/<slug>` in an incognito window, and confirm the unlock screen accepts the password.
+## Out of scope
 
-### Out of scope
-
-- No UI changes.
-- Not touching the "enabled without password" guard — current behavior (warn in admin UI, treat as not-configured in the gate) is correct.
+- No changes to `tenant_demo_gate` schema, RLS, or the unlock/set-password edge functions.
+- No change to the admin `DemoModeCard` UI.
+- Not touching the existing "enabled without password" guard rail in admin.
