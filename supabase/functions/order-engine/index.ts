@@ -1849,174 +1849,220 @@ async function adminChangeFulfillment(
   userId: string,
   payload: any,
 ) {
-  const {
-    order_id,
-    to,
-    delivery_address,
-    delivery_amount,
-    delivery_description,
-    notify_customer,
-  } = payload ?? {};
-
-  if (!order_id || !["delivery", "collection"].includes(to)) {
-    return err("order_id and to (delivery|collection) required");
-  }
-
-  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
-  if (denied) return err(denied, 403);
-  const o = order as any;
-
-  // Status guard — admin can change up until dispatch prep is done.
-  const { data: orderStatusRow } = await admin
-    .from("orders")
-    .select("admin_status, order_status")
-    .eq("id", order_id)
-    .maybeSingle();
-  const adminStatus = (orderStatusRow as any)?.admin_status ?? "";
-  const orderStatus = (orderStatusRow as any)?.order_status ?? "";
-  const BLOCKED = new Set(["ready_for_dispatch", "dispatched", "completed", "cancelled"]);
-  if (BLOCKED.has(adminStatus) || orderStatus === "cancelled") {
-    return err(`Cannot change fulfillment when order is ${adminStatus || orderStatus}`, 409);
-  }
-
-  const prevType = (o.fulfillment_type as string) ?? null;
-  const prevDelivery = Number(o.delivery_amount || 0);
-  const prevPaymentStatus = String(o.payment_status || "");
-  const newDelivery = to === "collection" ? 0 : Number(delivery_amount ?? 0);
-  if (to === "delivery" && !(newDelivery >= 0)) {
-    return err("delivery_amount must be a non-negative number when switching to delivery");
-  }
-
-  // 1. Update the order's fulfillment + delivery line.
-  const meta = (o.metadata as any) ?? {};
-  const history = Array.isArray(meta.fulfillment_history) ? meta.fulfillment_history : [];
-  history.push({
-    at: new Date().toISOString(),
-    by: userId,
-    from: prevType,
-    to,
-    delivery_amount: newDelivery,
-    delivery_description: delivery_description ?? null,
-  });
-  meta.fulfillment_history = history;
-  if (to === "delivery" && typeof delivery_description === "string") {
-    meta.delivery_description = delivery_description;
-  }
-  if (to === "collection") {
-    delete meta.delivery_description;
-  }
-
-  const { error: upErr } = await admin
-    .from("orders")
-    .update({ fulfillment_type: to, delivery_amount: newDelivery, metadata: meta })
-    .eq("id", order_id);
-  if (upErr) return err(`Failed to update fulfillment: ${upErr.message}`);
-
-  // 2. Upsert the delivery address when switching to delivery.
-  if (to === "delivery" && delivery_address && typeof delivery_address === "object") {
-    const { data: existing } = await admin
-      .from("order_addresses")
-      .select("id")
-      .eq("order_id", order_id)
-      .eq("address_type", "delivery")
-      .maybeSingle();
-    const addrRow = {
-      order_id,
-      address_type: "delivery" as const,
-      company_name: delivery_address.company_name ?? null,
-      contact_name: delivery_address.contact_name ?? null,
-      line1: delivery_address.line1 ?? null,
-      line2: delivery_address.line2 ?? null,
-      suburb: delivery_address.suburb ?? null,
-      city: delivery_address.city ?? null,
-      province: delivery_address.province ?? null,
-      postal_code: delivery_address.postal_code ?? null,
-      country: delivery_address.country ?? "ZA",
-      phone: delivery_address.phone ?? null,
-      email: delivery_address.email ?? null,
-      instructions: delivery_address.instructions ?? null,
-    };
-    if (existing?.id) {
-      await admin.from("order_addresses").update(addrRow).eq("id", (existing as any).id);
-    } else {
-      await admin.from("order_addresses").insert(addrRow);
-    }
-  }
-
-  // 3. Recompute totals.
-  const after = await syncOrderTotals(admin, order_id);
-
-  // 4. If the order was already paid and now owes money → trigger the
-  //    existing payment_request email so the customer can settle online/EFT.
-  let refundFlagged = false;
-  let refundAdjustmentId: string | undefined;
-  if (after.due > 0.005 && prevPaymentStatus === "paid" && notify_customer) {
-    try {
-      await triggerEmail(authHeader, order_id, "payment_request", { force: true });
-    } catch (e) {
-      console.error("payment_request email failed:", e);
-    }
-  }
-
-  // 5. If switching to collection and customer had already paid for delivery,
-  //    raise a refund_pending adjustment (auto-refund kicks in if a gateway
-  //    payment is on file; otherwise admin clicks Mark refunded).
-  if (to === "collection" && prevDelivery > 0 && Number(o.amount_paid || 0) >= prevDelivery) {
-    refundAdjustmentId = await createRefundPendingAdjustment(
-      admin,
-      order_id,
-      prevDelivery,
-      `Refund of delivery fee after switch to collection`,
-      `Admin switched fulfillment to collection`,
-      userId,
+  const step = (s: string, extra: Record<string, unknown> = {}) =>
+    console.log(`[adminChangeFulfillment] ${s}`, JSON.stringify(extra));
+  const fail = (message: string, status: number, atStep: string, extra: Record<string, unknown> = {}) => {
+    console.error(`[adminChangeFulfillment] FAIL @${atStep}: ${message}`, JSON.stringify(extra));
+    return new Response(
+      JSON.stringify({ error: message, step: atStep, ...extra }),
+      { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-    refundFlagged = !!refundAdjustmentId;
-    if (refundFlagged) await syncOrderTotals(admin, order_id);
-  }
+  };
 
-  // 6. Timeline.
-  await logTimeline(
-    admin,
-    o,
-    userId,
-    "fulfillment_changed",
-    `Admin changed fulfillment: ${prevType ?? "—"} → ${to}` +
-      (to === "delivery"
-        ? ` (R${newDelivery.toFixed(2)}${delivery_description ? ` · ${delivery_description}` : ""})`
-        : ""),
-    {
+  try {
+    const {
+      order_id,
+      to,
+      delivery_address,
+      delivery_amount,
+      delivery_description,
+      notify_customer,
+    } = payload ?? {};
+
+    step("entered", { order_id, to, hasAddress: !!delivery_address, delivery_amount });
+
+    if (!order_id || !["delivery", "collection"].includes(to)) {
+      return fail("order_id and to (delivery|collection) required", 400, "validate_input");
+    }
+
+    // Fetch + auth. We intentionally do NOT pass adminOnly here so branch
+    // managers / sales / production staff who own the order's branch can
+    // change fulfillment — same audience that can already edit pricing.
+    const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+    if (denied || !order) {
+      return fail(denied || "Order not found", 403, "auth");
+    }
+    const o = order as any;
+    step("loaded_order", { order_number: o.order_number, fulfillment_type: o.fulfillment_type });
+
+    // Status guard — admin can change up until dispatch prep is done.
+    const { data: orderStatusRow, error: statusErr } = await admin
+      .from("orders")
+      .select("admin_status, order_status")
+      .eq("id", order_id)
+      .maybeSingle();
+    if (statusErr) return fail(`Status lookup failed: ${statusErr.message}`, 500, "status_lookup");
+    const adminStatus = (orderStatusRow as any)?.admin_status ?? "";
+    const orderStatus = (orderStatusRow as any)?.order_status ?? "";
+    const BLOCKED = new Set(["ready_for_dispatch", "dispatched", "completed", "cancelled"]);
+    if (BLOCKED.has(adminStatus) || orderStatus === "cancelled") {
+      return fail(`Cannot change fulfillment when order is ${adminStatus || orderStatus}`, 409, "status_guard");
+    }
+
+    const prevType = (o.fulfillment_type as string) ?? null;
+    const prevDelivery = Number(o.delivery_amount || 0);
+    const prevPaymentStatus = String(o.payment_status || "");
+    const newDelivery = to === "collection" ? 0 : Number(delivery_amount ?? 0);
+    if (to === "delivery" && !(newDelivery >= 0)) {
+      return fail("delivery_amount must be a non-negative number when switching to delivery", 400, "validate_delivery_amount");
+    }
+
+    // 1. Update the order's fulfillment + delivery line.
+    const meta = (o.metadata as any) ?? {};
+    const history = Array.isArray(meta.fulfillment_history) ? meta.fulfillment_history : [];
+    history.push({
+      at: new Date().toISOString(),
+      by: userId,
       from: prevType,
       to,
-      prev_delivery: prevDelivery,
-      new_delivery: newDelivery,
+      delivery_amount: newDelivery,
       delivery_description: delivery_description ?? null,
-      old_total: Number(o.total_amount || 0),
+    });
+    meta.fulfillment_history = history;
+    if (to === "delivery" && typeof delivery_description === "string") {
+      meta.delivery_description = delivery_description;
+    }
+    if (to === "collection") {
+      delete meta.delivery_description;
+    }
+
+    const { error: upErr } = await admin
+      .from("orders")
+      .update({ fulfillment_type: to, delivery_amount: newDelivery, metadata: meta })
+      .eq("id", order_id);
+    if (upErr) return fail(`Failed to update fulfillment: ${upErr.message}`, 500, "update_order");
+    step("updated_order");
+
+    // 2. Upsert the delivery address when switching to delivery.
+    if (to === "delivery" && delivery_address && typeof delivery_address === "object") {
+      try {
+        const { data: existing } = await admin
+          .from("order_addresses")
+          .select("id")
+          .eq("order_id", order_id)
+          .eq("address_type", "delivery")
+          .maybeSingle();
+        const addrRow = {
+          order_id,
+          address_type: "delivery" as const,
+          company_name: delivery_address.company_name ?? null,
+          contact_name: delivery_address.contact_name ?? null,
+          line1: delivery_address.line1 ?? null,
+          line2: delivery_address.line2 ?? null,
+          suburb: delivery_address.suburb ?? null,
+          city: delivery_address.city ?? null,
+          province: delivery_address.province ?? null,
+          postal_code: delivery_address.postal_code ?? null,
+          country: delivery_address.country ?? "ZA",
+          phone: delivery_address.phone ?? null,
+          email: delivery_address.email ?? null,
+          instructions: delivery_address.instructions ?? null,
+        };
+        if (existing?.id) {
+          const { error: aErr } = await admin.from("order_addresses").update(addrRow).eq("id", (existing as any).id);
+          if (aErr) return fail(`Failed to update delivery address: ${aErr.message}`, 500, "address_update");
+        } else {
+          const { error: aErr } = await admin.from("order_addresses").insert(addrRow);
+          if (aErr) return fail(`Failed to insert delivery address: ${aErr.message}`, 500, "address_insert");
+        }
+        step("upserted_address");
+      } catch (e: any) {
+        return fail(`Address upsert threw: ${e?.message ?? e}`, 500, "address_throw");
+      }
+    }
+
+    // 3. Recompute totals.
+    let after: { subtotal: number; total: number; due: number; paid: number; payment_status: string };
+    try {
+      after = await syncOrderTotals(admin, order_id);
+      step("synced_totals", after);
+    } catch (e: any) {
+      return fail(`Totals recompute failed: ${e?.message ?? e}`, 500, "sync_totals");
+    }
+
+    // 4. Best-effort: payment_request email if order was paid and now owes money.
+    if (after.due > 0.005 && prevPaymentStatus === "paid" && notify_customer) {
+      try {
+        await triggerEmail(authHeader, order_id, "payment_request", { force: true });
+      } catch (e) {
+        console.error("[adminChangeFulfillment] payment_request email failed (non-fatal):", e);
+      }
+    }
+
+    // 5. Best-effort: refund_pending adjustment for collection swap.
+    let refundFlagged = false;
+    let refundAdjustmentId: string | undefined;
+    if (to === "collection" && prevDelivery > 0 && Number(o.amount_paid || 0) >= prevDelivery) {
+      try {
+        refundAdjustmentId = await createRefundPendingAdjustment(
+          admin,
+          order_id,
+          prevDelivery,
+          `Refund of delivery fee after switch to collection`,
+          `Admin switched fulfillment to collection`,
+          userId,
+        );
+        refundFlagged = !!refundAdjustmentId;
+        if (refundFlagged) {
+          after = await syncOrderTotals(admin, order_id);
+        }
+      } catch (e) {
+        console.error("[adminChangeFulfillment] refund_pending raise failed (non-fatal):", e);
+      }
+    }
+
+    // 6. Best-effort: timeline.
+    try {
+      await logTimeline(
+        admin,
+        o,
+        userId,
+        "fulfillment_changed",
+        `Admin changed fulfillment: ${prevType ?? "—"} → ${to}` +
+          (to === "delivery"
+            ? ` (R${newDelivery.toFixed(2)}${delivery_description ? ` · ${delivery_description}` : ""})`
+            : ""),
+        {
+          from: prevType,
+          to,
+          prev_delivery: prevDelivery,
+          new_delivery: newDelivery,
+          delivery_description: delivery_description ?? null,
+          old_total: Number(o.total_amount || 0),
+          new_total: after.total,
+          balance_due: after.due,
+          refund_flagged: refundFlagged,
+          refund_adjustment_id: refundAdjustmentId ?? null,
+          notify_customer: !!notify_customer,
+        },
+        "both",
+      );
+    } catch (e) {
+      console.error("[adminChangeFulfillment] timeline log failed (non-fatal):", e);
+    }
+
+    // 7. Best-effort: regenerate invoice.
+    try {
+      await triggerInvoice(authHeader, order_id, "invoice");
+    } catch (e) {
+      console.error("[adminChangeFulfillment] invoice regen failed (non-fatal):", e);
+    }
+
+    step("done", { refundFlagged, balance_due: after.due });
+
+    return json({
+      success: true,
+      from: prevType,
+      to,
+      delivery_amount: newDelivery,
       new_total: after.total,
       balance_due: after.due,
       refund_flagged: refundFlagged,
       refund_adjustment_id: refundAdjustmentId ?? null,
-      notify_customer: !!notify_customer,
-    },
-    "both",
-  );
-
-  // 7. Regenerate invoice (best effort — won't fail the request).
-  try {
-    await triggerInvoice(authHeader, order_id, "invoice");
-  } catch (e) {
-    console.error("invoice regen failed:", e);
+    });
+  } catch (e: any) {
+    return fail(`Unhandled: ${e?.message ?? e}`, 500, "unhandled", { stack: String(e?.stack ?? "") });
   }
-
-  return json({
-    success: true,
-    from: prevType,
-    to,
-    delivery_amount: newDelivery,
-    new_total: after.total,
-    balance_due: after.due,
-    refund_flagged: refundFlagged,
-    refund_adjustment_id: refundAdjustmentId ?? null,
-  });
 }
 
 
