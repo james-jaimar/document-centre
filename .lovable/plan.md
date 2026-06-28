@@ -1,67 +1,61 @@
-## Goal
+# Fix: "Change fulfillment" → Edge Function returns non-2xx
 
-Let an admin switch an order between **Collection ↔ Delivery** any time before it reaches `ready_for_dispatch`. When switching to delivery the system quotes a price using the existing weight + delivery-rate engine, captures an address, recalculates totals, and — if a balance is owed — flips the order to **Awaiting balance payment** with updated paperwork and a customer-payable link (EFT or online via the branch's gateway).
+## Root cause analysis
 
-Customers do **not** get this control (admin-only, per your direction).
+The user clicked **Confirm change** in `ChangeFulfillmentDialog` and saw
+`Update failed — Edge Function returned a non-2xx status code`. That generic
+text is the default `FunctionsHttpError.message` from `supabase.functions.invoke`,
+which **swallows the response body**. We never see *which* step failed.
 
-## Where it lives
+Looking at `supabase/functions/order-engine/index.ts → adminChangeFulfillment`,
+several call sites can return a non-2xx without our UI surfacing the reason:
 
-- New admin panel: **"Change fulfillment"** card on the order detail page (`src/pages/admin/AdminOrderDetail.tsx` / `BranchOrderDetail.tsx`), visible only while `admin_status ∈ {new_order, under_review, approved, in_production, qa}` and the caller has a staff role.
-- Reuses the existing `OrderDeliveryTab` data (address, weight, rates) but adds a guided dialog so admins don't have to hand-edit numbers.
+1. `fetchOrderForAdmin(..., { adminOnly: true })` returns **403** if the staff
+   user is not `owner`/`admin` at the order's tenant/branch. Branch managers
+   (the role many of our PostNet branch users actually hold) are blocked —
+   even though Step 1/Step 2 of the dialog still render because we only call
+   the function on confirm.
+2. `triggerEmail("payment_request", { force: true })` runs `send-order-email`
+   with the **service-role JWT**. If that function rejects service tokens or
+   the template is missing for this tenant, the whole request errors out — even
+   though the email is meant to be best-effort.
+3. `triggerInvoice("invoice")` similarly bubbles errors when the PDF render
+   fails (missing logo, unresolved address, etc.).
+4. The `orders.metadata` update could be rejected by RLS if the service-role
+   client is missing the `metadata` JSONB column (unlikely, but easy to log).
 
-## Flow (admin POV)
+We have no way to confirm which of these fires because the client throws the
+generic message and the edge logs only show "booted".
 
-1. Click **Change fulfillment** → dialog opens with current state.
-2. Choose target:
-   - **→ Collection**: pick branch (defaults to order's branch), confirm. Delivery cost zeroed; if customer had already paid for delivery, surface a "Refund R x.xx" action that reuses the existing `payments-refund` path (manual mark-refunded if no gateway).
-   - **→ Delivery**: 
-     a. Address step — pick from customer's saved addresses or enter a new one (writes back to `customer_addresses` if "save" ticked).
-     b. Rate step — system computes total weight from `order_jobs` using `calculateWeight` (`src/lib/weightCalculation.ts`), queries `delivery_methods` + `delivery_rates` + zone match for the tenant/branch, and lists eligible services with prices. Admin picks one.
-     c. Review step — shows old total, new delivery line, new total, **balance due**, and the chosen payment route (EFT instructions / "Send online payment link" if branch has Stripe or PayFast wired).
-3. Confirm → server applies the change atomically, writes a timeline entry, regenerates the invoice PDF, and (optionally) emails the customer the updated invoice + payment link.
+## Plan (build-mode edits)
 
-## Server: extend `order-engine`
+### 1. Make the client surface the real error  
+`src/lib/orders/mutations.ts → invokeOrderEngine`
+- After `supabase.functions.invoke` returns an error, read `error.context`
+  (the underlying `Response`) and parse the JSON body so toasts show messages
+  like `Only owners or admins of this branch/tenant may perform this action`
+  or `Failed to update fulfillment: …`.
 
-Add one new action and harden the existing admin update:
+### 2. Make `adminChangeFulfillment` resilient & observable  
+`supabase/functions/order-engine/index.ts → adminChangeFulfillment`
+- Allow `branch_manager` to change fulfillment for orders inside their own
+  branch (relax `assertOrderStaffAccess` for this specific action — keeps
+  parity with who can already record payments, edit pricing, etc.).
+- Wrap **every** side-effect step (`logTimeline`, `triggerEmail`,
+  `triggerInvoice`, `createRefundPendingAdjustment`) in its own `try/catch`
+  that logs but never aborts the response.
+- Add a top-level `try/catch` returning a JSON `{ error }` with the exact
+  failure point (`step: "update_order" | "address_upsert" | "totals" | …`).
+- `console.log` the payload + computed totals at the top so future failures
+  show in `supabase functions logs order-engine`.
 
-- `admin_change_fulfillment` (new):
-  - Input: `order_id`, `to: "collection" | "delivery"`, `delivery_address?`, `delivery_method_id?`, `delivery_amount?`, `delivery_description?`, `notify_customer?: boolean`, `payment_route?: "eft" | "online" | "none"`.
-  - Auth: staff membership on the order's tenant/branch (Owner/Admin/Sales/Production). Reject customers.
-  - Guard: block if `admin_status` is `ready_for_dispatch`, `dispatched`, `completed`, or `cancelled`.
-  - Writes: `orders.fulfillment_type`, `delivery_amount`, recompute `total_amount` + `amount_due` (and `payment_status` → `partial`/`paid`/`pending` as appropriate), upsert `order_addresses` (delivery row), insert `order_adjustments` line ("Delivery — <method>"), insert `timeline_events` with `from/to/old_total/new_total/balance_due`, snapshot into `order_pricing_snapshots`.
-  - If `notify_customer` and balance > 0: enqueue `send-order-email` template `order_balance_due` with the updated invoice and (if `payment_route=online`) a one-shot payment link via `payments-create-session` for the balance only.
-  - If `to=collection` and prior delivery had been paid: return a `refund_suggested` payload (no auto-refund — admin clicks "Refund" in the existing refund UI).
+### 3. Confirm with the user
+Once both edits are deployed, ask the user to retry; the toast will now read
+the real reason and we can fix the underlying cause in a follow-up.
 
-## DB
+## Files to edit
+- `src/lib/orders/mutations.ts` (invokeOrderEngine wrapper)
+- `supabase/functions/order-engine/index.ts` (`adminChangeFulfillment` +
+  optional role widening)
 
-No new tables. Migration covers:
-
-- New email template seed `order_balance_due` (HTML + text) in `platform_email_templates`.
-- `orders.balance_due_token` (text, nullable) + index — short-lived signed token that lets the customer hit the hosted payment page for the balance only without re-auth. Generated by the edge function when `payment_route=online`.
-- Timeline event type `fulfillment_changed` added to whatever enum/lookup the timeline uses (or just a string if it's free-text — confirm at build time).
-
-## Frontend pieces
-
-- `src/components/orders/admin/ChangeFulfillmentDialog.tsx` — the 3-step wizard above. Uses `useCustomerAddresses`, a new `useDeliveryQuote(orderId, addressId)` hook that calls a tiny edge helper (or reuses logic from cart checkout) to return ranked rate options.
-- Hook in the existing **Workflow** card (`OrderWorkflowPanel.tsx`) with a secondary action **"Change fulfillment"** beside "More", gated by status + role.
-- Read-only badge on `OrderDeliveryTab` showing "Changed from collection on <date> by <admin>" when `metadata.fulfillment_history` is present.
-- Customer-side `ManageOrderPanel` gets a one-line note "Delivery details can only be changed by the branch — message us to request a change." (no edit controls), and the existing self-service switch is removed for paid orders to avoid clashing with the new admin-controlled flow.
-
-## Paperwork & emails
-
-- Invoice regen: reuse the existing invoice PDF generator (whatever `order_invoices` currently uses) — re-render after the update and store the new path; old PDF is kept for audit.
-- Email: `order_balance_due` includes new total, delivery line, balance, EFT bank details (from `branch_settings`), and an optional **Pay balance online** button when `payment_route=online`.
-- For `→ collection` with refund owed: existing refund-pending flow already handles paperwork; we just call into it.
-
-## Out of scope (intentionally)
-
-- Customer self-service switching once paid (you said admin-only).
-- Auto-selecting the cheapest courier — admin picks.
-- Partial-fulfilment / split shipments.
-
-## Technical notes
-
-- Weight: `calculateWeight` already sums paper + binding + cover + 5% packaging per job; we'll sum across `order_jobs` for the rate query.
-- Zone match: existing `delivery_zone_locations` lookup by postcode/suburb; if no match, dialog lets admin enter a manual price + description ("Custom courier — R x").
-- Concurrency: edge function wraps update + adjustments + snapshot in a single RPC (`admin_change_fulfillment_atomic`) to avoid half-applied changes.
-- Audit: every change writes `impersonated_by` / `changed_by_profile_id` so we can see which staff member did it (already wired via the impersonation work).
+No DB migrations required.
