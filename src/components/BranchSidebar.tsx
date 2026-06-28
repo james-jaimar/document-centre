@@ -13,6 +13,7 @@ import {
   Truck,
   Users,
   Mail,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -48,6 +49,7 @@ const BRANCH_NAV: BranchNavItem[] = [
   { to: "/branch/catalog-pricing", icon: <DollarSign size={20} />, label: "Pricing" },
 
   { to: "/branch/delivery", icon: <Truck size={20} />, label: "Delivery" },
+  { to: "/branch/reports", icon: <BarChart3 size={20} />, label: "Reports", managerOnly: true },
   { to: "/branch/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings", managerOnly: true },
 ];
