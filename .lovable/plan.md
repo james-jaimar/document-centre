@@ -1,37 +1,51 @@
-## Problem
 
-`branch-financial-reports` edge function returns **500** ("Edge Function returned a non-2xx status code") on every call. The Reports UI is wired up correctly — the backend is failing.
+# Country indicator + tenant country column
 
-## Root cause
+Adds a lightweight country layer ahead of a possible PostNet USA rollout, without disturbing the current SA-only setup.
 
-In `supabase/functions/branch-financial-reports/index.ts`, the branch lookup selects a non-existent column:
+## 1. Database
 
-```ts
-.from("branches")
-.select("id, tenant_id, name, slug, currency")
-```
+Migration on `public.tenants`:
+- Add `country_code CHAR(2) NOT NULL DEFAULT 'ZA'` (ISO-3166-1 alpha-2).
+- Backfill: all existing rows become `'ZA'` via the default.
+- Add a CHECK that `country_code` is two uppercase letters (validation trigger if a CHECK is too rigid — per project rules we prefer triggers, but a simple regex CHECK on a static format is safe).
+- No RLS changes; column is readable wherever `tenants` already is.
 
-The `branches` table has **no `currency` column** (verified via `information_schema.columns`). Currency lives on `orders` and `payments`, not on the branch row. PostgREST rejects the select and the function throws before any auth/data logic runs.
+Nothing else changes — no new tables, no changes to pricing regions, branches, delivery, or VAT. Those stay driven by their existing mechanisms.
 
-Several downstream lines also reference `branch.currency` as a fallback (e.g. `branch.currency ?? "ZAR"` in three places, plus `summary.currency`).
+## 2. Platform admin
 
-## Fix
+In the existing Tenant edit screen (Platform → Tenants → edit):
+- New "Country" select (ZA 🇿🇦, US 🇺🇸 for now; list is a small static map so we can add more later without a migration).
+- Saved into `tenants.country_code`.
 
-Single edge-function edit — no UI, no DB migration:
+## 3. Customer header flag
 
-1. Drop `currency` from the `branches` select list.
-2. Derive a report-level currency from the data instead:
-   - Prefer the most common `currency` from the period's payments/orders.
-   - Fall back to `"ZAR"` (matches existing default) when there are no rows.
-3. Replace every `branch.currency ?? "ZAR"` with that resolved currency (or just `"ZAR"`) so per-payment / per-order `currency` continues to flow through unchanged.
+In `src/components/CustomerHeader.tsx` and `src/components/customer/mobile/MobileHeader.tsx`:
+- New `<CountryFlagBadge />` placed immediately to the right of the branch picker (and in the mobile header in the same logical slot).
+- Reads `tenant.country_code` from `useTenantFromSlug()`.
+- Renders an emoji flag + country short name (e.g. 🇿🇦 South Africa). Tooltip on hover.
+- Click opens a dropdown listing:
+  - 🇿🇦 South Africa — active, checkmark on current.
+  - 🇺🇸 United States — shown but disabled with a "Coming soon" label.
+- Selecting an active country in future will route to that country's tenant; for now only ZA is selectable so clicking it is a no-op.
+- No geolocation yet — that's a Phase 2 once a US tenant exists. We'll leave a `// TODO: geolocate` marker pointing at the existing `detect-region` edge function so we can wire it later without re-architecting.
 
-That's it — the 401-unauthorised path I hit via curl confirms the auth wall is fine; the 500 is purely the bad select.
+## 4. Where it does NOT appear
 
-## Verification
+- Admin / Platform / Branch headers — out of scope per your answer.
+- Pricing, currency, VAT, delivery — untouched. `useRegionalPricing` and `tenant_settings.default_currency_code` keep doing their job; the flag is purely an identity/UX cue.
 
-- Re-invoke the function from the Reports page on Demo Branch — expect 200 with empty arrays (no payments/orders in window).
-- Check `branch-financial-reports` logs for the absence of the previous error.
+## Technical notes
 
-## Out of scope
+- Country list lives in a tiny `src/lib/countries.ts` (code → { name, emoji }) so adding more is one-line.
+- Flag rendered as a Unicode regional-indicator emoji — no image assets, no CSP changes.
+- Existing tenant queries already `select *` from `tenants` in most places, so the new column flows through without refactors; the few typed selects get `country_code` added.
+- Once a USA tenant exists, enabling the dropdown entry is a one-line change (filter by "tenants that exist for this country") — no schema work.
 
-No changes to `Reports.tsx`, no schema changes, no other functions.
+## Out of scope (deliberately deferred)
+
+- Geolocation auto-switch.
+- Branch-level country (branches inherit tenant country).
+- Multi-country pricing/VAT/delivery wiring.
+- Admin-header flags.
