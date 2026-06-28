@@ -106,6 +106,7 @@ Deno.serve(async (req) => {
   if (existing) {
     const updates: Record<string, unknown> = { credentials_secret_id: secretId, mode: body.mode };
     if (body.scope === "tenant" && body.display_label !== undefined) updates.display_label = body.display_label;
+    if (body.scope === "branch" && body.is_enabled !== undefined) updates.is_enabled = body.is_enabled;
     await sb.from(table).update(updates).eq("id", existing.id);
   } else {
     const insert: Record<string, unknown> = {
@@ -115,6 +116,7 @@ Deno.serve(async (req) => {
       mode: body.mode,
     };
     if (body.scope === "tenant" && body.display_label !== undefined) insert.display_label = body.display_label;
+    if (body.scope === "branch" && body.is_enabled !== undefined) insert.is_enabled = body.is_enabled;
     await sb.from(table).insert(insert);
   }
 
