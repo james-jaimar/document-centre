@@ -115,6 +115,8 @@ import PlatformCatalog from "@/pages/platform/PlatformCatalog";
 import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
 import PlatformBranchSubscriptions from "@/pages/platform/PlatformBranchSubscriptions";
 import PlatformLegalStatus from "@/pages/platform/PlatformLegalStatus";
+import PlatformLegalDocuments from "@/pages/platform/PlatformLegalDocuments";
+import PlatformLegalEditor from "@/pages/platform/PlatformLegalEditor";
 import PlatformAuditLog from "@/pages/platform/PlatformAuditLog";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import PlatformImposition from "@/pages/platform/PlatformImposition";
