@@ -2272,6 +2272,10 @@ Deno.serve(async (req) => {
       case "markRefundCompleted":
         response = await markRefundCompleted(admin, userId, payload);
         break;
+      case "adminChangeFulfillment":
+        response = await adminChangeFulfillment(admin, authHeader!, userId, payload);
+        break;
+
 
       default:
         return err(`Unknown action: ${action}`, 400);
