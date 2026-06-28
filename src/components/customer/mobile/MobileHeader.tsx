@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
-import { Menu, ShoppingCart, LogIn } from "lucide-react";
+import { Menu, ShoppingCart, LogIn, MapPin } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -8,6 +8,7 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { isAnonymousUser } from "@/lib/tenantSignOut";
+import { useBranch } from "@/contexts/BranchContext";
 import MobileNavSheet from "./MobileNavSheet";
 import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
 
