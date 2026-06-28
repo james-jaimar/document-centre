@@ -41,7 +41,7 @@ export default function DemoGateGuard({ children }: { children: ReactNode }) {
     },
   });
 
-  const tenantId = ctxTenantId ?? (sub.matched ? (sub as any).tenantId ?? null : null) ?? fallbackTenant?.id ?? null;
+  const tenantId = ctxTenantId ?? fallbackTenant?.id ?? null;
   // Best-effort display name (only used by the gate page header)
   const tenantName = fallbackTenant?.name ?? null;
 
