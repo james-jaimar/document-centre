@@ -427,18 +427,6 @@ function SecurityPanel({
     .map((i) => ({ provider: i.provider, meta: SOCIAL_PROVIDER_META[i.provider] ?? { label: i.provider } }));
   const onlySocial = !hasPassword && socials.length > 0;
   const primarySocial = socials[0];
-  const [sending, setSending] = useState(false);
-
-  const sendSetupEmail = async () => {
-    if (!user?.email) return;
-    setSending(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    setSending(false);
-    if (error) toast.error(error.message);
-    else toast.success("Check your inbox to set a password.");
-  };
 
   return (
     <div className="space-y-4 max-w-md">
@@ -447,22 +435,33 @@ function SecurityPanel({
           <h3 className="font-semibold">Sign-in method</h3>
           <p className="text-sm text-muted-foreground">
             You sign in with <span className="font-medium text-foreground">{primarySocial.meta.label}</span>
-            {user?.email ? <> ({user.email})</> : null}. Your password is managed by {primarySocial.meta.label},
-            so there's nothing to change here.
+            {user?.email ? <> as <span className="font-medium text-foreground">{user.email}</span></> : null}.
+            Your password is managed by {primarySocial.meta.label}.
           </p>
-          <div className="flex flex-col sm:flex-row gap-2 pt-2">
-            <Button variant="outline" onClick={sendSetupEmail} disabled={sending}>
-              {sending ? "Sending…" : "Set a password for email sign-in"}
-            </Button>
-            {primarySocial.meta.manageUrl && (
-              <Button asChild variant="ghost">
+          {primarySocial.provider === "google" && primarySocial.meta.manageUrl && (
+            <div className="pt-2">
+              <a
+                href={primarySocial.meta.manageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition"
+              >
+                <GoogleGlyph className="h-4 w-4" />
+                Manage your Google Account
+              </a>
+            </div>
+          )}
+          {primarySocial.provider !== "google" && primarySocial.meta.manageUrl && (
+            <div className="pt-2">
+              <Button asChild variant="outline">
                 <a href={primarySocial.meta.manageUrl} target="_blank" rel="noopener noreferrer">
                   Manage your {primarySocial.meta.label} account
                 </a>
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </Card>
+
       ) : (
         <Card className="p-4 md:p-6 space-y-4">
           <h3 className="font-semibold">Change password</h3>
@@ -490,12 +489,30 @@ function SecurityPanel({
             </Button>
           </div>
           {socials.length > 0 && (
-            <p className="text-xs text-muted-foreground pt-1 border-t">
-              Linked sign-in methods: {socials.map((s) => s.meta.label).join(", ")}
-            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t">
+              <span>Linked sign-in methods:</span>
+              {socials.map((s) => (
+                <span key={s.provider} className="inline-flex items-center gap-1">
+                  {s.provider === "google" && <GoogleGlyph className="h-3 w-3" />}
+                  {s.meta.label}
+                </span>
+              ))}
+            </div>
           )}
         </Card>
       )}
     </div>
   );
 }
+
+function GoogleGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+  );
+}
+
