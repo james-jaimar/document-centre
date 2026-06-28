@@ -108,6 +108,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
         target_profile_id: removeTarget.profile_id,
         tenant_id: removeTarget.tenant_id,
         app_id: removeTarget.app_id,
+        branch_id: branchId,
         membership_id: removeTarget.id,
       });
       toast.success("Removed from branch");
@@ -126,7 +127,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
         type === "invite" ? "resend_invite" :
         "force_password_reset";
       await manageUser.mutateAsync({
-        action, target_profile_id: member.profile_id, tenant_id: member.tenant_id, app_id: member.app_id,
+        action, target_profile_id: member.profile_id, tenant_id: member.tenant_id, app_id: member.app_id, branch_id: branchId,
       });
       toast.success(
         type === "disable" ? "Account disabled" :
@@ -147,6 +148,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
         target_profile_id: setPasswordTarget.profile_id,
         tenant_id: setPasswordTarget.tenant_id,
         app_id: setPasswordTarget.app_id,
+        branch_id: branchId,
         new_password: newPassword,
       });
       toast.success("Password updated");
