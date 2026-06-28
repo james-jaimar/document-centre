@@ -83,6 +83,10 @@ export function Body() {
         law-enforcement or regulatory authorities. We are not obliged to monitor user content
         but reserve the right to do so where reasonable.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function AcceptableUsePolicy() {
+  return <LegalDocPage slug="aup" Fallback={Body} />;
 }
