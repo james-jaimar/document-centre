@@ -411,6 +411,14 @@ async function createOrderWithJobs(
     ]);
   }
 
+  // Recompute totals from authoritative jobs + tenant tax config so VAT and
+  // amount_due are populated even if the client didn't provide them.
+  try {
+    await syncOrderTotals(admin, newOrder.id);
+  } catch (e) {
+    console.warn("[order-engine] syncOrderTotals (post-create) failed", e);
+  }
+
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
