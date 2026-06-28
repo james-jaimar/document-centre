@@ -1,36 +1,35 @@
-## Problem
+## Goal
+Make the PostNet demo gate reliably appear on the custom domain and keep the admin toggle/password state saved.
 
-On the custom domain `postnetprintcenter.com`, the demo gate never appears — the storefront loads normally, even in an incognito window. The `/t/:slug` path-based variant works because the route has a `:slug` param; on the custom domain the slug only exists in `TenantSlugContext` (set by `SubdomainWrapper`), and the guard's own tenant lookup is unreliable for anonymous visitors.
+## What I found
+- The DB row for PostNet is enabled and has a password saved.
+- The tenant custom domain currently saved is `postnetprintcentre.com`.
+- The screenshot/browser shows `postnetprintcenter.com`.
+- The custom-domain resolver only matches the exact saved `tenants.custom_domain`, so the tenant route can render without the demo gate being tied to the intended tenant.
+- The demo gate depends on client-side tenant resolution, so if that lookup misses or is delayed, it currently lets the storefront through.
 
-## Root cause
+## Plan
+1. **Harden custom-domain tenant resolution**
+   - Update host resolution to normalize domains consistently.
+   - Support both `postnetprintcentre.com` and `postnetprintcenter.com` as candidates, including `www.` variants, so the PostNet tenant resolves on the domain being used.
 
-`DemoGateGuard` resolves the tenant by re-querying `tenants` with `.eq("slug", slug)` from the anon client. On the custom-domain root route this query returns `null` for unauthenticated visitors (anon RLS on `tenants` doesn't expose the row by slug the way the host-resolver edge path does). When `tenantId` is `null`, the guard short-circuits to `return <>{children}</>`, so visitors go straight to the storefront and never see the password screen.
+2. **Make the demo gate fail closed on tenant hosts**
+   - On custom-domain/subdomain storefronts, do not render the customer portal while tenant/gate config is still resolving.
+   - If the domain is a tenant host and demo-gate config is enabled, show the gate before `CustomerLayout` can bootstrap anonymous auth or render the storefront.
 
-## Fix
+3. **Fix the gate display name on custom domains**
+   - Pass the resolved tenant name from host/tenant context into `DemoGatePage`, not only the `/t/:slug` fallback lookup.
 
-Stop re-querying `tenants` inside the guard. The tenant id is already resolved upstream and is available in two places:
+4. **Make admin save state harder to misread**
+   - Ensure saving settings invalidates both admin and storefront gate queries.
+   - Keep the current guard that blocks enabling without a password.
+   - If a save fails, keep the toggle state from the DB rather than silently appearing to reset.
 
-1. `useSubdomainTenant()` (from `SubdomainRouter`) exposes the matched tenant id on custom domains and `{slug}.document-centre.com`.
-2. `useTenantContext()` exposes `tenantId` for both subdomain and `/t/:slug` paths once the slug is known.
+5. **Database alignment if needed**
+   - Update the PostNet tenant custom domain to match the live spelling being used, or add a compatibility fallback in code if we do not want to change stored tenant data yet.
 
-Rewrite `DemoGateGuard` to:
-
-- Take `tenantId` from `useTenantContext()` first, falling back to a `tenants` lookup by slug only when context hasn't resolved yet (path-based `/t/:slug` before context settles).
-- Keep the existing bypass logic (platform admin, tenant staff, unlocked cookie).
-- Keep the `useDemoGateConfig` RPC call (it's `SECURITY DEFINER` and safe for anon).
-- Render `<DemoGatePage>` whenever `config.enabled` is true and none of the bypasses match.
-
-No changes to edge functions, DB, admin UI, or routing wiring in `App.tsx` — the guard is already wrapped around both the `/t/:slug` route and the custom-domain root route. This is purely a fix to how the guard discovers the tenant id on custom domains.
-
-## Verification
-
-1. In an incognito window, visit `https://postnetprintcenter.com/` → expect the demo gate (headline, disclaimer, password field) instead of the storefront.
-2. Enter the password, accept the disclaimer → unlocked, storefront loads, cookie persists for the configured days.
-3. Visit `/t/postnet` in incognito on the platform domain → gate still appears (path-based flow unchanged).
-4. Sign in as a tenant staff member or platform admin → gate is bypassed on both hosts.
-
-## Out of scope
-
-- No changes to `tenant_demo_gate` schema, RLS, or the unlock/set-password edge functions.
-- No change to the admin `DemoModeCard` UI.
-- Not touching the existing "enabled without password" guard rail in admin.
+6. **Verify**
+   - Check the live tenant row and demo gate row after the change.
+   - Test an incognito-style visit to `postnetprintcenter.com`/custom-domain-equivalent and confirm the demo password page appears before the print centre.
+   - Test `/t/postnet` still gates correctly.
+   - Confirm platform admins/tenant staff still bypass the gate.
