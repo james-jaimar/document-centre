@@ -289,32 +289,13 @@ export default function CustomerAccount() {
 
 
         <TabsContent value="security">
-          <Card className="p-4 md:p-6 max-w-md space-y-4">
-            <h3 className="font-semibold">Change password</h3>
-            <div>
-              <Label htmlFor="pwd-new">New password</Label>
-              <Input
-                id="pwd-new"
-                type="password"
-                value={pwd.next}
-                onChange={(e) => setPwd({ ...pwd, next: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="pwd-confirm">Confirm password</Label>
-              <Input
-                id="pwd-confirm"
-                type="password"
-                value={pwd.confirm}
-                onChange={(e) => setPwd({ ...pwd, confirm: e.target.value })}
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button onClick={handleChangePassword} disabled={pwdSaving}>
-                {pwdSaving ? "Updating…" : "Update password"}
-              </Button>
-            </div>
-          </Card>
+          <SecurityPanel
+            user={user}
+            pwd={pwd}
+            setPwd={setPwd}
+            pwdSaving={pwdSaving}
+            handleChangePassword={handleChangePassword}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -417,5 +398,104 @@ function FavouriteBranchCombobox({
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+const SOCIAL_PROVIDER_META: Record<string, { label: string; manageUrl?: string }> = {
+  google: { label: "Google", manageUrl: "https://myaccount.google.com/security" },
+  azure: { label: "Microsoft", manageUrl: "https://account.microsoft.com/security" },
+  apple: { label: "Apple", manageUrl: "https://appleid.apple.com/" },
+};
+
+function SecurityPanel({
+  user,
+  pwd,
+  setPwd,
+  pwdSaving,
+  handleChangePassword,
+}: {
+  user: any;
+  pwd: { next: string; confirm: string };
+  setPwd: (v: { next: string; confirm: string }) => void;
+  pwdSaving: boolean;
+  handleChangePassword: () => void;
+}) {
+  const identities: Array<{ provider: string }> = user?.identities ?? [];
+  const hasPassword = identities.some((i) => i.provider === "email");
+  const socials = identities
+    .filter((i) => i.provider !== "email")
+    .map((i) => ({ provider: i.provider, meta: SOCIAL_PROVIDER_META[i.provider] ?? { label: i.provider } }));
+  const onlySocial = !hasPassword && socials.length > 0;
+  const primarySocial = socials[0];
+  const [sending, setSending] = useState(false);
+
+  const sendSetupEmail = async () => {
+    if (!user?.email) return;
+    setSending(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setSending(false);
+    if (error) toast.error(error.message);
+    else toast.success("Check your inbox to set a password.");
+  };
+
+  return (
+    <div className="space-y-4 max-w-md">
+      {onlySocial && primarySocial ? (
+        <Card className="p-4 md:p-6 space-y-3">
+          <h3 className="font-semibold">Sign-in method</h3>
+          <p className="text-sm text-muted-foreground">
+            You sign in with <span className="font-medium text-foreground">{primarySocial.meta.label}</span>
+            {user?.email ? <> ({user.email})</> : null}. Your password is managed by {primarySocial.meta.label},
+            so there's nothing to change here.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <Button variant="outline" onClick={sendSetupEmail} disabled={sending}>
+              {sending ? "Sending…" : "Set a password for email sign-in"}
+            </Button>
+            {primarySocial.meta.manageUrl && (
+              <Button asChild variant="ghost">
+                <a href={primarySocial.meta.manageUrl} target="_blank" rel="noopener noreferrer">
+                  Manage your {primarySocial.meta.label} account
+                </a>
+              </Button>
+            )}
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-4 md:p-6 space-y-4">
+          <h3 className="font-semibold">Change password</h3>
+          <div>
+            <Label htmlFor="pwd-new">New password</Label>
+            <Input
+              id="pwd-new"
+              type="password"
+              value={pwd.next}
+              onChange={(e) => setPwd({ ...pwd, next: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="pwd-confirm">Confirm password</Label>
+            <Input
+              id="pwd-confirm"
+              type="password"
+              value={pwd.confirm}
+              onChange={(e) => setPwd({ ...pwd, confirm: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleChangePassword} disabled={pwdSaving}>
+              {pwdSaving ? "Updating…" : "Update password"}
+            </Button>
+          </div>
+          {socials.length > 0 && (
+            <p className="text-xs text-muted-foreground pt-1 border-t">
+              Linked sign-in methods: {socials.map((s) => s.meta.label).join(", ")}
+            </p>
+          )}
+        </Card>
+      )}
+    </div>
   );
 }
