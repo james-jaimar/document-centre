@@ -32,6 +32,7 @@ type Action =
   | "update_email"
   | "update_profile"
   | "remove_membership"
+  | "update_membership_role"
   | "revoke_platform_admin";
 
 interface Body {
@@ -43,6 +44,7 @@ interface Body {
   membership_id?: string | null;
   new_email?: string;
   new_password?: string;
+  new_role?: string;
   display_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
@@ -73,7 +75,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = (await req.json()) as Body;
-    const { action, target_profile_id, tenant_id, app_id, branch_id, membership_id, new_email, new_password, display_name, first_name, last_name, phone, reason } = body;
+    const { action, target_profile_id, tenant_id, app_id, branch_id, membership_id, new_email, new_password, new_role, display_name, first_name, last_name, phone, reason } = body;
 
     if (!action || !target_profile_id) {
       return err("Missing action or target_profile_id");
@@ -123,6 +125,7 @@ Deno.serve(async (req) => {
       "disable_account",
       "enable_account",
       "remove_membership",
+      "update_membership_role",
     ];
     let isAuthorisedBranchStaff = false;
     if (
