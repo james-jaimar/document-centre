@@ -60,6 +60,10 @@ export default function MobileHeader() {
           )}
         </Link>
 
+        <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />
+
+
+
         <Link
           to={tenantPath("cart")}
           aria-label="Cart"
