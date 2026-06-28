@@ -275,6 +275,13 @@ export function OrderWorkflowPanel({ order }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ChangeFulfillmentDialog
+        order={order as any}
+        currentDeliveryAddress={currentDeliveryAddress}
+        open={fulfillmentDialogOpen}
+        onOpenChange={setFulfillmentDialogOpen}
+      />
     </div>
   );
 }
