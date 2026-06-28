@@ -60,11 +60,9 @@ const SUBS: Sub[] = [
     link: "https://policies.google.com/privacy",
   },
 ];
-
-export default function SubProcessors() {
-  const v = LEGAL_DOCS.subprocessors;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         {E.legalName} engages the following sub-processors to help us provide the Document
         Centre Service. This list is incorporated into our <a href="/legal/dpa">Data Processing
