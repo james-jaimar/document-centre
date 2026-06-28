@@ -63,6 +63,10 @@ export function Body() {
         Questions about this Cookie Policy can be sent to{" "}
         <a href={`mailto:${E.dpoEmail}`}>{E.dpoEmail}</a>.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function CookiePolicy() {
+  return <LegalDocPage slug="cookies" Fallback={Body} />;
 }
