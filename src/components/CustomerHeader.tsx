@@ -202,6 +202,15 @@ export default function CustomerHeader() {
           <span className="truncate max-w-[140px]">{activeBranch?.name ?? "Select branch"}</span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </button>
+      ) : activeBranch ? (
+        <div
+          aria-disabled="true"
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground border border-border/50 ml-2 shrink-0"
+          title={activeBranch.name}
+        >
+          <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: "hsl(var(--tenant-primary, var(--primary)))" }} />
+          <span className="truncate max-w-[140px]">{activeBranch.name}</span>
+        </div>
       ) : null}
 
       <CountryFlagBadge countryCode={tenant?.country_code} />
