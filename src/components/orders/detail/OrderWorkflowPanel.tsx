@@ -21,20 +21,29 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { ADMIN_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { updateOrderStatus } from "@/lib/orders/mutations";
 import { toast } from "@/hooks/use-toast";
-import { ChevronDown, Loader2, Truck, PackageCheck } from "lucide-react";
+import { ChevronDown, Loader2, Truck, PackageCheck, ArrowLeftRight } from "lucide-react";
+import { ChangeFulfillmentDialog } from "@/components/orders/admin/ChangeFulfillmentDialog";
 
 type AdminStatus = keyof typeof ADMIN_STATUS_CONFIG;
 
 interface Props {
   order: {
     id: string;
+    tenant_id?: string | null;
+    branch_id?: string | null;
+    currency?: string | null;
     admin_status: AdminStatus;
     fulfillment_type?: "delivery" | "collection" | null;
+    delivery_amount?: number | null;
+    total_amount?: number | null;
+    amount_paid?: number | null;
     tracking_number?: string | null;
     tracking_carrier?: string | null;
     dispatched_at?: string | null;
+    addresses?: any[];
   };
 }
+
 
 /** Primary forward actions for each status. Returns ordered list of next legal steps. */
 const PRIMARY_NEXT: Record<AdminStatus, Array<{ status: AdminStatus; label: string }>> = {
