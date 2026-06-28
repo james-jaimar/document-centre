@@ -1,11 +1,9 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
-export default function SecurityStatement() {
-  const v = LEGAL_DOCS.security;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         {E.legalName} takes the security of customer data seriously. This statement describes
         the technical and organisational measures we use to protect the Document Centre
