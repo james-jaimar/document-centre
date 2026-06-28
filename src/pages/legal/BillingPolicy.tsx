@@ -115,6 +115,10 @@ export function Body() {
         date so we can investigate. Please contact us before initiating a chargeback with your
         card issuer — we are usually able to resolve billing questions directly and quickly.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function BillingPolicy() {
+  return <LegalDocPage slug="billing" Fallback={Body} />;
 }
