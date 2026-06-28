@@ -111,6 +111,40 @@ export function useToggleTenantGatewayEnabled() {
   });
 }
 
+/**
+ * Toggle a branch-level provider on/off without touching its saved credentials.
+ * Routes through payments-save-credentials so RLS/permission rules stay in one place.
+ */
+export function useToggleBranchGatewayEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      branchId,
+      provider,
+      isEnabled,
+      mode,
+    }: {
+      branchId: string;
+      provider: GatewayProvider;
+      isEnabled: boolean;
+      mode: GatewayMode;
+    }) => {
+      const { data, error } = await supabase.functions.invoke("payments-save-credentials", {
+        body: {
+          scope: "branch",
+          scope_id: branchId,
+          provider,
+          mode,
+          is_enabled: isEnabled,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["branch-payment-gateways", vars.branchId] }),
+  });
+}
+
 export interface PaymentCredentialsSummary {
   configured: boolean;
   mode: GatewayMode;
