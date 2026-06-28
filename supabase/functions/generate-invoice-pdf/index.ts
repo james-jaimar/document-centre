@@ -210,7 +210,25 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = await req.json();
-    const { order_id, kind = "invoice" } = body || {};
+    let { order_id, kind = "invoice" } = body || {};
+    const refreshInvoiceId: string | null = body?.invoice_id ?? null;
+
+    // Refresh-in-place mode: re-render an existing invoice with current order data,
+    // preserving its invoice_number and storage_path. Receipts/credit notes are
+    // immutable snapshots — refuse to refresh them.
+    let existingInvoice: any = null;
+    if (refreshInvoiceId) {
+      const { data: inv, error: invErr } = await admin
+        .from("order_invoices").select("*").eq("id", refreshInvoiceId).maybeSingle();
+      if (invErr || !inv) return json({ error: "Invoice not found" }, 404);
+      if (!["invoice", "proforma"].includes(inv.kind)) {
+        return json({ error: `Cannot refresh ${inv.kind} — immutable record` }, 400);
+      }
+      existingInvoice = inv;
+      order_id = inv.order_id;
+      kind = inv.kind;
+    }
+
     if (!order_id) return json({ error: "order_id required" }, 400);
 
     // Accept either a service-role bearer (internal callers like order-engine
