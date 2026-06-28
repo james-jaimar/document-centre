@@ -152,6 +152,10 @@ export function Body() {
         For an executable counterpart on company letterhead, please contact{" "}
         <a href={`mailto:${E.contactEmail}`}>{E.contactEmail}</a>.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function DataProcessingAddendum() {
+  return <LegalDocPage slug="dpa" Fallback={Body} />;
 }
