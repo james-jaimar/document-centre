@@ -1,0 +1,1 @@
+ALTER TABLE public.branch_payment_gateways ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
