@@ -1,46 +1,53 @@
-## Fix "Login as customer" — error + open in new tab
+## Why Exit also kills the staff tab today
 
-### Root cause of the error
-The toast `Only the token_hash and type should be provided` is from `supabase-js` v2: when you call `verifyOtp({ type: "magiclink", token_hash, email })` it rejects because `email` must NOT be passed together with `token_hash`. So our current swap-in-place flow fails on the very first call inside `ImpersonationContext.startImpersonation`, which is why nothing happens.
+Supabase-JS persists the auth token in **`localStorage`** under a single key (e.g. `sb-<project>-auth-token`). `localStorage` is shared across all tabs on the same origin, so:
 
-### New behaviour (per your ask)
-Impersonation should open the customer portal in a **new tab**, leaving the staff session in the original tab completely untouched. This is also cleaner — no stashing/swapping of the staff `sb-…-auth-token` in `localStorage`, no risk of accidentally signing the staff out of their own tab.
+1. When the impersonation tab calls `verifyOtp(...)`, it **overwrites** that shared key with the customer's session — the staff tab's auth row in `localStorage` is gone the moment the customer tab signs in (the staff tab just hasn't noticed yet because it cached the session in memory).
+2. When the impersonation tab calls `supabase.auth.signOut()` on Exit, it **removes** that same shared key. The staff tab then loses its session on its next refresh / `getSession()` call.
 
-### Plan
+So the "Exit also logs out admin" symptom is really "the customer tab was sharing the staff tab's auth slot all along".
 
-1. **Edge function `impersonate-customer`** — no behaviour change, just return the same `token_hash` + `email` + `impersonation_id` + `expires_at` we already do.
+## Fix: give the impersonation tab its own auth storage
 
-2. **New customer-facing route `/impersonation/consume`** (public, no auth guard):
-   - Reads `token_hash`, `impersonation_id`, `expires_at`, `redirect`, `actor` from the URL.
-   - Calls `supabase.auth.verifyOtp({ type: "magiclink", token_hash })` — **without** `email` (this is the bug fix).
-   - On success, writes the active impersonation state into this tab's `sessionStorage` (so the banner + idle timer work in the new tab only), then `window.location.replace(redirect)`.
-   - On failure, shows an inline error with a "Close tab" button.
+Isolate the impersonation tab's Supabase auth into **`sessionStorage`** (per-tab, not shared) under a **different storage key**, so it can never read or write the staff tab's `localStorage` entry. The staff tab keeps its normal `localStorage`-backed session untouched.
 
-3. **`ImpersonationContext` rewrite**:
-   - `startImpersonation(...)` no longer touches the current tab's auth. It just calls the edge function, then does `window.open('/impersonation/consume?...', '_blank', 'noopener')`. No more `STAFF_SESSION_KEY` stash, no `verifyOtp` in the staff tab.
-   - `active` state is hydrated from `sessionStorage` on mount (so only the impersonation tab shows the amber banner and runs the 30-min idle timer).
-   - `endImpersonation()` in the customer tab: calls `end-impersonation`, signs the customer out of that tab, and closes the tab (`window.close()`); if the browser blocks `close()`, falls back to redirecting to `/`.
-   - Remove the now-unused `STAFF_SESSION_KEY` constant and `localStorage` swap logic.
+### Implementation
 
-4. **`AddCustomerDialog` (branch) "log in as after create" path**:
-   - Same new-tab behaviour — open the consume route in a new tab instead of swapping the current tab.
-   - Close the dialog immediately after the new tab is opened.
+1. **`src/integrations/supabase/client.ts`** — at module load, detect whether this tab is the impersonation tab and, if so, build the client with a sessionStorage-backed `storage` adapter and a distinct `storageKey`:
 
-5. **`BranchCustomers` "Log in as customer" action** — unchanged call site; behaviour change comes for free via the context rewrite.
+   ```ts
+   const isImpersonationTab =
+     typeof window !== "undefined" &&
+     (window.location.pathname.startsWith("/impersonation/consume") ||
+      window.sessionStorage.getItem("dc.impersonation.tab") === "1");
 
-6. **Out of scope for this pass** (saved for the next one, as you asked):
-   - Stamping `impersonation_id` / `impersonated_by` inside `order-engine`.
-   - Skipping `send-transactional-email` while impersonating.
-   - Tenant + Platform `AdminCustomers` pages.
+   if (isImpersonationTab) window.sessionStorage.setItem("dc.impersonation.tab", "1");
 
-### Files touched
-- `src/contexts/ImpersonationContext.tsx` — rewrite to new-tab model.
-- `src/pages/ImpersonationConsume.tsx` — new route handler.
-- `src/App.tsx` — register `/impersonation/consume` as a public route.
-- `src/components/branch/AddCustomerDialog.tsx` — adopt new-tab flow on "log in as after create".
-- `src/components/ImpersonationBanner.tsx` — minor: "Exit" closes the tab instead of redirecting back.
+   const authOptions = isImpersonationTab
+     ? {
+         storage: window.sessionStorage,
+         storageKey: "sb-<project>-impersonation-auth-token",
+         persistSession: true,
+         autoRefreshToken: true,
+       }
+     : { /* existing localStorage defaults */ };
+   ```
+
+   The consume route sets the flag synchronously on first load (URL match), so the very first `createClient` call in that tab already uses sessionStorage. Subsequent navigations in the same tab keep the flag via `sessionStorage`.
+
+2. **`src/contexts/ImpersonationContext.tsx`** — no logic change needed; `endImpersonation()` still calls `supabase.auth.signOut()` + `end-impersonation` + `window.close()`. Because the client in the impersonation tab now writes to `sessionStorage`, `signOut()` only clears the customer session in that tab. The staff tab's `localStorage` token is never touched.
+
+3. **No other files change.** The banner, idle timer, hard-expiry guard, `AddCustomerDialog`, and `BranchCustomers` "Log in as customer" action all keep working as-is.
 
 ### Verification
-- Branch portal → Customers → ⋯ → **Log in as customer** opens a new tab that lands on `/<branch-slug>` as the customer, while the original tab still shows the staff branch portal.
-- Amber banner appears only in the new tab; "Exit" closes the tab.
-- No `Only the token_hash and type should be provided` toast.
+
+- Staff tab: open Branch portal → Customers → **Log in as customer**. Confirm staff tab still shows the branch portal and `localStorage` still has `sb-<project>-auth-token` (staff session).
+- Customer tab (new tab): confirm amber banner, customer is logged in, `sessionStorage` has `sb-<project>-impersonation-auth-token`, `localStorage` does **not** have a fresh customer token.
+- Click **Exit** in the customer tab. Customer tab closes. Reload the staff tab — staff is still signed in (no redirect to login).
+- Repeat with a hard refresh of the staff tab mid-impersonation to make sure it survives.
+
+### Out of scope (unchanged from prior plan)
+
+- Stamping `impersonation_id` / `impersonated_by` in `order-engine`.
+- Skipping `send-transactional-email` while impersonating.
+- Tenant + Platform `AdminCustomers` pages.

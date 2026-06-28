@@ -4,14 +4,41 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
+// Detect impersonation tab and isolate its auth into sessionStorage so it
+// cannot read or clobber the staff tab's localStorage-backed session.
+// The flag is set synchronously on first load of /impersonation/consume and
+// persists for the lifetime of that tab via sessionStorage.
+const isImpersonationTab = (() => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (window.location.pathname.startsWith('/impersonation/consume')) {
+      window.sessionStorage.setItem('dc.impersonation.tab', '1');
+      return true;
+    }
+    return window.sessionStorage.getItem('dc.impersonation.tab') === '1';
+  } catch {
+    return false;
   }
+})();
+
+const authOptions = isImpersonationTab
+  ? {
+      storage: window.sessionStorage,
+      storageKey: `sb-${SUPABASE_PROJECT_ID}-impersonation-auth-token`,
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  : {
+      storage: localStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+    };
+
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: authOptions,
 });
