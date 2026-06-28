@@ -12,6 +12,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import BranchLayout from "@/components/BranchLayout";
 import CustomerLayout from "@/components/CustomerLayout";
+import DemoGateGuard from "@/components/legal/DemoGateGuard";
 
 import Auth from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
@@ -234,7 +235,7 @@ function AppRoutes() {
       <Route path="/impersonation/consume" element={<ImpersonationConsume />} />
 
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
-      <Route path="/t/:slug" element={<CustomerLayout />}>
+      <Route path="/t/:slug" element={<DemoGateGuard><CustomerLayout /></DemoGateGuard>}>
         {customerRoutes()}
         {/* Branch-scoped variants: /t/:slug/:branchSlug/... */}
         <Route path=":branchSlug" element={<BranchSlugRoute />}>
@@ -247,7 +248,7 @@ function AppRoutes() {
         <>
           <Route path="/:branchSlug/auth" element={<Auth />} />
           <Route path="/:branchSlug/auth/callback" element={<AuthCallback />} />
-          <Route path="/" element={<CustomerLayout />}>
+          <Route path="/" element={<DemoGateGuard><CustomerLayout /></DemoGateGuard>}>
             {customerRoutes()}
             <Route path=":branchSlug" element={<BranchSlugRoute />}>
               {customerRoutes()}
