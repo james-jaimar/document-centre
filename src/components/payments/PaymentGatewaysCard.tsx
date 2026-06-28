@@ -13,6 +13,7 @@ import {
   useSavePaymentCredentials,
   useBranchPaymentGateways,
   useToggleTenantGatewayEnabled,
+  useToggleBranchGatewayEnabled,
   usePaymentCredentialsSummary,
   type GatewayMode,
   type GatewayProvider,
@@ -76,6 +77,8 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
             scope === "branch"
               ? (branchOverride?.mode as GatewayMode | undefined) ?? tg?.mode ?? "test"
               : tg?.mode ?? "test";
+          // Branch defaults to enabled when no row exists yet.
+          const branchEnabled = branchOverride ? branchOverride.is_enabled !== false : true;
           return (
             <ProviderRow
               key={provider}
@@ -84,6 +87,7 @@ export function PaymentGatewaysCard({ scope, scopeId, tenantId }: Props) {
               scopeId={scopeId}
               tenantGateway={tg}
               isEnabledAtTenant={!!tg?.is_enabled}
+              isEnabledAtBranch={branchEnabled}
               persistedMode={persistedMode}
               hasCreds={hasCreds}
               tenantHasCreds={tenantHasCreds}
@@ -109,6 +113,7 @@ interface RowProps {
   scopeId: string;
   tenantGateway?: TenantPaymentGateway;
   isEnabledAtTenant: boolean;
+  isEnabledAtBranch: boolean;
   persistedMode: GatewayMode;
   hasCreds: boolean;
   tenantHasCreds: boolean;
@@ -117,10 +122,11 @@ interface RowProps {
 }
 
 function ProviderRow({
-  provider, scope, scopeId, isEnabledAtTenant, persistedMode, hasCreds, tenantHasCreds,
+  provider, scope, scopeId, isEnabledAtTenant, isEnabledAtBranch, persistedMode, hasCreds, tenantHasCreds,
   displayLabel, onToggleEnabled,
 }: RowProps) {
   const save = useSavePaymentCredentials();
+  const toggleBranch = useToggleBranchGatewayEnabled();
   const summaryQ = usePaymentCredentialsSummary(scope, scopeId, provider, hasCreds);
 
   const [mode, setMode] = useState<GatewayMode>(persistedMode);
