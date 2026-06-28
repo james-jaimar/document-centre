@@ -427,18 +427,6 @@ function SecurityPanel({
     .map((i) => ({ provider: i.provider, meta: SOCIAL_PROVIDER_META[i.provider] ?? { label: i.provider } }));
   const onlySocial = !hasPassword && socials.length > 0;
   const primarySocial = socials[0];
-  const [sending, setSending] = useState(false);
-
-  const sendSetupEmail = async () => {
-    if (!user?.email) return;
-    setSending(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    setSending(false);
-    if (error) toast.error(error.message);
-    else toast.success("Check your inbox to set a password.");
-  };
 
   return (
     <div className="space-y-4 max-w-md">
@@ -447,22 +435,33 @@ function SecurityPanel({
           <h3 className="font-semibold">Sign-in method</h3>
           <p className="text-sm text-muted-foreground">
             You sign in with <span className="font-medium text-foreground">{primarySocial.meta.label}</span>
-            {user?.email ? <> ({user.email})</> : null}. Your password is managed by {primarySocial.meta.label},
-            so there's nothing to change here.
+            {user?.email ? <> as <span className="font-medium text-foreground">{user.email}</span></> : null}.
+            Your password is managed by {primarySocial.meta.label}.
           </p>
-          <div className="flex flex-col sm:flex-row gap-2 pt-2">
-            <Button variant="outline" onClick={sendSetupEmail} disabled={sending}>
-              {sending ? "Sending…" : "Set a password for email sign-in"}
-            </Button>
-            {primarySocial.meta.manageUrl && (
-              <Button asChild variant="ghost">
+          {primarySocial.provider === "google" && primarySocial.meta.manageUrl && (
+            <div className="pt-2">
+              <a
+                href={primarySocial.meta.manageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition"
+              >
+                <GoogleGlyph className="h-4 w-4" />
+                Manage your Google Account
+              </a>
+            </div>
+          )}
+          {primarySocial.provider !== "google" && primarySocial.meta.manageUrl && (
+            <div className="pt-2">
+              <Button asChild variant="outline">
                 <a href={primarySocial.meta.manageUrl} target="_blank" rel="noopener noreferrer">
                   Manage your {primarySocial.meta.label} account
                 </a>
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </Card>
+
       ) : (
         <Card className="p-4 md:p-6 space-y-4">
           <h3 className="font-semibold">Change password</h3>
