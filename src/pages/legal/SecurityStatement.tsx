@@ -97,6 +97,10 @@ export function Body() {
         guarantee absolute security and accept no liability for security incidents to the
         extent excluded or limited by the Terms of Service.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function SecurityStatement() {
+  return <LegalDocPage slug="security" Fallback={Body} />;
 }
