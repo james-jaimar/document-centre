@@ -256,7 +256,19 @@ const PlatformTenants = () => {
               <Label>Logo URL</Label>
               <Input value={form.logo_url} onChange={(e) => setForm({ ...form, logo_url: e.target.value })} placeholder="https://..." />
             </div>
+            <div>
+              <Label>Country (storefront flag)</Label>
+              <Select value={form.country_code} onValueChange={(v) => setForm({ ...form, country_code: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ZA">🇿🇦 South Africa</SelectItem>
+                  <SelectItem value="US">🇺🇸 United States</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Shown as a flag in the customer header.</p>
+            </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={updateTenant.isPending}>
