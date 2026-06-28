@@ -2206,6 +2206,66 @@ export type Database = {
           },
         ]
       }
+      impersonation_sessions: {
+        Row: {
+          actions_count: number
+          actor_profile_id: string
+          branch_id: string | null
+          ended_at: string | null
+          ended_reason: string | null
+          id: string
+          ip: string | null
+          metadata: Json
+          started_at: string
+          target_profile_id: string
+          tenant_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          actions_count?: number
+          actor_profile_id: string
+          branch_id?: string | null
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          ip?: string | null
+          metadata?: Json
+          started_at?: string
+          target_profile_id: string
+          tenant_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          actions_count?: number
+          actor_profile_id?: string
+          branch_id?: string | null
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          ip?: string | null
+          metadata?: Json
+          started_at?: string
+          target_profile_id?: string
+          tenant_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "impersonation_sessions_actor_profile_id_fkey"
+            columns: ["actor_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "impersonation_sessions_target_profile_id_fkey"
+            columns: ["target_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       imposition_templates: {
         Row: {
           bleed_mm: number
@@ -2514,6 +2574,7 @@ export type Database = {
           branch_id: string | null
           created_at: string
           id: string
+          impersonated_by: string | null
           is_internal: boolean
           job_id: string | null
           message_body: string
@@ -2530,6 +2591,7 @@ export type Database = {
           branch_id?: string | null
           created_at?: string
           id?: string
+          impersonated_by?: string | null
           is_internal?: boolean
           job_id?: string | null
           message_body: string
@@ -2546,6 +2608,7 @@ export type Database = {
           branch_id?: string | null
           created_at?: string
           id?: string
+          impersonated_by?: string | null
           is_internal?: boolean
           job_id?: string | null
           message_body?: string
@@ -2570,6 +2633,13 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_impersonated_by_fkey"
+            columns: ["impersonated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -3452,6 +3522,7 @@ export type Database = {
           cost_centre: string | null
           created_at: string
           created_by_admin_profile_id: string | null
+          created_under_impersonation_id: string | null
           currency: string
           customer_email: string | null
           customer_name: string | null
@@ -3467,6 +3538,7 @@ export type Database = {
             | null
           fulfilment_status: string
           id: string
+          impersonated_by: string | null
           is_demo: boolean
           metadata: Json
           notes: string | null
@@ -3503,6 +3575,7 @@ export type Database = {
           cost_centre?: string | null
           created_at?: string
           created_by_admin_profile_id?: string | null
+          created_under_impersonation_id?: string | null
           currency?: string
           customer_email?: string | null
           customer_name?: string | null
@@ -3518,6 +3591,7 @@ export type Database = {
             | null
           fulfilment_status?: string
           id?: string
+          impersonated_by?: string | null
           is_demo?: boolean
           metadata?: Json
           notes?: string | null
@@ -3554,6 +3628,7 @@ export type Database = {
           cost_centre?: string | null
           created_at?: string
           created_by_admin_profile_id?: string | null
+          created_under_impersonation_id?: string | null
           currency?: string
           customer_email?: string | null
           customer_name?: string | null
@@ -3569,6 +3644,7 @@ export type Database = {
             | null
           fulfilment_status?: string
           id?: string
+          impersonated_by?: string | null
           is_demo?: boolean
           metadata?: Json
           notes?: string | null
@@ -3612,6 +3688,20 @@ export type Database = {
           {
             foreignKeyName: "orders_created_by_admin_profile_id_fkey"
             columns: ["created_by_admin_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_created_under_impersonation_id_fkey"
+            columns: ["created_under_impersonation_id"]
+            isOneToOne: false
+            referencedRelation: "impersonation_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_impersonated_by_fkey"
+            columns: ["impersonated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -6021,6 +6111,7 @@ export type Database = {
           description: string
           event_type: string
           id: string
+          impersonated_by: string | null
           job_id: string | null
           metadata: Json
           order_id: string | null
@@ -6037,6 +6128,7 @@ export type Database = {
           description: string
           event_type: string
           id?: string
+          impersonated_by?: string | null
           job_id?: string | null
           metadata?: Json
           order_id?: string | null
@@ -6053,6 +6145,7 @@ export type Database = {
           description?: string
           event_type?: string
           id?: string
+          impersonated_by?: string | null
           job_id?: string | null
           metadata?: Json
           order_id?: string | null
@@ -6072,6 +6165,13 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_impersonated_by_fkey"
+            columns: ["impersonated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -6259,6 +6359,7 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: boolean
       }
+      caller_can_impersonate: { Args: { _target: string }; Returns: boolean }
       caller_has_branch_access: {
         Args: { _branch_id: string }
         Returns: boolean
