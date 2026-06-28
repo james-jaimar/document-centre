@@ -1,33 +1,89 @@
-## Problem
+# Branch role tiering — two-tier model (revised)
 
-In the Branch Settings → Users tab, "Set password manually" (and likely Disable/Enable/Remove) fails when the signed-in user is a **branch manager** rather than a tenant owner/admin.
+Keep the existing two roles (`branch_manager`, `store_operator`) but make them mean different things. Operators run the whole shop floor including money movements; managers are the only ones who touch **configuration and people**.
 
-Root cause in `supabase/functions/manage-user/index.ts`:
+## Permission matrix
 
-- Authorization requires `platform_admin`, tenant `owner`/`admin`, OR an "authorised branch staff" path.
-- The branch-staff path only allows `force_password_reset`, `update_profile`, `update_email`, `resend_invite` — **`set_password` is not in the allowed list**.
-- It also only activates when `branch_id` is included in the request body. `BranchUsersPanel.tsx` currently sends `tenant_id` and `app_id` but **omits `branch_id`**, so the branch-staff branch never even runs.
+| Area | Branch Manager | Store Operator |
+|---|---|---|
+| Orders — view, progress, edit specs, messaging, artwork, statuses | ✅ | ✅ |
+| Customers — add, edit, notes, addresses, impersonate ("Login as customer") | ✅ | ✅ |
+| Quotes — create, send, convert | ✅ | ✅ |
+| Refunds & cancellations on paid orders | ✅ | ✅ |
+| Manual discounts / price overrides at checkout & on quotes | ✅ | ✅ |
+| Change fulfillment (collection ↔ delivery) on paid orders | ✅ | ✅ |
+| Financial visibility (order totals, revenue, dashboards) | ✅ | ✅ |
+| **Branch settings** (delivery zones, catalog pricing, products, branch info) | ✅ | ❌ |
+| **Payment gateways** (PayFast / Stripe credentials) | ✅ | ❌ |
+| **Branch users** (add, remove, disable, reset, set password, promote/demote) | ✅ | ❌ |
+| **Billing & subscription** (plan, Stripe portal, promo codes) | ✅ | ❌ |
 
-Result: a branch manager who can see the dialog gets a `403 Forbidden` (or generic failure toast) when clicking "Set password".
+The line is simple: **operators run the day, managers own the shop.**
 
-## Fix
+## What changes in the app
 
-### 1. `src/components/branch/BranchUsersPanel.tsx`
-Include `branch_id: branchId` in every `manageUser.mutateAsync({...})` call (set password, confirm action for disable/enable/reset/invite, and the existing remove flow). This lets the edge function evaluate the branch-staff authorisation path.
+### 1. Single source of truth for branch permissions
+New file `src/lib/auth/branchPermissions.ts`:
 
-### 2. `supabase/functions/manage-user/index.ts`
-Extend branch-staff authorisation so a **branch_manager** at the target's branch can manage their own staff:
+```
+type BranchAction =
+  | 'manage_users'
+  | 'manage_billing'
+  | 'manage_settings'
+  | 'manage_payment_gateways'
+  | 'manage_catalog_pricing';
 
-- Split BRANCH_ALLOWED_ACTIONS into two tiers:
-  - **Any branch staff** (existing): `force_password_reset`, `update_profile`, `update_email`, `resend_invite` — still gated to customers via `profile_belongs_to_branch`.
-  - **Branch manager only**: add `set_password`, `disable_account`, `enable_account`, `remove_membership` — only when the target is a `branch_manager`/`store_operator` whose `tenant_memberships.branch_id` matches the supplied `branch_id`.
-- Confirm caller's membership row has `role = 'branch_manager'` (or owner/admin, already covered) for the elevated set, and verify the target membership exists in the same `(tenant_id, app_id, branch_id)` before authorising. This keeps tenant-wide and cross-branch escalation impossible.
+canBranchDo(role, action) => boolean
+```
 
-No DB schema change. No UI change beyond passing `branch_id`.
+`branch_manager` → all true. `store_operator` → all false. Plus a `useBranchPermissions()` hook reading the current branch membership role. (Refunds, discounts, fulfillment changes are *not* gated — both roles get them.)
 
-## Verification
+### 2. UI gating (frontend) — manager-only surfaces
+Operators get a clear "Contact your Branch Manager" notice instead of the controls:
 
-- As branch_manager in Demo Branch: open Users → ⋮ on a store operator → "Set password manually" → succeeds; toast "Password updated".
-- Disable / Enable / Remove also succeed for branch_manager.
-- As a store_operator (non-manager): "Set password" still blocked (403).
-- As tenant owner/admin: unchanged, still works.
+- `BranchUsersPanel.tsx` — manager only; operators see a read-only roster (or nothing).
+- `BranchSubscriptionPanel.tsx` / branch Billing page / Stripe portal button — manager only.
+- `BranchSettings.tsx`, `BranchDelivery.tsx`, `BranchCatalogPricing.tsx`, `BranchProducts.tsx` — manager only.
+- `PaymentGatewaysCard.tsx` + masked-credentials summary — manager only.
+
+Everything else in `ManageOrderPanel.tsx`, checkout, quotes, customers stays visible to operators (including Refund, Cancel-paid, Change-fulfillment, discount fields).
+
+### 3. Server-side enforcement (the real gate)
+UI hiding isn't security. Add the same check in the edge functions behind the four locked surfaces:
+
+- `manage-user` — already differentiates; confirm the `BRANCH_MANAGER_STAFF_ACTIONS` tier (set_password, disable, enable, remove_membership, plus add/promote/demote) requires `branch_manager`. ✅ mostly done.
+- `override-branch-subscription`, `create-branch-portal-session` — require `branch_manager`.
+- `payments-set-credentials` (and the credentials-summary endpoint's write paths) — require `branch_manager`.
+- Branch settings / delivery / catalog-pricing / branch-products write endpoints (and matching RLS policies on `branch_settings`, `branch_capabilities`, `branch_payment_gateways`, `branch_catalog_overrides`, `branch_product_option_overrides`, `delivery_zones`, `delivery_rates`, `delivery_zone_locations`) — write access limited to `branch_manager` (+ owner/admin/platform_admin).
+
+Helper used by each edge function:
+```
+async function requireBranchManager(supabase, userId, branchId): Promise<void>
+```
+Looks up `tenant_memberships` for `(profile_id=userId, branch_id, is_active=true)` and throws 403 unless `role='branch_manager'`. `owner`, `admin`, and `platform_admin` always pass.
+
+Order-engine actions (`adminChangeFulfillment`, refund/cancel paths) and `payments-refund` stay open to both branch roles — no change there.
+
+### 4. Add-staff UX
+`BranchUsersPanel` currently hard-codes new staff as `store_operator`. Add a role selector to the "Add staff" dialog:
+- **Operator** (default)
+- **Branch Manager**
+
+Helper text: *"Operators run orders, customers, refunds and discounts. Managers also handle branch settings, payment gateways, billing and staff."*
+
+Allow a manager to **promote/demote** existing staff between the two roles from the roster row. Guard in `manage-user`: cannot demote the **last active `branch_manager`** of a branch, and cannot demote yourself if you'd be the last one.
+
+### 5. No DB schema change
+Both role values already exist in `tenant_memberships.role`. Only RLS policy tweaks on the manager-only tables (above) if any currently allow `store_operator` writes.
+
+## Out of scope (per your answers)
+- No third tier.
+- No refund/discount caps.
+- No hiding of money figures from operators.
+
+## Rollout
+1. Add `branchPermissions.ts` + `useBranchPermissions`.
+2. Add `requireBranchManager` to the four locked edge-function areas; audit RLS on the listed branch tables and tighten writes to manager-only.
+3. Gate the four UI surfaces (users, billing/subscription, settings/delivery/catalog/products, payment gateways).
+4. Add the role selector + promote/demote (with last-manager guard) to `BranchUsersPanel`.
+5. Smoke test in `postnet-test` as an operator: orders/customers/refunds/discounts/fulfillment changes all work; settings/users/billing/gateways are blocked in UI **and** if the edge function is called directly.
