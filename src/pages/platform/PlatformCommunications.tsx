@@ -159,6 +159,12 @@ function ComposeTab() {
     if (!tenantId || !templateSlug || selected.size === 0) {
       toast({ title: "Pick a tenant, template, and at least one branch", variant: "destructive" }); return;
     }
+    if (kind === "marketing" && template && !/\{\{\s*activation_link\s*\}\}/.test(template.body_html ?? "")) {
+      const ok = window.confirm(
+        "This marketing template doesn't include {{activation_link}}. Recipients won't get an activation URL. Send anyway?"
+      );
+      if (!ok) return;
+    }
     setSending(true); setResult(null);
     const fn = kind === "marketing" ? "send-branch-marketing-campaign" : "send-branch-welcome-campaign";
     const { data, error } = await supabase.functions.invoke(fn, {
