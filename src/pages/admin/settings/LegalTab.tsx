@@ -17,6 +17,7 @@ import {
   defaultPrivacyHtml,
   type LegalTemplateContext,
 } from "@/lib/legal/defaultTemplates";
+import { DemoModeCard } from "./DemoModeCard";
 
 export function LegalTab() {
   const { tenantId } = useTenantContext();
@@ -156,6 +157,8 @@ export function LegalTab() {
           </div>
         </CardContent>
       </Card>
+
+      <DemoModeCard />
     </div>
   );
 }
