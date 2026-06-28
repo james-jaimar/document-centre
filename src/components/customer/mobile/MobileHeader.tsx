@@ -62,6 +62,27 @@ export default function MobileHeader() {
           )}
         </Link>
 
+        {isMultiBranch ? (
+          <button
+            onClick={openPicker}
+            aria-label={activeBranch ? `Branch: ${activeBranch.name}` : "Select branch"}
+            title={activeBranch ? "Change branch" : "Select branch"}
+            className="flex items-center gap-1 rounded-lg border border-border/50 px-2 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 shrink-0"
+          >
+            <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: "hsl(var(--tenant-primary, var(--primary)))" }} />
+            <span className="truncate max-w-[80px]">{activeBranch?.name ?? "Branch"}</span>
+          </button>
+        ) : activeBranch ? (
+          <div
+            aria-disabled="true"
+            title={activeBranch.name}
+            className="flex items-center gap-1 rounded-lg border border-border/50 px-2 py-1.5 text-[11px] font-medium text-muted-foreground shrink-0"
+          >
+            <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: "hsl(var(--tenant-primary, var(--primary)))" }} />
+            <span className="truncate max-w-[80px]">{activeBranch.name}</span>
+          </div>
+        ) : null}
+
         <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />
 
 
