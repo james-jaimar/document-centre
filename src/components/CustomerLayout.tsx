@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
