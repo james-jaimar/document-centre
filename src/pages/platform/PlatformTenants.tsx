@@ -64,7 +64,7 @@ const PlatformTenants = () => {
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [paymentsTenant, setPaymentsTenant] = useState<Tenant | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
+  const [form, setForm] = useState({ name: "", slug: "", logo_url: "", country_code: "ZA" });
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE);
 
   // Subscription lookup by tenant_id
@@ -87,8 +87,14 @@ const PlatformTenants = () => {
 
   const openEdit = (t: Tenant) => {
     setEditing(t);
-    setForm({ name: t.name, slug: t.slug, logo_url: t.logo_url || "" });
+    setForm({
+      name: t.name,
+      slug: t.slug,
+      logo_url: t.logo_url || "",
+      country_code: ((t as any).country_code as string) || "ZA",
+    });
   };
+
 
   const handleManage = (tenantId: string) => {
     setOverrideTenantId(tenantId);
@@ -103,12 +109,14 @@ const PlatformTenants = () => {
         name: form.name,
         slug: form.slug,
         logo_url: form.logo_url || null,
-      });
+        country_code: form.country_code,
+      } as any);
       toast.success("Tenant updated");
       setEditing(null);
     } catch (err: any) {
       toast.error(err.message);
     }
+
   };
 
   // Auto-generate slug from name
