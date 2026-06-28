@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Save, Clock, Truck, MapPin, Phone, IdCard, CreditCard, Mail, Users, Wallet } from "lucide-react";
+import { Save, Clock, Truck, MapPin, Phone, IdCard, CreditCard, Mail, Users, Wallet, Lock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import BranchIdentityBankingCard from "@/components/branch/BranchIdentityBankingCard";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
@@ -21,6 +21,7 @@ import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptance
 import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
 import { useSearchParams } from "react-router-dom";
+import { isBranchManagerRole } from "@/lib/auth/branchPermissions";
 
 
 interface BranchSettingsData {
@@ -57,10 +58,11 @@ const defaultSettings: BranchSettingsData = {
 };
 
 const BranchSettings = () => {
-  const { tenantId, branchId, appId } = useTenantContext();
+  const { tenantId, branchId, appId, membershipRole } = useTenantContext();
   const { data: branches } = useBranches(tenantId);
   const branch = branches?.find((b) => b.id === branchId);
   const updateBranch = useUpdateBranch();
+  const canManage = isBranchManagerRole(membershipRole);
   const [settings, setSettings] = useState<BranchSettingsData>(defaultSettings);
   const [dirty, setDirty] = useState(false);
 
@@ -110,6 +112,34 @@ const BranchSettings = () => {
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-foreground">Branch Settings</h1>
         <p className="text-muted-foreground">No branch assigned to your account.</p>
+      </div>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Branch Settings</h1>
+          <p className="text-muted-foreground">{branch.name}</p>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Lock size={16} /> Manager access required
+            </CardTitle>
+            <CardDescription>
+              Branch settings, staff, payment gateways and subscription are
+              reserved for the branch manager. Ask a manager to make changes
+              here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            As a store operator you can still process orders, take payments,
+            issue refunds and cancellations, apply manual discounts and change
+            order fulfillment from the order screens.
+          </CardContent>
+        </Card>
       </div>
     );
   }
