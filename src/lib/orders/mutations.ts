@@ -312,6 +312,29 @@ export async function customerChangeFulfillment(payload: {
   return invokeOrderEngine<CustomerEditResult>("customerChangeFulfillment", payload);
 }
 
+export interface AdminChangeFulfillmentResult {
+  success: boolean;
+  from: "delivery" | "collection" | null;
+  to: "delivery" | "collection";
+  delivery_amount: number;
+  new_total: number;
+  balance_due: number;
+  refund_flagged: boolean;
+  refund_adjustment_id: string | null;
+}
+
+export async function adminChangeFulfillment(payload: {
+  order_id: string;
+  to: "delivery" | "collection";
+  delivery_address?: Record<string, string | null | undefined>;
+  delivery_amount?: number;
+  delivery_description?: string;
+  notify_customer?: boolean;
+}) {
+  return invokeOrderEngine<AdminChangeFulfillmentResult>("adminChangeFulfillment", payload as any);
+}
+
+
 export async function markRefundCompleted(payload: {
   adjustment_id: string;
   payment_reference?: string;
