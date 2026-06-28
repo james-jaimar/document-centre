@@ -294,6 +294,7 @@ export async function generateInvoice(payload: {
 }
 
 export async function sendInvoiceEmail(invoiceId: string, orderId: string) {
+  await ensureInvoiceFresh(invoiceId);
   const { data, error } = await supabase.functions.invoke("send-order-email", {
     body: { order_id: orderId, event_key: "invoice_sent", invoice_id: invoiceId, force: true },
   });
