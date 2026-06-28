@@ -112,6 +112,10 @@ export function Body() {
         Sub-processor questions can be sent to{" "}
         <a href={`mailto:${E.dpoEmail}`}>{E.dpoEmail}</a>.
       </p>
-    </LegalLayout>
+    </>
   );
+}
+
+export default function SubProcessors() {
+  return <LegalDocPage slug="subprocessors" Fallback={Body} />;
 }
