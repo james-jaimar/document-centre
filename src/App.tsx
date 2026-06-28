@@ -102,6 +102,7 @@ import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
 import BranchSettings from "@/pages/branch/BranchSettings";
 import BranchCustomers from "@/pages/branch/BranchCustomers";
 import BranchSentMail from "@/pages/branch/BranchSentMail";
+import BranchReports from "@/pages/branch/Reports";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
