@@ -10,6 +10,19 @@ interface HostTenant {
   app_id: string;
 }
 
+function domainCandidates(rawHost: string, hostname: string): string[] {
+  const base = [rawHost, hostname, rawHost.replace(/^www\./, ""), hostname.replace(/^www\./, "")];
+  const variants = base.flatMap((h) => {
+    const trimmed = h.toLowerCase().trim().replace(/\.$/, "");
+    return [
+      trimmed,
+      trimmed.replace(/centre/g, "center"),
+      trimmed.replace(/center/g, "centre"),
+    ];
+  });
+  return Array.from(new Set(variants.filter(Boolean)));
+}
+
 /**
  * Resolves a tenant from the current hostname.
  *
@@ -24,7 +37,7 @@ export function useTenantFromHost() {
   const [matched, setMatched] = useState(false);
 
   useEffect(() => {
-    const rawHost = window.location.hostname;
+    const rawHost = window.location.hostname.toLowerCase().trim().replace(/\.$/, "");
     const hostname = rawHost.replace(/^www\./, "");
 
     // Skip localhost, preview domains, and the bare platform domain
@@ -60,7 +73,7 @@ export function useTenantFromHost() {
       }
 
       // Custom domain (apex or www. form)
-      const candidates = Array.from(new Set([rawHost, hostname]));
+      const candidates = domainCandidates(rawHost, hostname);
       const { data } = await supabase
         .from("tenants")
         .select("id, slug, name, app_id")

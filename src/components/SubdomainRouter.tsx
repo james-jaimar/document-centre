@@ -6,9 +6,16 @@ import { isPlatformHost } from "@/lib/tenantUrl";
 interface SubdomainState {
   matched: boolean;
   slug: string | null;
+  tenantId: string | null;
+  name: string | null;
 }
 
-const SubdomainContext = createContext<SubdomainState>({ matched: false, slug: null });
+const SubdomainContext = createContext<SubdomainState>({
+  matched: false,
+  slug: null,
+  tenantId: null,
+  name: null,
+});
 
 export function useSubdomainTenant() {
   return useContext(SubdomainContext);
@@ -63,7 +70,12 @@ export function SubdomainWrapper({ children }: { children: ReactNode }) {
     );
   }
 
-  const state: SubdomainState = { matched: !!matched && !!tenant, slug: tenant?.slug ?? null };
+  const state: SubdomainState = {
+    matched: !!matched && !!tenant,
+    slug: tenant?.slug ?? null,
+    tenantId: tenant?.id ?? null,
+    name: tenant?.name ?? null,
+  };
 
   if (matched && tenant) {
     return (

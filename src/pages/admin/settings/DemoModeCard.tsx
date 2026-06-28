@@ -82,6 +82,10 @@ export function DemoModeCard() {
       qc.invalidateQueries({ queryKey: ["demo-gate-admin", tenantId] });
       qc.invalidateQueries({ queryKey: ["demo-gate-config", tenantId] });
     } catch (e: any) {
+      setEnabled(!!data?.enabled);
+      setHeadline(data?.headline ?? "Concept Demo");
+      setDisclaimer(data?.disclaimer_html ?? "");
+      setCookieDays(data?.cookie_days ?? 30);
       toast.error("Save failed", { description: e.message });
     } finally {
       setSaving(false);
@@ -104,6 +108,7 @@ export function DemoModeCard() {
       setNewPassword("");
       toast.success("Password updated");
       qc.invalidateQueries({ queryKey: ["demo-gate-admin", tenantId] });
+      qc.invalidateQueries({ queryKey: ["demo-gate-config", tenantId] });
     } catch (e: any) {
       toast.error("Could not update password", { description: e.message });
     } finally {

@@ -22,12 +22,12 @@ import DemoGatePage from "./DemoGatePage";
 export default function DemoGateGuard({ children }: { children: ReactNode }) {
   const { slug } = useTenantSlug();
   const { user, roles } = useAuth();
-  const { tenantId: ctxTenantId, memberships } = useTenantContext();
+  const { tenantId: ctxTenantId, tenantName: ctxTenantName, memberships, loading: tenantLoading } = useTenantContext();
   const sub = useSubdomainTenant();
 
   // Only fall back to a direct lookup when neither context has a tenant id yet.
   const needsFallback = !ctxTenantId && !sub.matched;
-  const { data: fallbackTenant } = useQuery({
+  const { data: fallbackTenant, isLoading: fallbackLoading } = useQuery({
     queryKey: ["demo-gate-tenant-fallback", slug],
     enabled: needsFallback && !!slug,
     queryFn: async () => {
@@ -41,18 +41,38 @@ export default function DemoGateGuard({ children }: { children: ReactNode }) {
     },
   });
 
-  const tenantId = ctxTenantId ?? fallbackTenant?.id ?? null;
+  const tenantId = sub.tenantId ?? ctxTenantId ?? fallbackTenant?.id ?? null;
   // Best-effort display name (only used by the gate page header)
-  const tenantName = fallbackTenant?.name ?? null;
+  const tenantName = sub.name ?? ctxTenantName ?? fallbackTenant?.name ?? null;
 
-  const { data: config, isLoading } = useDemoGateConfig(tenantId);
+  const { data: config, isLoading, isError } = useDemoGateConfig(tenantId);
   const { unlocked, unlock } = useDemoUnlock(tenantId);
 
   const isPlatformAdmin = roles?.includes("platform_admin");
+  const staffRoles = new Set([
+    "owner",
+    "admin",
+    "sales",
+    "production",
+    "accounts",
+    "branch_manager",
+    "store_operator",
+  ]);
   const isTenantStaff =
-    !!user && !!tenantId && memberships.some((m) => m.tenant_id === tenantId);
+    !!user &&
+    !!tenantId &&
+    memberships.some((m) => m.tenant_id === tenantId && staffRoles.has(m.role));
 
-  if (!tenantId || isLoading) return <>{children}</>;
+  const expectsTenant = sub.matched || !!slug;
+  if (expectsTenant && (!tenantId || tenantLoading || fallbackLoading || isLoading)) {
+    return <DemoGateLoading />;
+  }
+
+  if (expectsTenant && isError) {
+    return <DemoGateUnavailable />;
+  }
+
+  if (!tenantId) return <>{children}</>;
   if (!config?.enabled) return <>{children}</>;
   if (isPlatformAdmin || isTenantStaff) return <>{children}</>;
   if (unlocked) return <>{children}</>;
@@ -64,5 +84,26 @@ export default function DemoGateGuard({ children }: { children: ReactNode }) {
       config={config}
       onUnlock={unlock}
     />
+  );
+}
+
+function DemoGateLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+function DemoGateUnavailable() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 text-center">
+      <div className="max-w-md space-y-2">
+        <h1 className="text-xl font-semibold">Private preview unavailable</h1>
+        <p className="text-sm text-muted-foreground">
+          We could not verify access to this preview. Please refresh the page.
+        </p>
+      </div>
+    </div>
   );
 }
