@@ -1,12 +1,10 @@
-import LegalLayout from "./LegalLayout";
+import LegalDocPage from "@/components/legal/LegalDocPage";
 import { Link } from "react-router-dom";
 import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
-import { LEGAL_DOCS } from "@/lib/legal/versions";
 
-export default function DataProcessingAddendum() {
-  const v = LEGAL_DOCS.dpa;
+export function Body() {
   return (
-    <LegalLayout title={v.title} updated={v.effective} version={v.version}>
+    <>
       <p>
         This Data Processing Addendum ("DPA") forms part of the Terms of Service between{" "}
         <strong>{E.legalName}</strong> ("{E.tradingName}", "we", "us", "Processor") and the
