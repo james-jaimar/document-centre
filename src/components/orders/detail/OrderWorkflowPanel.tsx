@@ -163,8 +163,22 @@ export function OrderWorkflowPanel({ order }: Props) {
           </Button>
         )}
 
+        {fulfillmentChangeable && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            disabled={busy}
+            onClick={() => setFulfillmentDialogOpen(true)}
+          >
+            <ArrowLeftRight className="h-3 w-3 mr-1" />
+            Change fulfillment
+          </Button>
+        )}
+
         {/* More dropdown for on_hold / cancel */}
         {(order.admin_status !== "completed" && order.admin_status !== "cancelled") && (
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy}>
