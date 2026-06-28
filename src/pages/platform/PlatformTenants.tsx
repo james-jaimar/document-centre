@@ -144,16 +144,18 @@ const PlatformTenants = () => {
         app_id: createForm.app_id,
         logo_url: createForm.logo_url || null,
         country: createForm.country,
+        country_code: ["ZA", "US", "GB", "AU"].includes(createForm.country) ? createForm.country : "ZA",
         default_currency: createForm.default_currency,
         timezone: createForm.timezone,
         is_active: createForm.is_active,
-      });
+      } as any);
       toast.success("Tenant created");
       setCreating(false);
       setCreateForm(EMPTY_CREATE);
     } catch (err: any) {
       toast.error(err.message);
     }
+
   };
 
   return (
