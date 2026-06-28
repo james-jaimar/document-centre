@@ -1881,7 +1881,8 @@ async function adminChangeFulfillment(
     // Fetch + auth. We intentionally do NOT pass adminOnly here so branch
     // managers / sales / production staff who own the order's branch can
     // change fulfillment — same audience that can already edit pricing.
-    const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+    const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id, { adminOnly: false });
+
     if (denied || !order) {
       return fail(denied || "Order not found", 403, "auth");
     }
