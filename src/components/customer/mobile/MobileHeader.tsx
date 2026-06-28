@@ -23,6 +23,7 @@ export default function MobileHeader() {
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
   const cartCount = useCartItemCount();
   const isAuthenticated = !!user && !isAnonymousUser(user);
+  const { activeBranch, isMultiBranch, openPicker } = useBranch();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
   let logoUrl = branding?.logo_url || tenant?.logo_url || "";
