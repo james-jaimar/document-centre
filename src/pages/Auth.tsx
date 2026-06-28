@@ -356,7 +356,17 @@ const Auth = () => {
       )}
 
       <div className="relative w-full max-w-[460px]">
+        <div className="mb-4 flex justify-start">
+          <Link
+            to={isTenantPortal ? tenantPath("") : "/"}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-gray-900"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to {isTenantPortal ? (brandedTenant?.name ?? "storefront") : "home"}
+          </Link>
+        </div>
         <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] sm:p-10 md:p-12">
+
           {/* Brand Header */}
           <div className="mb-8 flex flex-col items-center text-center">
             {isTenantPortal && brandedTenant?.logo_url ? (
