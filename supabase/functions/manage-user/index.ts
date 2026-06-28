@@ -374,6 +374,28 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
 
       case "remove_membership": {
         if (!membership_id) return err("Missing membership_id");
+
+        // Last-manager guard: don't strip the final branch_manager from a branch.
+        const { data: targetRow } = await admin
+          .from("tenant_memberships")
+          .select("id, role, branch_id, tenant_id, app_id")
+          .eq("id", membership_id)
+          .maybeSingle();
+        if (targetRow?.role === "branch_manager" && targetRow.branch_id) {
+          const { data: peers } = await admin
+            .from("tenant_memberships")
+            .select("id")
+            .eq("tenant_id", targetRow.tenant_id)
+            .eq("app_id", targetRow.app_id)
+            .eq("branch_id", targetRow.branch_id)
+            .eq("role", "branch_manager")
+            .eq("is_active", true)
+            .neq("id", membership_id);
+          if (!peers || peers.length === 0) {
+            return err("Cannot remove the only branch manager. Promote another staff member first.", 400);
+          }
+        }
+
         const { error: e } = await admin
           .from("tenant_memberships")
           .delete()
@@ -381,6 +403,65 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
         if (e) return err(`Failed to remove membership: ${e.message}`);
         await audit({ membership_id });
         return json({ success: true, message: "Membership removed" });
+      }
+
+      case "update_membership_role": {
+        if (!membership_id) return err("Missing membership_id");
+        if (!new_role) return err("Missing new_role");
+        const ALLOWED_BRANCH_ROLES = ["branch_manager", "store_operator"];
+        if (!ALLOWED_BRANCH_ROLES.includes(new_role)) {
+          return err("new_role must be branch_manager or store_operator");
+        }
+
+        const { data: targetRow } = await admin
+          .from("tenant_memberships")
+          .select("id, role, branch_id, tenant_id, app_id, profile_id")
+          .eq("id", membership_id)
+          .maybeSingle();
+        if (!targetRow) return err("Membership not found", 404);
+        if (!ALLOWED_BRANCH_ROLES.includes(targetRow.role)) {
+          return err("Only branch staff roles can be promoted or demoted here");
+        }
+        if (targetRow.role === new_role) {
+          return json({ success: true, message: "Role unchanged" });
+        }
+
+        // Don't let a manager demote themselves out of their only management seat.
+        if (
+          targetRow.profile_id === caller.id &&
+          targetRow.role === "branch_manager" &&
+          new_role === "store_operator"
+        ) {
+          return err("You cannot demote yourself. Ask another manager to do it.", 400);
+        }
+
+        // Last-manager guard on demotion.
+        if (
+          targetRow.role === "branch_manager" &&
+          new_role === "store_operator" &&
+          targetRow.branch_id
+        ) {
+          const { data: peers } = await admin
+            .from("tenant_memberships")
+            .select("id")
+            .eq("tenant_id", targetRow.tenant_id)
+            .eq("app_id", targetRow.app_id)
+            .eq("branch_id", targetRow.branch_id)
+            .eq("role", "branch_manager")
+            .eq("is_active", true)
+            .neq("id", membership_id);
+          if (!peers || peers.length === 0) {
+            return err("Cannot demote the only branch manager. Promote another staff member first.", 400);
+          }
+        }
+
+        const { error: e } = await admin
+          .from("tenant_memberships")
+          .update({ role: new_role })
+          .eq("id", membership_id);
+        if (e) return err(`Failed to update role: ${e.message}`);
+        await audit({ membership_id, from_role: targetRow.role, to_role: new_role });
+        return json({ success: true, message: `Role updated to ${new_role === "branch_manager" ? "Branch Manager" : "Store Operator"}` });
       }
 
       case "revoke_platform_admin": {

@@ -12,6 +12,7 @@ export type ManageUserAction =
   | "update_email"
   | "update_profile"
   | "remove_membership"
+  | "update_membership_role"
   | "revoke_platform_admin";
 
 export interface ManageUserInput {
@@ -23,6 +24,7 @@ export interface ManageUserInput {
   membership_id?: string | null;
   new_email?: string;
   new_password?: string;
+  new_role?: string;
   display_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
