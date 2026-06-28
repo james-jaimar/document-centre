@@ -21,20 +21,29 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { ADMIN_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { updateOrderStatus } from "@/lib/orders/mutations";
 import { toast } from "@/hooks/use-toast";
-import { ChevronDown, Loader2, Truck, PackageCheck } from "lucide-react";
+import { ChevronDown, Loader2, Truck, PackageCheck, ArrowLeftRight } from "lucide-react";
+import { ChangeFulfillmentDialog } from "@/components/orders/admin/ChangeFulfillmentDialog";
 
 type AdminStatus = keyof typeof ADMIN_STATUS_CONFIG;
 
 interface Props {
   order: {
     id: string;
+    tenant_id?: string | null;
+    branch_id?: string | null;
+    currency?: string | null;
     admin_status: AdminStatus;
     fulfillment_type?: "delivery" | "collection" | null;
+    delivery_amount?: number | null;
+    total_amount?: number | null;
+    amount_paid?: number | null;
     tracking_number?: string | null;
     tracking_carrier?: string | null;
     dispatched_at?: string | null;
+    addresses?: any[];
   };
 }
+
 
 /** Primary forward actions for each status. Returns ordered list of next legal steps. */
 const PRIMARY_NEXT: Record<AdminStatus, Array<{ status: AdminStatus; label: string }>> = {
@@ -63,6 +72,11 @@ export function OrderWorkflowPanel({ order }: Props) {
   const [showDispatchForm, setShowDispatchForm] = useState(false);
   const [carrier, setCarrier] = useState(order.tracking_carrier ?? "");
   const [trackingNo, setTrackingNo] = useState(order.tracking_number ?? "");
+  const [fulfillmentDialogOpen, setFulfillmentDialogOpen] = useState(false);
+
+  const fulfillmentChangeable = !["ready_for_dispatch", "dispatched", "completed", "cancelled"].includes(order.admin_status);
+  const currentDeliveryAddress = (order.addresses || []).find((a: any) => a.address_type === "delivery") ?? null;
+
 
   const isDelivery = order.fulfillment_type === "delivery";
   const isCollection = order.fulfillment_type === "collection";
@@ -149,8 +163,22 @@ export function OrderWorkflowPanel({ order }: Props) {
           </Button>
         )}
 
+        {fulfillmentChangeable && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            disabled={busy}
+            onClick={() => setFulfillmentDialogOpen(true)}
+          >
+            <ArrowLeftRight className="h-3 w-3 mr-1" />
+            Change fulfillment
+          </Button>
+        )}
+
         {/* More dropdown for on_hold / cancel */}
         {(order.admin_status !== "completed" && order.admin_status !== "cancelled") && (
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy}>
@@ -247,6 +275,13 @@ export function OrderWorkflowPanel({ order }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ChangeFulfillmentDialog
+        order={order as any}
+        currentDeliveryAddress={currentDeliveryAddress}
+        open={fulfillmentDialogOpen}
+        onOpenChange={setFulfillmentDialogOpen}
+      />
     </div>
   );
 }
