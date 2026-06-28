@@ -44,6 +44,7 @@ import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 import MobileUpload from "@/pages/MobileUpload";
 import MicrosoftCallbackResult from "@/pages/oauth/MicrosoftCallbackResult";
 import PayfastHandoff from "@/pages/PayfastHandoff";
+import ImpersonationConsume from "@/pages/ImpersonationConsume";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
