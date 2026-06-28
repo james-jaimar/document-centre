@@ -83,17 +83,6 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
     }
   };
 
-  const handleSend = async (inv: Invoice) => {
-    setSendingId(inv.id);
-    try {
-      await sendInvoiceEmail(inv.id, orderId);
-      toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} sent to customer`);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setSendingId(null);
-    }
-  };
 
   return (
     <div className="rounded-lg border bg-card">
