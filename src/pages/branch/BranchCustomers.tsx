@@ -10,7 +10,7 @@ import {
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { Search, Users, MoreHorizontal, KeyRound, Pencil, ListOrdered } from "lucide-react";
+import { Search, Users, MoreHorizontal, KeyRound, Pencil, ListOrdered, UserPlus, LogIn } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useBranchCustomers, type BranchCustomerRow } from "@/hooks/useBranchCustomers";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -18,13 +18,23 @@ import { useManageUser } from "@/hooks/useManageUser";
 import { formatPrice } from "@/lib/formatCurrency";
 import { resolveDisplayName } from "@/lib/displayName";
 import { BranchCustomerEditDialog } from "@/components/branch/BranchCustomerEditDialog";
+import { AddCustomerDialog } from "@/components/branch/AddCustomerDialog";
+import { useImpersonation } from "@/contexts/ImpersonationContext";
+import { useBranch } from "@/contexts/BranchContext";
+import { toast } from "@/hooks/use-toast";
 
 export default function BranchCustomers() {
   const { tenantId, appId, branchId } = useTenantContext();
+  const { branches } = useBranch();
   const { data, isLoading, error } = useBranchCustomers();
   const manage = useManageUser();
+  const { startImpersonation } = useImpersonation();
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<BranchCustomerRow | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const currentBranch = branches.find((b) => b.id === branchId);
+  const branchSlug = currentBranch ? (currentBranch.url_slug || currentBranch.slug) : null;
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -51,16 +61,37 @@ export default function BranchCustomers() {
     });
   };
 
+  const handleImpersonate = async (c: BranchCustomerRow) => {
+    if (!tenantId) return;
+    try {
+      const path = branchSlug ? `/${branchSlug}` : "/";
+      await startImpersonation({
+        target_profile_id: c.profile_id,
+        tenant_id: tenantId,
+        branch_id: branchId ?? null,
+        return_to: window.location.pathname + window.location.search,
+        redirect_to: path,
+      });
+    } catch (e: any) {
+      toast({ title: "Could not log in as customer", description: e?.message, variant: "destructive" });
+    }
+  };
+
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <Users className="h-6 w-6" />
-          Customers
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Customers who have placed an order or requested a quote at your branch.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Users className="h-6 w-6" />
+            Customers
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Customers tagged to your branch, plus anyone who's ordered or quoted here.
+          </p>
+        </div>
+        <Button onClick={() => setAddOpen(true)}>
+          <UserPlus className="h-4 w-4 mr-2" /> Add customer
+        </Button>
       </div>
 
       <Card className="p-4">
