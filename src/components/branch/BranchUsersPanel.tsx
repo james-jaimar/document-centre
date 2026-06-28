@@ -192,11 +192,11 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
         <div>
           <CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4" /> Branch Staff</CardTitle>
           <CardDescription>
-            Manage the people who work at {branch?.name || "this branch"}. Store operators handle day-to-day orders and production.
+            Manage the people who work at {branch?.name || "this branch"}. Branch managers configure the shop; store operators run day-to-day orders, refunds and fulfillment.
           </CardDescription>
         </div>
         <Button onClick={() => setInviteOpen(true)}>
-          <UserPlus className="h-4 w-4 mr-1" /> Invite store operator
+          <UserPlus className="h-4 w-4 mr-1" /> Invite staff
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -204,7 +204,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : filtered.length === 0 ? (
           <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-            No branch staff yet. Invite your first store operator above.
+            No branch staff yet. Invite your first manager or operator above.
           </div>
         ) : (
           <Table>
@@ -256,11 +256,18 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
-                        {m.role !== "branch_manager" && (
-                          <DropdownMenuItem onClick={() => setRemoveTarget(m)} className="text-destructive">
-                            <Trash2 size={14} className="mr-2" /> Remove from branch
+                        {m.role === "store_operator" ? (
+                          <DropdownMenuItem onClick={() => setRoleChangeTarget({ member: m, to: "branch_manager" })}>
+                            <ShieldCheck size={14} className="mr-2" /> Promote to manager
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => setRoleChangeTarget({ member: m, to: "store_operator" })}>
+                            <ShieldOff size={14} className="mr-2" /> Demote to operator
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem onClick={() => setRemoveTarget(m)} className="text-destructive">
+                          <Trash2 size={14} className="mr-2" /> Remove from branch
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
