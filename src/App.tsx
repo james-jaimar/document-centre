@@ -227,6 +227,9 @@ function AppRoutes() {
       {/* PayFast handoff — same-origin page that renders the signed form */}
       <Route path="/pay/payfast" element={<PayfastHandoff />} />
 
+      {/* Impersonation handoff — opened in a new tab by staff */}
+      <Route path="/impersonation/consume" element={<ImpersonationConsume />} />
+
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
       <Route path="/t/:slug" element={<CustomerLayout />}>
         {customerRoutes()}
