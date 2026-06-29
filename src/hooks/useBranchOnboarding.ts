@@ -5,6 +5,8 @@ export interface BranchOnboardingProgress {
   branch_id: string;
   tenant_id: string;
   company_details_done: boolean;
+  banking_done: boolean;
+  pricing_reviewed: boolean;
   email_settings_done: boolean;
   branding_done: boolean;
   payfast_done: boolean;

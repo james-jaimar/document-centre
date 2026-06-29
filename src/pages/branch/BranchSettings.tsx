@@ -17,6 +17,7 @@ import { PayFastQuickStartGuide } from "@/components/branch/PayFastQuickStartGui
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
 import { BranchSubscriptionPanel } from "@/components/branch/BranchSubscriptionPanel";
+import { BranchOnboardingChecklist } from "@/components/branch/BranchOnboardingChecklist";
 import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
@@ -156,6 +157,8 @@ const BranchSettings = () => {
           {updateBranch.isPending ? "Saving…" : "Save Operations"}
         </Button>
       </div>
+
+      {branchId && <BranchOnboardingChecklist branchId={branchId} />}
 
       <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") || "identity"}>
         <TabsList className="flex-wrap h-auto">
