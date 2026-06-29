@@ -1,24 +1,47 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
   Bold, Italic, Heading2, Heading3, List, ListOrdered,
-  Link as LinkIcon, Undo2, Redo2,
+  Link as LinkIcon, Undo2, Redo2, ImagePlus, LayoutTemplate,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { EmailImageUpload } from "./EmailImageUpload";
+import { EMAIL_BLOCKS } from "./email-blocks";
 
 interface RichTextEditorProps {
   value: string;
   onChange: (html: string) => void;
   minHeightClass?: string;
+  /** Show email-specific tools (image upload + layout blocks). Default true. */
+  enableEmailTools?: boolean;
 }
 
-export function RichTextEditor({ value, onChange, minHeightClass = "min-h-[300px]" }: RichTextEditorProps) {
+export function RichTextEditor({
+  value,
+  onChange,
+  minHeightClass = "min-h-[300px]",
+  enableEmailTools = true,
+}: RichTextEditorProps) {
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
       Link.configure({ openOnClick: false, HTMLAttributes: { class: "underline text-primary" } }),
+      Image.configure({
+        inline: false,
+        allowBase64: false,
+        HTMLAttributes: {
+          style: "display:block;max-width:100%;height:auto;border-radius:8px;",
+        },
+      }),
     ],
     content: value || "",
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
@@ -54,6 +77,14 @@ export function RichTextEditor({ value, onChange, minHeightClass = "min-h-[300px
     editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
   };
 
+  const insertImage = (url: string, alt: string) => {
+    editor.chain().focus().setImage({ src: url, alt }).run();
+  };
+
+  const insertBlock = (html: string) => {
+    editor.chain().focus().insertContent(html).run();
+  };
+
   return (
     <div className="rounded-md border border-input bg-background">
       <div className="flex flex-wrap items-center gap-1 border-b border-input p-1.5">
@@ -87,6 +118,46 @@ export function RichTextEditor({ value, onChange, minHeightClass = "min-h-[300px
         <Button type="button" variant="ghost" size="icon" className={btn(editor.isActive("link"))} onClick={addLink}>
           <LinkIcon className="h-4 w-4" />
         </Button>
+
+        {enableEmailTools && (
+          <>
+            <span className="mx-1 h-5 w-px bg-border" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5"
+              onClick={() => setImageDialogOpen(true)}
+              title="Insert image"
+            >
+              <ImagePlus className="h-4 w-4" />
+              <span className="text-xs">Image</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="h-8 px-2 gap-1.5" title="Insert layout block">
+                  <LayoutTemplate className="h-4 w-4" />
+                  <span className="text-xs">Block</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuLabel>Insert layout block</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {EMAIL_BLOCKS.map((block) => (
+                  <DropdownMenuItem
+                    key={block.id}
+                    className="flex-col items-start gap-0.5"
+                    onSelect={() => insertBlock(block.html)}
+                  >
+                    <span className="text-sm font-medium">{block.label}</span>
+                    <span className="text-xs text-muted-foreground">{block.description}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
+
         <span className="mx-1 h-5 w-px bg-border" />
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8"
           onClick={() => editor.chain().focus().undo().run()}>
@@ -98,6 +169,14 @@ export function RichTextEditor({ value, onChange, minHeightClass = "min-h-[300px
         </Button>
       </div>
       <EditorContent editor={editor} />
+
+      {enableEmailTools && (
+        <EmailImageUpload
+          open={imageDialogOpen}
+          onOpenChange={setImageDialogOpen}
+          onInsert={insertImage}
+        />
+      )}
     </div>
   );
 }
