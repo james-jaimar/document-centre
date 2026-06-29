@@ -31,6 +31,11 @@ function mintSlug(): string {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function normalizeBranchIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((id) => String(id ?? "").trim()).filter(Boolean))];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
@@ -53,7 +58,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const tenant_id = String(body.tenant_id ?? "").trim();
     const template_slug = String(body.template_slug ?? "marketing_branch_offer").trim();
-    const branch_ids: string[] = Array.isArray(body.branch_ids) ? body.branch_ids : [];
+    const branch_ids = normalizeBranchIds(body.branch_ids);
     const dryRun = body.dry_run === true;
     if (!tenant_id || !branch_ids.length) return json({ error: "tenant_id and branch_ids required" }, 400);
 
@@ -87,6 +92,14 @@ Deno.serve(async (req) => {
         requested_count: branch_ids.length,
         found_count: 0,
         missing_branch_ids: missingBranchIds,
+        totals: { sent: 0, failed: 0, skipped: missingBranchIds.length },
+        results: missingBranchIds.map((missingId) => ({
+          branch_id: missingId,
+          branch: "Unknown branch",
+          email: null,
+          status: "skipped_branch_not_found",
+          error: "Branch was not found for the selected tenant",
+        })),
       }, 400);
     }
 
@@ -142,16 +155,18 @@ Deno.serve(async (req) => {
         let pageSlug = existingPage?.slug ?? null;
         if (!pageSlug) {
           pageSlug = mintSlug();
-          await admin.from("platform_branch_activation_pages").insert({
+          const { error: insertPageErr } = await admin.from("platform_branch_activation_pages").insert({
             tenant_id, branch_id: b.id, app_id: tenant.app_id,
             slug: pageSlug, contact_email: email, contact_name: contactName,
             created_by: caller.id,
           });
+          if (insertPageErr) throw new Error(`activation_page_insert: ${insertPageErr.message}`);
         } else {
           // Refresh contact details in case admin updated branch
-          await admin.from("platform_branch_activation_pages")
+          const { error: updatePageErr } = await admin.from("platform_branch_activation_pages")
             .update({ contact_email: email, contact_name: contactName, is_active: true })
             .eq("branch_id", b.id);
+          if (updatePageErr) throw new Error(`activation_page_update: ${updatePageErr.message}`);
         }
 
         const activationLink = `${appOrigin}/activate/${pageSlug}`;
@@ -228,7 +243,15 @@ Deno.serve(async (req) => {
       }).eq("id", campaignId);
     }
 
-    return json({ campaign_id: campaignId, dry_run: dryRun, totals: { sent, failed, skipped }, results });
+    return json({
+      campaign_id: campaignId,
+      dry_run: dryRun,
+      requested_count: branch_ids.length,
+      found_count: resolvedBranches.length,
+      missing_branch_ids: missingBranchIds,
+      totals: { sent, failed, skipped },
+      results,
+    });
   } catch (e) {
     console.error("send-branch-marketing-campaign error:", e);
     return json({ error: (e as Error).message ?? "Internal error" }, 500);
