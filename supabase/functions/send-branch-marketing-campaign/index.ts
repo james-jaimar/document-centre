@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
     }
 
     const results: any[] = [];
-    let sent = 0, failed = 0, skipped = 0;
+    let sent = 0, failed = 0, skipped = 0, dryRunOk = 0;
 
     for (const missingId of missingBranchIds) {
       skipped++;
@@ -195,6 +195,7 @@ Deno.serve(async (req) => {
         const text = renderBrandedText({ heading: subject, bodyText: textBody });
 
         if (dryRun) {
+          dryRunOk++;
           results.push({ branch_id: b.id, branch: b.name, email, status: "dry_run_ok", subject, activation_link: activationLink });
           continue;
         }
@@ -249,7 +250,7 @@ Deno.serve(async (req) => {
       requested_count: branch_ids.length,
       found_count: resolvedBranches.length,
       missing_branch_ids: missingBranchIds,
-      totals: { sent, failed, skipped },
+      totals: { sent, failed, skipped, dry_run_ok: dryRunOk },
       results,
     });
   } catch (e) {
