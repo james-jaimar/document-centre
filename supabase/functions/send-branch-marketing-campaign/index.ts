@@ -11,11 +11,8 @@ import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 
-// Hero image for the marketing email. Served from the recipient's own tenant
-// origin via the /email-image/* Amplify rewrite, which proxies to the
-// email-image edge function streaming from the email-assets Storage bucket.
-// Must stay on the tenant origin so no Supabase URLs appear in rendered HTML.
-const MARKETING_HERO_PATH = "/email-image/marketing/marketing-hero.jpg";
+// No hero image — admins insert their own images via the template editor.
+
 
 
 const corsHeaders = {
