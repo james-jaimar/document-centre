@@ -2,24 +2,31 @@ import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Circle, X, Sparkles } from "lucide-react";
 import { useBranchOnboarding, useDismissBranchOnboarding } from "@/hooks/useBranchOnboarding";
 import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
 import { formatDistanceToNowStrict } from "date-fns";
 
-const STEPS: Array<{
-  key: keyof import("@/hooks/useBranchOnboarding").BranchOnboardingProgress;
+interface Step {
+  key: string;
   label: string;
   to: string;
   hint: string;
-}> = [
-  { key: "company_details_done", label: "Confirm company details", to: "/branch/settings?tab=identity", hint: "Trading name, address, VAT" },
-  { key: "email_settings_done",  label: "Set sender email",        to: "/branch/settings?tab=email",    hint: "Connect SMTP / Gmail" },
-  { key: "branding_done",        label: "Upload your branding",    to: "/branch/settings?tab=identity", hint: "Logo & colours" },
-  { key: "payfast_done",         label: "Set up PayFast",          to: "/branch/settings?tab=payments", hint: "Accept card payments" },
+  optional?: boolean;
+}
+
+const STEPS: Step[] = [
+  { key: "company_details_done", label: "Confirm company details", to: "/branch/settings?tab=identity", hint: "Trading name, address, phone" },
+  { key: "banking_done",         label: "Add banking details",     to: "/branch/settings?tab=identity", hint: "Used on invoices for EFT payment" },
+  { key: "pricing_reviewed",     label: "Review your prices",      to: "/branch/catalog-pricing",       hint: "Confirm or adjust your branch pricing" },
+  { key: "email_settings_done",  label: "Set sender email",        to: "/branch/settings?tab=email",    hint: "Connect SMTP / Gmail / Microsoft" },
+  { key: "payfast_done",         label: "Set up online payments",  to: "/branch/settings?tab=payments", hint: "PayFast / Stripe — optional but recommended", optional: true },
   { key: "team_invited",         label: "Invite your team",        to: "/branch/settings?tab=users",    hint: "Add at least one teammate" },
   { key: "first_order_done",     label: "Run a test order",        to: "/branch/orders",                hint: "Place one through your storefront" },
 ];
+
+const REQUIRED_STEPS = STEPS.filter((s) => !s.optional);
 
 export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
   const { data, isLoading } = useBranchOnboarding(branchId);
@@ -35,8 +42,8 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
     if (ageDays < 7) return null;
   }
 
-  const completed = STEPS.filter((s) => Boolean((data as any)[s.key])).length;
-  const pct = Math.round((completed / STEPS.length) * 100);
+  const completedRequired = REQUIRED_STEPS.filter((s) => Boolean((data as any)[s.key])).length;
+  const pct = Math.round((completedRequired / REQUIRED_STEPS.length) * 100);
 
   const trialActive = sub?.trial_status === "active" && sub?.trial_ends_at;
   const trialLeft = trialActive
@@ -47,17 +54,17 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
     <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
       <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
         <div className="space-y-1">
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="text-base flex items-center gap-2 flex-wrap">
             <Sparkles className="h-4 w-4 text-primary" />
             Get your branch ready
             {trialLeft && (
-              <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+              <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
                 {trialLeft} left on trial
               </span>
             )}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            {completed} of {STEPS.length} steps complete — finish these to start taking orders.
+            {completedRequired} of {REQUIRED_STEPS.length} required steps complete — finish these to start taking orders.
           </p>
         </div>
         <Button
@@ -76,7 +83,7 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
           {STEPS.map((s) => {
             const done = Boolean((data as any)[s.key]);
             return (
-              <li key={s.key as string}>
+              <li key={s.key}>
                 <Link
                   to={s.to}
                   className={`flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/60 ${
@@ -88,9 +95,14 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
                   ) : (
                     <Circle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                   )}
-                  <div className="min-w-0">
-                    <p className={`text-sm font-medium leading-tight ${done ? "line-through" : ""}`}>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-medium leading-tight flex items-center gap-2 ${done ? "line-through" : ""}`}>
                       {s.label}
+                      {s.optional && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">
+                          Optional
+                        </Badge>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">{s.hint}</p>
                   </div>
