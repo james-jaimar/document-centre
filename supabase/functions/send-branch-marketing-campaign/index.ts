@@ -191,13 +191,31 @@ Deno.serve(async (req) => {
         const preheader = deriveSnippet(textBody)
           || `Activate your ${b.name} storefront on ${tenant.name}.`;
 
-        // Wrap in Document Centre branded shell (marketing = platform-branded, not tenant)
+        // Wrap in Document Centre branded shell.
+        // For marketing emails we deliberately:
+        //   - render a hero image hosted on the tenant's own origin
+        //   - hide Privacy/Terms footer links (clutter, and not relevant
+        //     before the recipient has even signed up)
+        //   - point the footer "site" link at the tenant origin too
+        //   - skip click/open tracking entirely so every <a href> in the
+        //     final HTML is a plain direct URL (no supabase.co anywhere).
+        //     We measure success by activations on /activate/<slug>, which
+        //     is far more meaningful than open/click pixels.
         const html = renderBrandedEmail({
           preheader,
           heading: subject,
           bodyHtml: htmlBody,
+          heroImageUrl: `${appOrigin}${MARKETING_HERO_PATH}`,
+          heroImageAlt: "Document Centre — Web-to-Print for print shops",
+          hideLegalLinks: true,
+          siteLinkUrl: appOrigin,
+          siteLinkLabel: appOrigin.replace(/^https?:\/\//, ""),
         });
-        const text = renderBrandedText({ heading: subject, bodyText: textBody });
+        const text = renderBrandedText({
+          heading: subject,
+          bodyText: textBody,
+          siteLinkUrl: appOrigin,
+        });
 
         if (dryRun) {
           dryRunOk++;
@@ -205,7 +223,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Insert recipient row first so we have an id for tracking
+        // Insert recipient row first so we have an id for reporting.
         const { data: rcpt, error: rcptErr } = await admin
           .from("platform_email_campaign_recipients").insert({
             campaign_id: campaignId, branch_id: b.id, email,
@@ -213,7 +231,8 @@ Deno.serve(async (req) => {
           }).select("id").single();
         if (rcptErr || !rcpt) throw new Error(`recipient_insert: ${rcptErr?.message}`);
 
-        const trackedHtml = await injectTracking(html, campaignId!, rcpt.id);
+        // NOTE: no tracking injection on marketing emails (see comment above).
+        const trackedHtml = html;
 
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
