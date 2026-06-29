@@ -146,6 +146,22 @@ function ComposeTab() {
     portal_name: tenant?.name ?? "Your Portal",
   };
 
+  const describeSendFailure = (data: any, fallback: string | null) => {
+    const requested = data?.requested_count ?? selected.size;
+    const found = data?.found_count;
+    const missing = Array.isArray(data?.missing_branch_ids) ? data.missing_branch_ids.length : undefined;
+    const bits = [fallback || "The email sender could not complete the request."];
+    if (requested !== undefined) bits.push(`Requested: ${requested}`);
+    if (found !== undefined) bits.push(`Matched: ${found}`);
+    if (missing !== undefined) bits.push(`Missing: ${missing}`);
+    return bits.join(" · ");
+  };
+
+  const copyText = async (value: string, label = "Copied") => {
+    await navigator.clipboard.writeText(value);
+    toast({ title: label });
+  };
+
   const toggle = (id: string) => {
     const next = new Set(selected);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -177,7 +193,12 @@ function ComposeTab() {
     });
     setSending(false);
     if (!response.ok || !response.data) {
-      toast({ title: dryRun ? "Dry run failed" : "Send failed", description: response.error ?? "No response from email sender", variant: "destructive" });
+      if (response.data) setResult(response.data);
+      toast({
+        title: dryRun ? "Dry run failed" : "Send failed",
+        description: describeSendFailure(response.data, response.error ?? "No response from email sender"),
+        variant: "destructive",
+      });
       return;
     }
     const data = response.data as any;
@@ -187,7 +208,7 @@ function ComposeTab() {
       setResult(data);
       toast({
         title: dryRun ? "Dry run found no recipients" : "Send found no recipients",
-        description: "The selected branch could not be matched by the email sender. Refresh the page and try again.",
+        description: describeSendFailure(data, "No selected branches were matched by the sender."),
         variant: "destructive",
       });
       return;
@@ -294,6 +315,21 @@ function ComposeTab() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{r.branch} {r.email ? `· ${r.email}` : ""}</span>
                     {r.error && <span className="block truncate text-destructive">{r.error}</span>}
+                    {r.activation_link && (
+                      <span className="mt-1 flex items-center gap-1 min-w-0 text-muted-foreground">
+                        <a className="truncate underline" href={r.activation_link} target="_blank" rel="noreferrer">
+                          {r.activation_link}
+                        </a>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-sm p-1 hover:bg-muted"
+                          title="Copy activation link"
+                          onClick={() => copyText(r.activation_link, "Activation link copied")}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
                   </span>
                   <Badge variant={r.status === "sent" || r.status === "dry_run_ok" ? "default" : r.status === "failed" || String(r.status).startsWith("skipped_branch") ? "destructive" : "secondary"}>
                     {r.status}
@@ -321,7 +357,7 @@ function ComposeTab() {
                 <div className="flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded p-2">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
                   {kind === "marketing"
-                    ? "Marketing pitch — no credentials are sent. Recipients land on /activate/<slug> and request the sign-in email themselves."
+                    ? "Marketing pitch — the preview uses a sample activation URL. Dry run or send creates/reuses each branch’s real /activate/<slug> link and merges it into {{activation_link}}."
                     : "The action link is a one-time sign-in link, valid for 1 hour. Recipients land on /welcome and must set a brand-new password before they can sign in."}
                 </div>
               }
