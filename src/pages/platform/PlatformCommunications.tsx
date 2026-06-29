@@ -202,8 +202,8 @@ function ComposeTab() {
       return;
     }
     const data = response.data as any;
-    const totals = data.totals ?? { sent: 0, failed: 0, skipped: 0 };
-    const resolvedTotal = Number(totals.sent ?? 0) + Number(totals.failed ?? 0) + Number(totals.skipped ?? 0);
+    const totals = data.totals ?? { sent: 0, failed: 0, skipped: 0, dry_run_ok: 0 };
+    const resolvedTotal = Number(totals.sent ?? 0) + Number(totals.failed ?? 0) + Number(totals.skipped ?? 0) + Number(totals.dry_run_ok ?? 0);
     if (selectedCount > 0 && resolvedTotal === 0) {
       setResult(data);
       toast({
@@ -216,7 +216,9 @@ function ComposeTab() {
     setResult(data);
     toast({
       title: dryRun ? "Dry run complete" : "Campaign sent",
-      description: `Sent ${totals.sent} · Failed ${totals.failed} · Skipped ${totals.skipped}`,
+      description: dryRun
+        ? `Ready ${totals.dry_run_ok ?? 0} · Failed ${totals.failed} · Skipped ${totals.skipped}`
+        : `Sent ${totals.sent} · Failed ${totals.failed} · Skipped ${totals.skipped}`,
     });
   };
 
