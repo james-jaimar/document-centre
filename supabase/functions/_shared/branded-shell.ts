@@ -37,6 +37,26 @@ export interface BrandedShellOptions {
   ctaLabel?: string;
   ctaUrl?: string;
   footerNote?: string;      // Small text below the body
+  /**
+   * Optional absolute URL of a hero image rendered above the heading.
+   * Must be reachable from email clients (no auth) — use a CDN URL on the
+   * recipient's tenant origin so the image loads from a trusted domain.
+   */
+  heroImageUrl?: string;
+  heroImageAlt?: string;
+  /**
+   * Marketing emails should not advertise legal docs in the footer.
+   * Set true to hide the Privacy / Terms links and only show the site link.
+   */
+  hideLegalLinks?: boolean;
+  /**
+   * Override the visible "site" link in the footer. Defaults to
+   * document-centre.com. For tenant-facing marketing, pass the tenant's
+   * own origin (e.g. https://postnetprintcentre.com) so every hover-link
+   * stays on the same domain as the call-to-action.
+   */
+  siteLinkUrl?: string;
+  siteLinkLabel?: string;
 }
 
 /**
@@ -51,6 +71,11 @@ export function renderBrandedEmail(opts: BrandedShellOptions): string {
     ctaLabel,
     ctaUrl,
     footerNote,
+    heroImageUrl,
+    heroImageAlt,
+    hideLegalLinks = false,
+    siteLinkUrl,
+    siteLinkLabel,
   } = opts;
 
   const ctaBlock = ctaLabel && ctaUrl
@@ -69,6 +94,28 @@ export function renderBrandedEmail(opts: BrandedShellOptions): string {
   const footerBlock = footerNote
     ? `<p style="font-size:13px;color:${DC_BRAND.textMuted};margin:24px 0 0;line-height:1.6;">${footerNote}</p>`
     : "";
+
+  const heroBlock = heroImageUrl
+    ? `<tr>
+         <td style="padding:0;background:#eef2f8;">
+           <img src="${escapeHtml(heroImageUrl)}"
+                alt="${escapeHtml(heroImageAlt ?? "")}"
+                width="600"
+                style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />
+         </td>
+       </tr>`
+    : "";
+
+  const resolvedSiteUrl = siteLinkUrl || DC_BRAND.siteUrl;
+  const resolvedSiteLabel = siteLinkLabel || "document-centre.com";
+
+  const footerLinks = hideLegalLinks
+    ? `<a href="${escapeHtml(resolvedSiteUrl)}" style="color:${DC_BRAND.accent};text-decoration:none;">${escapeHtml(resolvedSiteLabel)}</a>`
+    : `<a href="${escapeHtml(resolvedSiteUrl)}" style="color:${DC_BRAND.accent};text-decoration:none;">${escapeHtml(resolvedSiteLabel)}</a>
+       &nbsp;·&nbsp;
+       <a href="${DC_BRAND.privacyUrl}" style="color:${DC_BRAND.accent};text-decoration:none;">Privacy</a>
+       &nbsp;·&nbsp;
+       <a href="${DC_BRAND.termsUrl}" style="color:${DC_BRAND.accent};text-decoration:none;">Terms</a>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -105,6 +152,7 @@ export function renderBrandedEmail(opts: BrandedShellOptions): string {
             </table>
           </td>
         </tr>
+        ${heroBlock}
         <!-- Body -->
         <tr>
           <td style="padding:36px 32px 32px;">
@@ -125,11 +173,7 @@ export function renderBrandedEmail(opts: BrandedShellOptions): string {
               © ${new Date().getFullYear()} ${escapeHtml(DC_BRAND.name)} · Web-to-Print software for copy shops &amp; small printers
             </p>
             <p style="margin:0;font-size:12px;color:${DC_BRAND.textMuted};font-family:Inter,Arial,sans-serif;">
-              <a href="${DC_BRAND.siteUrl}" style="color:${DC_BRAND.accent};text-decoration:none;">document-centre.com</a>
-              &nbsp;·&nbsp;
-              <a href="${DC_BRAND.privacyUrl}" style="color:${DC_BRAND.accent};text-decoration:none;">Privacy</a>
-              &nbsp;·&nbsp;
-              <a href="${DC_BRAND.termsUrl}" style="color:${DC_BRAND.accent};text-decoration:none;">Terms</a>
+              ${footerLinks}
             </p>
           </td>
         </tr>
@@ -141,8 +185,9 @@ export function renderBrandedEmail(opts: BrandedShellOptions): string {
 }
 
 /** Plain-text fallback derived from the same content. */
-export function renderBrandedText(opts: { heading: string; bodyText: string; ctaLabel?: string; ctaUrl?: string; footerNote?: string }): string {
+export function renderBrandedText(opts: { heading: string; bodyText: string; ctaLabel?: string; ctaUrl?: string; footerNote?: string; siteLinkUrl?: string }): string {
   const cta = opts.ctaLabel && opts.ctaUrl ? `\n\n${opts.ctaLabel}: ${opts.ctaUrl}` : "";
   const footer = opts.footerNote ? `\n\n${opts.footerNote}` : "";
-  return `${opts.heading}\n\n${opts.bodyText}${cta}${footer}\n\n— ${DC_BRAND.name}\n${DC_BRAND.siteUrl}`;
+  const site = opts.siteLinkUrl || DC_BRAND.siteUrl;
+  return `${opts.heading}\n\n${opts.bodyText}${cta}${footer}\n\n— ${DC_BRAND.name}\n${site}`;
 }
