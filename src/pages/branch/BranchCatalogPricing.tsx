@@ -2,16 +2,25 @@ import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricin
 import RateCardEditor from "@/components/pricing/RateCardEditor";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { CheckCircle2 } from "lucide-react";
 import {
   useClonePricingToBranch,
   useResyncBranchPricing,
 } from "@/hooks/useRateCard";
 import { toast } from "@/hooks/use-toast";
+import { useBranchOnboarding } from "@/hooks/useBranchOnboarding";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 export default function BranchCatalogPricing() {
   const { tenantId, branchId } = useTenantContext();
   const clonePricing = useClonePricingToBranch();
   const resyncPricing = useResyncBranchPricing();
+  const { data: onboarding } = useBranchOnboarding(branchId ?? undefined);
+  const qc = useQueryClient();
+  const [marking, setMarking] = useState(false);
 
   if (!tenantId) {
     return <div className="p-6 text-sm text-muted-foreground">No active tenant.</div>;
