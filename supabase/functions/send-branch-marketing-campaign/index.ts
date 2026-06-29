@@ -7,10 +7,14 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
-import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
-import { injectTracking } from "../_shared/emailTracking.ts";
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
+
+// CDN-hosted hero image for the marketing email. Served from the recipient's
+// own tenant origin (e.g. postnetprintcentre.com) so the <img src> sits on a
+// trusted domain — no Supabase URLs anywhere in the rendered HTML.
+const MARKETING_HERO_PATH = "/__l5e/assets-v1/441a76bc-04dc-4488-b285-3dd91b20cbc6/marketing-hero.jpg";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
