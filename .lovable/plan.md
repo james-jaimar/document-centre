@@ -1,60 +1,51 @@
-## Goal
+# Marketing Email Layout Editor
 
-The current marketing email wraps every link in `https://<project>.supabase.co/functions/v1/email-track?t=...`. That looks like a phishing payload to a branch owner and kills click-through. Fix the tracking transport, trim the footer, and add a hero visual so the email visibly says "web-to-print".
+You're right — for a cold marketing email, layout and imagery matter more than the words. Right now the `RichTextEditor` only handles bold/italic/headings/lists/links, so there's no way to drop in a hero, a product shot, or a two-column block. Here's the plan to fix that, scoped to the platform-level template editor.
 
-## 1. Kill the Supabase-looking tracking URLs
+## What you'll get
 
-Two parts to the problem:
+In **Platform → Communications**, when editing a marketing template, the body editor gains:
 
-- **Click tracking** rewrites every `<a href>` into `…supabase.co/functions/v1/email-track?t=<long token>`. This is the scary one — visible in the hover tooltip.
-- **Open tracking** loads a 1×1 pixel from the same `…supabase.co/functions/v1/email-track?t=…` URL. Less visible but still leaks the Supabase host into "view source" and some clients show it.
+1. **Image insertion** — toolbar button that lets you:
+   - Upload a file from your computer (PNG/JPG/WebP, up to ~5 MB)
+   - Or paste a URL (for re-using the existing hero, screenshots, etc.)
+   - Inserted as a full-width, responsive `<img>` (max 600 px, auto height, rounded corners) so it renders correctly inside the email shell.
+2. **Layout blocks** — a small "Insert block" menu with email-safe presets that drop pre-built HTML into the editor:
+   - **Hero image** (full-width image, no caption)
+   - **Image + caption** (image with small grey caption underneath)
+   - **Two-column** (image left, text right — using `<table>` so Outlook renders it)
+   - **Button** (already-styled CTA button matching the brand accent)
+   - **Divider** (thin horizontal rule)
+   - **Spacer** (24 px vertical gap)
+3. **Image alignment & size controls** — click any inserted image to get a small floating toolbar: left / centre / right align, and "small / medium / full width" size presets. Backed by Tiptap's `Image` extension plus a custom node-view.
+4. **Bigger preview pane** — the existing right-hand preview already mirrors the real sent email; no change needed there, it'll just start showing your imagery live as you edit.
 
-Approach:
+## Where images get stored
 
-a. **Route tracking through the tenant's own domain.** Add a public app route `/e/o/:token` (open pixel) and `/e/c/:token` (click redirect) on the storefront app, served from whatever host the recipient already trusts — `postnetprintcentre.com` for PostNet, `document-centre.com` otherwise. The route is a thin proxy that calls the existing `email-track` edge function server-side and returns the GIF / 302 to the browser. Hover tooltip then reads `https://postnetprintcentre.com/e/c/<token>` — same domain as the activation link, no Supabase string anywhere.
+Uploaded images go to a **dedicated public Supabase Storage bucket** (`email-assets`, public read, 5 MB per file, image MIME only). The public URL is what's inserted into the HTML, so it works from every email client without auth. Bucket is created in a migration so it's reproducible.
 
-b. **For the marketing template specifically, drop click tracking entirely** and only keep the open pixel. Marketing has exactly one real CTA (the activation link) and that click is already logged server-side when the recipient lands on `/activate/<slug>` and self-confirms — we don't need to wrap it. This means every `<a href>` in the marketing email is a plain, direct URL. Transactional emails can keep click tracking via the new domain-proxied route.
+I'll **not** use the Lovable Assets CDN here — those URLs are tied to the project preview origin, and email clients hammer them from many networks; Supabase Storage public URLs are the standard, durable choice for email-embedded media.
 
-c. **Resolve the proxy host per recipient** using the same `resolveAppOriginDetailed(tenant_id, …)` helper already used for activation links, so PostNet branches get `postnetprintcentre.com` and other tenants get their own custom domain (falling back to `document-centre.com`).
+## What stays the same
 
-Technical notes:
-- `supabase/functions/_shared/emailTracking.ts` currently hard-codes the Supabase functions origin when building tracked URLs. Change `injectTracking()` to take a `trackingOrigin` argument and emit `${trackingOrigin}/e/o/<token>` / `${trackingOrigin}/e/c/<token>`.
-- `supabase/functions/send-branch-marketing-campaign/index.ts` stops calling `injectTracking` for `<a>` rewriting; it only injects the open pixel (also via the tenant origin). All `{{activation_link}}` and any other URLs render as-is.
-- New SPA route `/e/o/:token` and `/e/c/:token` in `src/App.tsx`, backed by tiny components that `fetch` the existing `email-track` edge function and then either render a blank pixel response or `window.location.replace(target)`. Pixel route can be a server-rendered fallback — for an SPA we can just hit the edge function from a small loader; the open is still logged. (If we want a true `<img>` GET with no JS, we can add a Cloudflare/Amplify rewrite later, but the JS pixel works for the HTML email because clients fetch the `<img>` from their own renderer, not the SPA. To keep the open pixel a real image GET, the cleanest option is an Amplify/Cloudfront URL rewrite from `/e/o/*` → the edge function; flag this as a small follow-up if rewrites aren't available, and in the interim point the pixel at `${appOrigin}/e/o.gif?t=…` served via the same proxy.)
+- The send pipeline (`send-branch-marketing-campaign`) is untouched — it already strips tracking and injects the tenant origin into footer links. Images you embed via the editor are direct `<img src="https://...supabase.co/storage/...">` URLs, which is fine and looks legitimate (no `redirect?token=...` weirdness).
+- Existing templates render exactly as before; the new toolbar is purely additive.
+- The `Raw HTML` toggle and plain-text fallback remain — power users can still hand-edit.
+- Activation-email templates use the same editor, so they get the upgrade too (harmless; they rarely need images).
 
-## 2. Clean up the marketing footer
+## Technical notes
 
-In `supabase/functions/_shared/branded-shell.ts` (the `renderBrandedEmail` shell), the footer currently appends Privacy / Terms / unsubscribe links. For `kind = "marketing"` campaigns:
+- `src/components/admin/RichTextEditor.tsx` — add `@tiptap/extension-image` and a small custom extension for alignment/size attributes; add toolbar buttons for "Insert image" and "Insert block". The "Insert block" menu inserts raw HTML via `editor.chain().insertContent(html).run()`.
+- New file `src/components/admin/email-blocks.ts` — exports the HTML snippets for hero, two-column, button, etc., using inline styles and `<table>` layouts so Outlook/Gmail render them.
+- New file `src/components/admin/EmailImageUpload.tsx` — small dialog: drag-drop or URL, uploads to `email-assets` bucket, returns the public URL.
+- Migration: `create bucket email-assets (public)` with a policy allowing platform admins to insert/delete and anyone to read.
+- The seed marketing template (`marketing_branch_offer`) gets updated to start with the hero block and a two-column "what you get" section, so new editors see a good starting point rather than a blank page.
+- The plain-text fallback is **not** auto-derived from the new HTML (would lose meaning) — the existing manual textarea stays.
 
-- Remove the Privacy and Terms links.
-- Keep a single, plain-text unsubscribe line (legally required for cold-ish B2B outreach) pointing to the same tenant-domain route, e.g. `postnetprintcentre.com/u/<token>` — no Supabase URL.
-- Keep the small "Document Centre — Web-to-Print SaaS" sign-off line.
+## Out of scope
 
-Transactional emails are unchanged.
+- Drag-and-drop reordering of blocks (Tiptap's native arrow-up/arrow-down handles this well enough).
+- A full "Mailchimp-style" visual block builder — overkill for the volume of marketing emails you're sending.
+- AI-generated copy/imagery inside the editor — separate feature if you want it later.
 
-## 3. Add a hero image
-
-- Generate one polished hero image (web-to-print themed — laptop/phone showing a print order being built, neutral palette that works for any tenant). Save under `src/assets/marketing/hero-web-to-print.jpg` and upload to a public bucket so it has a stable CDN URL usable in email (`<img>` in email cannot be a Vite import).
-- Inject it at the top of the marketing email body inside `renderBrandedEmail`, above the heading, max-width 600px, with proper `alt`, explicit width/height, and a fallback background colour so Outlook's "block images" state still looks OK.
-- Store the URL in `platform_settings` (key `marketing_hero_image_url`) so it can be swapped later without a redeploy. Fall back to a bundled default if unset.
-
-Optional follow-up (not in this plan unless you want it now): allow per-template hero override on `platform_email_templates`.
-
-## 4. Verify
-
-- Send a dry-run to the Demo2 branch and confirm in the returned `activation_link` and rendered HTML preview that:
-  - Every `<a href>` is either `https://postnetprintcentre.com/…` or `https://document-centre.com/…` — no `supabase.co` anywhere.
-  - Footer has no Privacy/Terms links.
-  - Hero image renders.
-- Send a real test to `admin@jaimar.dev`, open in Outlook, hover every link, confirm tooltips show the tenant domain only.
-
-## Files likely touched
-
-- `supabase/functions/_shared/emailTracking.ts` — accept `trackingOrigin`, build URLs on it.
-- `supabase/functions/_shared/branded-shell.ts` — marketing footer variant, hero image slot.
-- `supabase/functions/send-branch-marketing-campaign/index.ts` — pass tenant origin, skip click rewriting, inject hero URL.
-- `src/App.tsx` + new `src/pages/email/TrackOpen.tsx` / `TrackClick.tsx` — public proxy routes.
-- `src/assets/marketing/hero-web-to-print.jpg` (generated) + upload to public bucket.
-- `platform_settings` row for `marketing_hero_image_url`.
-
-No DB schema change. No change to the activation page or demo gate.
+Approve and I'll build it.
