@@ -11,10 +11,11 @@ import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 
-// CDN-hosted hero image for the marketing email. Served from the recipient's
-// own tenant origin (e.g. postnetprintcentre.com) so the <img src> sits on a
-// trusted domain — no Supabase URLs anywhere in the rendered HTML.
-const MARKETING_HERO_PATH = "/__l5e/assets-v1/441a76bc-04dc-4488-b285-3dd91b20cbc6/marketing-hero.jpg";
+// Hero image for the marketing email. Served from the recipient's own tenant
+// origin via the /email-image/* Amplify rewrite, which proxies to the
+// email-image edge function streaming from the email-assets Storage bucket.
+// Must stay on the tenant origin so no Supabase URLs appear in rendered HTML.
+const MARKETING_HERO_PATH = "/email-image/marketing/marketing-hero.jpg";
 
 
 const corsHeaders = {
