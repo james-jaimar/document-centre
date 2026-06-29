@@ -48,7 +48,11 @@ export function useBranchDocsNeedingReacceptance(branchId?: string) {
         .filter((h) => h.document_slug === slug)
         .map((h) => h.document_version)
         .sort((a, b) => b - a)[0] ?? null;
-      if (latest === null || latest < current) {
+      // Only flag as stale when the branch has previously accepted an OLDER
+      // version. Brand-new branches (no acceptance history at all) are handled
+      // by the SubscriptionDisclosureCard during initial activation — showing
+      // the re-acceptance banner there too would be a duplicate prompt.
+      if (latest !== null && latest < current) {
         stale.push({ slug, current, accepted: latest });
       }
     }

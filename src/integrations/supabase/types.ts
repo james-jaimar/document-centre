@@ -261,6 +261,7 @@ export type Database = {
       }
       branch_onboarding_progress: {
         Row: {
+          banking_done: boolean
           branch_id: string
           branding_done: boolean
           company_details_done: boolean
@@ -270,11 +271,14 @@ export type Database = {
           email_settings_done: boolean
           first_order_done: boolean
           payfast_done: boolean
+          pricing_reviewed: boolean
+          pricing_reviewed_at: string | null
           team_invited: boolean
           tenant_id: string
           updated_at: string
         }
         Insert: {
+          banking_done?: boolean
           branch_id: string
           branding_done?: boolean
           company_details_done?: boolean
@@ -284,11 +288,14 @@ export type Database = {
           email_settings_done?: boolean
           first_order_done?: boolean
           payfast_done?: boolean
+          pricing_reviewed?: boolean
+          pricing_reviewed_at?: string | null
           team_invited?: boolean
           tenant_id: string
           updated_at?: string
         }
         Update: {
+          banking_done?: boolean
           branch_id?: string
           branding_done?: boolean
           company_details_done?: boolean
@@ -298,6 +305,8 @@ export type Database = {
           email_settings_done?: boolean
           first_order_done?: boolean
           payfast_done?: boolean
+          pricing_reviewed?: boolean
+          pricing_reviewed_at?: string | null
           team_invited?: boolean
           tenant_id?: string
           updated_at?: string
@@ -6641,6 +6650,10 @@ export type Database = {
       map_customer_job_status: {
         Args: { p_job_status: string; p_payment_status?: string }
         Returns: string
+      }
+      mark_branch_pricing_reviewed: {
+        Args: { _branch_id: string }
+        Returns: undefined
       }
       mark_order_messages_read_customer: {
         Args: { p_order_id: string }
