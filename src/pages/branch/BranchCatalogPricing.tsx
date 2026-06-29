@@ -55,8 +55,6 @@ export default function BranchCatalogPricing() {
     }
   }
 
-  return (
-    <div className="p-6 space-y-8">
   async function handleMarkReviewed() {
     if (!branchId) return;
     setMarking(true);
