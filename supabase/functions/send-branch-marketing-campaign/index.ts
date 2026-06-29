@@ -191,7 +191,6 @@ Deno.serve(async (req) => {
 
         // Wrap in Document Centre branded shell.
         // For marketing emails we deliberately:
-        //   - render a hero image hosted on the tenant's own origin
         //   - hide Privacy/Terms footer links (clutter, and not relevant
         //     before the recipient has even signed up)
         //   - point the footer "site" link at the tenant origin too
@@ -199,16 +198,17 @@ Deno.serve(async (req) => {
         //     final HTML is a plain direct URL (no supabase.co anywhere).
         //     We measure success by activations on /activate/<slug>, which
         //     is far more meaningful than open/click pixels.
+        // No hero image is injected — admins add their own images directly
+        // in the template editor when they want a header banner.
         const html = renderBrandedEmail({
           preheader,
           heading: subject,
           bodyHtml: htmlBody,
-          heroImageUrl: `${appOrigin}${MARKETING_HERO_PATH}`,
-          heroImageAlt: "Document Centre — Web-to-Print for print shops",
           hideLegalLinks: true,
           siteLinkUrl: appOrigin,
           siteLinkLabel: appOrigin.replace(/^https?:\/\//, ""),
         });
+
         const text = renderBrandedText({
           heading: subject,
           bodyText: textBody,
