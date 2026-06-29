@@ -158,6 +158,8 @@ const BranchSettings = () => {
         </Button>
       </div>
 
+      {branchId && <BranchOnboardingChecklist branchId={branchId} />}
+
       <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") || "identity"}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="identity" className="gap-1.5"><IdCard size={14} /> Identity &amp; Banking</TabsTrigger>
