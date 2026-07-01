@@ -14,6 +14,7 @@ import {
   Users,
   Mail,
   BarChart3,
+  TicketPercent,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -47,6 +48,7 @@ const BRANCH_NAV: BranchNavItem[] = [
   { to: "/branch/customers", icon: <Users size={20} />, label: "Customers" },
   { to: "/branch/products", icon: <Store size={20} />, label: "Products" },
   { to: "/branch/catalog-pricing", icon: <DollarSign size={20} />, label: "Pricing" },
+  { to: "/branch/discounts", icon: <TicketPercent size={20} />, label: "Discounts", managerOnly: true },
 
   { to: "/branch/delivery", icon: <Truck size={20} />, label: "Delivery" },
   { to: "/branch/reports", icon: <BarChart3 size={20} />, label: "Reports", managerOnly: true },

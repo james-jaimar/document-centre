@@ -2,7 +2,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCart, usePlaceOrder } from "@/hooks/useCart";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranch, branchUrlSlug } from "@/contexts/BranchContext";
@@ -19,7 +19,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck } from "lucide-react";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck, TicketPercent, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -41,6 +41,8 @@ export default function Checkout() {
   const { activeBranch, branches: liveBranches } = useBranch();
   const { isSubdomain } = useTenantSlug();
   const placeOrder = usePlaceOrder();
+  const queryClient = useQueryClient();
+  const invalidateCart = () => queryClient.invalidateQueries({ queryKey: ["cart"] });
   const { region } = useRegionalPricing();
   // Currency is locked at the cart level (set when items are added). Fall back
   // to the active region for empty-cart edge cases.
@@ -233,8 +235,65 @@ export default function Checkout() {
 
 
   const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
+
+  // Promo code / discount handling
+  const [promoInput, setPromoInput] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
+  const appliedDiscount = (cart as any)?.discount_snapshot as
+    | { name: string; code?: string | null; kind: string; amount_applied: number } | null;
+  const discountAmount = Number((cart as any)?.discount_amount ?? 0);
+
+  const applyPromo = async () => {
+    if (!cart?.id || !promoInput.trim()) return;
+    setPromoBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("branch-discount-apply", {
+        body: {
+          action: "apply", order_id: cart.id, code: promoInput.trim(),
+          delivery_amount: deliveryFee, customer_email: user?.email ?? null,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("Discount applied");
+      setPromoInput("");
+      invalidateCart();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to apply code");
+    } finally { setPromoBusy(false); }
+  };
+
+  const removePromo = async () => {
+    if (!cart?.id) return;
+    setPromoBusy(true);
+    try {
+      await supabase.functions.invoke("branch-discount-apply", {
+        body: { action: "remove", order_id: cart.id },
+      });
+      toast.success("Discount removed");
+      invalidateCart();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to remove discount");
+    } finally { setPromoBusy(false); }
+  };
+
+  // Auto-evaluate best applicable automatic special whenever subtotal / delivery changes.
+  // A manually-applied coupon/voucher takes precedence; the edge function only
+  // touches an existing 'automatic' snapshot.
+  useEffect(() => {
+    if (!cart?.id) return;
+    if (appliedDiscount && appliedDiscount.kind !== "automatic") return;
+    const t = setTimeout(() => {
+      supabase.functions.invoke("branch-discount-apply", {
+        body: { action: "evaluate_auto", order_id: cart.id, delivery_amount: deliveryFee },
+      }).then(() => invalidateCart()).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart?.id, subtotal, deliveryFee]);
+
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
-  const total = subtotal + deliveryFee;
+  const total = Math.max(0, subtotal - discountAmount + deliveryFee);
 
   const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
 
@@ -754,10 +813,63 @@ export default function Checkout() {
                 {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
               </div>
             )}
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                  <TicketPercent className="h-3.5 w-3.5" />
+                  {appliedDiscount?.name ?? "Discount"}
+                  {appliedDiscount?.code && (
+                    <code className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 px-1 rounded">
+                      {appliedDiscount.code}
+                    </code>
+                  )}
+                </span>
+                <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                  −{formatPrice(discountAmount, currency)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-base font-bold pt-1">
               <span className="text-foreground">Total</span>
               <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>
+          </div>
+
+          {/* Promo code */}
+          <div className="border-t border-border pt-3 space-y-2">
+            {appliedDiscount && appliedDiscount.kind !== "automatic" ? (
+              <div className="flex items-center justify-between text-sm bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-md px-3 py-2">
+                <span className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                  <TicketPercent className="h-4 w-4" />
+                  <span className="font-medium">{appliedDiscount.code ?? appliedDiscount.name}</span>
+                  <span className="text-xs text-muted-foreground">applied</span>
+                </span>
+                <Button variant="ghost" size="sm" onClick={removePromo} disabled={promoBusy}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="promo" className="text-xs text-muted-foreground">Promo code</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="promo"
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                    placeholder="Enter code"
+                    className="uppercase"
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPromo(); } }}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={applyPromo}
+                    disabled={!promoInput.trim() || promoBusy}
+                  >
+                    {promoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           {storefrontGate.checkoutBlocked && (
             <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2">

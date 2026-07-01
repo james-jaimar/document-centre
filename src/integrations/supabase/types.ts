@@ -259,6 +259,219 @@ export type Database = {
           },
         ]
       }
+      branch_discount_customers: {
+        Row: {
+          created_at: string
+          customer_email: string | null
+          customer_user_id: string | null
+          discount_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          customer_email?: string | null
+          customer_user_id?: string | null
+          discount_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          customer_email?: string | null
+          customer_user_id?: string | null
+          discount_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_discount_customers_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "branch_discounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      branch_discount_products: {
+        Row: {
+          created_at: string
+          discount_id: string
+          id: string
+          product_family_id: string
+        }
+        Insert: {
+          created_at?: string
+          discount_id: string
+          id?: string
+          product_family_id: string
+        }
+        Update: {
+          created_at?: string
+          discount_id?: string
+          id?: string
+          product_family_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_discount_products_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "branch_discounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_discount_products_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      branch_discount_redemptions: {
+        Row: {
+          amount_applied: number
+          branch_id: string
+          customer_email: string | null
+          customer_user_id: string | null
+          discount_id: string
+          id: string
+          order_id: string
+          redeemed_at: string
+        }
+        Insert: {
+          amount_applied?: number
+          branch_id: string
+          customer_email?: string | null
+          customer_user_id?: string | null
+          discount_id: string
+          id?: string
+          order_id: string
+          redeemed_at?: string
+        }
+        Update: {
+          amount_applied?: number
+          branch_id?: string
+          customer_email?: string | null
+          customer_user_id?: string | null
+          discount_id?: string
+          id?: string
+          order_id?: string
+          redeemed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_discount_redemptions_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_discount_redemptions_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "branch_discounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_discount_redemptions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      branch_discounts: {
+        Row: {
+          allow_combine_with_code: boolean
+          branch_id: string
+          code: string | null
+          created_at: string
+          created_by: string | null
+          currency_code: string
+          description: string | null
+          ends_at: string | null
+          first_time_customer_only: boolean
+          free_item_ref: Json | null
+          id: string
+          is_active: boolean
+          kind: string
+          max_per_customer: number | null
+          max_redemptions: number | null
+          min_order_subtotal: number | null
+          name: string
+          starts_at: string | null
+          tenant_id: string
+          updated_at: string
+          value_amount: number
+          value_type: string
+        }
+        Insert: {
+          allow_combine_with_code?: boolean
+          branch_id: string
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          description?: string | null
+          ends_at?: string | null
+          first_time_customer_only?: boolean
+          free_item_ref?: Json | null
+          id?: string
+          is_active?: boolean
+          kind: string
+          max_per_customer?: number | null
+          max_redemptions?: number | null
+          min_order_subtotal?: number | null
+          name: string
+          starts_at?: string | null
+          tenant_id: string
+          updated_at?: string
+          value_amount?: number
+          value_type: string
+        }
+        Update: {
+          allow_combine_with_code?: boolean
+          branch_id?: string
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          description?: string | null
+          ends_at?: string | null
+          first_time_customer_only?: boolean
+          free_item_ref?: Json | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          max_per_customer?: number | null
+          max_redemptions?: number | null
+          min_order_subtotal?: number | null
+          name?: string
+          starts_at?: string | null
+          tenant_id?: string
+          updated_at?: string
+          value_amount?: number
+          value_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_discounts_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_discounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_onboarding_progress: {
         Row: {
           banking_done: boolean
@@ -3542,6 +3755,8 @@ export type Database = {
           date_required: string | null
           delivery_amount: number
           discount_amount: number
+          discount_code: string | null
+          discount_snapshot: Json | null
           dispatched_at: string | null
           external_code: string | null
           external_order_ref: string | null
@@ -3595,6 +3810,8 @@ export type Database = {
           date_required?: string | null
           delivery_amount?: number
           discount_amount?: number
+          discount_code?: string | null
+          discount_snapshot?: Json | null
           dispatched_at?: string | null
           external_code?: string | null
           external_order_ref?: string | null
@@ -3648,6 +3865,8 @@ export type Database = {
           date_required?: string | null
           delivery_amount?: number
           discount_amount?: number
+          discount_code?: string | null
+          discount_snapshot?: Json | null
           dispatched_at?: string | null
           external_code?: string | null
           external_order_ref?: string | null
