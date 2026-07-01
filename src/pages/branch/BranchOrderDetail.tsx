@@ -2,9 +2,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useOrderDetail } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useLinkedBranches } from "@/hooks/useLinkedBranches";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Receipt, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Receipt, Undo2, Send, Building2 } from "lucide-react";
 import { OrderSummaryTab } from "@/components/orders/detail/OrderSummaryTab";
 import { OrderPricingTab } from "@/components/orders/detail/OrderPricingTab";
 import { OrderDeliveryTab } from "@/components/orders/detail/OrderDeliveryTab";
@@ -13,6 +14,7 @@ import { JobDetailPanel } from "@/components/orders/detail/JobDetailPanel";
 import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
 import { RecordPaymentDialog } from "@/components/orders/RecordPaymentDialog";
 import { RefundDialog } from "@/components/orders/RefundDialog";
+import { TransferProductionDialog } from "@/components/orders/TransferProductionDialog";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,12 +36,15 @@ export default function BranchOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { branchId } = useTenantContext();
+  const { branches: linkedBranches, isMultiBranchOperator } = useLinkedBranches();
   const { data, isLoading, error } = useOrderDetail(id);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
+
 
   // Auto-select first job once data is loaded.
   useEffect(() => {
@@ -77,8 +82,17 @@ export default function BranchOrderDetail() {
 
   const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile } = data;
 
+  const linkedBranchIds = new Set(linkedBranches.map((b) => b.id));
+  const belongsToBranch =
+    !branchId ||
+    !order.branch_id ||
+    order.branch_id === branchId ||
+    order.production_branch_id === branchId ||
+    linkedBranchIds.has(order.branch_id) ||
+    (order.production_branch_id && linkedBranchIds.has(order.production_branch_id));
+
   // Defensive: if RLS somehow lets a foreign order through, refuse to render it.
-  if (branchId && order.branch_id && order.branch_id !== branchId) {
+  if (!belongsToBranch) {
     return (
       <div className="space-y-4">
         <Button variant="outline" onClick={() => navigate("/branch/orders")}>
@@ -92,6 +106,17 @@ export default function BranchOrderDetail() {
       </div>
     );
   }
+
+  const originBranchName = linkedBranches.find((b) => b.id === order.branch_id)?.name || null;
+  const productionBranchName = order.production_branch_id
+    ? linkedBranches.find((b) => b.id === order.production_branch_id)?.name || null
+    : null;
+  const canTransfer =
+    isMultiBranchOperator &&
+    order.branch_id &&
+    linkedBranchIds.has(order.branch_id) &&
+    !["completed", "cancelled"].includes(order.admin_status);
+
 
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
@@ -130,12 +155,29 @@ export default function BranchOrderDetail() {
           <Button variant="outline" size="sm" onClick={() => navigate("/branch/orders")}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Orders
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
             {paymentConfig && <StatusBadge {...paymentConfig} />}
+            {originBranchName && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium">
+                <Building2 className="h-3 w-3" />
+                {originBranchName}
+              </span>
+            )}
+            {productionBranchName && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                → Producing at {productionBranchName}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {canTransfer && (
+            <Button size="sm" variant="outline" onClick={() => setTransferOpen(true)}>
+              <Send className="mr-2 h-4 w-4" />
+              {order.production_branch_id ? "Change production branch" : "Send for production"}
+            </Button>
+          )}
           {Number(order.amount_paid) > 0 && (
             <Button size="sm" variant="outline" onClick={() => setRefundDialogOpen(true)}>
               <Undo2 className="mr-2 h-4 w-4" /> Refund
@@ -169,6 +211,19 @@ export default function BranchOrderDetail() {
         amountPaid={Number(order.amount_paid)}
         currency={order.currency}
       />
+      {canTransfer && (
+        <TransferProductionDialog
+          open={transferOpen}
+          onOpenChange={setTransferOpen}
+          orderId={order.id}
+          orderNumber={order.order_number}
+          originBranchId={order.branch_id}
+          originBranchName={originBranchName}
+          currentProductionBranchId={order.production_branch_id}
+          linkedBranches={linkedBranches}
+        />
+      )}
+
 
       {/* 3-column layout */}
       <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr_360px] gap-4">

@@ -11,6 +11,7 @@ import { AlertCircle } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
+import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
@@ -92,7 +93,8 @@ export default function BranchLayout() {
     <div className="flex h-screen w-full bg-background">
       <BranchSidebar unreadOrderCount={totalUnread} />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 items-center justify-end gap-2 border-b bg-background px-4">
+        <header className="flex h-12 items-center justify-between gap-2 border-b bg-background px-4">
+          <BranchSwitcher />
           <StaffMessagesBell ordersBasePath="/branch/orders" />
         </header>
         <SubscriptionGateBanner />

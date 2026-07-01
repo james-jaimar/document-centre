@@ -3776,6 +3776,7 @@ export type Database = {
           ordered_by_profile_id: string | null
           payment_status: string
           po_number: string | null
+          production_branch_id: string | null
           ready_at: string | null
           source_channel: string | null
           storefront_name: string | null
@@ -3831,6 +3832,7 @@ export type Database = {
           ordered_by_profile_id?: string | null
           payment_status?: string
           po_number?: string | null
+          production_branch_id?: string | null
           ready_at?: string | null
           source_channel?: string | null
           storefront_name?: string | null
@@ -3886,6 +3888,7 @@ export type Database = {
           ordered_by_profile_id?: string | null
           payment_status?: string
           po_number?: string | null
+          production_branch_id?: string | null
           ready_at?: string | null
           source_channel?: string | null
           storefront_name?: string | null
@@ -3942,6 +3945,13 @@ export type Database = {
             columns: ["ordered_by_profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_production_branch_id_fkey"
+            columns: ["production_branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
             referencedColumns: ["id"]
           },
           {
@@ -6045,6 +6055,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_primary_branch: boolean
           metadata: Json
           profile_id: string
           role: string
@@ -6057,6 +6068,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_primary_branch?: boolean
           metadata?: Json
           profile_id: string
           role: string
@@ -6069,6 +6081,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_primary_branch?: boolean
           metadata?: Json
           profile_id?: string
           role?: string
@@ -7076,6 +7089,10 @@ export type Database = {
       }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
       user_branch_id: { Args: never; Returns: string }
+      user_can_access_order_production: {
+        Args: { p_order_id: string }
+        Returns: boolean
+      }
       user_can_bypass_branch_gate: {
         Args: { p_branch_id: string }
         Returns: boolean

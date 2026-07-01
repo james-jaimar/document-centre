@@ -442,6 +442,8 @@ export interface AdminOrderListFilters {
   app_id?: UUID;
   tenant_id?: UUID;
   branch_id?: UUID;
+  /** When set, matches orders whose customer-facing branch_id OR production_branch_id is in the list. */
+  branch_ids?: UUID[];
   admin_status?: OrderAdminStatus[];
   payment_status?: PaymentStatus[];
   customer_status?: OrderCustomerStatus[];
