@@ -1,114 +1,65 @@
-# Branch Discounts & Vouchers
+# Cross-Branch Owner Experience
 
-Branch owners get a single "Discounts" area to run three kinds of promotions on their own storefront. Nothing tenant- or platform-wide yet — every discount belongs to one branch and only applies to orders at that branch.
+Enable an owner who runs several branches to sign in once, see everything across her branches, and shift production work between them — without juggling three logins.
 
-## What branches can create
+## 1. Multi-branch linking
 
-1. **Coupon codes** — customer types a code at checkout (e.g. `SAVE15`).
-2. **Customer vouchers** — a code issued to a named customer/email; single-use credit tied to that person.
-3. **Automatic specials** — no code needed, auto-applies when the rules match (e.g. "20% off flyers this week").
+Today `tenant_memberships` already supports one row per (user, branch). We'll lean into that instead of inventing a new "owner group" concept.
 
-## Discount value types (all three kinds support these)
+- **Platform admin** (Platform → Users → user detail): "Link to branches" picker. Multi-select any branches across any tenant. Creates/deactivates `tenant_memberships` rows with role `branch_manager`.
+- **Tenant admin** (Admin → Branches → Users, or a new Admin → Team page): can grant an existing user `branch_manager` on any additional branches **within their own tenant**. Cannot cross tenants.
+- Email-based invite: if the email doesn't exist yet, we send the standard activation link and pre-stage the memberships so all branches light up on first login.
+- A small `is_primary_branch` flag (default the first membership) drives which branch loads by default on sign-in.
 
-- **Percentage off** subtotal or matching items (e.g. 15%).
-- **Fixed amount off** (e.g. R50).
-- **Free delivery** — zeroes the delivery/collection fee.
-- **Free item / freebie** — free finishing (lamination, binding upgrade) or a free product line the branch nominates.
+## 2. Unified admin session
 
-## Rules & limits per discount
+The branch portal today is scoped to a single `activeBranch`. We'll add a **multi-branch mode** that turns on automatically when the signed-in user has `branch_manager`/`owner`/`admin` on 2+ branches (same tenant or across tenants).
 
-- Start date + expiry date.
-- Total redemption cap, and per-customer redemption cap.
-- Minimum order value (e.g. only valid over R200).
-- Product / product-family restriction (e.g. only flyers, only bound documents).
-- First-time customers only (no prior paid orders at this branch).
-- Active/inactive toggle for pausing without deleting.
-- Stacking: only one code-based discount per order; automatic specials can stack with a code only if the branch ticks "Allow combining with codes" on the special.
+- **Branch switcher in the header** — replaces the current static branch badge with a dropdown listing all linked branches (grouped by tenant when cross-tenant). Selecting one switches context exactly like today. Adds an "All my branches" option that flips the portal into aggregated mode.
+- **Unified Orders** (`/branch/orders?scope=all`) — one list across all linked branches, with a Branch column and a Branch filter chip. Reuses `fetchAdminOrders` with a new `branchIds: string[]` filter.
+- **Unified Customers & Quotes** — same pattern: Branch column + filter, scoped to the user's linked branch IDs.
+- **Unified Dashboard/Reports** — the existing Branch Reports page gains a "My branches" toggle that sums revenue / order counts / production load across the linked set, with a per-branch breakdown table and CSV/PDF export.
+- Manager-only tabs (Billing, Payments, Branch Settings, Branch Users) stay strictly single-branch — the switcher forces you to pick a branch before those pages render.
 
-## Where it appears
+## 3. Order transfer — production only
 
-**Branch admin → new "Discounts" page**
-- List of all discounts (code, type, value, uses, status, expiry).
-- Create/edit dialog with tabs: *Value* · *Rules* · *Products* · *Customers*.
-- Per-row: pause, duplicate, view redemptions.
-- "Issue voucher" flow: pick a customer (or paste email), generate a unique code, optionally email it.
+Owner-driven "send this job to my quieter branch" without disturbing the customer relationship.
 
-**Customer checkout**
-- New "Promo code" field above the totals. Apply → server validates and returns the discount line.
-- Applied automatic specials show as their own line ("Weekend flyer special −R80") — no code entry needed.
-- Clear error copy for invalid/expired/min-order/first-time-only cases.
+- New action on the order detail page (visible to `branch_manager`/`owner`/`admin` who is linked to 2+ branches): **"Send to another branch for production"**.
+- Behavior:
+  - Customer-facing branch stays the original. Invoice, payments, collection address, comms, order number — unchanged.
+  - A new `production_branch_id` on `orders` records where the work is being done.
+  - Order appears in the production branch's **production queue** (jobs/print-centre views) but not in their Orders/Customers/Revenue.
+  - The originating branch still owns fulfilment; when jobs come back "ready", they show up in the original branch's ready-for-collection/dispatch flow.
+  - Timeline entry logs who moved it, from → to, and when. Internal-only note visible to both branches' staff.
+- No guardrails per your call — owner decides. We surface a soft warning if the target branch has that product family disabled, but don't block.
+- Reversible: same action can send it back or forward it again.
 
-**Order detail (branch + customer)**
-- Discount line item shows on invoice, order summary, PDF invoice, and refund calculations.
-- Reorder flow re-evaluates discounts against current rules (doesn't blindly carry old code).
+## 4. Guardrails & safety
 
-**Onboarding checklist**
-- Add an optional "Set up your first promo (optional)" step so new branches see the feature exists.
+- Tenant admins can only link users within their own tenant. Cross-tenant links require platform admin.
+- RLS: extend the existing branch-scoped policies to accept the new `production_branch_id` for read access on `order_jobs` / production artefacts, so operators at the production branch can see and progress the work.
+- Audit: every link/unlink and every order transfer writes to `platform_admin_audit` (platform actions) or `timeline_events` (tenant actions).
+- Impersonation and demo-gate paths untouched.
 
-## Onboarding checklist entry
+## Technical notes
 
-The existing `BranchOnboardingChecklist` gains one optional item pointing at the new Discounts page. Marked complete once the branch has ever created a discount (active or not).
+- **Schema**: add `orders.production_branch_id uuid null` + FK to `branches`; add `tenant_memberships.is_primary_branch boolean default false`; unique partial index enforcing one primary per user. No new tables.
+- **RLS updates**: `caller_has_branch_access` and `user_can_read_order` extended to also match `production_branch_id`. Order writes still gated by the customer-facing `branch_id`.
+- **New hook** `useLinkedBranches()` returns all branches the current user has manager/admin/owner role on, plus a helper `isMultiBranchOperator`.
+- **Header** `BranchHeader` swaps its static badge for `<BranchSwitcher />` when `isMultiBranchOperator`.
+- **Orders/Customers/Quotes hooks**: accept `branchIds?: string[]`; when unset, fall back to the single active branch (current behaviour).
+- **Edge function** `transfer-order-production` — validates caller has manager role on both source and destination, updates `production_branch_id`, writes timeline event, notifies (optional) via existing email pipeline.
+- **UI**:
+  - `src/components/branch/BranchSwitcher.tsx` (new) — dropdown in `BranchHeader`.
+  - `src/pages/branch/BranchOrders.tsx` — add `scope=all` mode + Branch column/filter.
+  - `src/pages/branch/BranchOrderDetail.tsx` — add "Send for production" dialog.
+  - `src/pages/branch/BranchReports.tsx` — add "My branches" aggregation toggle.
+  - Platform user detail — add "Linked branches" multi-select.
+  - Tenant Admin → Team (or existing Branch Users panel) — "Also link this user to…" section.
 
----
+## Out of scope (call out now)
 
-## Technical section
-
-### Database (single migration)
-
-New tables, all `branch_id NOT NULL`, tenant-scoped through the branch:
-
-- `branch_discounts`
-  - `id`, `branch_id`, `tenant_id`
-  - `kind`: `coupon` | `voucher` | `automatic`
-  - `code` (nullable for automatic; unique per branch when set, case-insensitive)
-  - `name`, `description`
-  - `value_type`: `percentage` | `fixed` | `free_delivery` | `free_item`
-  - `value_amount` (numeric; percent 0-100 or currency), `currency_code`
-  - `free_item_ref` jsonb (family_id / finishing_id for freebies)
-  - `starts_at`, `ends_at`
-  - `max_redemptions` int null, `max_per_customer` int null
-  - `min_order_subtotal` numeric null
-  - `first_time_customer_only` bool
-  - `allow_combine_with_code` bool (automatic only)
-  - `is_active` bool
-  - `created_by`, timestamps
-
-- `branch_discount_products` (M:N restriction to product families; empty = all)
-  - `discount_id`, `product_family_id`
-
-- `branch_discount_customers` (voucher assignment)
-  - `discount_id`, `customer_user_id` nullable, `customer_email` nullable
-
-- `branch_discount_redemptions` (audit trail, used for caps)
-  - `discount_id`, `order_id`, `customer_user_id` nullable, `customer_email` nullable, `amount_applied`, `redeemed_at`
-
-- `orders`: add `discount_code text null`, `discount_total numeric default 0`, `discount_snapshot jsonb null` (immutable at order-time).
-
-**RLS**: branch managers of the owning branch can CRUD their own discounts; store operators read-only. Customers get no direct access — validation happens through the edge function. `service_role` for edge functions. All tables get explicit `GRANT`s alongside CREATE.
-
-### Edge functions
-
-- `discount-validate` — inputs: `order_id` (or draft cart) + optional code. Runs all rule checks server-side, returns line-item breakdown or a typed error (`expired`, `min_order`, `first_time_only`, `product_restricted`, `cap_reached`, `not_your_voucher`, etc.). Called from Checkout and from the customer "apply code" action.
-- `discount-apply` — atomically writes `discount_code`, `discount_total`, `discount_snapshot` on the order, inserts `branch_discount_redemptions` row, and recomputes totals via existing `syncOrderTotals`.
-- `discount-remove` — clears the fields and deletes the redemption row (only while order is still editable / unpaid).
-- Order confirmation / payment success path calls `discount-apply` server-side; **automatic specials** are evaluated during `syncOrderTotals` so they can't be bypassed by tampering.
-
-### Frontend
-
-- New `src/pages/branch/BranchDiscounts.tsx` + list/detail components under `src/components/branch/discounts/`.
-- Hook `useBranchDiscounts` (list/create/update/delete, react-query).
-- Checkout: promo code field wired to `discount-validate` → `discount-apply`, shows applied line, allows remove.
-- Order summary/invoice PDF: render `Discount` line above VAT, using `discount_snapshot` so historical orders never change.
-- Reorder review: recompute against current rules; if the old code no longer applies, show a soft warning.
-- Refund flow (`payments-refund`): refund amount is post-discount total, unchanged logic.
-
-### Ringfencing
-
-Every query and RLS policy scopes by `branch_id`. Codes are unique per branch, so `SAVE10` at Sandton and `SAVE10` at Rosebank are independent.
-
-### Out of scope (for now)
-
-- Tenant-wide or platform-wide promo codes (Stripe-linked subscription coupons already exist separately and are untouched).
-- Gift cards / prepaid balances.
-- BOGO / "buy X get Y" combinatorial rules — only single-item freebies in v1.
-- Referral codes.
+- No cross-tenant order transfers — production moves only allowed within one tenant.
+- No shared inventory or shared pricing changes — each branch keeps its own catalog/pricing.
+- No unified billing view — subscription/billing stays strictly per-branch (as today).
