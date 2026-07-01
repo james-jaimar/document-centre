@@ -77,19 +77,21 @@ export default function Checkout() {
         activeBranch?.id
           ? supabase
               .from("branch_payment_gateways")
-              .select("provider, credentials_secret_id, mode")
+              .select("provider, credentials_secret_id, mode, is_enabled")
               .eq("branch_id", activeBranch.id)
           : Promise.resolve({ data: [], error: null } as any),
       ]);
       if (tenantRes.error) throw tenantRes.error;
       if (branchRes.error) throw branchRes.error;
       const branchByProvider = new Map(
-        ((branchRes.data ?? []) as Array<{ provider: string; credentials_secret_id: string | null; mode: string }>)
+        ((branchRes.data ?? []) as Array<{ provider: string; credentials_secret_id: string | null; mode: string; is_enabled: boolean | null }>)
           .map((b) => [b.provider, b]),
       );
       return (tenantRes.data ?? [])
         .filter((g) => {
           const b = branchByProvider.get(g.provider);
+          // Branch hard opt-out wins even if tenant is enabled and credentials exist.
+          if (b && b.is_enabled === false) return false;
           const hasCreds = !!g.credentials_secret_id || !!b?.credentials_secret_id;
           if (!hasCreds) return false;
           if (g.provider === "payfast" && currency !== "ZAR") return false;
