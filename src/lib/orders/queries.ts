@@ -14,7 +14,7 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
   let query = supabase
     .from("orders")
     .select(
-      `id, order_number, app_id, tenant_id, branch_id,
+      `id, order_number, app_id, tenant_id, branch_id, production_branch_id,
        source_channel, storefront_name,
        customer_name, company_name, customer_email,
        admin_status, customer_status, payment_status, fulfilment_status,
@@ -36,6 +36,10 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
 
   if (filters.tenant_id) query = query.eq("tenant_id", filters.tenant_id);
   if (filters.branch_id) query = query.eq("branch_id", filters.branch_id);
+  if (filters.branch_ids?.length) {
+    const list = filters.branch_ids.map((id) => `"${id}"`).join(",");
+    query = query.or(`branch_id.in.(${list}),production_branch_id.in.(${list})`);
+  }
   if (filters.admin_status?.length) query = query.in("admin_status", filters.admin_status);
   if (filters.payment_status?.length) query = query.in("payment_status", filters.payment_status);
   if (filters.customer_status?.length) query = query.in("customer_status", filters.customer_status);

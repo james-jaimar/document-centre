@@ -21,6 +21,9 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 
 
+import { useLinkedBranches } from "@/hooks/useLinkedBranches";
+import { Layers, Building2 } from "lucide-react";
+
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "new_order", "under_review", "approved", "in_production", "qa",
   "ready_for_dispatch", "completed", "on_hold", "cancelled",
@@ -34,6 +37,9 @@ export default function BranchOrders() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId, branchId } = useTenantContext();
+  const { branches: linkedBranches, isMultiBranchOperator } = useLinkedBranches();
+  const scopeAll = searchParams.get("scope") === "all" && isMultiBranchOperator;
+  const branchFilterId = searchParams.get("branch") || null;
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
@@ -42,25 +48,35 @@ export default function BranchOrders() {
   const [unreadFirst, setUnreadFirst] = useState(true);
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || !!branchFilterId;
 
   const filters: AdminOrderListFilters = useMemo(() => ({
-    tenant_id: tenantId || undefined,
-    branch_id: branchId || undefined,
+    tenant_id: scopeAll ? undefined : tenantId || undefined,
+    branch_id: scopeAll ? undefined : (branchFilterId || branchId || undefined),
+    branch_ids: scopeAll
+      ? (branchFilterId ? [branchFilterId] : linkedBranches.map((b) => b.id))
+      : undefined,
     search: search || undefined,
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     page,
     page_size: 25,
-  }), [tenantId, branchId, search, selectedStatuses, selectedPaymentStatuses, page]);
+  }), [tenantId, branchId, branchFilterId, scopeAll, linkedBranches, search, selectedStatuses, selectedPaymentStatuses, page]);
 
   const { data, isLoading } = useAdminOrders(filters);
   const rawOrders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
   const totalForBranch = hasActiveFilters ? null : total;
-  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, scopeAll ? null : branchId);
   const totalUnreadOrders = Object.values(unreadMap).filter((n) => (Number(n) || 0) > 0).length;
+
+  const branchNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    linkedBranches.forEach((b) => map.set(b.id, b.name));
+    return map;
+  }, [linkedBranches]);
+
 
   const orders = useMemo(() => {
     let list = rawOrders;
@@ -100,13 +116,20 @@ export default function BranchOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
-    if (unreadOnly) {
-      const next = new URLSearchParams(searchParams);
-      next.delete("unread");
-      setSearchParams(next, { replace: true });
-    }
+    const next = new URLSearchParams(searchParams);
+    if (unreadOnly) next.delete("unread");
+    if (branchFilterId) next.delete("branch");
+    setSearchParams(next, { replace: true });
     setPage(1);
   };
+
+  const setBranchFilter = (id: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("branch", id); else next.delete("branch");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
+
 
   const handleSearch = (value: string) => {
     setSearch(value);
@@ -138,19 +161,77 @@ export default function BranchOrders() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Order Manager</h1>
-          <p className="text-sm text-muted-foreground">Orders assigned to your branch</p>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            {scopeAll && <Layers className="h-6 w-6 text-primary" />}
+            Order Manager
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {scopeAll
+              ? `Orders across ${linkedBranches.length} branches`
+              : "Orders assigned to your branch"}
+          </p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search orders..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-9 w-64"
-          />
+        <div className="flex items-center gap-2">
+          {isMultiBranchOperator && (
+            <Button
+              variant={scopeAll ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                if (scopeAll) next.delete("scope"); else next.set("scope", "all");
+                next.delete("branch");
+                setSearchParams(next, { replace: true });
+                setPage(1);
+              }}
+            >
+              <Layers className="mr-1.5 h-3.5 w-3.5" />
+              All my branches
+            </Button>
+          )}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search orders..."
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-9 w-64"
+            />
+          </div>
         </div>
       </div>
+
+      {scopeAll && linkedBranches.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground mr-1">Branch:</span>
+          <button
+            onClick={() => setBranchFilter(null)}
+            className={
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs " +
+              (!branchFilterId
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border hover:bg-muted")
+            }
+          >
+            All
+          </button>
+          {linkedBranches.map((b) => (
+            <button
+              key={b.id}
+              onClick={() => setBranchFilter(b.id)}
+              className={
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs " +
+                (branchFilterId === b.id
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border hover:bg-muted")
+              }
+            >
+              <Building2 className="h-3 w-3" />
+              {b.name}
+            </button>
+          ))}
+        </div>
+      )}
+
 
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -205,6 +286,7 @@ export default function BranchOrders() {
           <TableHeader>
             <TableRow className="text-xs">
               <TableHead className="w-[140px]">Job</TableHead>
+              {scopeAll && <TableHead>Branch</TableHead>}
               <TableHead>Storefront</TableHead>
               <TableHead>Company Name</TableHead>
               <TableHead>Date Ordered</TableHead>
@@ -218,17 +300,19 @@ export default function BranchOrders() {
               <TableHead className="text-center">Msgs</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
+
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={scopeAll ? 14 : 13} className="h-32 text-center text-muted-foreground">
                   Loading orders...
                 </TableCell>
               </TableRow>
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={13} className="h-40 text-center">
+                <TableCell colSpan={scopeAll ? 14 : 13} className="h-40 text-center">
+
                   <div className="flex flex-col items-center gap-2">
                     <p className="text-sm text-muted-foreground">
                       {hasActiveFilters
@@ -261,7 +345,18 @@ export default function BranchOrders() {
                       <TableCell className="font-mono text-xs font-medium">
                         {order.order_number || "—"}
                       </TableCell>
+                      {scopeAll && (
+                        <TableCell className="text-xs">
+                          <BranchTag
+                            name={branchNameById.get(order.branch_id) || "—"}
+                            production={order.production_branch_id && order.production_branch_id !== order.branch_id
+                              ? branchNameById.get(order.production_branch_id)
+                              : null}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>{order.source_channel || "—"}</TableCell>
+
                       <TableCell>{order.company_name || order.customer_name || "—"}</TableCell>
                       <TableCell>
                         <div className="text-xs">{getTimeAgo(order.created_at)}</div>
@@ -293,7 +388,18 @@ export default function BranchOrders() {
                     <TableCell className="font-mono text-xs font-medium text-primary">
                       {job.job_number}
                     </TableCell>
+                    {scopeAll && (
+                      <TableCell className="text-xs">
+                        <BranchTag
+                          name={branchNameById.get(order.branch_id) || "—"}
+                          production={order.production_branch_id && order.production_branch_id !== order.branch_id
+                            ? branchNameById.get(order.production_branch_id)
+                            : null}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>{order.source_channel || "storefront"}</TableCell>
+
                     <TableCell className="max-w-[140px] truncate">{order.company_name || order.customer_name || "—"}</TableCell>
                     <TableCell>
                       <div className="text-xs">{getTimeAgo(order.created_at)}</div>
@@ -375,4 +481,21 @@ function PaymentIcon({ status }: { status: string }) {
 function ReadyIcon({ status }: { status: string }) {
   if (status === "ready" || status === "completed") return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />;
   return <span className="text-muted-foreground text-[10px]">—</span>;
+}
+
+function BranchTag({ name, production }: { name: string; production?: string | null }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+        <Building2 className="h-3 w-3" />
+        {name}
+      </span>
+      {production && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+          → {production}
+        </span>
+      )}
+    </div>
+  );
+
 }
