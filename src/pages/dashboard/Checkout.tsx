@@ -2,7 +2,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCart, usePlaceOrder } from "@/hooks/useCart";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranch, branchUrlSlug } from "@/contexts/BranchContext";
@@ -41,6 +41,8 @@ export default function Checkout() {
   const { activeBranch, branches: liveBranches } = useBranch();
   const { isSubdomain } = useTenantSlug();
   const placeOrder = usePlaceOrder();
+  const queryClient = useQueryClient();
+  const invalidateCart = () => queryClient.invalidateQueries({ queryKey: ["cart"] });
   const { region } = useRegionalPricing();
   // Currency is locked at the cart level (set when items are added). Fall back
   // to the active region for empty-cart edge cases.
