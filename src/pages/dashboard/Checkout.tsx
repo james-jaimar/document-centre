@@ -813,10 +813,63 @@ export default function Checkout() {
                 {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
               </div>
             )}
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                  <TicketPercent className="h-3.5 w-3.5" />
+                  {appliedDiscount?.name ?? "Discount"}
+                  {appliedDiscount?.code && (
+                    <code className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 px-1 rounded">
+                      {appliedDiscount.code}
+                    </code>
+                  )}
+                </span>
+                <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                  −{formatPrice(discountAmount, currency)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-base font-bold pt-1">
               <span className="text-foreground">Total</span>
               <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>
+          </div>
+
+          {/* Promo code */}
+          <div className="border-t border-border pt-3 space-y-2">
+            {appliedDiscount && appliedDiscount.kind !== "automatic" ? (
+              <div className="flex items-center justify-between text-sm bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-md px-3 py-2">
+                <span className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                  <TicketPercent className="h-4 w-4" />
+                  <span className="font-medium">{appliedDiscount.code ?? appliedDiscount.name}</span>
+                  <span className="text-xs text-muted-foreground">applied</span>
+                </span>
+                <Button variant="ghost" size="sm" onClick={removePromo} disabled={promoBusy}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="promo" className="text-xs text-muted-foreground">Promo code</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="promo"
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                    placeholder="Enter code"
+                    className="uppercase"
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPromo(); } }}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={applyPromo}
+                    disabled={!promoInput.trim() || promoBusy}
+                  >
+                    {promoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           {storefrontGate.checkoutBlocked && (
             <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2">
