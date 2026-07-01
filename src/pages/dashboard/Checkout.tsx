@@ -19,7 +19,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck } from "lucide-react";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck, TicketPercent, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -233,8 +233,72 @@ export default function Checkout() {
 
 
   const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
+
+  // Promo code / discount handling
+  const [promoInput, setPromoInput] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
+  const appliedDiscount = (cart as any)?.discount_snapshot as
+    | { name: string; code?: string | null; kind: string; amount_applied: number } | null;
+  const discountAmount = Number((cart as any)?.discount_amount ?? 0);
+
+  const refreshCart = async () => {
+    // The useCart hook is keyed on the cart query; invalidate via a manual refetch trick.
+    // Simplest — re-hit via supabase to update local totals until react-query invalidates.
+    if (!cart?.id) return;
+    await Promise.resolve();
+  };
+
+  const applyPromo = async () => {
+    if (!cart?.id || !promoInput.trim()) return;
+    setPromoBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("branch-discount-apply", {
+        body: {
+          action: "apply", order_id: cart.id, code: promoInput.trim(),
+          delivery_amount: deliveryFee, customer_email: user?.email ?? null,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("Discount applied");
+      setPromoInput("");
+      await refreshCart();
+      // Force a full cart refetch
+      window.dispatchEvent(new Event("cart:changed"));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to apply code");
+    } finally { setPromoBusy(false); }
+  };
+
+  const removePromo = async () => {
+    if (!cart?.id) return;
+    setPromoBusy(true);
+    try {
+      await supabase.functions.invoke("branch-discount-apply", {
+        body: { action: "remove", order_id: cart.id },
+      });
+      toast.success("Discount removed");
+      window.dispatchEvent(new Event("cart:changed"));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to remove discount");
+    } finally { setPromoBusy(false); }
+  };
+
+  // Auto-evaluate best automatic special when cart / delivery changes.
+  useEffect(() => {
+    if (!cart?.id) return;
+    if (appliedDiscount && appliedDiscount.kind !== "automatic") return; // manual code wins
+    const t = setTimeout(() => {
+      supabase.functions.invoke("branch-discount-apply", {
+        body: { action: "evaluate_auto", order_id: cart.id, delivery_amount: deliveryFee },
+      }).then(() => window.dispatchEvent(new Event("cart:changed"))).catch(() => {});
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart?.id, subtotal, deliveryFee]);
+
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
-  const total = subtotal + deliveryFee;
+  const total = Math.max(0, subtotal - discountAmount + deliveryFee);
 
   const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
 
