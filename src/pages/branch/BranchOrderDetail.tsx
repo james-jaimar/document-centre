@@ -155,20 +155,7 @@ export default function BranchOrderDetail() {
           <Button variant="outline" size="sm" onClick={() => navigate("/branch/orders")}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Orders
           </Button>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
-            {paymentConfig && <StatusBadge {...paymentConfig} />}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {Number(order.amount_paid) > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setRefundDialogOpen(true)}>
-              <Undo2 className="mr-2 h-4 w-4" /> Refund
-            </Button>
-          )}
-          {order.amount_due > 0 && (
-            <>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
             {paymentConfig && <StatusBadge {...paymentConfig} />}
             {originBranchName && (
@@ -223,8 +210,20 @@ export default function BranchOrderDetail() {
         orderId={order.id}
         amountPaid={Number(order.amount_paid)}
         currency={order.currency}
-
       />
+      {canTransfer && (
+        <TransferProductionDialog
+          open={transferOpen}
+          onOpenChange={setTransferOpen}
+          orderId={order.id}
+          orderNumber={order.order_number}
+          originBranchId={order.branch_id}
+          originBranchName={originBranchName}
+          currentProductionBranchId={order.production_branch_id}
+          linkedBranches={linkedBranches}
+        />
+      )}
+
 
       {/* 3-column layout */}
       <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr_360px] gap-4">
