@@ -1223,11 +1223,14 @@ export default function OrderBuild() {
               overrides={cascadedOverrides}
               recipe={useNewEngine ? recipe : null}
               rateCard={useNewEngine ? rateCard : null}
+              quantityMode={quantityMode}
+              quantityBlocks={quantityBlocks}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
               isSubmitting={isSubmitting}
             />
+
           </div>
         </div>
 
