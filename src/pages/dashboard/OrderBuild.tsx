@@ -820,10 +820,33 @@ export default function OrderBuild() {
 
 
   const computeBreakdown = useCallback(() => {
-    return useNewEngine && recipe && rateCard
+    const engine = useNewEngine && recipe && rateCard
       ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard, options)
       : calculateItemPrice(pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides);
-  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides]);
+    if (blocksActive) {
+      const block =
+        quantityBlocks.find((b) => b.qty === pricingSpec.quantity) ??
+        quantityBlocks[0];
+      const total = block.price_minor / 100;
+      const perUnit = total / Math.max(1, block.qty);
+      return {
+        ...engine,
+        subtotal_per_unit: perUnit,
+        total,
+        lines: [
+          {
+            label: `Pack of ${block.qty}`,
+            type: "fixed" as const,
+            unit_amount: total,
+            multiplier: 1,
+            total,
+          },
+        ],
+      };
+    }
+    return engine;
+  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides, blocksActive, quantityBlocks]);
+
 
   const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) {
