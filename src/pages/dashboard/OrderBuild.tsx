@@ -46,6 +46,7 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
 
 
 export default function OrderBuild() {
