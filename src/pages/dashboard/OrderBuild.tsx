@@ -716,10 +716,9 @@ export default function OrderBuild() {
   // sides from Print Sides (falls back to is_duplex) and filter the ladder
   // to entries matching the current combo — that filtered list is what
   // drives snapping, pricing, and the dropdown in PriceSummary.
-  const { blockMatchesField } = require("@/hooks/useProductFamilies") as typeof import("@/hooks/useProductFamilies");
   const allBlocks = useMemo(() => {
     const raw = (productFamily as any)?.quantity_blocks;
-    return Array.isArray(raw) ? (raw as import("@/hooks/useProductFamilies").QuantityBlock[]) : [];
+    return Array.isArray(raw) ? (raw as QuantityBlock[]) : [];
   }, [productFamily]);
   const quantityMode = ((productFamily as any)?.quantity_mode ?? "free") as "free" | "blocks";
 
