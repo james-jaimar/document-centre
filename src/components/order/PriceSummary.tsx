@@ -97,10 +97,13 @@ export default function PriceSummary({
       lines: [
         {
           label: `Pack of ${activeBlock.qty}`,
+          type: "fixed",
+          unit_amount: total,
           multiplier: 1,
           total,
         },
       ],
+
     };
   }, [blocksActive, activeBlock, engineBreakdown]);
 
