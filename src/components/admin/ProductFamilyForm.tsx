@@ -485,7 +485,12 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
   const blocks = form.watch("quantity_blocks") ?? [];
 
   const update = (next: QuantityBlock[]) => {
-    const sorted = next.slice().sort((a, b) => a.qty - b.qty);
+    const sorted = next.slice().sort((a, b) => {
+      const sa = `${a.size ?? "*"}|${a.paper ?? "*"}|${a.sides ?? "single"}`;
+      const sb = `${b.size ?? "*"}|${b.paper ?? "*"}|${b.sides ?? "single"}`;
+      if (sa !== sb) return sa.localeCompare(sb);
+      return a.qty - b.qty;
+    });
     form.setValue("quantity_blocks", sorted, { shouldDirty: true });
   };
 
