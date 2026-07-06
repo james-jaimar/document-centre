@@ -49,6 +49,9 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
 };
 
 interface QuantityBlock {
+  size: string;   // e.g. "a5", "dl", or "*" for any
+  paper: string;  // e.g. "gloss_170", or "*" for any
+  sides: "single" | "double";
   qty: number;
   price_minor: number;
   cost_minor?: number;
@@ -482,7 +485,12 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
   const blocks = form.watch("quantity_blocks") ?? [];
 
   const update = (next: QuantityBlock[]) => {
-    const sorted = next.slice().sort((a, b) => a.qty - b.qty);
+    const sorted = next.slice().sort((a, b) => {
+      const sa = `${a.size ?? "*"}|${a.paper ?? "*"}|${a.sides ?? "single"}`;
+      const sb = `${b.size ?? "*"}|${b.paper ?? "*"}|${b.sides ?? "single"}`;
+      if (sa !== sb) return sa.localeCompare(sb);
+      return a.qty - b.qty;
+    });
     form.setValue("quantity_blocks", sorted, { shouldDirty: true });
   };
 
@@ -513,19 +521,61 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
 
       {mode === "blocks" && (
         <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
-            <span>Pack qty</span>
-            <span>Sell price (major)</span>
-            <span>Cost (major, optional)</span>
+          <p className="text-[11px] text-muted-foreground px-1">
+            Each row is one pack — keyed by size + paper + sides + qty. Use{" "}
+            <code className="text-[10px] bg-muted px-1 rounded">*</code> for
+            size/paper to mean "any" (matches every catalogue option).
+          </p>
+          <div className="grid grid-cols-[80px_110px_90px_80px_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
+            <span>Size</span>
+            <span>Paper</span>
+            <span>Sides</span>
+            <span>Qty</span>
+            <span>Sell (major)</span>
+            <span>Cost (optional)</span>
             <span></span>
           </div>
           {blocks.length === 0 && (
             <p className="text-xs text-muted-foreground italic px-1">
-              No blocks yet. Add pack sizes (e.g. 50, 100, 250).
+              No pack rows yet. Add a row per size × paper × sides × qty combo you offer.
             </p>
           )}
           {blocks.map((b, i) => (
-            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+            <div key={i} className="grid grid-cols-[80px_110px_90px_80px_1fr_1fr_auto] gap-2 items-center">
+              <Input
+                className="h-8 text-xs"
+                value={b.size ?? "*"}
+                placeholder="a5"
+                onChange={(e) => {
+                  const next = [...blocks];
+                  next[i] = { ...b, size: e.target.value.trim().toLowerCase() || "*" };
+                  update(next);
+                }}
+              />
+              <Input
+                className="h-8 text-xs"
+                value={b.paper ?? "*"}
+                placeholder="gloss_170"
+                onChange={(e) => {
+                  const next = [...blocks];
+                  next[i] = { ...b, paper: e.target.value.trim().toLowerCase() || "*" };
+                  update(next);
+                }}
+              />
+              <Select
+                value={b.sides ?? "single"}
+                onValueChange={(v) => {
+                  const next = [...blocks];
+                  next[i] = { ...b, sides: v as "single" | "double" };
+                  update(next);
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Single</SelectItem>
+                  <SelectItem value="double">Double</SelectItem>
+                </SelectContent>
+              </Select>
               <Input
                 type="number"
                 min={1}
@@ -577,20 +627,52 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
               </Button>
             </div>
           ))}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() =>
-              update([
-                ...blocks,
-                { qty: blocks.length ? blocks[blocks.length - 1].qty * 2 : 50, price_minor: 0 },
-              ])
-            }
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add block
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                const last = blocks[blocks.length - 1];
+                update([
+                  ...blocks,
+                  {
+                    size: last?.size ?? "*",
+                    paper: last?.paper ?? "*",
+                    sides: last?.sides ?? "single",
+                    qty: last ? last.qty * 2 : 50,
+                    price_minor: 0,
+                  },
+                ]);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add row
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                // Duplicate all "single" rows as "double" so admins can quickly
+                // seed the double-sided column then tweak prices.
+                const singles = blocks.filter((b) => b.sides === "single");
+                const existingKeys = new Set(
+                  blocks.map((b) => `${b.size}|${b.paper}|${b.sides}|${b.qty}`),
+                );
+                const additions = singles
+                  .map((s) => ({ ...s, sides: "double" as const }))
+                  .filter(
+                    (s) => !existingKeys.has(`${s.size}|${s.paper}|${s.sides}|${s.qty}`),
+                  );
+                if (additions.length === 0) return;
+                update([...blocks, ...additions]);
+              }}
+            >
+              Duplicate singles → double
+            </Button>
+          </div>
         </div>
       )}
     </div>

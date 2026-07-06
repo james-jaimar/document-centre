@@ -4,7 +4,7 @@ import type { ItemSpec, PriceBreakdown, RateCardBundle } from "@/lib/calculatePr
 import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
 import type { ProductRecipe } from "@/lib/productRecipe";
-import type { QuantityBlock } from "@/hooks/useProductFamilies";
+import { type QuantityBlock, blockMatchesField } from "@/hooks/useProductFamilies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -62,11 +62,35 @@ export default function PriceSummary({
   const { region } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
 
-  const sortedBlocks = useMemo(
-    () => (quantityBlocks ?? []).slice().sort((a, b) => a.qty - b.qty),
-    [quantityBlocks],
-  );
+  // Filter the raw block ladder down to entries matching the current spec's
+  // size / paper / sides. This makes pack pricing spec-aware — flyers priced
+  // as A5 / 170gsm gloss / double-sided pick a different pack row than A4 /
+  // 130gsm / single-sided. `'*'` in a block field is a wildcard.
+  const specSize = spec.selected_options?.["Document Size"] ?? null;
+  const specPaper = spec.selected_options?.["Paper"] ?? null;
+  const specSidesSlug = spec.selected_options?.["Print Sides"] ?? null;
+  const specSides: "single" | "double" = (() => {
+    if (specSidesSlug) {
+      const s = specSidesSlug.toLowerCase();
+      if (s === "duplex" || s === "double" || s === "double_sided") return "double";
+      return "single";
+    }
+    return spec.is_duplex ? "double" : "single";
+  })();
+
+  const sortedBlocks = useMemo(() => {
+    const all = (quantityBlocks ?? []).slice();
+    const filtered = all.filter(
+      (b) =>
+        b.sides === specSides &&
+        blockMatchesField(b.size, specSize) &&
+        blockMatchesField(b.paper, specPaper),
+    );
+    return filtered.sort((a, b) => a.qty - b.qty);
+  }, [quantityBlocks, specSize, specPaper, specSides]);
   const blocksActive = quantityMode === "blocks" && sortedBlocks.length > 0;
+  const blocksConfiguredButNoMatch =
+    quantityMode === "blocks" && (quantityBlocks?.length ?? 0) > 0 && sortedBlocks.length === 0;
 
   const activeBlock = useMemo(() => {
     if (!blocksActive) return null;
@@ -96,7 +120,7 @@ export default function PriceSummary({
       total,
       lines: [
         {
-          label: `Pack of ${activeBlock.qty}`,
+          label: `Pack of ${activeBlock.qty} · ${activeBlock.sides === "double" ? "Double-sided" : "Single-sided"}`,
           type: "fixed",
           unit_amount: total,
           multiplier: 1,
@@ -166,6 +190,12 @@ export default function PriceSummary({
         </p>
       )}
 
+      {blocksConfiguredButNoMatch && (
+        <p className="text-xs text-destructive -mt-1">
+          This size / paper / sides combination isn't offered. Pick a different option to see pack pricing.
+        </p>
+      )}
+
       {/* Price */}
       <div className="flex items-center justify-between">
         <Popover>
@@ -215,7 +245,7 @@ export default function PriceSummary({
       <Button
         className="w-full gap-2"
         size="lg"
-        disabled={disabled || isSubmitting}
+        disabled={disabled || isSubmitting || blocksConfiguredButNoMatch}
         onClick={onAddToCart}
       >
         <ShoppingCart className="h-4 w-4" />

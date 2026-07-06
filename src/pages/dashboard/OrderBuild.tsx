@@ -46,6 +46,7 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
 
 
 export default function OrderBuild() {
@@ -712,15 +713,41 @@ export default function OrderBuild() {
   }, []);
 
   // Block-quantity config (e.g. flyers sold in packs of 50/100/250…)
-  const quantityBlocks = useMemo(() => {
+  // Blocks are keyed by size + paper + sides + qty. We derive the spec's
+  // sides from Print Sides (falls back to is_duplex) and filter the ladder
+  // to entries matching the current combo — that filtered list is what
+  // drives snapping, pricing, and the dropdown in PriceSummary.
+  const allBlocks = useMemo(() => {
     const raw = (productFamily as any)?.quantity_blocks;
-    return Array.isArray(raw)
-      ? (raw as Array<{ qty: number; price_minor: number; cost_minor?: number }>)
-          .slice()
-          .sort((a, b) => a.qty - b.qty)
-      : [];
+    return Array.isArray(raw) ? (raw as QuantityBlock[]) : [];
   }, [productFamily]);
   const quantityMode = ((productFamily as any)?.quantity_mode ?? "free") as "free" | "blocks";
+
+  const specSize = spec.selected_options?.["Document Size"] ?? null;
+  const specPaper = spec.selected_options?.["Paper"] ?? null;
+  const specSidesSlug = spec.selected_options?.["Print Sides"] ?? null;
+  const specSides: "single" | "double" = useMemo(() => {
+    if (specSidesSlug) {
+      const s = specSidesSlug.toLowerCase();
+      if (s === "duplex" || s === "double" || s === "double_sided") return "double";
+      return "single";
+    }
+    return spec.is_duplex ? "double" : "single";
+  }, [specSidesSlug, spec.is_duplex]);
+
+  const quantityBlocks = useMemo(
+    () =>
+      allBlocks
+        .filter(
+          (b) =>
+            b.sides === specSides &&
+            blockMatchesField(b.size, specSize) &&
+            blockMatchesField(b.paper, specPaper),
+        )
+        .slice()
+        .sort((a, b) => a.qty - b.qty),
+    [allBlocks, specSize, specPaper, specSides, blockMatchesField],
+  );
   const blocksActive = quantityMode === "blocks" && quantityBlocks.length > 0;
 
   const handleQuantityChange = useCallback((qty: number) => {
@@ -735,7 +762,9 @@ export default function OrderBuild() {
     setSpec((prev) => ({ ...prev, quantity: qty }));
   }, [blocksActive, quantityBlocks]);
 
-  // Snap to first block if the current quantity isn't a valid block.
+  // Snap to first block if the current quantity isn't a valid block for
+  // this size/paper/sides combo (fires on load AND when the customer
+  // changes any of those axes).
   useEffect(() => {
     if (!blocksActive) return;
     const valid = quantityBlocks.some((b) => b.qty === spec.quantity);
@@ -835,7 +864,7 @@ export default function OrderBuild() {
         total,
         lines: [
           {
-            label: `Pack of ${block.qty}`,
+            label: `Pack of ${block.qty} · ${block.sides === "double" ? "Double-sided" : "Single-sided"}`,
             type: "fixed" as const,
             unit_amount: total,
             multiplier: 1,
