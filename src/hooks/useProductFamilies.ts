@@ -15,9 +15,28 @@ type PrintOutputFields = {
     | "saturation";
 };
 
-export type ProductFamily = Tables<"product_families"> & PrintOutputFields;
-export type ProductFamilyInsert = TablesInsert<"product_families"> & Partial<PrintOutputFields>;
-export type ProductFamilyUpdate = TablesUpdate<"product_families"> & Partial<PrintOutputFields>;
+/** A single fixed-quantity block: pack size + pack price (in minor units). */
+export type QuantityBlock = {
+  qty: number;
+  price_minor: number;
+  cost_minor?: number;
+};
+
+type QuantityBlockFields = {
+  quantity_mode: "free" | "blocks";
+  quantity_blocks: QuantityBlock[];
+};
+
+export type ProductFamily = Tables<"product_families"> &
+  PrintOutputFields &
+  QuantityBlockFields;
+export type ProductFamilyInsert = TablesInsert<"product_families"> &
+  Partial<PrintOutputFields> &
+  Partial<QuantityBlockFields>;
+export type ProductFamilyUpdate = TablesUpdate<"product_families"> &
+  Partial<PrintOutputFields> &
+  Partial<QuantityBlockFields>;
+
 
 const QUERY_KEY = ["product_families"];
 
