@@ -711,9 +711,40 @@ export default function OrderBuild() {
     }));
   }, []);
 
+  // Block-quantity config (e.g. flyers sold in packs of 50/100/250…)
+  const quantityBlocks = useMemo(() => {
+    const raw = (productFamily as any)?.quantity_blocks;
+    return Array.isArray(raw)
+      ? (raw as Array<{ qty: number; price_minor: number; cost_minor?: number }>)
+          .slice()
+          .sort((a, b) => a.qty - b.qty)
+      : [];
+  }, [productFamily]);
+  const quantityMode = ((productFamily as any)?.quantity_mode ?? "free") as "free" | "blocks";
+  const blocksActive = quantityMode === "blocks" && quantityBlocks.length > 0;
+
   const handleQuantityChange = useCallback((qty: number) => {
+    if (blocksActive) {
+      const snapped =
+        quantityBlocks.find((b) => b.qty === qty)?.qty ??
+        quantityBlocks.find((b) => b.qty >= qty)?.qty ??
+        quantityBlocks[quantityBlocks.length - 1].qty;
+      setSpec((prev) => ({ ...prev, quantity: snapped }));
+      return;
+    }
     setSpec((prev) => ({ ...prev, quantity: qty }));
-  }, []);
+  }, [blocksActive, quantityBlocks]);
+
+  // Snap to first block if the current quantity isn't a valid block.
+  useEffect(() => {
+    if (!blocksActive) return;
+    const valid = quantityBlocks.some((b) => b.qty === spec.quantity);
+    if (!valid) {
+      const next = quantityBlocks[0].qty;
+      setSpec((prev) => ({ ...prev, quantity: next }));
+    }
+  }, [blocksActive, quantityBlocks, spec.quantity]);
+
 
   // Save spec back to DB
   const handleSave = useCallback(async () => {
@@ -789,10 +820,33 @@ export default function OrderBuild() {
 
 
   const computeBreakdown = useCallback(() => {
-    return useNewEngine && recipe && rateCard
+    const engine = useNewEngine && recipe && rateCard
       ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard, options)
       : calculateItemPrice(pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides);
-  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides]);
+    if (blocksActive) {
+      const block =
+        quantityBlocks.find((b) => b.qty === pricingSpec.quantity) ??
+        quantityBlocks[0];
+      const total = block.price_minor / 100;
+      const perUnit = total / Math.max(1, block.qty);
+      return {
+        ...engine,
+        subtotal_per_unit: perUnit,
+        total,
+        lines: [
+          {
+            label: `Pack of ${block.qty}`,
+            type: "fixed" as const,
+            unit_amount: total,
+            multiplier: 1,
+            total,
+          },
+        ],
+      };
+    }
+    return engine;
+  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides, blocksActive, quantityBlocks]);
+
 
   const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) {
@@ -1192,11 +1246,14 @@ export default function OrderBuild() {
               overrides={cascadedOverrides}
               recipe={useNewEngine ? recipe : null}
               rateCard={useNewEngine ? rateCard : null}
+              quantityMode={quantityMode}
+              quantityBlocks={quantityBlocks}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
               isSubmitting={isSubmitting}
             />
+
           </div>
         </div>
 

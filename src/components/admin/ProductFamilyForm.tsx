@@ -48,6 +48,12 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
   min_quantity: 1,
 };
 
+interface QuantityBlock {
+  qty: number;
+  price_minor: number;
+  cost_minor?: number;
+}
+
 interface FormValues {
   name: string;
   slug: string;
@@ -60,7 +66,10 @@ interface FormValues {
   render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
   pricing_engine: "click_charges" | "photo_prints" | "business_cards";
   printing_rules: PrintingRules;
+  quantity_mode: "free" | "blocks";
+  quantity_blocks: QuantityBlock[];
 }
+
 
 
 interface Props {
@@ -89,11 +98,13 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       render_intent: "relative_colorimetric",
       pricing_engine: "click_charges",
       printing_rules: DEFAULT_PRINTING_RULES,
+      quantity_mode: "free",
+      quantity_blocks: [],
     },
   });
 
   useEffect(() => {
-    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"] }) | null;
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"]; quantity_blocks?: QuantityBlock[] }) | null;
     if (fam) {
       form.reset({
         name: fam.name,
@@ -107,6 +118,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
         pricing_engine: (fam.pricing_engine as FormValues["pricing_engine"]) ?? "click_charges",
         printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
+        quantity_mode: fam.quantity_mode ?? "free",
+        quantity_blocks: Array.isArray(fam.quantity_blocks) ? fam.quantity_blocks : [],
       });
     } else {
       form.reset({
@@ -121,9 +134,13 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         render_intent: "relative_colorimetric",
         pricing_engine: "click_charges",
         printing_rules: DEFAULT_PRINTING_RULES,
+        quantity_mode: "free",
+        quantity_blocks: [],
       });
     }
   }, [family, open]);
+
+
 
 
   const watchName = form.watch("name");
@@ -249,6 +266,10 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 </FormItem>
               )}
             />
+
+            <QuantityBlocksSection form={form} />
+
+
 
             <div className="space-y-3 rounded-md border bg-muted/30 p-3">
 
@@ -450,3 +471,129 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
     </Dialog>
   );
 }
+
+// ─── Quantity Blocks editor ─────────────────────────────────
+
+import type { UseFormReturn } from "react-hook-form";
+import { Plus, Trash2 } from "lucide-react";
+
+function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
+  const mode = form.watch("quantity_mode");
+  const blocks = form.watch("quantity_blocks") ?? [];
+
+  const update = (next: QuantityBlock[]) => {
+    const sorted = next.slice().sort((a, b) => a.qty - b.qty);
+    form.setValue("quantity_blocks", sorted, { shouldDirty: true });
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+      <div>
+        <h4 className="text-sm font-semibold">Quantity Selling Mode</h4>
+        <p className="text-xs text-muted-foreground">
+          Sell by a free numeric quantity, or as fixed packs (e.g. 50 / 100 / 250 flyers).
+        </p>
+      </div>
+      <FormField
+        control={form.control}
+        name="quantity_mode"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs">Mode</FormLabel>
+            <Select onValueChange={field.onChange} value={field.value}>
+              <FormControl><SelectTrigger className="h-8"><SelectValue /></SelectTrigger></FormControl>
+              <SelectContent>
+                <SelectItem value="free">Free number (spinner)</SelectItem>
+                <SelectItem value="blocks">Fixed pack sizes (blocks)</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormItem>
+        )}
+      />
+
+      {mode === "blocks" && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
+            <span>Pack qty</span>
+            <span>Sell price (major)</span>
+            <span>Cost (major, optional)</span>
+            <span></span>
+          </div>
+          {blocks.length === 0 && (
+            <p className="text-xs text-muted-foreground italic px-1">
+              No blocks yet. Add pack sizes (e.g. 50, 100, 250).
+            </p>
+          )}
+          {blocks.map((b, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+              <Input
+                type="number"
+                min={1}
+                className="h-8 text-xs"
+                value={b.qty}
+                onChange={(e) => {
+                  const next = [...blocks];
+                  next[i] = { ...b, qty: parseInt(e.target.value, 10) || 0 };
+                  update(next);
+                }}
+              />
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8 text-xs"
+                value={(b.price_minor / 100).toString()}
+                onChange={(e) => {
+                  const next = [...blocks];
+                  next[i] = { ...b, price_minor: Math.round(parseFloat(e.target.value || "0") * 100) };
+                  update(next);
+                }}
+              />
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8 text-xs"
+                value={b.cost_minor != null ? (b.cost_minor / 100).toString() : ""}
+                placeholder="—"
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const next = [...blocks];
+                  next[i] = {
+                    ...b,
+                    cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                  };
+                  update(next);
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => update(blocks.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() =>
+              update([
+                ...blocks,
+                { qty: blocks.length ? blocks[blocks.length - 1].qty * 2 : 50, price_minor: 0 },
+              ])
+            }
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add block
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+

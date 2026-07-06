@@ -4923,6 +4923,8 @@ export type Database = {
           name: string
           pricing_engine: string
           printing_rules: Json
+          quantity_blocks: Json
+          quantity_mode: string
           render_intent: string
           slug: string
           sort_order: number
@@ -4940,6 +4942,8 @@ export type Database = {
           name: string
           pricing_engine?: string
           printing_rules?: Json
+          quantity_blocks?: Json
+          quantity_mode?: string
           render_intent?: string
           slug: string
           sort_order?: number
@@ -4957,6 +4961,8 @@ export type Database = {
           name?: string
           pricing_engine?: string
           printing_rules?: Json
+          quantity_blocks?: Json
+          quantity_mode?: string
           render_intent?: string
           slug?: string
           sort_order?: number

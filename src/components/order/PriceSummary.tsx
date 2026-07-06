@@ -4,8 +4,16 @@ import type { ItemSpec, PriceBreakdown, RateCardBundle } from "@/lib/calculatePr
 import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
 import type { ProductRecipe } from "@/lib/productRecipe";
+import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Minus, Plus, ShoppingCart } from "lucide-react";
 import {
   Popover,
@@ -26,6 +34,11 @@ interface PriceSummaryProps {
   /** When both supplied, the new rate-card engine is used instead of legacy rules. */
   recipe?: ProductRecipe | null;
   rateCard?: RateCardBundle | null;
+  /** Fixed-quantity block config from the product family.
+   *  When mode = "blocks" and blocks is non-empty, the numeric spinner is
+   *  replaced by a pack picker and pricing is looked up from the block. */
+  quantityMode?: "free" | "blocks";
+  quantityBlocks?: QuantityBlock[];
   onQuantityChange: (qty: number) => void;
   onAddToCart: () => void;
   disabled?: boolean;
@@ -39,6 +52,8 @@ export default function PriceSummary({
   overrides = [],
   recipe = null,
   rateCard = null,
+  quantityMode = "free",
+  quantityBlocks = [],
   onQuantityChange,
   onAddToCart,
   disabled,
@@ -46,48 +61,110 @@ export default function PriceSummary({
 }: PriceSummaryProps) {
   const { region } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
-  const breakdown: PriceBreakdown = useMemo(
+
+  const sortedBlocks = useMemo(
+    () => (quantityBlocks ?? []).slice().sort((a, b) => a.qty - b.qty),
+    [quantityBlocks],
+  );
+  const blocksActive = quantityMode === "blocks" && sortedBlocks.length > 0;
+
+  const activeBlock = useMemo(() => {
+    if (!blocksActive) return null;
+    return (
+      sortedBlocks.find((b) => b.qty === spec.quantity) ??
+      sortedBlocks.find((b) => b.qty >= spec.quantity) ??
+      sortedBlocks[sortedBlocks.length - 1]
+    );
+  }, [blocksActive, sortedBlocks, spec.quantity]);
+
+  const engineBreakdown: PriceBreakdown = useMemo(
     () =>
       recipe && rateCard
         ? calculatePriceFromRateCard(spec, recipe, rateCard, options)
         : calculateItemPrice(spec, options, rules, currency, overrides),
-    [spec, options, rules, currency, overrides, recipe, rateCard]
+    [spec, options, rules, currency, overrides, recipe, rateCard],
   );
+
+  // When blocks are active, the pack price replaces the engine total.
+  const breakdown: PriceBreakdown = useMemo(() => {
+    if (!blocksActive || !activeBlock) return engineBreakdown;
+    const total = activeBlock.price_minor / 100;
+    const perUnit = total / Math.max(1, activeBlock.qty);
+    return {
+      ...engineBreakdown,
+      subtotal_per_unit: perUnit,
+      total,
+      lines: [
+        {
+          label: `Pack of ${activeBlock.qty}`,
+          type: "fixed",
+          unit_amount: total,
+          multiplier: 1,
+          total,
+        },
+      ],
+
+    };
+  }, [blocksActive, activeBlock, engineBreakdown]);
 
   return (
     <div className="border-t border-border pt-4 space-y-3">
       {/* Quantity */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-foreground">Quantity</span>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onQuantityChange(Math.max(1, spec.quantity - 1))}
+        {blocksActive ? (
+          <Select
+            value={String(activeBlock?.qty ?? sortedBlocks[0].qty)}
+            onValueChange={(v) => onQuantityChange(parseInt(v, 10))}
           >
-            <Minus className="h-3 w-3" />
-          </Button>
-          <Input
-            type="number"
-            min={1}
-            value={spec.quantity}
-            onChange={(e) => {
-              const v = parseInt(e.target.value, 10);
-              if (v >= 1) onQuantityChange(v);
-            }}
-            className="w-16 h-8 text-center"
-          />
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onQuantityChange(spec.quantity + 1)}
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
+            <SelectTrigger className="h-8 w-40 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {sortedBlocks.map((b) => (
+                <SelectItem key={b.qty} value={String(b.qty)} className="text-xs">
+                  {b.qty.toLocaleString()} — {formatPrice(b.price_minor / 100, currency)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onQuantityChange(Math.max(1, spec.quantity - 1))}
+            >
+              <Minus className="h-3 w-3" />
+            </Button>
+            <Input
+              type="number"
+              min={1}
+              value={spec.quantity}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                if (v >= 1) onQuantityChange(v);
+              }}
+              className="w-16 h-8 text-center"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onQuantityChange(spec.quantity + 1)}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
       </div>
+
+      {blocksActive && activeBlock && (
+        <p className="text-[11px] text-muted-foreground -mt-1">
+          {formatPrice(activeBlock.price_minor / activeBlock.qty / 100, currency)} each
+        </p>
+      )}
 
       {/* Price */}
       <div className="flex items-center justify-between">
@@ -147,3 +224,4 @@ export default function PriceSummary({
     </div>
   );
 }
+
