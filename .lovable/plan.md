@@ -1,65 +1,34 @@
-# Cross-Branch Owner Experience
+## Goal
+Sell flyers in fixed quantity blocks (50, 100, 250, 500, 1000, 2500, 5000…) instead of a free-form numeric quantity, with each block having its own price — which is the standard print-shop model.
 
-Enable an owner who runs several branches to sign in once, see everything across her branches, and shift production work between them — without juggling three logins.
+## Approach
+Reuse the existing `rate_card_price_breaks` infrastructure (already powering business cards & photo prints) rather than inventing a new pricing system. Flyers just become another family whose price comes from a tiered rate card, and the UI swaps the +/- spinner for a block selector.
 
-## 1. Multi-branch linking
+## 1. Data model
+- No new tables. Use existing `rate_card_price_breaks` keyed by `product_family_id` (flyers), `size` (A6/A5/A4/DL), `paper`, `sides`, and `min_quantity`/`max_quantity`.
+- Add a small `product_families.quantity_mode` column: `'free' | 'blocks'`. Default `'free'` (backwards compatible). Set flyers to `'blocks'`.
+- Optionally add `product_families.quantity_blocks jsonb` (e.g. `[50,100,250,500,1000,2500,5000]`) so the admin can curate the offered blocks per family without deriving them from rate-card rows. Falls back to `distinct min_quantity` from the rate card if null.
+- Branches can already override rate cards via `branch_catalog_overrides` / price overrides — no extra work.
 
-Today `tenant_memberships` already supports one row per (user, branch). We'll lean into that instead of inventing a new "owner group" concept.
+## 2. Admin (tenant + branch)
+- Product Families editor: new "Quantity mode" toggle (Free number / Fixed blocks) and a "Blocks" chip editor when `blocks` is selected.
+- Rate Card editor for Flyers: already supports tiers by size/paper/sides — just seed the standard SA flyer matrix (A6/A5/A4/DL × 130gsm gloss / 170gsm silk / 250gsm × single/double sided × the block tiers) so it ships usable out of the box.
+- Branch override screen re-uses the existing rate-card override UI.
 
-- **Platform admin** (Platform → Users → user detail): "Link to branches" picker. Multi-select any branches across any tenant. Creates/deactivates `tenant_memberships` rows with role `branch_manager`.
-- **Tenant admin** (Admin → Branches → Users, or a new Admin → Team page): can grant an existing user `branch_manager` on any additional branches **within their own tenant**. Cannot cross tenants.
-- Email-based invite: if the email doesn't exist yet, we send the standard activation link and pre-stage the memberships so all branches light up on first login.
-- A small `is_primary_branch` flag (default the first membership) drives which branch loads by default on sign-in.
+## 3. Customer order flow
+- `PriceSummary.tsx`: when `family.quantity_mode === 'blocks'`, replace the numeric spinner with a segmented control / dropdown listing the allowed blocks. Show the per-block price and unit price (e.g. `500 flyers — R850  (R1.70 each)`).
+- `useOrderBuilder`: initialise `quantity` to the first block; validate that any incoming quantity snaps to an allowed block.
+- `calculatePrice.ts`: for block-mode families, look the price up directly from `rate_card_price_breaks` (exact `min_quantity` match) instead of `unit_price × qty`. Photo prints / business cards already do this — extract the shared helper if useful.
+- Cart / order item snapshot: store the chosen block quantity + resolved tier id in `configuration` so the historical price is preserved (already the pattern via `order_pricing_snapshots`).
 
-## 2. Unified admin session
+## 4. Seed data
+Migration seeds the default flyer rate card matrix so the feature works immediately for existing tenants; tenants/branches can then override.
 
-The branch portal today is scoped to a single `activeBranch`. We'll add a **multi-branch mode** that turns on automatically when the signed-in user has `branch_manager`/`owner`/`admin` on 2+ branches (same tenant or across tenants).
-
-- **Branch switcher in the header** — replaces the current static branch badge with a dropdown listing all linked branches (grouped by tenant when cross-tenant). Selecting one switches context exactly like today. Adds an "All my branches" option that flips the portal into aggregated mode.
-- **Unified Orders** (`/branch/orders?scope=all`) — one list across all linked branches, with a Branch column and a Branch filter chip. Reuses `fetchAdminOrders` with a new `branchIds: string[]` filter.
-- **Unified Customers & Quotes** — same pattern: Branch column + filter, scoped to the user's linked branch IDs.
-- **Unified Dashboard/Reports** — the existing Branch Reports page gains a "My branches" toggle that sums revenue / order counts / production load across the linked set, with a per-branch breakdown table and CSV/PDF export.
-- Manager-only tabs (Billing, Payments, Branch Settings, Branch Users) stay strictly single-branch — the switcher forces you to pick a branch before those pages render.
-
-## 3. Order transfer — production only
-
-Owner-driven "send this job to my quieter branch" without disturbing the customer relationship.
-
-- New action on the order detail page (visible to `branch_manager`/`owner`/`admin` who is linked to 2+ branches): **"Send to another branch for production"**.
-- Behavior:
-  - Customer-facing branch stays the original. Invoice, payments, collection address, comms, order number — unchanged.
-  - A new `production_branch_id` on `orders` records where the work is being done.
-  - Order appears in the production branch's **production queue** (jobs/print-centre views) but not in their Orders/Customers/Revenue.
-  - The originating branch still owns fulfilment; when jobs come back "ready", they show up in the original branch's ready-for-collection/dispatch flow.
-  - Timeline entry logs who moved it, from → to, and when. Internal-only note visible to both branches' staff.
-- No guardrails per your call — owner decides. We surface a soft warning if the target branch has that product family disabled, but don't block.
-- Reversible: same action can send it back or forward it again.
-
-## 4. Guardrails & safety
-
-- Tenant admins can only link users within their own tenant. Cross-tenant links require platform admin.
-- RLS: extend the existing branch-scoped policies to accept the new `production_branch_id` for read access on `order_jobs` / production artefacts, so operators at the production branch can see and progress the work.
-- Audit: every link/unlink and every order transfer writes to `platform_admin_audit` (platform actions) or `timeline_events` (tenant actions).
-- Impersonation and demo-gate paths untouched.
+## 5. Out of scope
+- No changes to non-flyer families (they stay on `free` mode until a tenant opts in).
+- No custom-quantity fallback for flyers (owner-configurable later if requested).
+- No changes to delivery/weight logic — weight is already `per-sheet × quantity`.
 
 ## Technical notes
-
-- **Schema**: add `orders.production_branch_id uuid null` + FK to `branches`; add `tenant_memberships.is_primary_branch boolean default false`; unique partial index enforcing one primary per user. No new tables.
-- **RLS updates**: `caller_has_branch_access` and `user_can_read_order` extended to also match `production_branch_id`. Order writes still gated by the customer-facing `branch_id`.
-- **New hook** `useLinkedBranches()` returns all branches the current user has manager/admin/owner role on, plus a helper `isMultiBranchOperator`.
-- **Header** `BranchHeader` swaps its static badge for `<BranchSwitcher />` when `isMultiBranchOperator`.
-- **Orders/Customers/Quotes hooks**: accept `branchIds?: string[]`; when unset, fall back to the single active branch (current behaviour).
-- **Edge function** `transfer-order-production` — validates caller has manager role on both source and destination, updates `production_branch_id`, writes timeline event, notifies (optional) via existing email pipeline.
-- **UI**:
-  - `src/components/branch/BranchSwitcher.tsx` (new) — dropdown in `BranchHeader`.
-  - `src/pages/branch/BranchOrders.tsx` — add `scope=all` mode + Branch column/filter.
-  - `src/pages/branch/BranchOrderDetail.tsx` — add "Send for production" dialog.
-  - `src/pages/branch/BranchReports.tsx` — add "My branches" aggregation toggle.
-  - Platform user detail — add "Linked branches" multi-select.
-  - Tenant Admin → Team (or existing Branch Users panel) — "Also link this user to…" section.
-
-## Out of scope (call out now)
-
-- No cross-tenant order transfers — production moves only allowed within one tenant.
-- No shared inventory or shared pricing changes — each branch keeps its own catalog/pricing.
-- No unified billing view — subscription/billing stays strictly per-branch (as today).
+- Files touched: `supabase/migrations/*` (add columns + seed), `src/hooks/useProductFamilies.ts`, product-family admin editor, `src/components/order/PriceSummary.tsx`, `src/hooks/useOrderBuilder.ts`, `src/lib/calculatePrice.ts`, and a small `resolveBlockPrice()` helper alongside `useRateCardPriceBreaks`.
+- Types regenerate after the migration; no manual edits to `types.ts`.
