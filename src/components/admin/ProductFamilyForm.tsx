@@ -49,6 +49,9 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
 };
 
 interface QuantityBlock {
+  size: string;   // e.g. "a5", "dl", or "*" for any
+  paper: string;  // e.g. "gloss_170", or "*" for any
+  sides: "single" | "double";
   qty: number;
   price_minor: number;
   cost_minor?: number;
