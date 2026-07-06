@@ -48,6 +48,12 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
   min_quantity: 1,
 };
 
+interface QuantityBlock {
+  qty: number;
+  price_minor: number;
+  cost_minor?: number;
+}
+
 interface FormValues {
   name: string;
   slug: string;
@@ -60,7 +66,10 @@ interface FormValues {
   render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
   pricing_engine: "click_charges" | "photo_prints" | "business_cards";
   printing_rules: PrintingRules;
+  quantity_mode: "free" | "blocks";
+  quantity_blocks: QuantityBlock[];
 }
+
 
 
 interface Props {
