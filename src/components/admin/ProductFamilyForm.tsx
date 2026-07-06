@@ -98,8 +98,48 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       render_intent: "relative_colorimetric",
       pricing_engine: "click_charges",
       printing_rules: DEFAULT_PRINTING_RULES,
+      quantity_mode: "free",
+      quantity_blocks: [],
     },
   });
+
+  useEffect(() => {
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"]; quantity_blocks?: QuantityBlock[] }) | null;
+    if (fam) {
+      form.reset({
+        name: fam.name,
+        slug: fam.slug,
+        description: fam.description || "",
+        icon: fam.icon || "FileText",
+        is_active: fam.is_active,
+        sort_order: fam.sort_order,
+        color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
+        cmyk_profile: fam.cmyk_profile ?? "fogra39",
+        render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        pricing_engine: (fam.pricing_engine as FormValues["pricing_engine"]) ?? "click_charges",
+        printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
+        quantity_mode: fam.quantity_mode ?? "free",
+        quantity_blocks: Array.isArray(fam.quantity_blocks) ? fam.quantity_blocks : [],
+      });
+    } else {
+      form.reset({
+        name: "",
+        slug: "",
+        description: "",
+        icon: "FileText",
+        is_active: true,
+        sort_order: 0,
+        color_output: "cmyk",
+        cmyk_profile: "fogra39",
+        render_intent: "relative_colorimetric",
+        pricing_engine: "click_charges",
+        printing_rules: DEFAULT_PRINTING_RULES,
+        quantity_mode: "free",
+        quantity_blocks: [],
+      });
+    }
+  }, [family, open]);
+
 
   useEffect(() => {
     const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"] }) | null;
