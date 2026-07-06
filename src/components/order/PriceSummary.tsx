@@ -4,7 +4,7 @@ import type { ItemSpec, PriceBreakdown, RateCardBundle } from "@/lib/calculatePr
 import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
 import type { ProductRecipe } from "@/lib/productRecipe";
-import type { QuantityBlock } from "@/hooks/useProductFamilies";
+import { type QuantityBlock, blockMatchesField } from "@/hooks/useProductFamilies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
