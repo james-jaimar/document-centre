@@ -1,34 +1,57 @@
 ## Goal
-Sell flyers in fixed quantity blocks (50, 100, 250, 500, 1000, 2500, 5000…) instead of a free-form numeric quantity, with each block having its own price — which is the standard print-shop model.
-
-## Approach
-Reuse the existing `rate_card_price_breaks` infrastructure (already powering business cards & photo prints) rather than inventing a new pricing system. Flyers just become another family whose price comes from a tiered rate card, and the UI swaps the +/- spinner for a block selector.
+Pack pricing (flyers etc.) currently ignores spec. Extend the ladder so each row is keyed by **size + paper + sides + qty**, matching how print shops actually quote flyers (e.g. A5 / 170gsm silk / double-sided / 500 = R X).
 
 ## 1. Data model
-- No new tables. Use existing `rate_card_price_breaks` keyed by `product_family_id` (flyers), `size` (A6/A5/A4/DL), `paper`, `sides`, and `min_quantity`/`max_quantity`.
-- Add a small `product_families.quantity_mode` column: `'free' | 'blocks'`. Default `'free'` (backwards compatible). Set flyers to `'blocks'`.
-- Optionally add `product_families.quantity_blocks jsonb` (e.g. `[50,100,250,500,1000,2500,5000]`) so the admin can curate the offered blocks per family without deriving them from rate-card rows. Falls back to `distinct min_quantity` from the rate card if null.
-- Branches can already override rate cards via `branch_catalog_overrides` / price overrides — no extra work.
+Keep block pricing on `product_families.quantity_blocks` (no new table) but change the row shape:
 
-## 2. Admin (tenant + branch)
-- Product Families editor: new "Quantity mode" toggle (Free number / Fixed blocks) and a "Blocks" chip editor when `blocks` is selected.
-- Rate Card editor for Flyers: already supports tiers by size/paper/sides — just seed the standard SA flyer matrix (A6/A5/A4/DL × 130gsm gloss / 170gsm silk / 250gsm × single/double sided × the block tiers) so it ships usable out of the box.
-- Branch override screen re-uses the existing rate-card override UI.
+```ts
+type QuantityBlock = {
+  size: string;        // canonical size label, e.g. "A5", "DL"
+  paper: string;       // paper item_code from catalog_papers, e.g. "gloss_170"
+  sides: "single" | "double";
+  qty: number;
+  price_minor: number;
+  cost_minor?: number;
+};
+```
 
-## 3. Customer order flow
-- `PriceSummary.tsx`: when `family.quantity_mode === 'blocks'`, replace the numeric spinner with a segmented control / dropdown listing the allowed blocks. Show the per-block price and unit price (e.g. `500 flyers — R850  (R1.70 each)`).
-- `useOrderBuilder`: initialise `quantity` to the first block; validate that any incoming quantity snaps to an allowed block.
-- `calculatePrice.ts`: for block-mode families, look the price up directly from `rate_card_price_breaks` (exact `min_quantity` match) instead of `unit_price × qty`. Photo prints / business cards already do this — extract the shared helper if useful.
-- Cart / order item snapshot: store the chosen block quantity + resolved tier id in `configuration` so the historical price is preserved (already the pattern via `order_pricing_snapshots`).
+- Migration: no schema change (already `jsonb`); add a lightweight validation trigger to reject rows missing `size/paper/sides`.
+- One-time data migration: existing rows (which only have qty/price) are re-keyed as `size = <family default>`, `paper = <family default>`, `sides = "single"` so nothing breaks.
 
-## 4. Seed data
-Migration seeds the default flyer rate card matrix so the feature works immediately for existing tenants; tenants/branches can then override.
+## 2. Admin editor (`ProductFamilyForm.tsx`)
+Replace the flat block list with a **matrix editor**:
+
+```text
+Size:  [A6] [A5] [A4] [DL]           ← tab strip
+Paper: [130gsm gloss ▼]              ← select (populated from catalog_papers enabled for this family)
+
+              Single-sided   Double-sided
+     50       R___  cost__   R___  cost__
+    100       R___  cost__   R___  cost__
+    250       R___  cost__   R___  cost__
+    ...
+[+ add qty row]   [+ add size]   [+ add paper]
+```
+
+- "Qty ladder" (50/100/250/…) is shared across the whole family — edited once, applied to every size/paper/sides cell.
+- Empty cells = "not offered" (customer can't pick that combo).
+- Bulk actions: "copy A5 prices → A4", "double = single × 1.6", "clear paper".
+
+## 3. Customer flow
+`useOrderBuilder` + `PriceSummary`:
+1. When `quantity_mode === "blocks"`, resolve `activeBlock` by filtering `quantity_blocks` where `size === spec.size && paper === spec.paper && sides === spec.sides`, then matching `qty`.
+2. Quantity dropdown shows only qtys available for the current size/paper/sides combo.
+3. Changing size/paper/sides re-filters the ladder and snaps qty to the nearest available block (with a toast if the previous qty isn't offered).
+4. If no blocks match the combo → show "This combination isn't available — pick a different paper/size" and disable Add to Cart.
+5. Cart snapshot stores `{size, paper, sides, qty, price_minor}` so historical pricing is preserved.
+
+## 4. Rate-card fallback
+Not needed for block-mode families — block price is authoritative. Non-block families are unchanged.
 
 ## 5. Out of scope
-- No changes to non-flyer families (they stay on `free` mode until a tenant opts in).
-- No custom-quantity fallback for flyers (owner-configurable later if requested).
-- No changes to delivery/weight logic — weight is already `per-sheet × quantity`.
+- Tenant/branch overrides of the block matrix (follow-up).
+- Finishing uplifts on top of the block price (follow-up; currently baked into the pack price).
 
 ## Technical notes
-- Files touched: `supabase/migrations/*` (add columns + seed), `src/hooks/useProductFamilies.ts`, product-family admin editor, `src/components/order/PriceSummary.tsx`, `src/hooks/useOrderBuilder.ts`, `src/lib/calculatePrice.ts`, and a small `resolveBlockPrice()` helper alongside `useRateCardPriceBreaks`.
-- Types regenerate after the migration; no manual edits to `types.ts`.
+- Files: `src/hooks/useProductFamilies.ts` (extend `QuantityBlock` type), `src/components/admin/ProductFamilyForm.tsx` (new matrix editor component), `src/components/order/PriceSummary.tsx` + `src/pages/dashboard/OrderBuild.tsx` (spec-aware block resolution), one migration for the validation trigger + data backfill.
+- Sizes/papers pulled from the existing `resolve_product_options` RPC so the matrix only offers combos the family actually supports.
