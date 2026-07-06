@@ -190,6 +190,12 @@ export default function PriceSummary({
         </p>
       )}
 
+      {blocksConfiguredButNoMatch && (
+        <p className="text-xs text-destructive -mt-1">
+          This size / paper / sides combination isn't offered. Pick a different option to see pack pricing.
+        </p>
+      )}
+
       {/* Price */}
       <div className="flex items-center justify-between">
         <Popover>
