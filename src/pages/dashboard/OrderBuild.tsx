@@ -864,7 +864,7 @@ export default function OrderBuild() {
         total,
         lines: [
           {
-            label: `Pack of ${block.qty}`,
+            label: `Pack of ${block.qty} · ${block.sides === "double" ? "Double-sided" : "Single-sided"}`,
             type: "fixed" as const,
             unit_amount: total,
             multiplier: 1,
