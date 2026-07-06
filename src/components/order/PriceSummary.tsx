@@ -245,7 +245,7 @@ export default function PriceSummary({
       <Button
         className="w-full gap-2"
         size="lg"
-        disabled={disabled || isSubmitting}
+        disabled={disabled || isSubmitting || blocksConfiguredButNoMatch}
         onClick={onAddToCart}
       >
         <ShoppingCart className="h-4 w-4" />
