@@ -267,6 +267,10 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
               )}
             />
 
+            <QuantityBlocksSection form={form} />
+
+
+
             <div className="space-y-3 rounded-md border bg-muted/30 p-3">
 
               <div>
