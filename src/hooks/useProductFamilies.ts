@@ -15,12 +15,25 @@ type PrintOutputFields = {
     | "saturation";
 };
 
-/** A single fixed-quantity block: pack size + pack price (in minor units). */
+/** A single fixed-quantity block: keyed by size + paper + sides + qty.
+ *  `'*'` in size/paper is a wildcard meaning "matches any". `sides` is
+ *  `"single"` or `"double"` — mapped from Print Sides (`single`/`duplex`)
+ *  or the sheet spec's `is_duplex` flag. */
 export type QuantityBlock = {
+  size: string;                  // e.g. "a5", "dl", or "*"
+  paper: string;                 // e.g. "gloss_170", or "*"
+  sides: "single" | "double";
   qty: number;
   price_minor: number;
   cost_minor?: number;
 };
+
+/** Match helper: `'*'` is a wildcard, comparison is case-insensitive. */
+export function blockMatchesField(blockField: string, specField: string | undefined | null) {
+  if (!blockField || blockField === "*") return true;
+  if (!specField) return false;
+  return blockField.toLowerCase() === specField.toLowerCase();
+}
 
 type QuantityBlockFields = {
   quantity_mode: "free" | "blocks";
