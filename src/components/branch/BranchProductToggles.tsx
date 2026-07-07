@@ -10,8 +10,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import BranchProductSpecsDialog from "@/components/branch/BranchProductSpecsDialog";
+import PackPricingDialog from "@/components/pricing/PackPricingDialog";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { toast } from "sonner";
-import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag, Sliders } from "lucide-react";
+import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag, Sliders, PackageOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BranchCapability } from "@/hooks/useBranchCapabilities";
 
