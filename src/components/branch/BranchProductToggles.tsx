@@ -149,6 +149,16 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                       >
                         <Tag size={12} className="mr-1.5" /> Pricing
                       </Button>
+                      {(cap.product_families as any)?.quantity_mode === "blocks" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => setPackFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
+                        >
+                          <PackageOpen size={12} className="mr-1.5" /> Packs
+                        </Button>
+                      )}
                     </>
                   )}
                   {!readOnly && (
