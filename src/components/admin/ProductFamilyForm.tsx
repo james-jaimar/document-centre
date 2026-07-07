@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProductFamily } from "@/hooks/useProductFamilies";
+import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 
 const ICON_OPTIONS = [
   "FileText", "File", "BookOpen", "Book", "Layers", "Printer",
