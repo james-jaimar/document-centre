@@ -1,57 +1,36 @@
+
+## Problem
+
+In the Edit Product Family dialog, the Fixed Pack Sizes matrix uses free-text inputs for Size, Paper and Sides. Admins can type anything, so the values never reliably match the catalogue codes the customer flow uses to look up a matching block. Result: pricing silently falls through to "no block matches".
+
 ## Goal
-Pack pricing (flyers etc.) currently ignores spec. Extend the ladder so each row is keyed by **size + paper + sides + qty**, matching how print shops actually quote flyers (e.g. A5 / 170gsm silk / double-sided / 500 = R X).
 
-## 1. Data model
-Keep block pricing on `product_families.quantity_blocks` (no new table) but change the row shape:
+Every Size / Paper / Sides value in a pack row must be chosen from the same catalogue and family config the customer flow reads, so the keys are guaranteed to line up.
 
-```ts
-type QuantityBlock = {
-  size: string;        // canonical size label, e.g. "A5", "DL"
-  paper: string;       // paper item_code from catalog_papers, e.g. "gloss_170"
-  sides: "single" | "double";
-  qty: number;
-  price_minor: number;
-  cost_minor?: number;
-};
-```
+## Changes (frontend only)
 
-- Migration: no schema change (already `jsonb`); add a lightweight validation trigger to reject rows missing `size/paper/sides`.
-- One-time data migration: existing rows (which only have qty/price) are re-keyed as `size = <family default>`, `paper = <family default>`, `sides = "single"` so nothing breaks.
+`src/components/admin/ProductFamilyForm.tsx` — `QuantityBlocksSection`:
 
-## 2. Admin editor (`ProductFamilyForm.tsx`)
-Replace the flat block list with a **matrix editor**:
+1. Replace the three text inputs with `Select` dropdowns.
+2. Data sources:
+   - **Size** — `useCatalogSizes()` filtered to the family's `printing_rules.allowed_finished_sizes` (fall back to all active catalog sizes if none configured). Option value = catalog size `code`, label = catalog `label` (e.g. `A5`, `DL`).
+   - **Paper** — `useCatalogPapers()` (master scope, active). Option value = paper `code`, label = `label` + weight. Later we can narrow to papers linked to this family, but for now the full active paper list matches how the customer picker resolves.
+   - **Sides** — read allowed values from the family's `product_options` "Print Sides" group if present; otherwise the fixed pair `Single` / `Double`.
+3. Each dropdown includes a top `Any (*)` entry that stores `"*"` — preserves today's wildcard behaviour.
+4. Show the human label in the row, store the lowercase catalogue code in state (same shape `QuantityBlock` uses today, no schema change).
+5. "Duplicate singles → double" button stays; only enabled when the family allows a `double` sides option.
+6. If the family has no allowed sizes / no papers loaded yet, show a short inline hint ("Configure allowed sizes first") instead of empty dropdowns.
 
-```text
-Size:  [A6] [A5] [A4] [DL]           ← tab strip
-Paper: [130gsm gloss ▼]              ← select (populated from catalog_papers enabled for this family)
+Nothing else changes: `QuantityBlock` type, storage, migration, `blockMatchesField`, `PriceSummary` and `OrderBuild` all stay as-is because the stored codes are already what the customer flow matches against — we're just constraining admin input to legal values.
 
-              Single-sided   Double-sided
-     50       R___  cost__   R___  cost__
-    100       R___  cost__   R___  cost__
-    250       R___  cost__   R___  cost__
-    ...
-[+ add qty row]   [+ add size]   [+ add paper]
-```
+## Out of scope
 
-- "Qty ladder" (50/100/250/…) is shared across the whole family — edited once, applied to every size/paper/sides cell.
-- Empty cells = "not offered" (customer can't pick that combo).
-- Bulk actions: "copy A5 prices → A4", "double = single × 1.6", "clear paper".
+- No DB migration, no backend changes.
+- No change to the customer-side matching logic.
+- No bulk "backfill legacy rows" UI — existing `*` wildcards keep working; admins can edit rows to pick concrete codes as needed.
 
-## 3. Customer flow
-`useOrderBuilder` + `PriceSummary`:
-1. When `quantity_mode === "blocks"`, resolve `activeBlock` by filtering `quantity_blocks` where `size === spec.size && paper === spec.paper && sides === spec.sides`, then matching `qty`.
-2. Quantity dropdown shows only qtys available for the current size/paper/sides combo.
-3. Changing size/paper/sides re-filters the ladder and snaps qty to the nearest available block (with a toast if the previous qty isn't offered).
-4. If no blocks match the combo → show "This combination isn't available — pick a different paper/size" and disable Add to Cart.
-5. Cart snapshot stores `{size, paper, sides, qty, price_minor}` so historical pricing is preserved.
+## Verification
 
-## 4. Rate-card fallback
-Not needed for block-mode families — block price is authoritative. Non-block families are unchanged.
-
-## 5. Out of scope
-- Tenant/branch overrides of the block matrix (follow-up).
-- Finishing uplifts on top of the block price (follow-up; currently baked into the pack price).
-
-## Technical notes
-- Files: `src/hooks/useProductFamilies.ts` (extend `QuantityBlock` type), `src/components/admin/ProductFamilyForm.tsx` (new matrix editor component), `src/components/order/PriceSummary.tsx` + `src/pages/dashboard/OrderBuild.tsx` (spec-aware block resolution), one migration for the validation trigger + data backfill.
-- Sizes/papers pulled from the existing `resolve_product_options` RPC so the matrix only offers combos the family actually supports.
+- Open Platform → Products → edit Flyers family → Fixed pack sizes: Size/Paper/Sides are dropdowns pre-populated from catalog; `Any (*)` is selectable.
+- Pick a concrete Size + Paper + Sides row, save, then price a flyer with that exact combo on the customer side — block matches and price shows.
+- Pick a combo not covered by any row — customer picker shows the existing "combination isn't offered" warning.

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProductFamily } from "@/hooks/useProductFamilies";
+import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 
 const ICON_OPTIONS = [
   "FileText", "File", "BookOpen", "Book", "Layers", "Printer",
@@ -483,6 +484,19 @@ import { Plus, Trash2 } from "lucide-react";
 function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
   const mode = form.watch("quantity_mode");
   const blocks = form.watch("quantity_blocks") ?? [];
+  const allowedSizeCodes = form.watch("printing_rules.allowed_finished_sizes") ?? [];
+
+  const { data: sizesRaw = [] } = useCatalogSizes({ scope: "master" });
+  const { data: papersRaw = [] } = useCatalogPapers({ scope: "master" });
+  const allSizes = sizesRaw.filter((s) => s.is_active);
+  const allPapers = papersRaw.filter((p) => p.is_active);
+
+  const sizeOptions = (() => {
+    if (allowedSizeCodes.length === 0) return allSizes;
+    const allowSet = new Set(allowedSizeCodes.map((c) => c.toLowerCase()));
+    const filtered = allSizes.filter((s) => allowSet.has(s.code.toLowerCase()));
+    return filtered.length > 0 ? filtered : allSizes;
+  })();
 
   const update = (next: QuantityBlock[]) => {
     const sorted = next.slice().sort((a, b) => {
@@ -493,6 +507,14 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
     });
     form.setValue("quantity_blocks", sorted, { shouldDirty: true });
   };
+
+  const paperLabel = (code: string) => {
+    const p = allPapers.find((pp) => pp.code.toLowerCase() === code.toLowerCase());
+    if (!p) return code;
+    return p.weight_gsm ? `${p.label} ${p.weight_gsm}gsm` : p.label;
+  };
+
+  const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
 
   return (
     <div className="space-y-3 rounded-md border bg-muted/30 p-3">
@@ -522,11 +544,18 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
       {mode === "blocks" && (
         <div className="space-y-2">
           <p className="text-[11px] text-muted-foreground px-1">
-            Each row is one pack — keyed by size + paper + sides + qty. Use{" "}
-            <code className="text-[10px] bg-muted px-1 rounded">*</code> for
-            size/paper to mean "any" (matches every catalogue option).
+            Each row is one pack — keyed by size + paper + sides + qty. Choose{" "}
+            <code className="text-[10px] bg-muted px-1 rounded">Any</code> for
+            size or paper to match every catalogue option.
           </p>
-          <div className="grid grid-cols-[80px_110px_90px_80px_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
+          {noCatalogueReady && (
+            <p className="text-[11px] text-amber-600 px-1">
+              {sizeOptions.length === 0
+                ? "Configure allowed finished sizes first (Printing rules above)."
+                : "No papers found in the master catalogue."}
+            </p>
+          )}
+          <div className="grid grid-cols-[140px_200px_100px_90px_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
             <span>Size</span>
             <span>Paper</span>
             <span>Sides</span>
@@ -540,93 +569,119 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
               No pack rows yet. Add a row per size × paper × sides × qty combo you offer.
             </p>
           )}
-          {blocks.map((b, i) => (
-            <div key={i} className="grid grid-cols-[80px_110px_90px_80px_1fr_1fr_auto] gap-2 items-center">
-              <Input
-                className="h-8 text-xs"
-                value={b.size ?? "*"}
-                placeholder="a5"
-                onChange={(e) => {
-                  const next = [...blocks];
-                  next[i] = { ...b, size: e.target.value.trim().toLowerCase() || "*" };
-                  update(next);
-                }}
-              />
-              <Input
-                className="h-8 text-xs"
-                value={b.paper ?? "*"}
-                placeholder="gloss_170"
-                onChange={(e) => {
-                  const next = [...blocks];
-                  next[i] = { ...b, paper: e.target.value.trim().toLowerCase() || "*" };
-                  update(next);
-                }}
-              />
-              <Select
-                value={b.sides ?? "single"}
-                onValueChange={(v) => {
-                  const next = [...blocks];
-                  next[i] = { ...b, sides: v as "single" | "double" };
-                  update(next);
-                }}
-              >
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="single">Single</SelectItem>
-                  <SelectItem value="double">Double</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                type="number"
-                min={1}
-                className="h-8 text-xs"
-                value={b.qty}
-                onChange={(e) => {
-                  const next = [...blocks];
-                  next[i] = { ...b, qty: parseInt(e.target.value, 10) || 0 };
-                  update(next);
-                }}
-              />
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                className="h-8 text-xs"
-                value={(b.price_minor / 100).toString()}
-                onChange={(e) => {
-                  const next = [...blocks];
-                  next[i] = { ...b, price_minor: Math.round(parseFloat(e.target.value || "0") * 100) };
-                  update(next);
-                }}
-              />
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                className="h-8 text-xs"
-                value={b.cost_minor != null ? (b.cost_minor / 100).toString() : ""}
-                placeholder="—"
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  const next = [...blocks];
-                  next[i] = {
-                    ...b,
-                    cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
-                  };
-                  update(next);
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => update(blocks.filter((_, j) => j !== i))}
-              >
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
-              </Button>
-            </div>
-          ))}
+          {blocks.map((b, i) => {
+            const sizeVal = (b.size ?? "*").toLowerCase();
+            const paperVal = (b.paper ?? "*").toLowerCase();
+            return (
+              <div key={i} className="grid grid-cols-[140px_200px_100px_90px_1fr_1fr_auto] gap-2 items-center">
+                <Select
+                  value={sizeVal}
+                  onValueChange={(v) => {
+                    const next = [...blocks];
+                    next[i] = { ...b, size: v };
+                    update(next);
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="*">Any (*)</SelectItem>
+                    {sizeOptions.map((s) => (
+                      <SelectItem key={s.id} value={s.code.toLowerCase()}>
+                        {s.label} ({s.code})
+                      </SelectItem>
+                    ))}
+                    {sizeVal !== "*" && !sizeOptions.some((s) => s.code.toLowerCase() === sizeVal) && (
+                      <SelectItem value={sizeVal}>{sizeVal} (legacy)</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={paperVal}
+                  onValueChange={(v) => {
+                    const next = [...blocks];
+                    next[i] = { ...b, paper: v };
+                    update(next);
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="*">Any (*)</SelectItem>
+                    {allPapers.map((p) => (
+                      <SelectItem key={p.id} value={p.code.toLowerCase()}>
+                        {paperLabel(p.code)}
+                      </SelectItem>
+                    ))}
+                    {paperVal !== "*" && !allPapers.some((p) => p.code.toLowerCase() === paperVal) && (
+                      <SelectItem value={paperVal}>{paperVal} (legacy)</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={b.sides ?? "single"}
+                  onValueChange={(v) => {
+                    const next = [...blocks];
+                    next[i] = { ...b, sides: v as "single" | "double" };
+                    update(next);
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single">Single</SelectItem>
+                    <SelectItem value="double">Double</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  min={1}
+                  className="h-8 text-xs"
+                  value={b.qty}
+                  onChange={(e) => {
+                    const next = [...blocks];
+                    next[i] = { ...b, qty: parseInt(e.target.value, 10) || 0 };
+                    update(next);
+                  }}
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="h-8 text-xs"
+                  value={(b.price_minor / 100).toString()}
+                  onChange={(e) => {
+                    const next = [...blocks];
+                    next[i] = { ...b, price_minor: Math.round(parseFloat(e.target.value || "0") * 100) };
+                    update(next);
+                  }}
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="h-8 text-xs"
+                  value={b.cost_minor != null ? (b.cost_minor / 100).toString() : ""}
+                  placeholder="—"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const next = [...blocks];
+                    next[i] = {
+                      ...b,
+                      cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                    };
+                    update(next);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => update(blocks.filter((_, j) => j !== i))}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              </div>
+            );
+          })}
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
@@ -655,8 +710,6 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
               size="sm"
               className="h-8 text-xs"
               onClick={() => {
-                // Duplicate all "single" rows as "double" so admins can quickly
-                // seed the double-sided column then tweak prices.
                 const singles = blocks.filter((b) => b.sides === "single");
                 const existingKeys = new Set(
                   blocks.map((b) => `${b.size}|${b.paper}|${b.sides}|${b.qty}`),
@@ -678,4 +731,5 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
     </div>
   );
 }
+
 
