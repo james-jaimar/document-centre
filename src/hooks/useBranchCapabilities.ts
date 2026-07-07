@@ -29,7 +29,7 @@ export function useBranchCapabilities(branchId: string | null) {
       if (!branchId) return [];
       const { data, error } = await supabase
         .from("branch_capabilities")
-        .select("*, product_families:product_family_id (name, slug, icon)")
+        .select("*, product_families:product_family_id (name, slug, icon, quantity_mode)")
         .eq("branch_id", branchId)
         .order("created_at");
       if (error) throw error;
