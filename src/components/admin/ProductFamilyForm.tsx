@@ -486,8 +486,10 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
   const blocks = form.watch("quantity_blocks") ?? [];
   const allowedSizeCodes = form.watch("printing_rules.allowed_finished_sizes") ?? [];
 
-  const { data: allSizes = [] } = useCatalogSizes({ scope: "master", isActive: true });
-  const { data: allPapers = [] } = useCatalogPapers({ scope: "master", isActive: true });
+  const { data: sizesRaw = [] } = useCatalogSizes({ scope: "master" });
+  const { data: papersRaw = [] } = useCatalogPapers({ scope: "master" });
+  const allSizes = sizesRaw.filter((s) => s.is_active);
+  const allPapers = papersRaw.filter((p) => p.is_active);
 
   const sizeOptions = (() => {
     if (allowedSizeCodes.length === 0) return allSizes;
