@@ -25,9 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Settings2, SlidersHorizontal } from "lucide-react";
+import { Settings2, SlidersHorizontal, PackageOpen } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
+import PackPricingDialog from "@/components/pricing/PackPricingDialog";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
