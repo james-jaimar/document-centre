@@ -155,6 +155,19 @@ const AdminProductCatalogue = () => {
                           <Settings2 className="h-3 w-3 mr-1" />
                           Pricing
                         </Button>
+                        {(f as any).quantity_mode === "blocks" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setPackFamilyId(f.id);
+                              setPackFamilyName(f.name);
+                            }}
+                          >
+                            <PackageOpen className="h-3 w-3 mr-1" />
+                            Packs
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
