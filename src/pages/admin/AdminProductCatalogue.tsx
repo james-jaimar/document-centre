@@ -207,6 +207,17 @@ const AdminProductCatalogue = () => {
           productFamilyName={specsFamilyName}
         />
       )}
+
+      {tenantId && packFamilyId && (
+        <PackPricingDialog
+          open={!!packFamilyId}
+          onOpenChange={(o) => { if (!o) setPackFamilyId(null); }}
+          scope="tenant"
+          tenantId={tenantId}
+          productFamilyId={packFamilyId}
+          productFamilyName={packFamilyName}
+        />
+      )}
     </div>
   );
 };
