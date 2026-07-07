@@ -17,7 +17,7 @@ export interface BranchCapability {
   turnaround_levels: unknown;
   created_at: string;
   updated_at: string;
-  product_families?: { name: string; slug: string; icon: string | null } | null;
+  product_families?: { name: string; slug: string; icon: string | null; quantity_mode?: string | null } | null;
 }
 
 const QUERY_KEY = "branch-capabilities";
