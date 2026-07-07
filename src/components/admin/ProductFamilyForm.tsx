@@ -157,7 +157,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[90vw] sm:w-[80vw] max-w-[90vw] sm:max-w-[80vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{family ? "Edit Product Family" : "New Product Family"}</DialogTitle>
         </DialogHeader>
