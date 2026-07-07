@@ -50,6 +50,8 @@ const AdminProductCatalogue = () => {
   const [openFamilySlug, setOpenFamilySlug] = useState<string>("");
   const [specsFamilyId, setSpecsFamilyId] = useState<string | null>(null);
   const [specsFamilyName, setSpecsFamilyName] = useState<string>("");
+  const [packFamilyId, setPackFamilyId] = useState<string | null>(null);
+  const [packFamilyName, setPackFamilyName] = useState<string>("");
 
   async function handleToggle(familyId: string, next: boolean) {
     if (!tenantId) return;
