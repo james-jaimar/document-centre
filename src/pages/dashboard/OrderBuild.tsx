@@ -47,6 +47,8 @@ import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
+import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
+import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
 
 
 export default function OrderBuild() {
@@ -717,10 +719,36 @@ export default function OrderBuild() {
   // sides from Print Sides (falls back to is_duplex) and filter the ladder
   // to entries matching the current combo — that filtered list is what
   // drives snapping, pricing, and the dropdown in PriceSummary.
-  const allBlocks = useMemo(() => {
+  // Master ladder from the family row
+  const masterBlocks = useMemo(() => {
     const raw = (productFamily as any)?.quantity_blocks;
     return Array.isArray(raw) ? (raw as QuantityBlock[]) : [];
   }, [productFamily]);
+
+  // Tenant + branch overrides — cascade branch > tenant > master
+  const { data: packOverrides = [] } = usePackPricingOverridesForFamily(
+    productFamilyId,
+    tenantId,
+  );
+  const tenantOverrideBlocks = useMemo(() => {
+    const row = packOverrides.find((r) => r.branch_id === null);
+    return (row?.quantity_blocks ?? null) as QuantityBlock[] | null;
+  }, [packOverrides]);
+  const branchOverrideBlocks = useMemo(() => {
+    if (!effectiveBranchId) return null;
+    const row = packOverrides.find((r) => r.branch_id === effectiveBranchId);
+    return (row?.quantity_blocks ?? null) as QuantityBlock[] | null;
+  }, [packOverrides, effectiveBranchId]);
+
+  const allBlocks = useMemo(
+    () =>
+      resolvePackPricing({
+        master: masterBlocks,
+        tenant: tenantOverrideBlocks,
+        branch: branchOverrideBlocks,
+      }),
+    [masterBlocks, tenantOverrideBlocks, branchOverrideBlocks],
+  );
   const quantityMode = ((productFamily as any)?.quantity_mode ?? "free") as "free" | "blocks";
 
   const specSize = spec.selected_options?.["Document Size"] ?? null;

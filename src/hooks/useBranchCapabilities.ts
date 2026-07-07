@@ -17,7 +17,7 @@ export interface BranchCapability {
   turnaround_levels: unknown;
   created_at: string;
   updated_at: string;
-  product_families?: { name: string; slug: string; icon: string | null } | null;
+  product_families?: { name: string; slug: string; icon: string | null; quantity_mode?: string | null } | null;
 }
 
 const QUERY_KEY = "branch-capabilities";
@@ -29,7 +29,7 @@ export function useBranchCapabilities(branchId: string | null) {
       if (!branchId) return [];
       const { data, error } = await supabase
         .from("branch_capabilities")
-        .select("*, product_families:product_family_id (name, slug, icon)")
+        .select("*, product_families:product_family_id (name, slug, icon, quantity_mode)")
         .eq("branch_id", branchId)
         .order("created_at");
       if (error) throw error;
