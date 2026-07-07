@@ -281,6 +281,18 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
           productFamilyName={specsFamily.name}
         />
       )}
+
+      {tenantId && packFamily && (
+        <PackPricingDialog
+          open={!!packFamily}
+          onOpenChange={(o) => !o && setPackFamily(null)}
+          scope="branch"
+          tenantId={tenantId}
+          branchId={branchId}
+          productFamilyId={packFamily.id}
+          productFamilyName={packFamily.name}
+        />
+      )}
     </div>
   );
 }
