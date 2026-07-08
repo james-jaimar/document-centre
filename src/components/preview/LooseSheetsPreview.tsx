@@ -99,12 +99,15 @@ export default function LooseSheetsPreview({
           pdfH = canvasWidth / pdfAspect;
         }
       } else {
+        // Fit mode: PDF must fit entirely inside the canvas — never clip.
+        // Floor to whole pixels so sub-pixel rounding cannot push us past
+        // the canvas edge and clip real artwork.
         if (pdfAspect > canvasAspect) {
-          pdfW = canvasWidth;
-          pdfH = canvasWidth / pdfAspect;
+          pdfW = Math.floor(canvasWidth);
+          pdfH = Math.floor(canvasWidth / pdfAspect);
         } else {
-          pdfH = canvasHeight;
-          pdfW = canvasHeight * pdfAspect;
+          pdfH = Math.floor(canvasHeight);
+          pdfW = Math.floor(canvasHeight * pdfAspect);
         }
       }
     }

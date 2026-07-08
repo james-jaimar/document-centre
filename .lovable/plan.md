@@ -1,108 +1,62 @@
-## Problem
+## Goal
 
-Pack pricing (`quantity_blocks`) lives only on the master `product_families` row and is only editable from Platform → Products → Edit Family. Tenant admins and branch admins have no way to see or override it, so a tenant can't set its own pack prices and a branch can't tweak them locally. The customer flow (`OrderBuild.tsx`) also reads only from the master row, so any override wouldn't be honoured yet.
+Stop the customer preview from chopping into artwork on PDFs that carry a proper TrimBox + bleed (like your Nissan catalogue). The finished-page area (TrimBox) must render fully — no matter which Fit/Fill mode is selected and no matter how the container is sized.
 
-## Solution
+## What we know
 
-Introduce a proper cascade for pack pricing — **master → tenant → branch** — matching how catalogue toggles and price overrides already work, and expose editors at both tenant and branch level.
+- The uploaded PDF has MediaBox 637.276×883.89 pt, TrimBox 595.276×841.89 pt (A4), 7mm bleed all sides.
+- Rendering the TrimBox area in isolation shows every element (including the right-side "Fits ..." badges) inside the trim — the artwork is fine.
+- The customer preview clips those badges even with **Fit** selected. Fit mode should never clip, so the trim math is misbehaving for this box geometry.
+- No `documents` row exists for this file, so we can't yet inspect what preflight actually captured. Part of the plan is to capture that.
 
-### 1. Database (migration)
+## Suspected causes (to confirm via instrumentation, then fix)
 
-New table `product_pack_pricing_overrides`:
+1. `page_width_mm` / `page_height_mm` stored at upload may be MediaBox dimensions (224.8 × 311.7 mm), but `PreviewPanel.pdfSizeMm` and `trimCrop` assume they refer to TrimBox — producing an inconsistent reference frame.
+2. `resolvedTrimBox` in `PreviewPanel.tsx` also accepts `boxes.CropBox` — if CropBox equals MediaBox (as in most exports), it wrongly treats the whole media as the trim and never crops the bleed/marks off; the "chop" then comes from downstream size-mismatch math forcing the page into a smaller canvas at the wrong aspect.
+3. `hasSizeMismatch` comparisons in `LooseSheetsPreview.tsx` compare canvas mm to `pdfSizeMm` mm — if `pdfSizeMm` is derived from Trim but `canvasSizeMm` is A5 (148×210) and the trim is A4 (210×297), we end up on the "fit" branch with `pdfAspect > canvasAspect`, which lays out `pdfW = canvasWidth` but leaves the (already-scaled) inner PDF at an offset that overflows the parent `overflow: hidden` box when the browser rounds.
 
-```text
-id              uuid pk
-product_family_id  uuid  -> product_families(id) on delete cascade
-tenant_id       uuid nullable  -> tenants(id) on delete cascade
-branch_id       uuid nullable  -> branches(id) on delete cascade
-quantity_blocks jsonb not null default '[]'::jsonb
-updated_at, updated_by
+## Step 1 — Reproduce with real data (no code change)
 
-Unique (product_family_id, tenant_id, branch_id)  -- one row per scope
-Check: (tenant_id is not null)  -- master edits stay on product_families
-```
+- Ask you to re-upload the Nissan PDF into the same demo storefront so a `documents` row exists.
+- Query `documents.preflight_data` for that row and confirm exactly what `boxes`, `trim_box_pt`, `page_width_mm`, and `page_height_mm` were persisted. This tells us which of (1)/(2)/(3) is in play.
 
-- Reuse the existing `validate_product_family_quantity_blocks` shape via an equivalent trigger on this table (size/paper/sides/qty/price_minor validation).
-- Standard `GRANT` block: `authenticated` full CRUD, `service_role` all, no `anon` grant.
-- RLS:
-  - Tenant rows (branch_id null): tenant owner/admin can manage; storefront anon can read rows for their `x-storefront-tenant`.
-  - Branch rows: branch manager (or tenant owner/admin) can manage; anon can read when it matches storefront tenant + selected branch.
-- Enable realtime on the table so editors update live.
+## Step 2 — Tighten the TrimBox resolver
 
-### 2. Resolver
+In `src/components/order/PreviewPanel.tsx`:
 
-Add `src/lib/pricing/resolvePackPricing.ts`:
+- `resolvedTrimBox` should only return a box that is **strictly smaller** than the MediaBox (≥1pt smaller on any edge). If `boxes.TrimBox == boxes.MediaBox` or only `CropBox` is present and equals MediaBox, return `undefined` so no crop is applied.
+- Add BleedBox as a **secondary** fallback — if TrimBox is missing but BleedBox is strictly inside MediaBox, use BleedBox so the crop marks still get hidden.
 
-```text
-resolvePackPricing({ familyMasterBlocks, tenantBlocks, branchBlocks }) → QuantityBlock[]
-// precedence: branchBlocks (if non-empty) > tenantBlocks (if non-empty) > master
-```
+This mirrors the server-side `derive_default_render_box` rule that already exists in `pdf-server/app/services/pdf_ops.py` (lines 3474–3532) and stops false-positive crops.
 
-Whole-set override, not per-row merge — matches how admins think about a pack ladder ("this branch runs different pack prices").
+## Step 3 — Make `pdfSizeMm` internally consistent with `trimCrop`
 
-### 3. Customer flow
+Also in `PreviewPanel.tsx`:
 
-`src/pages/dashboard/OrderBuild.tsx` (around line 720):
-- Add a query for `product_pack_pricing_overrides` filtered by `product_family_id`, current `tenantId`, and `effectiveBranchId`.
-- Feed master + tenant + branch rows through `resolvePackPricing` and use the result as `allBlocks`.
-- No other logic changes — filtering by size/paper/sides and snapping stay identical.
+- When `trimCrop` is active, `pdfSizeMm` must describe the **TrimBox** in mm (which it already tries to do). When `trimCrop` is NOT active, `pdfSizeMm` must describe the **MediaBox** in mm using `boxes.MediaBox` if present, falling back to `page_width_mm/height_mm` only as a last resort. This removes the aspect-ratio drift that puts the "fit" branch into an off-by-1% clip.
 
-### 4. Shared editor component
+## Step 4 — Guarantee Fit mode never clips
 
-Extract the existing pack pricing matrix from `ProductFamilyForm.tsx` into `src/components/pricing/PackPricingMatrixEditor.tsx`:
+In `src/components/preview/LooseSheetsPreview.tsx`:
 
-Props:
-```text
-productFamilyId
-scope: "master" | "tenant" | "branch"
-tenantId?, branchId?
-allowedSizes, allowedPapers, allowedSides   // already dynamic from catalogue
-initialBlocks
-onSave(blocks) → Promise
-onRevertToParent()   // clears the override row (tenant/branch scopes only)
-```
+- The outer white canvas currently applies `overflow: hidden` when `(isFill && hasSizeMismatch) || useTrimClip`. This is correct in intent but the inner `pdfW/pdfH` calc can round up past `canvasWidth/canvasHeight` in the fit branch. Change the fit branch to compute `pdfW`/`pdfH` with `Math.floor` and remove any residual sub-pixel overflow so Fit mode is provably clip-free.
+- In Fill mode the current behaviour (over-render + clip to trim) is retained.
 
-- Master usage writes into `product_families.quantity_blocks` via the existing form save (unchanged behaviour).
-- Tenant/branch usage upserts a row in `product_pack_pricing_overrides`.
-- Header shows the parent ladder (master or tenant) as read-only reference so admins can see what they're overriding.
-- "Revert to parent" deletes the override row so cascade falls through.
+## Step 5 — Verify against your file
 
-### 5. Tenant admin UI
+Once (2)–(4) are in, re-upload the Nissan catalogue and screenshot both Fit and Fill in the customer preview. Success criteria:
 
-`src/pages/admin/AdminProductCatalogue.tsx`:
-- Add a **Pack Pricing** action button next to Specs / Pricing on each row.
-- Opens a dialog (90vw / 80vw sm, same sizing as edit product family) hosting `PackPricingMatrixEditor` in `scope="tenant"`.
-- Only shown when the family has `quantity_mode = 'blocks'`.
-
-### 6. Branch admin UI
-
-`src/pages/branch/BranchProducts.tsx`:
-- Move from bare toggle list to the same table layout used in `AdminProductCatalogue` (compact reuse), or add a secondary "Pack Pricing" button per family below the toggle.
-- Opens the same editor with `scope="branch"`, showing the tenant override (or master fallback) as the parent reference.
-- Available to `branch_manager`, `owner`, `admin` per `isBranchManagerRole`.
-
-### 7. Hook
-
-`src/hooks/useProductPackPricingOverrides.ts` with:
-- `usePackPricingOverride(familyId, { tenantId, branchId })`
-- `useUpsertPackPricingOverride()`
-- `useDeletePackPricingOverride()`
-
-Invalidates the family query so customer views refresh.
+- Fit mode: entire TrimBox visible, letterboxed against the paper canvas.
+- Fill mode: TrimBox fills the paper canvas, crop marks / bleed area clipped, all in-trim content (including right-column badges) intact.
 
 ## Out of scope
 
-- No changes to `pricing_rules`, `product_price_overrides`, `PriceSummary` math beyond consuming the resolved blocks.
-- No backfill — absent override rows simply fall through to master.
-- `quantity_mode` stays a master-only setting (a tenant/branch overriding to "free" is a bigger conversation).
+- Server-side rendering / print-ready PDF path — that already respects TrimBox (`respect_trim_box=True` in `pdf_ops.py`) and is not what you're looking at.
+- Ring-binder / flip-book previews — they intentionally don't apply `trimCrop` today; leave unchanged.
+- Any change to size auto-detection or the A4→A5 warning UX.
 
 ## Files touched
 
-- new `supabase/migrations/…_pack_pricing_overrides.sql`
-- new `src/hooks/useProductPackPricingOverrides.ts`
-- new `src/lib/pricing/resolvePackPricing.ts`
-- new `src/components/pricing/PackPricingMatrixEditor.tsx`
-- edit `src/components/admin/ProductFamilyForm.tsx` (delegate matrix section to shared editor)
-- edit `src/pages/admin/AdminProductCatalogue.tsx` (Pack Pricing button + dialog)
-- edit `src/pages/branch/BranchProducts.tsx` (Pack Pricing button + dialog)
-- edit `src/pages/dashboard/OrderBuild.tsx` (query + resolver, ~10 lines)
+- `src/components/order/PreviewPanel.tsx` — tighten `resolvedTrimBox`, add BleedBox fallback, make `pdfSizeMm` consistent.
+- `src/components/preview/LooseSheetsPreview.tsx` — guarantee Fit branch cannot overflow the canvas.
+- (No DB, no edge-function, no server-side PDF changes.)

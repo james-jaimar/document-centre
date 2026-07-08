@@ -676,17 +676,75 @@ export default function PreviewPanel({
     });
   }, [computedPageRoles, effects?.bleed, isBusinessCards, isPoster, isRingBinder]);
 
-  /** Resolve TrimBox from preflight_data — checks trim_box_pt, then boxes.TrimBox/CropBox */
+  /**
+   * Resolve a printable-area box (TrimBox, falling back to BleedBox) from
+   * preflight_data — but ONLY when it is strictly smaller than the MediaBox.
+   *
+   * A TrimBox/CropBox that equals the MediaBox carries no useful crop
+   * information and, if honoured, causes the downstream `trimCrop` path to
+   * scale the page up and clip real artwork. Mirror the server-side rule in
+   * `pdf-server/app/services/pdf_ops.py::derive_default_render_box`.
+   */
   const resolvedTrimBox = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc) return undefined;
     const preflight = doc.preflight_data as Record<string, unknown> | null;
-    let tb = preflight?.trim_box_pt as number[] | undefined;
-    if (!tb || tb.length !== 4) {
-      const boxes = preflight?.boxes as Record<string, number[]> | undefined;
-      tb = boxes?.TrimBox ?? boxes?.CropBox;
+    const boxes = preflight?.boxes as Record<string, number[]> | undefined;
+
+    // Determine the media rectangle (in pt) so we can prove candidate boxes
+    // are strictly inside it.
+    const media = boxes?.MediaBox && boxes.MediaBox.length === 4 ? boxes.MediaBox : undefined;
+    const mediaW = media ? Math.abs(media[2] - media[0]) : undefined;
+    const mediaH = media ? Math.abs(media[3] - media[1]) : undefined;
+
+    const isStrictlySmaller = (b: number[]) => {
+      if (!b || b.length !== 4) return false;
+      const w = Math.abs(b[2] - b[0]);
+      const h = Math.abs(b[3] - b[1]);
+      if (w <= 0 || h <= 0) return false;
+      if (mediaW && mediaH) {
+        // Require at least 1pt smaller on one dimension.
+        return mediaW - w >= 1 || mediaH - h >= 1;
+      }
+      // Without a MediaBox reference we can't prove containment. Fall back
+      // to the historical behaviour (accept whatever is provided).
+      return true;
+    };
+
+    // 1. Explicit trim_box_pt captured at upload.
+    const tbPt = preflight?.trim_box_pt as number[] | undefined;
+    if (tbPt && tbPt.length === 4 && isStrictlySmaller(tbPt)) return tbPt;
+
+    // 2. boxes.TrimBox — only if strictly smaller than MediaBox.
+    if (boxes?.TrimBox && isStrictlySmaller(boxes.TrimBox)) return boxes.TrimBox;
+
+    // 3. boxes.BleedBox — secondary fallback so crop marks are still hidden
+    //    when no TrimBox was authored.
+    if (boxes?.BleedBox && isStrictlySmaller(boxes.BleedBox)) return boxes.BleedBox;
+
+    // Do NOT fall back to CropBox when it equals MediaBox — that is the
+    // default for most exports and would produce a false-positive crop.
+    if (boxes?.CropBox && isStrictlySmaller(boxes.CropBox)) return boxes.CropBox;
+
+    return undefined;
+  }, [documents]);
+
+  /** MediaBox size in mm, taken from preflight boxes when available. */
+  const mediaSizeMm = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (!doc) return undefined;
+    const preflight = doc.preflight_data as Record<string, unknown> | null;
+    const boxes = preflight?.boxes as Record<string, number[]> | undefined;
+    const PT_TO_MM = 25.4 / 72;
+    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
+      const w = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
+      const h = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
+      if (w > 0 && h > 0) return { widthMm: w, heightMm: h };
     }
-    return tb && tb.length === 4 ? tb : undefined;
+    if (doc.page_width_mm && doc.page_height_mm) {
+      return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
+    }
+    return undefined;
   }, [documents]);
 
   const pageAspectRatio = useMemo(() => {
@@ -707,11 +765,11 @@ export default function PreviewPanel({
     return undefined;
   }, [documents, isBusinessCards, resolvedTrimBox]);
 
-  // Native PDF page dimensions for canvas-vs-content sizing
+  // Native PDF page dimensions for canvas-vs-content sizing.
+  // When trimCrop is active, describe the TrimBox (the visible printed area).
+  // When it is not, describe the MediaBox so aspect-ratio comparisons against
+  // the paper canvas are consistent with what the browser is actually laying out.
   const pdfSizeMm = useMemo(() => {
-    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
-    if (!doc || !doc.page_width_mm || !doc.page_height_mm) return undefined;
-    // Use trim box dimensions if available
     if (resolvedTrimBox) {
       const trimW = Math.abs(resolvedTrimBox[2] - resolvedTrimBox[0]);
       const trimH = Math.abs(resolvedTrimBox[3] - resolvedTrimBox[1]);
@@ -720,8 +778,8 @@ export default function PreviewPanel({
         return { widthMm: trimW * PT_TO_MM, heightMm: trimH * PT_TO_MM };
       }
     }
-    return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
-  }, [documents, resolvedTrimBox]);
+    return mediaSizeMm;
+  }, [mediaSizeMm, resolvedTrimBox]);
 
   // Compute trim crop for PDFs with a TrimBox smaller than MediaBox (e.g. business cards with crop marks)
   const trimCrop = useMemo(() => {
