@@ -1314,6 +1314,8 @@ export default function OrderBuild() {
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
               familySlug={productFamily?.slug ?? undefined}
+              packBlocks={allBlocks}
+              blocksActive={blocksMode}
               suppressPriceDeltaFor={(() => {
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug === "business-cards" || slug === "business_cards") {
@@ -1339,6 +1341,7 @@ export default function OrderBuild() {
                 };
               })()}
             />
+
 
 
 
