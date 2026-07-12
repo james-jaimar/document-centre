@@ -920,7 +920,18 @@ export default function OrderFiles() {
       if (resolvedDocIds.current.has(d.id)) return false;
       if (autoAppliedDocIds.current.has(d.id)) return false;
       const preflight = d.preflight_data as Record<string, any> | null;
-      return preflight?.detected_size && !preflight?.size_resolved;
+      if (!(preflight?.detected_size && !preflight?.size_resolved)) return false;
+      // Stale-classification guard: a doc may have been persisted as
+      // "Custom size" before an ISO table update (e.g. DL added). Re-check
+      // the current dimensions — if they now match an ISO size, skip the
+      // non-ISO branch so the ISO effect below handles it correctly.
+      const w = Number(d.page_width_mm);
+      const h = Number(d.page_height_mm);
+      if (w > 0 && h > 0 && matchIsoSize(w, h)) {
+        resolvedDocIds.current.add(d.id);
+        return false;
+      }
+      return true;
     });
     if (!nonIsoDoc) return;
     const preflight = nonIsoDoc.preflight_data as Record<string, any>;
