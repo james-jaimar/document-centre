@@ -1,51 +1,81 @@
-## Goal
-For **Flyers only** (and any future family in `quantity_mode === "blocks"`), stop sourcing Document Size / Paper / Sides from `product_options`. Instead, derive those selectors from the resolved pack-pricing ladder (`quantity_blocks`) so what the customer sees always matches what's actually priced. Lamination / Print to Edge / other non-pack options continue to come from `product_options` as usual.
+## Scope
 
-## Behaviour after change (customer view, Flyers)
+Two items from the last message:
 
-Options panel renders in this order:
+1. **Landscape uploads for Flyers** — already works, no code change needed.
+2. **Preview trim accuracy** — investigate and fix over-cropping so the customer preview matches exactly what will print.
 
-1. **Document Size** — dropdown, values = distinct `size` slugs from the resolved `quantity_blocks` (filtered by current Paper/Sides where relevant).
-2. **Paper Stock** — dropdown, values = distinct `paper` slugs available for the selected size.
-3. **Print Sides** — Single / Double, values = distinct `sides` available for the selected size + paper.
-4. **Quantity** — dropdown of `qty` rows from blocks matching the (size, paper, sides) triple (already implemented in `PriceSummary`).
-5. Any remaining admin-configured `product_options` **that are not** Document Size / Paper Stock / Paper / Print Sides — e.g. Lamination, Print to Edge, Shrink Wrap — rendered as today.
+---
 
-A wildcard (`*`) in a block field means "any", and is preserved: if all blocks have `paper = "*"`, the Paper selector is hidden (no meaningful choice); same for Size and Sides. This keeps small ladders simple.
+## 1. Landscape auto-handling (verify only, no changes)
 
-Non-blocks families (everything except Flyers today) are unchanged — they keep the current `product_options`-driven panel.
+Confirmed against the current code:
 
-## Where the change happens (frontend only)
+- `orientationPolicy.ts` — Flyers are not in `PORTRAIT_REQUIRED` / `LANDSCAPE_REQUIRED`, so nothing is force-rotated.
+- `OrderBuild.tsx` size auto-detect (L487–503) matches a pack row by dimensions in either orientation, and prefers the row whose stored `orientation` matches the upload. That's why the UI already labels the upload "A5 Landscape (297 × 148 mm)".
+- `docOrientationForCanvas` (L659–703) reads the actual PDF page dimensions, so the preview renders landscape when the PDF is landscape.
 
-1. **`src/components/order/OptionsPanel.tsx`**
-   - Accept new optional props:
-     - `packBlocks?: QuantityBlock[]` — the resolved ladder (branch → tenant → master) that `OrderBuild` already computes.
-     - `blocksActive?: boolean`.
-   - When `blocksActive`:
-     - Suppress `product_options` whose name matches Document Size / Paper Stock / Paper / Print Sides (case-insensitive, matched via a small `PACK_MANAGED_OPTION_NAMES` set).
-     - Prepend synthetic rows for Document Size, Paper Stock, Print Sides built from the block ladder. Values use the same label helpers already used (`humaniseSlug`, size/paper label maps) so users see `A4`, `130gsm Matt`, `Double-sided` — never raw slugs.
-     - Filter downstream selectors by earlier selections (size → paper list → sides list), and auto-repair invalid combos by snapping to the first available value (same pattern `PriceSummary` already uses to pick `activeBlock`).
-   - Emit changes through the existing `onOptionChange(name, slug)` so the rest of the pipeline (spec, pricing, preview) needs no changes.
+No code change here. The plan drops the earlier proposal to add a Flyers-only tie-breaker.
 
-2. **`src/pages/dashboard/OrderBuild.tsx`**
-   - Pass `packBlocks={quantityBlocks}` and `blocksActive={blocksActive}` (both already in scope) into `<OptionsPanel />`.
-   - On first render for a blocks family, seed `selected_options["Document Size"] / ["Paper"] / ["Print Sides"]` from the first block if unset, so the price and preview aren't empty. Existing seeding for `Print Colour` / `Print Sides` stays intact.
-   - Keep the existing size-auto-detection logic, but constrain its candidate set to sizes present in `quantityBlocks` when `blocksActive`.
+---
 
-3. **`src/components/order/PriceSummary.tsx`** — no functional change; it already renders the pack quantity dropdown when `blocksActive`. Just verify labels stay consistent with the new Size/Paper/Sides options.
+## 2. Preview trim over-crop (real bug — investigate then fix)
 
-## Admin-side implications (no code change now)
+Ground truth from the uploaded `A5_Landscape.pdf`:
 
-- Admins can still attach Lamination, Print to Edge, etc. to Flyers via Product Options — those will render as extras. If an admin attaches a Paper Stock / Document Size / Print Sides option to a blocks family, it will be silently hidden in the customer UI (the pack ladder wins). We can surface an admin warning in a later pass if needed — out of scope here.
+- MediaBox: 637.276 × 461.528 pt (224.9 × 162.9 mm)
+- TrimBox: `[21, 21, 616.276, 440.528]` → 210 × 148 mm inset 21 pt (7.4 mm) on every side
+- BleedBox: `[12.5, 12.5, 624.78, 449.03]` → 216 × 154 mm (3 mm bleed)
+- Rotation: 0
+
+When I crop the rendered page to the **metadata TrimBox** manually, both the designer's pink "Cut Line" dashes and the gray "Type unsafe area" band remain visible inside the crop (they were drawn as ink inside the TrimBox). The user reports the app preview does not show them — meaning the preview is clipping **tighter than the TrimBox**.
+
+Candidate causes to check in order:
+
+1. **`preflight.trim_box_pt` stored the wrong rectangle.** `OrderFiles.tsx` (L740–760, L1049–1096, L1329–1369) writes `trim_box_pt` from several code paths (upload → crop-mark trim → session pipeline). If any of those paths persist the BleedBox, or the intersection of TrimBox∩BleedBox, or a shrunk-for-safety rect, `PreviewPanel.resolvedTrimBox` will honour it and over-crop. Read the persisted `preflight_data.trim_box_pt` and `preflight_data.boxes.TrimBox` for a Flyers upload of this exact file and compare against the ground truth above.
+
+2. **`PreviewPanel.trimCrop` math (L785–811).** Currently:
+   ```
+   left = trim[0] * PT_TO_MM / mediaWmm
+   top  = 1 - trim[3] * PT_TO_MM / mediaHmm
+   width  = (trim[2]-trim[0]) * PT_TO_MM / mediaWmm
+   height = (trim[3]-trim[1]) * PT_TO_MM / mediaHmm
+   ```
+   Verified against the ground-truth boxes this yields `{ left: 0.0330, top: 0.0455, width: 0.9341, height: 0.9090 }` — correct. So if `resolvedTrimBox` is right, `trimCrop` will be right.
+
+3. **`page_width_mm` / MediaBox derivation.** `PreviewPanel.trimCrop` prefers `boxes.MediaBox` when present, otherwise falls back to `doc.page_width_mm`. On this file `page_width_mm` was likely set to the **TrimBox** dimensions (210 × 148), not the MediaBox (224.9 × 162.9). If `boxes.MediaBox` is missing from `preflight_data`, `mediaWmm/mediaHmm` become the TrimBox size, the fractions collapse to a much smaller inner rectangle, and the preview over-crops. **This is the most likely cause** — worth checking first.
+
+4. **`LooseSheetsPreview` clip transform (L115–170)** — verified: `renderW = pdfW / trimCrop.width`, `offsetX = -trimCrop.left * renderW`. Correct for a well-formed `trimCrop`.
+
+### Fix (once cause is confirmed)
+
+- If (3) is confirmed: in `PreviewPanel.tsx` `trimCrop`/`resolvedTrimBox`, when `boxes.MediaBox` is absent, either
+  - abort the crop (return `undefined`) instead of applying it against the TrimBox dimensions (safe fallback: preview shows the whole page without clipping crop marks), or
+  - reconstruct MediaBox from the persisted `boxes.MediaBox` at upload time by making the preflight writer always store all four boxes when it stores any of them.
+
+  Prefer the latter (`OrderFiles.tsx` L614–621, L1049–1096, L1329–1369, and `useDocumentUpload.ts` L742–835): always persist `preflight_data.boxes.MediaBox` alongside `trim_box_pt`, so downstream code has an unambiguous denominator.
+
+- If (1) is confirmed: fix the writer that stored the wrong rectangle. Do not touch `PreviewPanel`.
+
+- Add a small dev-only console warning in `PreviewPanel.trimCrop` when the derived fractions produce a rectangle smaller than 80 % of the media on either axis, so future regressions surface immediately.
+
+### Verification (mandatory)
+
+1. Upload `A5_Landscape.pdf` to a Flyers product.
+2. Read `documents.preflight_data` for the row and confirm `boxes.MediaBox = [0,0,637.276,461.528]` and `boxes.TrimBox = [21,21,616.276,440.528]`.
+3. Confirm the on-screen preview shows the pink dashed cut line and the gray "type unsafe" band around the edges (they are drawn inside the TrimBox and must remain visible).
+4. Confirm the annotation panel on the right (which is outside the TrimBox) is clipped away.
+5. Repeat with a Business Cards upload that has crop marks — must still hide crop marks (existing behaviour).
+
+---
 
 ## Out of scope
 
-- No DB migrations.
-- No changes to pricing math, `resolvePackPricing`, or the pack editors.
-- No changes to non-flyer families.
-- No changes to cart / order snapshot shape — the spec still carries `selected_options["Document Size"]`, `["Paper"]`, `["Print Sides"]` exactly as today.
+- Any change to the pack-pricing plumbing.
+- Any change to preview rendering for bound/folded/ring products.
+- Any change to server-side preflight extraction on the PDF worker — this plan only touches how the client persists and consumes those boxes.
 
-## Files touched
+## Files likely touched
 
-- `src/components/order/OptionsPanel.tsx` — add pack-aware rendering.
-- `src/pages/dashboard/OrderBuild.tsx` — pass pack props, seed defaults from blocks.
+- `src/components/order/PreviewPanel.tsx` — safer fallback in `resolvedTrimBox` / `trimCrop`, dev-only sanity warning.
+- `src/hooks/useDocumentUpload.ts` and `src/pages/dashboard/OrderFiles.tsx` — always persist `preflight_data.boxes.MediaBox` alongside any TrimBox write, so `PreviewPanel` has an unambiguous denominator.
