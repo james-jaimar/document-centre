@@ -888,7 +888,7 @@ export default function OrderBuild() {
 
       return changed ? { ...prev, selected_options: next } : prev;
     });
-  }, [blocksMode, allBlocks]);
+  }, [blocksMode, allBlocks, preferredSides]);
 
 
   // Save spec back to DB
