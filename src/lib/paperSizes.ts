@@ -11,15 +11,25 @@ export interface PaperSize {
   heightMm: number;
 }
 
-// ISO A-series sizes
+// ISO A-series sizes (plus DL, a specialty ISO format used for flyers/envelopes)
 export const ISO_SIZES: PaperSize[] = [
+  { name: "A6", widthMm: 105, heightMm: 148 },
   { name: "A5", widthMm: 148, heightMm: 210 },
+  { name: "DL", widthMm: 99, heightMm: 210 },
   { name: "A4", widthMm: 210, heightMm: 297 },
   { name: "A3", widthMm: 297, heightMm: 420 },
   { name: "A2", widthMm: 420, heightMm: 594 },
   { name: "A1", widthMm: 594, heightMm: 841 },
   { name: "A0", widthMm: 841, heightMm: 1189 },
 ];
+
+/**
+ * DL is a specialty size (⅓ A4 flyer / envelope). It should be *recognised*
+ * as a standard size but never *suggested* as a scale target or matched via
+ * bleed-detection (its narrow 99mm width is close to A6/A5 short edges).
+ */
+const SPECIALTY_ISO_NAMES = new Set(["DL"]);
+
 
 /** Product families whose ISO size suggestions should be poster-scale (A2/A1/A0). */
 const POSTER_FAMILY_SLUGS = new Set(["posters", "poster"]);
@@ -207,7 +217,8 @@ export function getSuggestedIsoSizes(
   }
 
   const area = widthMm * heightMm;
-  const within = ISO_SIZES.filter((s) => {
+  const candidates = ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+  const within = candidates.filter((s) => {
     const isoArea = s.widthMm * s.heightMm;
     const ratio = area / isoArea;
     return ratio > 0.5 && ratio < 2.0;
@@ -222,9 +233,10 @@ export function getSuggestedIsoSizes(
       if (iso) within.push(iso);
     }
   }
-  // Preserve canonical ISO ordering (A5 → A0)
-  return ISO_SIZES.filter((s) => within.some((w) => w.name === s.name));
+  // Preserve canonical ISO ordering (A6 → A0), excluding specialty formats.
+  return candidates.filter((s) => within.some((w) => w.name === s.name));
 }
+
 
 /**
  * Determine if a document is in landscape orientation.
@@ -243,9 +255,11 @@ const ALL_KNOWN_SIZES: Record<string, { widthMm: number; heightMm: number }> = {
   a4: { widthMm: 210, heightMm: 297 },
   a5: { widthMm: 148, heightMm: 210 },
   a6: { widthMm: 105, heightMm: 148 },
+  dl: { widthMm: 99, heightMm: 210 },
   letter: { widthMm: 216, heightMm: 279 },
   legal: { widthMm: 216, heightMm: 356 },
   tabloid: { widthMm: 279, heightMm: 432 },
+
 };
 
 /**
@@ -299,7 +313,8 @@ export function detectNearIsoWithBleed(
   const bleedMax = isPoster ? POSTER_BLEED_MAX_MM : BLEED_MAX_MM;
   const candidates = isPoster
     ? ISO_SIZES.filter((s) => POSTER_ISO_NAMES.has(s.name))
-    : ISO_SIZES;
+    : ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+
 
   let best: NearIsoMatch | null = null;
   let bestArea = Infinity;
