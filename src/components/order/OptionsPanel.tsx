@@ -1,12 +1,21 @@
+import { useMemo } from "react";
 import type { Tables } from "@/integrations/supabase/types";
 import { isStructuredValues } from "@/lib/productOptionTypes";
 import { humaniseSlug } from "@/lib/utils";
+import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import OptionSelector from "./OptionSelector";
 
 type ProductOption = Tables<"product_options">;
@@ -28,6 +37,13 @@ interface OptionsPanelProps {
    *  `+R x /doc` price-impact suffix. Used for Business Cards where the
    *  real prices come from the BC matrix + finishing catalogue. */
   suppressPriceDeltaFor?: string[];
+  /** When the family is in `blocks` quantity mode, pass the fully-resolved
+   *  (branch > tenant > master) pack ladder here. Document Size, Paper and
+   *  Print Sides selectors are then derived from the ladder instead of from
+   *  `product_options`, so what the customer sees always matches what's
+   *  actually priced. */
+  packBlocks?: QuantityBlock[];
+  blocksActive?: boolean;
 }
 
 
@@ -52,6 +68,24 @@ export const SECTION_CONTROLLED_OPTION_NAMES = new Set([
   "Print Sides",
 ]);
 
+/** Option names that are managed by the pack-pricing ladder when a family
+ *  is in `blocks` quantity mode. These are hidden from the standard option
+ *  list and replaced by pack-derived selectors. Matched case-insensitively. */
+const PACK_MANAGED_OPTION_NAMES = new Set([
+  "document size",
+  "paper",
+  "paper stock",
+  "print sides",
+  "sides",
+]);
+
+/** Spec keys the rest of the app already reads for pack-priced items. */
+const PACK_SPEC_KEYS = {
+  size: "Document Size",
+  paper: "Paper",
+  sides: "Print Sides",
+} as const;
+
 export default function OptionsPanel({
   options,
   selectedOptions,
@@ -59,17 +93,126 @@ export default function OptionsPanel({
   familySlug,
   lockedDisplay,
   suppressPriceDeltaFor,
+  packBlocks,
+  blocksActive,
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
   const sortedOptions = [...options]
     .filter((o) => (isMultiSection ? !SECTION_CONTROLLED_OPTION_NAMES.has(o.name) : true))
+    .filter((o) =>
+      blocksActive ? !PACK_MANAGED_OPTION_NAMES.has(o.name.trim().toLowerCase()) : true,
+    )
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const lockedFor = (name: string) => lockedDisplay?.[name];
   const suppressSet = new Set(suppressPriceDeltaFor ?? []);
 
-  // Get current display value for an option
+  // Build a helper that resolves a slug to a human label by first looking in
+  // the original `options` array (so an admin-defined "A4 (210 × 297mm)"
+  // label wins), then falling back to `humaniseSlug`.
+  const resolveLabel = useMemo(() => {
+    const byNameSlug = new Map<string, string>();
+    for (const opt of options) {
+      const nameKey = opt.name.trim().toLowerCase();
+      if (isStructuredValues(opt.values)) {
+        for (const v of opt.values) {
+          byNameSlug.set(`${nameKey}::${v.slug}`, v.label);
+        }
+      }
+    }
+    return (nameCandidates: string[], slug: string) => {
+      for (const n of nameCandidates) {
+        const hit = byNameSlug.get(`${n.trim().toLowerCase()}::${slug}`);
+        if (hit) return hit;
+      }
+      return humaniseSlug(slug);
+    };
+  }, [options]);
+
+  // Derive Size / Paper / Sides value lists from the current pack ladder,
+  // cascading each selection so downstream selectors only show combos that
+  // actually have a matching pack row.
+  const packRows = blocksActive ? (packBlocks ?? []) : [];
+  const selectedSize = selectedOptions[PACK_SPEC_KEYS.size] ?? null;
+  const selectedPaper = selectedOptions[PACK_SPEC_KEYS.paper] ?? null;
+  const selectedSides = selectedOptions[PACK_SPEC_KEYS.sides] ?? null;
+
+  const uniq = (arr: string[]) => Array.from(new Set(arr));
+
+  const sizeValues = useMemo(() => {
+    return uniq(packRows.map((b) => b.size).filter((s) => s && s !== "*"));
+  }, [packRows]);
+
+  const paperValues = useMemo(() => {
+    const filtered = packRows.filter(
+      (b) => !selectedSize || b.size === "*" || b.size === selectedSize,
+    );
+    return uniq(filtered.map((b) => b.paper).filter((p) => p && p !== "*"));
+  }, [packRows, selectedSize]);
+
+  const sidesValues = useMemo(() => {
+    const filtered = packRows.filter(
+      (b) =>
+        (!selectedSize || b.size === "*" || b.size === selectedSize) &&
+        (!selectedPaper || b.paper === "*" || b.paper === selectedPaper),
+    );
+    return uniq(filtered.map((b) => b.sides));
+  }, [packRows, selectedSize, selectedPaper]);
+
+  type PackRow = {
+    key: string;
+    specName: string;
+    label: string;
+    values: string[];
+    valueLabelCandidates: string[]; // option names to search for value labels
+    sidesLabels?: Record<string, string>;
+    current: string | null;
+  };
+
+  const packManagedRows: PackRow[] = useMemo(() => {
+    if (!blocksActive) return [];
+    const rows: PackRow[] = [];
+    if (sizeValues.length > 0) {
+      rows.push({
+        key: "size",
+        specName: PACK_SPEC_KEYS.size,
+        label: "Document Size",
+        values: sizeValues,
+        valueLabelCandidates: ["Document Size", "Size"],
+        current: selectedSize,
+      });
+    }
+    if (paperValues.length > 0) {
+      rows.push({
+        key: "paper",
+        specName: PACK_SPEC_KEYS.paper,
+        label: "Paper Stock",
+        values: paperValues,
+        valueLabelCandidates: ["Paper Stock", "Paper"],
+        current: selectedPaper,
+      });
+    }
+    if (sidesValues.length > 1) {
+      rows.push({
+        key: "sides",
+        specName: PACK_SPEC_KEYS.sides,
+        label: "Print Sides",
+        values: sidesValues,
+        valueLabelCandidates: ["Print Sides", "Sides"],
+        sidesLabels: { single: "Single-sided", double: "Double-sided" },
+        current: selectedSides,
+      });
+    }
+    return rows;
+  }, [blocksActive, sizeValues, paperValues, sidesValues, selectedSize, selectedPaper, selectedSides]);
+
+  const labelForPackValue = (row: PackRow, slug: string) => {
+    if (row.sidesLabels && row.sidesLabels[slug]) return row.sidesLabels[slug];
+    return resolveLabel(row.valueLabelCandidates, slug);
+  };
+
+  // Get current display value for a standard product option
   const getDisplayValue = (option: ProductOption) => {
     const locked = lockedFor(option.name);
     if (locked) return locked.label;
@@ -82,13 +225,55 @@ export default function OptionsPanel({
     return selected;
   };
 
+  const packAccordionValues = packManagedRows.map((r) => `pack::${r.key}`);
+  const standardAccordionValues = sortedOptions.map((o) => o.id);
+
   return (
     <div className="space-y-1">
       <Accordion
         type="multiple"
-        defaultValue={sortedOptions.map((o) => o.id)}
+        defaultValue={[...packAccordionValues, ...standardAccordionValues]}
         className="space-y-0"
       >
+        {packManagedRows.map((row) => {
+          const current = row.current ?? "";
+          const displayLabel = current ? labelForPackValue(row, current) : "Not selected";
+          return (
+            <AccordionItem
+              key={`pack::${row.key}`}
+              value={`pack::${row.key}`}
+              className="border-b border-border"
+            >
+              <AccordionTrigger className="py-2 hover:no-underline">
+                <div className="flex items-center justify-between w-full pr-2">
+                  <span className="text-xs font-medium text-foreground">{row.label}</span>
+                  <span className="text-[11px] text-muted-foreground ml-2 truncate max-w-[140px]">
+                    {displayLabel}
+                  </span>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pb-2">
+                <Select
+                  value={current}
+                  onValueChange={(slug) => onOptionChange(row.specName, slug)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={`Select ${row.label}`}>
+                      {current ? labelForPackValue(row, current) : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {row.values.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {labelForPackValue(row, v)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
         {sortedOptions.map((option) => {
           const locked = lockedFor(option.name);
           return (
@@ -136,4 +321,3 @@ export default function OptionsPanel({
     </div>
   );
 }
-

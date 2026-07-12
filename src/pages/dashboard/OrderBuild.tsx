@@ -430,7 +430,8 @@ export default function OrderBuild() {
         if (!!s.is_color !== wantColor) patch.is_color = wantColor;
       }
       if (sidesSlug) {
-        const wantDuplex = sidesSlug.toLowerCase() === "duplex";
+        const sl = sidesSlug.toLowerCase();
+        const wantDuplex = sl === "duplex" || sl === "double" || sl === "double_sided";
         if (!!s.is_duplex !== wantDuplex) patch.is_duplex = wantDuplex;
       }
       if (patch.is_color !== undefined || patch.is_duplex !== undefined) {
@@ -777,6 +778,11 @@ export default function OrderBuild() {
     [allBlocks, specSize, specPaper, specSides, blockMatchesField],
   );
   const blocksActive = quantityMode === "blocks" && quantityBlocks.length > 0;
+  // `blocksMode` is broader than `blocksActive`: it stays true whenever the
+  // family sells in packs and has ANY ladder rows, even if the current
+  // size/paper/sides combo doesn't match a row yet. Used to drive the
+  // pack-derived Size/Paper/Sides selectors in OptionsPanel.
+  const blocksMode = quantityMode === "blocks" && allBlocks.length > 0;
 
   const handleQuantityChange = useCallback((qty: number) => {
     if (blocksActive) {
@@ -801,6 +807,72 @@ export default function OrderBuild() {
       setSpec((prev) => ({ ...prev, quantity: next }));
     }
   }, [blocksActive, quantityBlocks, spec.quantity]);
+
+  // Seed Document Size / Paper / Print Sides from the pack ladder for
+  // blocks-mode families. When the current selection is missing or doesn't
+  // match any ladder row, snap to the first valid value so pricing + the
+  // quantity dropdown are never empty on load.
+  useEffect(() => {
+    if (!blocksMode) return;
+    setSpec((prev) => {
+      const next = { ...prev.selected_options };
+      let changed = false;
+
+      const currentSize = next["Document Size"] ?? null;
+      const sizes = Array.from(
+        new Set(allBlocks.map((b) => b.size).filter((s) => s && s !== "*")),
+      );
+      if (sizes.length > 0 && (!currentSize || !sizes.includes(currentSize))) {
+        next["Document Size"] = sizes[0];
+        changed = true;
+      }
+
+      const effSize = next["Document Size"] ?? null;
+      const papers = Array.from(
+        new Set(
+          allBlocks
+            .filter((b) => !effSize || b.size === "*" || b.size === effSize)
+            .map((b) => b.paper)
+            .filter((p) => p && p !== "*"),
+        ),
+      );
+      const currentPaper = next["Paper"] ?? null;
+      if (papers.length > 0 && (!currentPaper || !papers.includes(currentPaper))) {
+        next["Paper"] = papers[0];
+        changed = true;
+      }
+
+      const effPaper = next["Paper"] ?? null;
+      const sides = Array.from(
+        new Set(
+          allBlocks
+            .filter(
+              (b) =>
+                (!effSize || b.size === "*" || b.size === effSize) &&
+                (!effPaper || b.paper === "*" || b.paper === effPaper),
+            )
+            .map((b) => b.sides),
+        ),
+      );
+      const currentSides = next["Print Sides"] ?? null;
+      const mappedCurrent =
+        currentSides === "duplex" || currentSides === "double" || currentSides === "double_sided"
+          ? "double"
+          : currentSides === "single" || currentSides === "single_sided"
+          ? "single"
+          : null;
+      if (sides.length > 0) {
+        const target =
+          mappedCurrent && sides.includes(mappedCurrent) ? mappedCurrent : sides[0];
+        if (currentSides !== target) {
+          next["Print Sides"] = target;
+          changed = true;
+        }
+      }
+
+      return changed ? { ...prev, selected_options: next } : prev;
+    });
+  }, [blocksMode, allBlocks]);
 
 
   // Save spec back to DB
@@ -1247,6 +1319,8 @@ export default function OrderBuild() {
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
               familySlug={productFamily?.slug ?? undefined}
+              packBlocks={allBlocks}
+              blocksActive={blocksMode}
               suppressPriceDeltaFor={(() => {
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug === "business-cards" || slug === "business_cards") {
@@ -1272,6 +1346,7 @@ export default function OrderBuild() {
                 };
               })()}
             />
+
 
 
 
