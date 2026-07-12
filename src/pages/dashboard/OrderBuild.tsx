@@ -430,9 +430,9 @@ export default function OrderBuild() {
         if (!!s.is_color !== wantColor) patch.is_color = wantColor;
       }
       if (sidesSlug) {
-        const s = sidesSlug.toLowerCase();
-        const wantDuplex = s === "duplex" || s === "double" || s === "double_sided";
-        if (!!s !== wantDuplex && !!s.is_duplex !== wantDuplex) patch.is_duplex = wantDuplex;
+        const sl = sidesSlug.toLowerCase();
+        const wantDuplex = sl === "duplex" || sl === "double" || sl === "double_sided";
+        if (!!s.is_duplex !== wantDuplex) patch.is_duplex = wantDuplex;
       }
       if (patch.is_color !== undefined || patch.is_duplex !== undefined) {
         updateSectionMut.mutate(patch as any);
