@@ -255,9 +255,11 @@ const ALL_KNOWN_SIZES: Record<string, { widthMm: number; heightMm: number }> = {
   a4: { widthMm: 210, heightMm: 297 },
   a5: { widthMm: 148, heightMm: 210 },
   a6: { widthMm: 105, heightMm: 148 },
+  dl: { widthMm: 99, heightMm: 210 },
   letter: { widthMm: 216, heightMm: 279 },
   legal: { widthMm: 216, heightMm: 356 },
   tabloid: { widthMm: 279, heightMm: 432 },
+
 };
 
 /**
