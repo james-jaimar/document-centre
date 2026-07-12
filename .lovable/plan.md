@@ -1,52 +1,51 @@
-## What's broken
+## Goal
+For **Flyers only** (and any future family in `quantity_mode === "blocks"`), stop sourcing Document Size / Paper / Sides from `product_options`. Instead, derive those selectors from the resolved pack-pricing ladder (`quantity_blocks`) so what the customer sees always matches what's actually priced. Lamination / Print to Edge / other non-pack options continue to come from `product_options` as usual.
 
-**1. "Save failed — no unique or exclusion constraint matching the ON CONFLICT specification"**
+## Behaviour after change (customer view, Flyers)
 
-`product_pack_pricing_overrides` uses **partial unique indexes** (one for tenant-wide rows where `branch_id IS NULL`, one for branch rows where `branch_id IS NOT NULL`). PostgREST's `.upsert({ onConflict: "…" })` can't reliably infer partial indexes, so the branch save blows up.
+Options panel renders in this order:
 
-**2. Customer quantity UX**
+1. **Document Size** — dropdown, values = distinct `size` slugs from the resolved `quantity_blocks` (filtered by current Paper/Sides where relevant).
+2. **Paper Stock** — dropdown, values = distinct `paper` slugs available for the selected size.
+3. **Print Sides** — Single / Double, values = distinct `sides` available for the selected size + paper.
+4. **Quantity** — dropdown of `qty` rows from blocks matching the (size, paper, sides) triple (already implemented in `PriceSummary`).
+5. Any remaining admin-configured `product_options` **that are not** Document Size / Paper Stock / Paper / Print Sides — e.g. Lamination, Print to Edge, Shrink Wrap — rendered as today.
 
-Good news: `OrderBuild.tsx` already resolves `branch → tenant → master` via `resolvePackPricing`, and `PriceSummary.tsx` already swaps the +/- stepper for a `<Select>` dropdown when `quantityMode === "blocks"` and there are matching rows for the chosen size/paper/sides. So the wiring exists — but we should sanity-check it end-to-end after the save bug is fixed.
+A wildcard (`*`) in a block field means "any", and is preserved: if all blocks have `paper = "*"`, the Paper selector is hidden (no meaningful choice); same for Size and Sides. This keeps small ladders simple.
 
----
+Non-blocks families (everything except Flyers today) are unchanged — they keep the current `product_options`-driven panel.
 
-## Fix
+## Where the change happens (frontend only)
 
-### 1. Rewrite `useUpsertPackPricingOverride` to avoid PostgREST's `onConflict`
+1. **`src/components/order/OptionsPanel.tsx`**
+   - Accept new optional props:
+     - `packBlocks?: QuantityBlock[]` — the resolved ladder (branch → tenant → master) that `OrderBuild` already computes.
+     - `blocksActive?: boolean`.
+   - When `blocksActive`:
+     - Suppress `product_options` whose name matches Document Size / Paper Stock / Paper / Print Sides (case-insensitive, matched via a small `PACK_MANAGED_OPTION_NAMES` set).
+     - Prepend synthetic rows for Document Size, Paper Stock, Print Sides built from the block ladder. Values use the same label helpers already used (`humaniseSlug`, size/paper label maps) so users see `A4`, `130gsm Matt`, `Double-sided` — never raw slugs.
+     - Filter downstream selectors by earlier selections (size → paper list → sides list), and auto-repair invalid combos by snapping to the first available value (same pattern `PriceSummary` already uses to pick `activeBlock`).
+   - Emit changes through the existing `onOptionChange(name, slug)` so the rest of the pipeline (spec, pricing, preview) needs no changes.
 
-In `src/hooks/useProductPackPricingOverrides.ts`, replace the `.upsert(...)` call with an explicit two-step:
+2. **`src/pages/dashboard/OrderBuild.tsx`**
+   - Pass `packBlocks={quantityBlocks}` and `blocksActive={blocksActive}` (both already in scope) into `<OptionsPanel />`.
+   - On first render for a blocks family, seed `selected_options["Document Size"] / ["Paper"] / ["Print Sides"]` from the first block if unset, so the price and preview aren't empty. Existing seeding for `Print Colour` / `Print Sides` stays intact.
+   - Keep the existing size-auto-detection logic, but constrain its candidate set to sizes present in `quantityBlocks` when `blocksActive`.
 
-```text
-SELECT id FROM product_pack_pricing_overrides
-  WHERE product_family_id = :fam AND tenant_id = :ten
-    AND (branch_id = :branch  OR (branch_id IS NULL AND :branch IS NULL))
-  LIMIT 1;
+3. **`src/components/order/PriceSummary.tsx`** — no functional change; it already renders the pack quantity dropdown when `blocksActive`. Just verify labels stay consistent with the new Size/Paper/Sides options.
 
-if found -> UPDATE ... SET quantity_blocks = :blocks WHERE id = :id
-else     -> INSERT ...
-```
+## Admin-side implications (no code change now)
 
-This sidesteps the partial-index limitation entirely, no migration required. Existing partial unique indexes still protect against races (a concurrent insert will 23505 → we surface a friendly retry toast).
-
-Both master (`MasterPackPricingEditor`, edits `product_families.quantity_blocks` directly) and tenant/branch (`product_pack_pricing_overrides`) paths keep the same call sites; only the hook body changes.
-
-### 2. Verify customer wiring after the fix
-
-Manual pass on the `/t/:slug/order/new` Flyers flow:
-- With **no** branch override → dropdown shows master ladder.
-- After saving a branch override with different qty rows → dropdown shows branch ladder for that size/paper/sides.
-- Snap-to-nearest logic in `OrderBuild.tsx` (lines 783–803) already reseats an invalid quantity to the first block, so switching contexts won't strand the user on an unsupported qty.
-
-No code changes expected here — just a smoke test. If the dropdown doesn't switch, the follow-up is almost certainly a stale react-query cache; the hook already invalidates the right keys on save.
-
----
+- Admins can still attach Lamination, Print to Edge, etc. to Flyers via Product Options — those will render as extras. If an admin attaches a Paper Stock / Document Size / Print Sides option to a blocks family, it will be silently hidden in the customer UI (the pack ladder wins). We can surface an admin warning in a later pass if needed — out of scope here.
 
 ## Out of scope
 
-- No DB migration (partial indexes stay; they're correct, PostgREST just can't use them).
-- No changes to `PriceSummary` dropdown UI, `resolvePackPricing`, or master-scope editor.
-- Pricing math, click charges, and rate cards untouched.
+- No DB migrations.
+- No changes to pricing math, `resolvePackPricing`, or the pack editors.
+- No changes to non-flyer families.
+- No changes to cart / order snapshot shape — the spec still carries `selected_options["Document Size"]`, `["Paper"]`, `["Print Sides"]` exactly as today.
 
 ## Files touched
 
-- `src/hooks/useProductPackPricingOverrides.ts` — swap upsert for select-then-insert/update.
+- `src/components/order/OptionsPanel.tsx` — add pack-aware rendering.
+- `src/pages/dashboard/OrderBuild.tsx` — pass pack props, seed defaults from blocks.
