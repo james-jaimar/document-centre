@@ -99,6 +99,7 @@ export default function OptionsPanel({
   suppressPriceDeltaFor,
   packBlocks,
   blocksActive,
+  allowedSides,
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
