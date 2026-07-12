@@ -313,7 +313,8 @@ export function detectNearIsoWithBleed(
   const bleedMax = isPoster ? POSTER_BLEED_MAX_MM : BLEED_MAX_MM;
   const candidates = isPoster
     ? ISO_SIZES.filter((s) => POSTER_ISO_NAMES.has(s.name))
-    : ISO_SIZES;
+    : ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+
 
   let best: NearIsoMatch | null = null;
   let bestArea = Infinity;
