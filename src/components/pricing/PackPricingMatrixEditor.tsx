@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, RotateCcw, Save } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Save, Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 
@@ -11,18 +19,28 @@ export type PackScope = "master" | "tenant" | "branch";
 
 interface Props {
   scope: PackScope;
-  /** Master ladder — shown as a read-only reference for tenant/branch scopes. */
+  /** Parent ladder shown as read-only reference (branch → tenant, tenant → master). */
   parentBlocks?: QuantityBlock[];
   /** Current stored ladder for this scope. */
   initialBlocks: QuantityBlock[];
-  /** Size codes the family allows (from printing_rules.allowed_finished_sizes).
-   *  When empty/undefined the picker falls back to the full active catalogue. */
+  /** Allowed size codes for this family — restricts the "Add pack" picker. */
   allowedSizeCodes?: string[];
   saving?: boolean;
   onSave: (blocks: QuantityBlock[]) => Promise<void> | void;
   /** Only meaningful for tenant/branch scopes — clears the override row. */
   onRevertToParent?: () => Promise<void> | void;
   reverting?: boolean;
+}
+
+const DEFAULT_QTY_TIERS = [100, 250, 500, 1000];
+
+type GroupKey = string; // `${size}|${paper}`
+
+interface Group {
+  key: GroupKey;
+  size: string;
+  paper: string;
+  rows: { block: QuantityBlock; index: number }[];
 }
 
 export default function PackPricingMatrixEditor({
@@ -37,6 +55,7 @@ export default function PackPricingMatrixEditor({
 }: Props) {
   const [blocks, setBlocks] = useState<QuantityBlock[]>(initialBlocks ?? []);
   const [dirty, setDirty] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     setBlocks(initialBlocks ?? []);
@@ -55,13 +74,23 @@ export default function PackPricingMatrixEditor({
     return filtered.length > 0 ? filtered : allSizes;
   }, [allSizes, allowedSizeCodes]);
 
+  // ── label helpers: never show the raw slug ───────────────────────
+  const sizeLabel = (code: string) => {
+    if (code === "*") return "Any size";
+    const s = allSizes.find((x) => x.code.toLowerCase() === code.toLowerCase());
+    return s?.label ?? code.toUpperCase();
+  };
   const paperLabel = (code: string) => {
-    const p = allPapers.find((pp) => pp.code.toLowerCase() === code.toLowerCase());
+    if (code === "*") return "Any paper";
+    const p = allPapers.find((x) => x.code.toLowerCase() === code.toLowerCase());
     if (!p) return code;
-    return p.weight_gsm ? `${p.label} ${p.weight_gsm}gsm` : p.label;
+    // Avoid "130gsm 130gsm" when label already includes the weight.
+    const label = p.label ?? code;
+    if (p.weight_gsm && !/\d+\s*gsm/i.test(label)) return `${label} ${p.weight_gsm}gsm`;
+    return label;
   };
 
-  const update = (next: QuantityBlock[]) => {
+  const commit = (next: QuantityBlock[]) => {
     const sorted = next.slice().sort((a, b) => {
       const sa = `${a.size ?? "*"}|${a.paper ?? "*"}|${a.sides ?? "single"}`;
       const sb = `${b.size ?? "*"}|${b.paper ?? "*"}|${b.sides ?? "single"}`;
@@ -72,23 +101,106 @@ export default function PackPricingMatrixEditor({
     setDirty(true);
   };
 
-  const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
+  // ── group by (size, paper) ───────────────────────────────────────
+  const groups: Group[] = useMemo(() => {
+    const byKey = new Map<GroupKey, Group>();
+    blocks.forEach((b, index) => {
+      const size = (b.size ?? "*").toLowerCase();
+      const paper = (b.paper ?? "*").toLowerCase();
+      const key = `${size}|${paper}`;
+      if (!byKey.has(key)) byKey.set(key, { key, size, paper, rows: [] });
+      byKey.get(key)!.rows.push({ block: b, index });
+    });
+    // Sort rows: single before double, then qty ascending
+    for (const g of byKey.values()) {
+      g.rows.sort((a, b) => {
+        const sa = a.block.sides === "single" ? 0 : 1;
+        const sb = b.block.sides === "single" ? 0 : 1;
+        if (sa !== sb) return sa - sb;
+        return a.block.qty - b.block.qty;
+      });
+    }
+    return Array.from(byKey.values());
+  }, [blocks]);
+
   const isOverrideScope = scope !== "master";
   const hasOverride = isOverrideScope && (initialBlocks?.length ?? 0) > 0;
+  const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
 
-  const usingParent = isOverrideScope && !hasOverride && blocks.length === 0;
+  // ── group-level actions ──────────────────────────────────────────
+  function updateBlockAt(idx: number, patch: Partial<QuantityBlock>) {
+    const next = blocks.slice();
+    next[idx] = { ...next[idx], ...patch };
+    commit(next);
+  }
+  function deleteBlockAt(idx: number) {
+    commit(blocks.filter((_, i) => i !== idx));
+  }
+  function addQtyRow(group: Group, sides: "single" | "double") {
+    const existingQtys = group.rows.filter((r) => r.block.sides === sides).map((r) => r.block.qty);
+    const nextQty = existingQtys.length ? Math.max(...existingQtys) * 2 : 100;
+    commit([
+      ...blocks,
+      { size: group.size, paper: group.paper, sides, qty: nextQty, price_minor: 0 },
+    ]);
+  }
+  function duplicateSinglesToDouble(group: Group) {
+    const singles = group.rows.filter((r) => r.block.sides === "single").map((r) => r.block);
+    const existingDoubleQtys = new Set(
+      group.rows.filter((r) => r.block.sides === "double").map((r) => r.block.qty),
+    );
+    const additions = singles
+      .filter((s) => !existingDoubleQtys.has(s.qty))
+      .map((s) => ({ ...s, sides: "double" as const }));
+    if (additions.length === 0) return;
+    commit([...blocks, ...additions]);
+  }
+  function deleteGroup(group: Group) {
+    if (!confirm(`Remove all pack rows for ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`)) return;
+    const idxs = new Set(group.rows.map((r) => r.index));
+    commit(blocks.filter((_, i) => !idxs.has(i)));
+  }
+
+  function seedPack(size: string, paper: string, qtys: number[], includeBothSides: boolean) {
+    const existing = new Set(
+      blocks
+        .filter((b) => (b.size ?? "*") === size && (b.paper ?? "*") === paper)
+        .map((b) => `${b.sides}|${b.qty}`),
+    );
+    const additions: QuantityBlock[] = [];
+    const sidesList: Array<"single" | "double"> = includeBothSides ? ["single", "double"] : ["single"];
+    for (const sides of sidesList) {
+      for (const qty of qtys) {
+        if (existing.has(`${sides}|${qty}`)) continue;
+        additions.push({ size, paper, sides, qty, price_minor: 0 });
+      }
+    }
+    if (additions.length === 0) return;
+    commit([...blocks, ...additions]);
+  }
+
+  const parentGroups: Group[] = useMemo(() => {
+    const byKey = new Map<GroupKey, Group>();
+    parentBlocks.forEach((b, index) => {
+      const size = (b.size ?? "*").toLowerCase();
+      const paper = (b.paper ?? "*").toLowerCase();
+      const key = `${size}|${paper}`;
+      if (!byKey.has(key)) byKey.set(key, { key, size, paper, rows: [] });
+      byKey.get(key)!.rows.push({ block: b, index });
+    });
+    return Array.from(byKey.values());
+  }, [parentBlocks]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="space-y-4">
+      {/* Header: scope badge + save/revert */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            Each row is one pack — keyed by size + paper + sides + qty. Choose{" "}
-            <code className="text-[10px] bg-muted px-1 rounded">Any</code> for size or
-            paper to match every catalogue option.
+            Grouped by <strong>Size × Paper</strong>. Each group has a Single-sided and Double-sided qty ladder.
           </p>
           {isOverrideScope && (
-            <div className="mt-1 flex items-center gap-2">
+            <div className="flex items-center gap-2">
               {hasOverride ? (
                 <Badge variant="secondary" className="text-[10px]">
                   {scope === "branch" ? "Branch override active" : "Tenant override active"}
@@ -102,6 +214,16 @@ export default function PackPricingMatrixEditor({
           )}
         </div>
         <div className="flex gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setAddOpen(true)}
+            disabled={noCatalogueReady}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Add pack
+          </Button>
           {isOverrideScope && hasOverride && onRevertToParent && (
             <Button
               type="button"
@@ -127,231 +249,370 @@ export default function PackPricingMatrixEditor({
       </div>
 
       {noCatalogueReady && (
-        <p className="text-[11px] text-amber-600 px-1">
+        <p className="text-[11px] text-amber-600">
           {sizeOptions.length === 0
             ? "No sizes available — configure the master catalogue first."
             : "No papers found in the master catalogue."}
         </p>
       )}
 
-      {isOverrideScope && parentBlocks.length > 0 && !hasOverride && (
-        <div className="rounded-md border border-dashed p-2">
-          <p className="text-[11px] font-medium text-muted-foreground mb-1">
-            Parent ladder (read-only reference)
+      {/* Parent reference when inheriting */}
+      {isOverrideScope && !hasOverride && parentGroups.length > 0 && (
+        <div className="rounded-md border border-dashed p-3 bg-muted/30">
+          <p className="text-[11px] font-semibold text-muted-foreground mb-2">
+            Parent ladder (read-only) — this is what customers currently see
           </p>
-          <ParentBlocksSummary blocks={parentBlocks} paperLabel={paperLabel} />
-        </div>
-      )}
-
-      <div className="grid grid-cols-[140px_200px_100px_90px_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
-        <span>Size</span>
-        <span>Paper</span>
-        <span>Sides</span>
-        <span>Qty</span>
-        <span>Sell (major)</span>
-        <span>Cost (optional)</span>
-        <span></span>
-      </div>
-
-      {blocks.length === 0 && (
-        <p className="text-xs text-muted-foreground italic px-1">
-          {usingParent
-            ? "No override rows — customers see the parent ladder above. Add rows to start overriding."
-            : "No pack rows yet. Add a row per size × paper × sides × qty combo you offer."}
-        </p>
-      )}
-
-      {blocks.map((b, i) => {
-        const sizeVal = (b.size ?? "*").toLowerCase();
-        const paperVal = (b.paper ?? "*").toLowerCase();
-        return (
-          <div key={i} className="grid grid-cols-[140px_200px_100px_90px_1fr_1fr_auto] gap-2 items-center">
-            <Select
-              value={sizeVal}
-              onValueChange={(v) => {
-                const next = [...blocks];
-                next[i] = { ...b, size: v };
-                update(next);
-              }}
-            >
-              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="*">Any (*)</SelectItem>
-                {sizeOptions.map((s) => (
-                  <SelectItem key={s.id} value={s.code.toLowerCase()}>
-                    {s.label} ({s.code})
-                  </SelectItem>
-                ))}
-                {sizeVal !== "*" && !sizeOptions.some((s) => s.code.toLowerCase() === sizeVal) && (
-                  <SelectItem value={sizeVal}>{sizeVal} (legacy)</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            <Select
-              value={paperVal}
-              onValueChange={(v) => {
-                const next = [...blocks];
-                next[i] = { ...b, paper: v };
-                update(next);
-              }}
-            >
-              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="*">Any (*)</SelectItem>
-                {allPapers.map((p) => (
-                  <SelectItem key={p.id} value={p.code.toLowerCase()}>
-                    {paperLabel(p.code)}
-                  </SelectItem>
-                ))}
-                {paperVal !== "*" && !allPapers.some((p) => p.code.toLowerCase() === paperVal) && (
-                  <SelectItem value={paperVal}>{paperVal} (legacy)</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            <Select
-              value={b.sides ?? "single"}
-              onValueChange={(v) => {
-                const next = [...blocks];
-                next[i] = { ...b, sides: v as "single" | "double" };
-                update(next);
-              }}
-            >
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="single">Single</SelectItem>
-                <SelectItem value="double">Double</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              type="number"
-              min={1}
-              className="h-8 text-xs"
-              value={b.qty}
-              onChange={(e) => {
-                const next = [...blocks];
-                next[i] = { ...b, qty: parseInt(e.target.value, 10) || 0 };
-                update(next);
-              }}
-            />
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              className="h-8 text-xs"
-              value={(b.price_minor / 100).toString()}
-              onChange={(e) => {
-                const next = [...blocks];
-                next[i] = { ...b, price_minor: Math.round(parseFloat(e.target.value || "0") * 100) };
-                update(next);
-              }}
-            />
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              className="h-8 text-xs"
-              value={b.cost_minor != null ? (b.cost_minor / 100).toString() : ""}
-              placeholder="—"
-              onChange={(e) => {
-                const raw = e.target.value;
-                const next = [...blocks];
-                next[i] = {
-                  ...b,
-                  cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
-                };
-                update(next);
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => update(blocks.filter((_, j) => j !== i))}
-            >
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-            </Button>
+          <div className="space-y-1.5">
+            {parentGroups.map((g) => (
+              <ParentGroupSummary key={g.key} group={g} sizeLabel={sizeLabel} paperLabel={paperLabel} />
+            ))}
           </div>
-        );
-      })}
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs"
-          onClick={() => {
-            const last = blocks[blocks.length - 1];
-            update([
-              ...blocks,
-              {
-                size: last?.size ?? "*",
-                paper: last?.paper ?? "*",
-                sides: last?.sides ?? "single",
-                qty: last ? last.qty * 2 : 50,
-                price_minor: 0,
-              },
-            ]);
-          }}
-        >
-          <Plus className="h-3.5 w-3.5 mr-1" /> Add row
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs"
-          onClick={() => {
-            const singles = blocks.filter((b) => b.sides === "single");
-            const existingKeys = new Set(
-              blocks.map((b) => `${b.size}|${b.paper}|${b.sides}|${b.qty}`),
-            );
-            const additions = singles
-              .map((s) => ({ ...s, sides: "double" as const }))
-              .filter(
-                (s) => !existingKeys.has(`${s.size}|${s.paper}|${s.sides}|${s.qty}`),
-              );
-            if (additions.length === 0) return;
-            update([...blocks, ...additions]);
-          }}
-        >
-          Duplicate singles → double
-        </Button>
-        {isOverrideScope && parentBlocks.length > 0 && blocks.length === 0 && (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 text-xs"
-            onClick={() => update(parentBlocks.map((b) => ({ ...b })))}
+            className="mt-3 h-7 text-xs"
+            onClick={() => commit(parentBlocks.map((b) => ({ ...b })))}
           >
-            Copy parent as starting point
+            <Copy className="h-3 w-3 mr-1" /> Copy parent as starting point
           </Button>
-        )}
+        </div>
+      )}
+
+      {/* Groups */}
+      {groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic py-6 text-center border border-dashed rounded-md">
+          {isOverrideScope
+            ? "No override rows yet. Click Add pack to start."
+            : "No pack rows yet. Click Add pack to create your first Size × Paper group."}
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {groups.map((g) => (
+            <GroupCard
+              key={g.key}
+              group={g}
+              sizeLabel={sizeLabel}
+              paperLabel={paperLabel}
+              onUpdateBlock={updateBlockAt}
+              onDeleteBlock={deleteBlockAt}
+              onAddQty={addQtyRow}
+              onDuplicateSingles={duplicateSinglesToDouble}
+              onDeleteGroup={deleteGroup}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Add pack dialog */}
+      <AddPackDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        sizeOptions={sizeOptions}
+        allPapers={allPapers}
+        paperLabel={paperLabel}
+        existingKeys={new Set(groups.map((g) => g.key))}
+        onSeed={(size, paper, qtys, both) => {
+          seedPack(size, paper, qtys, both);
+          setAddOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ─── Sub-components ─────────────────────────────────────────────── */
+
+function GroupCard({
+  group,
+  sizeLabel,
+  paperLabel,
+  onUpdateBlock,
+  onDeleteBlock,
+  onAddQty,
+  onDuplicateSingles,
+  onDeleteGroup,
+}: {
+  group: Group;
+  sizeLabel: (c: string) => string;
+  paperLabel: (c: string) => string;
+  onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
+  onDeleteBlock: (idx: number) => void;
+  onAddQty: (group: Group, sides: "single" | "double") => void;
+  onDuplicateSingles: (group: Group) => void;
+  onDeleteGroup: (group: Group) => void;
+}) {
+  const singles = group.rows.filter((r) => r.block.sides === "single");
+  const doubles = group.rows.filter((r) => r.block.sides === "double");
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted/40 rounded-t-lg">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="secondary" className="text-[11px]">{sizeLabel(group.size)}</Badge>
+          <span className="text-sm font-medium truncate">{paperLabel(group.paper)}</span>
+        </div>
+        <div className="flex gap-1 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => onDuplicateSingles(group)}
+            disabled={singles.length === 0}
+          >
+            <Copy className="h-3 w-3 mr-1" />
+            Copy singles → double
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onDeleteGroup(group)}
+            title="Delete this Size × Paper group"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          </Button>
+        </div>
+      </div>
+      <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
+        <SidesColumn
+          heading="Single-sided"
+          rows={singles}
+          onUpdateBlock={onUpdateBlock}
+          onDeleteBlock={onDeleteBlock}
+          onAddRow={() => onAddQty(group, "single")}
+        />
+        <SidesColumn
+          heading="Double-sided"
+          rows={doubles}
+          onUpdateBlock={onUpdateBlock}
+          onDeleteBlock={onDeleteBlock}
+          onAddRow={() => onAddQty(group, "double")}
+        />
       </div>
     </div>
   );
 }
 
-function ParentBlocksSummary({
-  blocks,
-  paperLabel,
+function SidesColumn({
+  heading,
+  rows,
+  onUpdateBlock,
+  onDeleteBlock,
+  onAddRow,
 }: {
-  blocks: QuantityBlock[];
-  paperLabel: (code: string) => string;
+  heading: string;
+  rows: { block: QuantityBlock; index: number }[];
+  onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
+  onDeleteBlock: (idx: number) => void;
+  onAddRow: () => void;
 }) {
   return (
-    <div className="space-y-0.5 text-[11px] text-muted-foreground">
-      {blocks.slice(0, 12).map((b, i) => (
-        <div key={i} className="flex justify-between gap-2">
-          <span>
-            {b.size} · {paperLabel(b.paper)} · {b.sides} · qty {b.qty}
-          </span>
-          <span>R{(b.price_minor / 100).toFixed(2)}</span>
-        </div>
-      ))}
-      {blocks.length > 12 && <div>…and {blocks.length - 12} more.</div>}
+    <div className="p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <h5 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{heading}</h5>
+        <Button type="button" variant="ghost" size="sm" className="h-6 text-[11px]" onClick={onAddRow}>
+          <Plus className="h-3 w-3 mr-0.5" /> Qty
+        </Button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic">No qty tiers.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+            <span>Qty</span>
+            <span>Sell</span>
+            <span>Cost</span>
+            <span></span>
+          </div>
+          {rows.map(({ block, index }) => (
+            <div key={index} className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 items-center">
+              <Input
+                type="number"
+                min={1}
+                className="h-8 text-xs"
+                value={block.qty}
+                onChange={(e) => onUpdateBlock(index, { qty: parseInt(e.target.value, 10) || 0 })}
+              />
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8 text-xs"
+                value={(block.price_minor / 100).toString()}
+                onChange={(e) =>
+                  onUpdateBlock(index, {
+                    price_minor: Math.round(parseFloat(e.target.value || "0") * 100),
+                  })
+                }
+              />
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8 text-xs"
+                placeholder="—"
+                value={block.cost_minor != null ? (block.cost_minor / 100).toString() : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onUpdateBlock(index, {
+                    cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                  });
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onDeleteBlock(index)}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </div>
+          ))}
+        </>
+      )}
     </div>
+  );
+}
+
+function ParentGroupSummary({
+  group,
+  sizeLabel,
+  paperLabel,
+}: {
+  group: Group;
+  sizeLabel: (c: string) => string;
+  paperLabel: (c: string) => string;
+}) {
+  const summary = group.rows
+    .map((r) => `${r.block.sides === "single" ? "1s" : "2s"}·${r.block.qty}=R${(r.block.price_minor / 100).toFixed(2)}`)
+    .join("  ·  ");
+  return (
+    <div className="text-[11px] text-muted-foreground">
+      <span className="font-medium text-foreground">{sizeLabel(group.size)} · {paperLabel(group.paper)}</span>
+      <span className="ml-2">{summary}</span>
+    </div>
+  );
+}
+
+function AddPackDialog({
+  open,
+  onOpenChange,
+  sizeOptions,
+  allPapers,
+  paperLabel,
+  existingKeys,
+  onSeed,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  sizeOptions: Array<{ id: string; code: string; label: string }>;
+  allPapers: Array<{ id: string; code: string; label: string; weight_gsm: number | null }>;
+  paperLabel: (c: string) => string;
+  existingKeys: Set<GroupKey>;
+  onSeed: (size: string, paper: string, qtys: number[], includeBothSides: boolean) => void;
+}) {
+  const [size, setSize] = useState<string>("");
+  const [paper, setPaper] = useState<string>("");
+  const [tiersText, setTiersText] = useState<string>(DEFAULT_QTY_TIERS.join(", "));
+  const [includeBothSides, setIncludeBothSides] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setSize("");
+      setPaper("");
+      setTiersText(DEFAULT_QTY_TIERS.join(", "));
+      setIncludeBothSides(true);
+    }
+  }, [open]);
+
+  const parsedQtys = useMemo(
+    () =>
+      tiersText
+        .split(/[,\s]+/)
+        .map((s) => parseInt(s, 10))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    [tiersText],
+  );
+
+  const duplicate = size && paper && existingKeys.has(`${size.toLowerCase()}|${paper.toLowerCase()}`);
+  const canSubmit = size && paper && parsedQtys.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add pack</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Size</Label>
+            <Select value={size} onValueChange={setSize}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Pick a size…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="*">Any size</SelectItem>
+                {sizeOptions.map((s) => (
+                  <SelectItem key={s.id} value={s.code.toLowerCase()}>
+                    {s.label} <span className="text-muted-foreground text-[10px]">({s.code})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Paper</Label>
+            <Select value={paper} onValueChange={setPaper}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Pick a paper…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="*">Any paper</SelectItem>
+                {allPapers.map((p) => (
+                  <SelectItem key={p.id} value={p.code.toLowerCase()}>
+                    {paperLabel(p.code)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Qty tiers</Label>
+            <Input
+              value={tiersText}
+              onChange={(e) => setTiersText(e.target.value)}
+              placeholder="100, 250, 500, 1000"
+              className="h-9"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Comma or space separated. All prices default to 0 — set them in the group rows after adding.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={includeBothSides}
+              onChange={(e) => setIncludeBothSides(e.target.checked)}
+              className="h-4 w-4"
+            />
+            Create rows for both Single-sided and Double-sided
+          </label>
+          {duplicate && (
+            <p className="text-[11px] text-amber-600">
+              This Size × Paper group already exists — new qty rows will be added to it (duplicates skipped).
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            disabled={!canSubmit}
+            onClick={() => onSeed(size, paper, parsedQtys, includeBothSides)}
+          >
+            Add pack
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

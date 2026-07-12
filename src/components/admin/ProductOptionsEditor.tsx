@@ -49,9 +49,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, X, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, X, ExternalLink, PackageOpen } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 
 const OPTION_TYPES = ["select", "radio", "checkbox", "number", "text"];

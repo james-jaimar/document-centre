@@ -25,10 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Settings2, SlidersHorizontal, PackageOpen } from "lucide-react";
+import { Settings2, SlidersHorizontal } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
-import PackPricingDialog from "@/components/pricing/PackPricingDialog";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
@@ -50,8 +49,7 @@ const AdminProductCatalogue = () => {
   const [openFamilySlug, setOpenFamilySlug] = useState<string>("");
   const [specsFamilyId, setSpecsFamilyId] = useState<string | null>(null);
   const [specsFamilyName, setSpecsFamilyName] = useState<string>("");
-  const [packFamilyId, setPackFamilyId] = useState<string | null>(null);
-  const [packFamilyName, setPackFamilyName] = useState<string>("");
+
 
   async function handleToggle(familyId: string, next: boolean) {
     if (!tenantId) return;
@@ -155,19 +153,7 @@ const AdminProductCatalogue = () => {
                           <Settings2 className="h-3 w-3 mr-1" />
                           Pricing
                         </Button>
-                        {(f as any).quantity_mode === "blocks" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setPackFamilyId(f.id);
-                              setPackFamilyName(f.name);
-                            }}
-                          >
-                            <PackageOpen className="h-3 w-3 mr-1" />
-                            Packs
-                          </Button>
-                        )}
+
                       </div>
                     </TableCell>
                   </TableRow>
@@ -205,17 +191,6 @@ const AdminProductCatalogue = () => {
           tenantId={tenantId}
           productFamilyId={specsFamilyId}
           productFamilyName={specsFamilyName}
-        />
-      )}
-
-      {tenantId && packFamilyId && (
-        <PackPricingDialog
-          open={!!packFamilyId}
-          onOpenChange={(o) => { if (!o) setPackFamilyId(null); }}
-          scope="tenant"
-          tenantId={tenantId}
-          productFamilyId={packFamilyId}
-          productFamilyName={packFamilyName}
         />
       )}
     </div>

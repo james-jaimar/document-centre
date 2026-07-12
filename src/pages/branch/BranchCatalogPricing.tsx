@@ -1,5 +1,6 @@
 import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
+import BranchPackPricingEditor from "@/components/pricing/BranchPackPricingEditor";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,10 @@ export default function BranchCatalogPricing() {
           onResync={handleResync}
           resyncPending={resyncPricing.isPending}
         />
+      </div>
+
+      <div className="border-t border-border pt-6">
+        <BranchPackPricingEditor tenantId={tenantId} branchId={branchId} />
       </div>
     </div>
   );

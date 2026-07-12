@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProductFamily } from "@/hooks/useProductFamilies";
-import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
+
 
 const ICON_OPTIONS = [
   "FileText", "File", "BookOpen", "Book", "Layers", "Printer",
@@ -49,14 +49,6 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
   min_quantity: 1,
 };
 
-interface QuantityBlock {
-  size: string;   // e.g. "a5", "dl", or "*" for any
-  paper: string;  // e.g. "gloss_170", or "*" for any
-  sides: "single" | "double";
-  qty: number;
-  price_minor: number;
-  cost_minor?: number;
-}
 
 interface FormValues {
   name: string;
@@ -71,7 +63,7 @@ interface FormValues {
   pricing_engine: "click_charges" | "photo_prints" | "business_cards";
   printing_rules: PrintingRules;
   quantity_mode: "free" | "blocks";
-  quantity_blocks: QuantityBlock[];
+
 }
 
 
@@ -103,12 +95,12 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       pricing_engine: "click_charges",
       printing_rules: DEFAULT_PRINTING_RULES,
       quantity_mode: "free",
-      quantity_blocks: [],
+
     },
   });
 
   useEffect(() => {
-    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"]; quantity_blocks?: QuantityBlock[] }) | null;
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"] }) | null;
     if (fam) {
       form.reset({
         name: fam.name,
@@ -123,7 +115,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         pricing_engine: (fam.pricing_engine as FormValues["pricing_engine"]) ?? "click_charges",
         printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
         quantity_mode: fam.quantity_mode ?? "free",
-        quantity_blocks: Array.isArray(fam.quantity_blocks) ? fam.quantity_blocks : [],
+
       });
     } else {
       form.reset({
@@ -139,7 +131,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         pricing_engine: "click_charges",
         printing_rules: DEFAULT_PRINTING_RULES,
         quantity_mode: "free",
-        quantity_blocks: [],
+
       });
     }
   }, [family, open]);
@@ -271,7 +263,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
               )}
             />
 
-            <QuantityBlocksSection form={form} />
+            <QuantityModeSection form={form} />
+
+
 
 
 
@@ -476,52 +470,28 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
   );
 }
 
-// ─── Quantity Blocks editor ─────────────────────────────────
+// ─── Quantity mode toggle (just the definition flag — prices live in Master Pricing → Pack Pricing) ─
 
 import type { UseFormReturn } from "react-hook-form";
-import { Plus, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ExternalLink } from "lucide-react";
 
-function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
+function QuantityModeSection({ form }: { form: UseFormReturn<FormValues> }) {
   const mode = form.watch("quantity_mode");
-  const blocks = form.watch("quantity_blocks") ?? [];
-  const allowedSizeCodes = form.watch("printing_rules.allowed_finished_sizes") ?? [];
-
-  const { data: sizesRaw = [] } = useCatalogSizes({ scope: "master" });
-  const { data: papersRaw = [] } = useCatalogPapers({ scope: "master" });
-  const allSizes = sizesRaw.filter((s) => s.is_active);
-  const allPapers = papersRaw.filter((p) => p.is_active);
-
-  const sizeOptions = (() => {
-    if (allowedSizeCodes.length === 0) return allSizes;
-    const allowSet = new Set(allowedSizeCodes.map((c) => c.toLowerCase()));
-    const filtered = allSizes.filter((s) => allowSet.has(s.code.toLowerCase()));
-    return filtered.length > 0 ? filtered : allSizes;
-  })();
-
-  const update = (next: QuantityBlock[]) => {
-    const sorted = next.slice().sort((a, b) => {
-      const sa = `${a.size ?? "*"}|${a.paper ?? "*"}|${a.sides ?? "single"}`;
-      const sb = `${b.size ?? "*"}|${b.paper ?? "*"}|${b.sides ?? "single"}`;
-      if (sa !== sb) return sa.localeCompare(sb);
-      return a.qty - b.qty;
-    });
-    form.setValue("quantity_blocks", sorted, { shouldDirty: true });
-  };
-
-  const paperLabel = (code: string) => {
-    const p = allPapers.find((pp) => pp.code.toLowerCase() === code.toLowerCase());
-    if (!p) return code;
-    return p.weight_gsm ? `${p.label} ${p.weight_gsm}gsm` : p.label;
-  };
-
-  const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
-
   return (
-    <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
       <div>
         <h4 className="text-sm font-semibold">Quantity Selling Mode</h4>
         <p className="text-xs text-muted-foreground">
-          Sell by a free numeric quantity, or as fixed packs (e.g. 50 / 100 / 250 flyers).
+          Sell by a free numeric quantity, or as fixed packs (e.g. 100 / 250 / 500 flyers).
+          Pack prices are managed in{" "}
+          <Link
+            to="/platform/master-pricing"
+            className="inline-flex items-center gap-0.5 text-primary hover:underline"
+          >
+            Master Pricing → Pack Pricing <ExternalLink className="h-3 w-3" />
+          </Link>
+          .
         </p>
       </div>
       <FormField
@@ -531,7 +501,9 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
           <FormItem>
             <FormLabel className="text-xs">Mode</FormLabel>
             <Select onValueChange={field.onChange} value={field.value}>
-              <FormControl><SelectTrigger className="h-8"><SelectValue /></SelectTrigger></FormControl>
+              <FormControl>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+              </FormControl>
               <SelectContent>
                 <SelectItem value="free">Free number (spinner)</SelectItem>
                 <SelectItem value="blocks">Fixed pack sizes (blocks)</SelectItem>
@@ -540,196 +512,15 @@ function QuantityBlocksSection({ form }: { form: UseFormReturn<FormValues> }) {
           </FormItem>
         )}
       />
-
       {mode === "blocks" && (
-        <div className="space-y-2">
-          <p className="text-[11px] text-muted-foreground px-1">
-            Each row is one pack — keyed by size + paper + sides + qty. Choose{" "}
-            <code className="text-[10px] bg-muted px-1 rounded">Any</code> for
-            size or paper to match every catalogue option.
-          </p>
-          {noCatalogueReady && (
-            <p className="text-[11px] text-amber-600 px-1">
-              {sizeOptions.length === 0
-                ? "Configure allowed finished sizes first (Printing rules above)."
-                : "No papers found in the master catalogue."}
-            </p>
-          )}
-          <div className="grid grid-cols-[140px_200px_100px_90px_1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-1">
-            <span>Size</span>
-            <span>Paper</span>
-            <span>Sides</span>
-            <span>Qty</span>
-            <span>Sell (major)</span>
-            <span>Cost (optional)</span>
-            <span></span>
-          </div>
-          {blocks.length === 0 && (
-            <p className="text-xs text-muted-foreground italic px-1">
-              No pack rows yet. Add a row per size × paper × sides × qty combo you offer.
-            </p>
-          )}
-          {blocks.map((b, i) => {
-            const sizeVal = (b.size ?? "*").toLowerCase();
-            const paperVal = (b.paper ?? "*").toLowerCase();
-            return (
-              <div key={i} className="grid grid-cols-[140px_200px_100px_90px_1fr_1fr_auto] gap-2 items-center">
-                <Select
-                  value={sizeVal}
-                  onValueChange={(v) => {
-                    const next = [...blocks];
-                    next[i] = { ...b, size: v };
-                    update(next);
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="*">Any (*)</SelectItem>
-                    {sizeOptions.map((s) => (
-                      <SelectItem key={s.id} value={s.code.toLowerCase()}>
-                        {s.label} ({s.code})
-                      </SelectItem>
-                    ))}
-                    {sizeVal !== "*" && !sizeOptions.some((s) => s.code.toLowerCase() === sizeVal) && (
-                      <SelectItem value={sizeVal}>{sizeVal} (legacy)</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={paperVal}
-                  onValueChange={(v) => {
-                    const next = [...blocks];
-                    next[i] = { ...b, paper: v };
-                    update(next);
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="*">Any (*)</SelectItem>
-                    {allPapers.map((p) => (
-                      <SelectItem key={p.id} value={p.code.toLowerCase()}>
-                        {paperLabel(p.code)}
-                      </SelectItem>
-                    ))}
-                    {paperVal !== "*" && !allPapers.some((p) => p.code.toLowerCase() === paperVal) && (
-                      <SelectItem value={paperVal}>{paperVal} (legacy)</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={b.sides ?? "single"}
-                  onValueChange={(v) => {
-                    const next = [...blocks];
-                    next[i] = { ...b, sides: v as "single" | "double" };
-                    update(next);
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="single">Single</SelectItem>
-                    <SelectItem value="double">Double</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  min={1}
-                  className="h-8 text-xs"
-                  value={b.qty}
-                  onChange={(e) => {
-                    const next = [...blocks];
-                    next[i] = { ...b, qty: parseInt(e.target.value, 10) || 0 };
-                    update(next);
-                  }}
-                />
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className="h-8 text-xs"
-                  value={(b.price_minor / 100).toString()}
-                  onChange={(e) => {
-                    const next = [...blocks];
-                    next[i] = { ...b, price_minor: Math.round(parseFloat(e.target.value || "0") * 100) };
-                    update(next);
-                  }}
-                />
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className="h-8 text-xs"
-                  value={b.cost_minor != null ? (b.cost_minor / 100).toString() : ""}
-                  placeholder="—"
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const next = [...blocks];
-                    next[i] = {
-                      ...b,
-                      cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
-                    };
-                    update(next);
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => update(blocks.filter((_, j) => j !== i))}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-              </div>
-            );
-          })}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => {
-                const last = blocks[blocks.length - 1];
-                update([
-                  ...blocks,
-                  {
-                    size: last?.size ?? "*",
-                    paper: last?.paper ?? "*",
-                    sides: last?.sides ?? "single",
-                    qty: last ? last.qty * 2 : 50,
-                    price_minor: 0,
-                  },
-                ]);
-              }}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add row
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => {
-                const singles = blocks.filter((b) => b.sides === "single");
-                const existingKeys = new Set(
-                  blocks.map((b) => `${b.size}|${b.paper}|${b.sides}|${b.qty}`),
-                );
-                const additions = singles
-                  .map((s) => ({ ...s, sides: "double" as const }))
-                  .filter(
-                    (s) => !existingKeys.has(`${s.size}|${s.paper}|${s.sides}|${s.qty}`),
-                  );
-                if (additions.length === 0) return;
-                update([...blocks, ...additions]);
-              }}
-            >
-              Duplicate singles → double
-            </Button>
-          </div>
-        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Switching to <strong>Fixed pack sizes</strong> enables this family in Master Pricing → Pack Pricing.
+          Existing pack rows are preserved.
+        </p>
       )}
     </div>
   );
 }
+
 
 

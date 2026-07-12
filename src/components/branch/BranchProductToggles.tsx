@@ -10,10 +10,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import BranchProductSpecsDialog from "@/components/branch/BranchProductSpecsDialog";
-import PackPricingDialog from "@/components/pricing/PackPricingDialog";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { toast } from "sonner";
-import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag, Sliders, PackageOpen } from "lucide-react";
+import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag, Sliders } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BranchCapability } from "@/hooks/useBranchCapabilities";
 
@@ -29,7 +28,7 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pricingFamily, setPricingFamily] = useState<{ id: string; name: string; slug?: string } | null>(null);
   const [specsFamily, setSpecsFamily] = useState<{ id: string; name: string } | null>(null);
-  const [packFamily, setPackFamily] = useState<{ id: string; name: string } | null>(null);
+
   const { tenantId } = useTenantContext();
 
   const handleToggle = async (cap: BranchCapability, field: keyof BranchCapability, value: unknown) => {
@@ -149,18 +148,9 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                       >
                         <Tag size={12} className="mr-1.5" /> Pricing
                       </Button>
-                      {(cap.product_families as any)?.quantity_mode === "blocks" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          onClick={() => setPackFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
-                        >
-                          <PackageOpen size={12} className="mr-1.5" /> Packs
-                        </Button>
-                      )}
                     </>
                   )}
+
                   {!readOnly && (
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -282,17 +272,6 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
         />
       )}
 
-      {tenantId && packFamily && (
-        <PackPricingDialog
-          open={!!packFamily}
-          onOpenChange={(o) => !o && setPackFamily(null)}
-          scope="branch"
-          tenantId={tenantId}
-          branchId={branchId}
-          productFamilyId={packFamily.id}
-          productFamilyName={packFamily.name}
-        />
-      )}
     </div>
   );
 }
