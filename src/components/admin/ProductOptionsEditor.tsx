@@ -294,6 +294,24 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const updateOption = useUpdateProductOption();
   const deleteOption = useDeleteProductOption();
 
+  // Family metadata — used to expose the "Pack Pricing" shortcut when the
+  // family is a fixed-pack (blocks) product. Pack prices themselves live in
+  // Master Pricing → Pack Pricing, not in the product-options table.
+  const { data: family } = useQuery({
+    queryKey: ["product_family_options_meta", productFamilyId],
+    enabled: !!productFamilyId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("product_families")
+        .select("id, quantity_mode")
+        .eq("id", productFamilyId)
+        .single();
+      if (error) throw error;
+      return data as { id: string; quantity_mode: "free" | "blocks" | null };
+    },
+  });
+  const isBlocksFamily = family?.quantity_mode === "blocks";
+
   // Live catalog data (used when source ≠ manual)
   const { data: catSizes = [] } = useCatalogSizes();
   const { data: catPapers = [] } = useCatalogPapers();
