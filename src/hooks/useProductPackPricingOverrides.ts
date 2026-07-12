@@ -67,17 +67,40 @@ export function useUpsertPackPricingOverride() {
       branch_id: string | null;
       quantity_blocks: QuantityBlock[];
     }) => {
-      const conflict = input.branch_id
-        ? "product_family_id,tenant_id,branch_id"
-        : "product_family_id,tenant_id";
+      // Partial unique indexes (WHERE branch_id IS NULL / IS NOT NULL) can't
+      // be inferred by PostgREST's onConflict, so do an explicit
+      // select-then-insert-or-update instead of .upsert().
+      let existingQ = (supabase as any)
+        .from("product_pack_pricing_overrides")
+        .select("id")
+        .eq("product_family_id", input.product_family_id)
+        .eq("tenant_id", input.tenant_id);
+      existingQ = input.branch_id
+        ? existingQ.eq("branch_id", input.branch_id)
+        : existingQ.is("branch_id", null);
+      const { data: existing, error: findError } = await existingQ.maybeSingle();
+      if (findError) throw findError;
+
+      if (existing?.id) {
+        const { data, error } = await (supabase as any)
+          .from("product_pack_pricing_overrides")
+          .update({ quantity_blocks: input.quantity_blocks })
+          .eq("id", existing.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data as PackPricingOverrideRow;
+      }
+
       const { data, error } = await (supabase as any)
         .from("product_pack_pricing_overrides")
-        .upsert(input, { onConflict: conflict })
+        .insert(input)
         .select()
         .single();
       if (error) throw error;
       return data as PackPricingOverrideRow;
     },
+
     onSuccess: (row) => {
       qc.invalidateQueries({ queryKey: BASE_KEY });
       qc.invalidateQueries({
