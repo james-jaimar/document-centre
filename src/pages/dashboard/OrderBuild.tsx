@@ -1337,6 +1337,7 @@ export default function OrderBuild() {
               familySlug={productFamily?.slug ?? undefined}
               packBlocks={allBlocks}
               blocksActive={blocksMode}
+              allowedSides={allowedSides}
               suppressPriceDeltaFor={(() => {
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug === "business-cards" || slug === "business_cards") {
