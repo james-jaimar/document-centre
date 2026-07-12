@@ -1434,17 +1434,25 @@ export default function OrderFiles() {
     const preflight = previewDoc.preflight_data as Record<string, unknown> | null;
     const boxes = preflight?.boxes as Record<string, number[]> | undefined;
     const PT_TO_MM = 25.4 / 72;
-    let mediaWmm = Number(previewDoc.page_width_mm) || 0;
-    let mediaHmm = Number(previewDoc.page_height_mm) || 0;
-    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
-      const mbW = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
-      const mbH = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
-      if (mbW > 0 && mbH > 0) { mediaWmm = mbW; mediaHmm = mbH; }
-    }
+    // Require an explicit MediaBox — page_width_mm often equals the TrimBox
+    // dimensions on files that have already been server-cropped, and using
+    // that as the denominator would over-crop the preview.
+    if (!boxes?.MediaBox || boxes.MediaBox.length !== 4) return undefined;
+    const mediaWmm = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
+    const mediaHmm = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
     if (!mediaWmm || !mediaHmm) return undefined;
     const trimW = Math.abs(lightboxTrimBox[2] - lightboxTrimBox[0]) * PT_TO_MM;
     const trimH = Math.abs(lightboxTrimBox[3] - lightboxTrimBox[1]) * PT_TO_MM;
     if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
+    // Same double-crop guard as PreviewPanel: if the rendered file is
+    // already sized to the TrimBox, don't clip again.
+    const pageW = Number(previewDoc.page_width_mm) || 0;
+    const pageH = Number(previewDoc.page_height_mm) || 0;
+    if (pageW > 0 && pageH > 0) {
+      const distTrim = Math.abs(pageW - trimW) + Math.abs(pageH - trimH);
+      const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
+      if (distTrim < 2 && distMedia - distTrim > 2) return undefined;
+    }
     const left = Math.min(lightboxTrimBox[0], lightboxTrimBox[2]) * PT_TO_MM / mediaWmm;
     const top = 1 - (Math.max(lightboxTrimBox[1], lightboxTrimBox[3]) * PT_TO_MM / mediaHmm);
     return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
