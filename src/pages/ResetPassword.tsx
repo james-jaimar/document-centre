@@ -83,7 +83,9 @@ const ResetPassword = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      // If this came from a reusable welcome link, mark the onboarding token consumed.
+      // If this came from a reusable welcome link (branch activation), mark
+      // the onboarding token consumed and drop the user straight into their
+      // branch admin — do NOT sign them out.
       const welcomeToken = searchParams.get("welcome_token");
       if (welcomeToken) {
         try {
@@ -93,6 +95,9 @@ const ResetPassword = () => {
         } catch {
           /* best-effort */
         }
+        toast.success("Password set — welcome to your branch.");
+        navigate("/branch", { replace: true });
+        return;
       }
       toast.success("Password updated successfully. Please sign in with your new password.");
       await supabase.auth.signOut();
@@ -106,6 +111,7 @@ const ResetPassword = () => {
     } finally {
       setLoading(false);
     }
+
   };
 
   if (checking || (isTenantPortal && (tenantLoading || brandingLoading))) {
