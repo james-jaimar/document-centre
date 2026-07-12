@@ -75,8 +75,11 @@ Deno.serve(async (req) => {
     }
 
     // Decide which Supabase link type to mint.
+    // Branch activation ALWAYS forces a password-set flow so the user lands on
+    // /reset-password → /branch (where the subscription modal + onboarding
+    // checklist live). Non-branch tokens fall back to magiclink for repeat users.
     let linkType: "recovery" | "magiclink" = "recovery";
-    if (row.profile_id) {
+    if (!row.branch_id && row.profile_id) {
       const { data: u } = await admin.auth.admin.getUserById(row.profile_id);
       if (u?.user?.last_sign_in_at) linkType = "magiclink";
     }
@@ -93,8 +96,9 @@ Deno.serve(async (req) => {
 
     const slugPrefix = tenantSlug ? `/t/${tenantSlug}` : "";
     const branchPath = branchSlug ? `/${branchSlug}` : "";
+    const nextParam = row.branch_id ? `&next=branch` : "";
     const redirectPath = linkType === "recovery"
-      ? `${slugPrefix}/reset-password?welcome_token=${encodeURIComponent(token)}`
+      ? `${slugPrefix}/reset-password?welcome_token=${encodeURIComponent(token)}${nextParam}`
       : `${slugPrefix}${branchPath}?welcome_token=${encodeURIComponent(token)}`;
 
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({

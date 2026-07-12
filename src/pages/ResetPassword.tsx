@@ -87,6 +87,7 @@ const ResetPassword = () => {
       // the onboarding token consumed and drop the user straight into their
       // branch admin — do NOT sign them out.
       const welcomeToken = searchParams.get("welcome_token");
+      const next = searchParams.get("next");
       if (welcomeToken) {
         try {
           await supabase.functions.invoke("complete-onboarding-token", {
@@ -96,7 +97,7 @@ const ResetPassword = () => {
           /* best-effort */
         }
         toast.success("Password set — welcome to your branch.");
-        navigate("/branch", { replace: true });
+        navigate(next === "branch" ? "/branch" : "/branch", { replace: true });
         return;
       }
       toast.success("Password updated successfully. Please sign in with your new password.");
