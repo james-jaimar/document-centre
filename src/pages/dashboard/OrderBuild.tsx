@@ -362,6 +362,20 @@ export default function OrderBuild() {
   const familySlugLower = (productFamily?.slug ?? "").toLowerCase();
   const isMultiSectionFamily = MULTI_SECTION_FAMILIES.has(familySlugLower);
 
+  // Flyers: infer Print Sides from the uploaded page count so the customer
+  // never sees (or is defaulted to) double-sided pricing on a 1-page file.
+  // null = no inference (keep existing ladder behaviour).
+  const isFlyersFamily = familySlugLower === "flyers";
+  const uploadedPageTotal = useMemo(
+    () => documents.reduce((sum, d) => sum + (d.page_count ?? 0), 0),
+    [documents],
+  );
+  const preferredSides: "single" | "double" | null = useMemo(() => {
+    if (!isFlyersFamily || uploadedPageTotal <= 0) return null;
+    return uploadedPageTotal >= 2 ? "double" : "single";
+  }, [isFlyersFamily, uploadedPageTotal]);
+  const allowedSides: string[] | undefined = preferredSides ? [preferredSides] : undefined;
+
   useEffect(() => {
     if (options.length === 0) return;
     setSpec((prev) => {
