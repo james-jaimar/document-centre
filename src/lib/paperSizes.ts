@@ -217,7 +217,8 @@ export function getSuggestedIsoSizes(
   }
 
   const area = widthMm * heightMm;
-  const within = ISO_SIZES.filter((s) => {
+  const candidates = ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+  const within = candidates.filter((s) => {
     const isoArea = s.widthMm * s.heightMm;
     const ratio = area / isoArea;
     return ratio > 0.5 && ratio < 2.0;
@@ -232,9 +233,10 @@ export function getSuggestedIsoSizes(
       if (iso) within.push(iso);
     }
   }
-  // Preserve canonical ISO ordering (A5 → A0)
-  return ISO_SIZES.filter((s) => within.some((w) => w.name === s.name));
+  // Preserve canonical ISO ordering (A6 → A0), excluding specialty formats.
+  return candidates.filter((s) => within.some((w) => w.name === s.name));
 }
+
 
 /**
  * Determine if a document is in landscape orientation.
