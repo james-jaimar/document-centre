@@ -40,12 +40,12 @@ export function BranchSubscriptionRequiredModal({ branchId }: { branchId: string
   return (
     <Dialog open>
       <DialogContent
-        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="max-w-2xl max-h-[90vh] overflow-y-auto [&>button.absolute]:hidden"
         onEscapeKeyDown={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
-        hideClose
       >
+
         <DialogHeader>
           <DialogTitle>Choose your subscription to continue</DialogTitle>
           <DialogDescription>
