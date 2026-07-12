@@ -1397,6 +1397,7 @@ export default function OrderBuild() {
               rateCard={useNewEngine ? rateCard : null}
               quantityMode={quantityMode}
               quantityBlocks={quantityBlocks}
+              allowedSides={allowedSides}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
