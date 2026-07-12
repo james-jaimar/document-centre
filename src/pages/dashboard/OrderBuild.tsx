@@ -860,9 +860,13 @@ export default function OrderBuild() {
           : currentSides === "single" || currentSides === "single_sided"
           ? "single"
           : null;
-      if (sides.length > 0 && (!mappedCurrent || !sides.includes(mappedCurrent))) {
-        next["Print Sides"] = sides[0];
-        changed = true;
+      if (sides.length > 0) {
+        const target =
+          mappedCurrent && sides.includes(mappedCurrent) ? mappedCurrent : sides[0];
+        if (currentSides !== target) {
+          next["Print Sides"] = target;
+          changed = true;
+        }
       }
 
       return changed ? { ...prev, selected_options: next } : prev;
