@@ -1,45 +1,60 @@
 ## Goal
 
-For **Flyers only**, use the uploaded PDF's page count to decide which Print Sides options are shown and which one is pre-selected — so a customer uploading a 1-page file never sees (or gets defaulted to) double-sided pricing.
+When a branch manager clicks the activation email, they should end up **signed in inside their branch admin**, with a **blocking "Choose your subscription" modal**, and only after picking a plan should they see the existing `BranchOnboardingChecklist` card.
 
-## Rule
+Today the flow instead: sets password → signs them **out** → sends them to `/auth` to log in again → dashboard shows a dismissible checklist and nothing forces a subscription choice.
 
-Let `uploadedPages = sum(documents[].page_count)` for the current order item.
+## What Changes
 
-- `uploadedPages <= 1` → only offer **Single-sided** (hide Double from the selector and the pack picker).
-- `uploadedPages >= 2` → only offer **Double-sided** (hide Single).
-- `uploadedPages == 0` (nothing uploaded yet) → fall back to current behaviour (show whatever the ladder offers, default to first).
+### 1. Keep the session after password reset (`src/pages/ResetPassword.tsx`)
 
-Applies **only** when `familySlug === "flyers"` AND the family is in `blocks` quantity mode. Every other family keeps today's behaviour untouched.
+When the reset came from a `welcome_token` (branch activation), do NOT sign out. Instead:
 
-## Changes
+- Call `complete-onboarding-token` (already there).
+- Read the branch/tenant slug from the URL path (already parsed as `m`).
+- Skip `supabase.auth.signOut()`.
+- `navigate` straight to the branch admin dashboard: `/t/:tenantSlug/:branchSlug/admin` (or the equivalent branch dashboard route — verify against `App.tsx` routes).
+- Show a success toast: "Password set — welcome to your branch."
 
-### 1. `src/pages/dashboard/OrderBuild.tsx`
+For non-welcome password resets (normal "forgot password"), keep the current sign-out + back-to-auth behaviour.
 
-- Compute `uploadedPages` from `documents` (already in scope, already used at L328–331).
-- Derive a `preferredSides: "single" | "double" | null` — non-null only for Flyers with `uploadedPages > 0`.
-- In the pack-seed `useEffect` (L815–875), replace the `sides[0]` default with: if `preferredSides` is set and present in `sides`, use it; otherwise keep the existing `mappedCurrent ?? sides[0]` logic.
-- Pass `preferredSides` (or an equivalent `allowedSides: string[]`) into `OptionsPanel` and `PriceSummary`.
+### 2. Add a blocking "Choose a plan" modal on the branch admin (`src/components/branch/BranchSubscriptionRequiredModal.tsx` — new)
 
-### 2. `src/components/order/OptionsPanel.tsx`
+A new modal component that:
 
-- Add optional prop `allowedSides?: string[]` (case: `["single"]` or `["double"]`).
-- In the `sidesValues` memo (L154–161), intersect with `allowedSides` when provided and non-empty. Existing "hide the row entirely when only one side is available" behaviour (L196 `sidesValues.length > 1`) then naturally hides Print Sides when it's forced by the upload.
+- Reads `useBranchSubscription(branchId)`.
+- Renders as an **undismissible** shadcn `<Dialog>` (no close button, `onOpenChange` no-op, ESC disabled) when the branch has **no active plan and no trial started** — i.e. `subscription.status` is null/`inactive` AND `!subscription.trial_started_at` AND `!subscription.stripe_subscription_id`.
+- Reuses the trial/pay buttons + `SubscriptionDisclosureCard` acceptance UX from `BranchSubscriptionPanel` — extract the "action buttons + disclosure" block into a small shared sub-component (`BranchSubscriptionActions`) that both `BranchSubscriptionPanel` and the new modal render.
+- Once the subscription becomes `trialing` / `active` / has `trial_started_at`, the modal auto-closes (driven by the query invalidation `BranchSubscriptionPanel` already does after each action).
 
-### 3. `src/components/order/PriceSummary.tsx`
+### 3. Mount the modal on branch entry (`src/pages/branch/BranchDashboard.tsx`)
 
-- Accept `allowedSides?: string[]` and, when provided, treat `specSides` as the single allowed value regardless of what's on `spec.selected_options`. This guarantees the quantity dropdown lists only rows that match the inferred sidedness even during the tick before OrderBuild's seed effect settles.
+Add `<BranchSubscriptionRequiredModal branchId={branchId} />` near the top of the dashboard JSX (above `BranchOnboardingChecklist`). Because it renders as a Dialog overlay, it visually blocks the dashboard until a plan is chosen. The existing `BranchOnboardingChecklist` continues to render underneath and takes over once the modal closes.
 
-### Out of scope
+No other pages get the modal — the branch admin router already guarantees they arrive at the dashboard first after activation.
 
-- No DB / schema / migration changes.
-- No changes to any other family (Bound, Ring, Brochures, Presentations, Business Cards, Photo, Loose Sheets, Booklets).
-- No changes to pricing math, `resolvePackPricing`, cart snapshots, preview rendering, or the recent trim-crop fixes.
-- No auto-mirroring back to `is_duplex` beyond what the existing L412–448 effect already does — it already syncs whatever ends up in `Print Sides`.
+### 4. Sanity: route path for post-reset redirect
 
-## Verification
+Verify the branch dashboard route in the router. The onboarding checklist links use `/branch/settings…` paths, so the tenant/branch scoping is elsewhere. Confirm the exact prefix (`/t/:tenantSlug/:branchSlug` vs `/t/:tenantSlug`) that resolves to `BranchDashboard` and use that literal string in the ResetPassword redirect.
 
-1. Flyers, upload a 1-page A5 PDF → Print Sides row is hidden (or shows only Single-sided); quantity dropdown lists only single-sided pack rows; price matches the single-sided ladder.
-2. Flyers, upload a 2-page A5 PDF → only Double-sided offered; pricing uses the double-sided ladder.
-3. Flyers with no upload yet → behaviour unchanged (both sides visible if the ladder has both, default is the first row as today).
-4. Bound Documents / Brochures / Business Cards → no change to their option lists or defaults.
+## Out of Scope
+
+- Changing the activation email itself, the `redeem-onboarding-token` edge function, or the opaque-token DB schema.
+- Turning the onboarding checklist into a guided wizard — user explicitly asked to keep the current card.
+- Adding new subscription plans, pricing logic, or Stripe changes.
+- Any changes to the customer-facing (`/t/:slug/*`) portal.
+
+## Files Touched
+
+- `src/pages/ResetPassword.tsx` — conditional post-reset behaviour when `welcome_token` is present.
+- `src/components/branch/BranchSubscriptionRequiredModal.tsx` — new blocking modal.
+- `src/components/branch/BranchSubscriptionActions.tsx` — new shared sub-component (extracted from `BranchSubscriptionPanel`).
+- `src/components/branch/BranchSubscriptionPanel.tsx` — refactor to consume the extracted actions sub-component (no UX change).
+- `src/pages/branch/BranchDashboard.tsx` — mount the modal.
+
+## Expected Result
+
+1. Recipient clicks activation email → `/welcome?token=…` → recovery link → `/t/:slug/reset-password?welcome_token=…`.
+2. Sets password → stays signed in → lands on `/t/:tenantSlug/:branchSlug/admin`.
+3. Blocking modal appears: "Choose your subscription" with trial/pay options and required disclosures.
+4. After picking a plan or trial, modal closes → the existing `BranchOnboardingChecklist` card guides them through company details, banking, pricing, email, PayFast, team, first order.
