@@ -30,6 +30,8 @@ import {
   Cell,
 } from "recharts";
 import { BranchOnboardingChecklist } from "@/components/branch/BranchOnboardingChecklist";
+import { BranchSubscriptionRequiredModal } from "@/components/branch/BranchSubscriptionRequiredModal";
+
 
 type DashRow = {
   id: string;
