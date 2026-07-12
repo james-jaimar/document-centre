@@ -162,8 +162,14 @@ export default function OptionsPanel({
         (!selectedSize || b.size === "*" || b.size === selectedSize) &&
         (!selectedPaper || b.paper === "*" || b.paper === selectedPaper),
     );
-    return uniq(filtered.map((b) => b.sides));
-  }, [packRows, selectedSize, selectedPaper]);
+    const all = uniq(filtered.map((b) => b.sides));
+    if (allowedSides && allowedSides.length > 0) {
+      const allow = new Set(allowedSides);
+      const restricted = all.filter((s) => allow.has(s));
+      return restricted.length > 0 ? restricted : all;
+    }
+    return all;
+  }, [packRows, selectedSize, selectedPaper, allowedSides]);
 
   type PackRow = {
     key: string;
