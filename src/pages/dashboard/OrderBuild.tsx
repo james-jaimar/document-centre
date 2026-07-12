@@ -876,8 +876,10 @@ export default function OrderBuild() {
           ? "single"
           : null;
       if (sides.length > 0) {
+        const inferred = preferredSides && sides.includes(preferredSides) ? preferredSides : null;
         const target =
-          mappedCurrent && sides.includes(mappedCurrent) ? mappedCurrent : sides[0];
+          inferred ??
+          (mappedCurrent && sides.includes(mappedCurrent) ? mappedCurrent : sides[0]);
         if (currentSides !== target) {
           next["Print Sides"] = target;
           changed = true;
