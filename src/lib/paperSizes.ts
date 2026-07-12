@@ -11,15 +11,25 @@ export interface PaperSize {
   heightMm: number;
 }
 
-// ISO A-series sizes
+// ISO A-series sizes (plus DL, a specialty ISO format used for flyers/envelopes)
 export const ISO_SIZES: PaperSize[] = [
+  { name: "A6", widthMm: 105, heightMm: 148 },
   { name: "A5", widthMm: 148, heightMm: 210 },
+  { name: "DL", widthMm: 99, heightMm: 210 },
   { name: "A4", widthMm: 210, heightMm: 297 },
   { name: "A3", widthMm: 297, heightMm: 420 },
   { name: "A2", widthMm: 420, heightMm: 594 },
   { name: "A1", widthMm: 594, heightMm: 841 },
   { name: "A0", widthMm: 841, heightMm: 1189 },
 ];
+
+/**
+ * DL is a specialty size (⅓ A4 flyer / envelope). It should be *recognised*
+ * as a standard size but never *suggested* as a scale target or matched via
+ * bleed-detection (its narrow 99mm width is close to A6/A5 short edges).
+ */
+const SPECIALTY_ISO_NAMES = new Set(["DL"]);
+
 
 /** Product families whose ISO size suggestions should be poster-scale (A2/A1/A0). */
 const POSTER_FAMILY_SLUGS = new Set(["posters", "poster"]);
