@@ -362,6 +362,20 @@ export default function OrderBuild() {
   const familySlugLower = (productFamily?.slug ?? "").toLowerCase();
   const isMultiSectionFamily = MULTI_SECTION_FAMILIES.has(familySlugLower);
 
+  // Flyers: infer Print Sides from the uploaded page count so the customer
+  // never sees (or is defaulted to) double-sided pricing on a 1-page file.
+  // null = no inference (keep existing ladder behaviour).
+  const isFlyersFamily = familySlugLower === "flyers";
+  const uploadedPageTotal = useMemo(
+    () => documents.reduce((sum, d) => sum + (d.page_count ?? 0), 0),
+    [documents],
+  );
+  const preferredSides: "single" | "double" | null = useMemo(() => {
+    if (!isFlyersFamily || uploadedPageTotal <= 0) return null;
+    return uploadedPageTotal >= 2 ? "double" : "single";
+  }, [isFlyersFamily, uploadedPageTotal]);
+  const allowedSides: string[] | undefined = preferredSides ? [preferredSides] : undefined;
+
   useEffect(() => {
     if (options.length === 0) return;
     setSpec((prev) => {
@@ -862,8 +876,10 @@ export default function OrderBuild() {
           ? "single"
           : null;
       if (sides.length > 0) {
+        const inferred = preferredSides && sides.includes(preferredSides) ? preferredSides : null;
         const target =
-          mappedCurrent && sides.includes(mappedCurrent) ? mappedCurrent : sides[0];
+          inferred ??
+          (mappedCurrent && sides.includes(mappedCurrent) ? mappedCurrent : sides[0]);
         if (currentSides !== target) {
           next["Print Sides"] = target;
           changed = true;
@@ -872,7 +888,7 @@ export default function OrderBuild() {
 
       return changed ? { ...prev, selected_options: next } : prev;
     });
-  }, [blocksMode, allBlocks]);
+  }, [blocksMode, allBlocks, preferredSides]);
 
 
   // Save spec back to DB
@@ -1321,6 +1337,7 @@ export default function OrderBuild() {
               familySlug={productFamily?.slug ?? undefined}
               packBlocks={allBlocks}
               blocksActive={blocksMode}
+              allowedSides={allowedSides}
               suppressPriceDeltaFor={(() => {
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug === "business-cards" || slug === "business_cards") {
@@ -1380,6 +1397,7 @@ export default function OrderBuild() {
               rateCard={useNewEngine ? rateCard : null}
               quantityMode={quantityMode}
               quantityBlocks={quantityBlocks}
+              allowedSides={allowedSides}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
