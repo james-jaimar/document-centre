@@ -44,6 +44,10 @@ interface OptionsPanelProps {
    *  actually priced. */
   packBlocks?: QuantityBlock[];
   blocksActive?: boolean;
+  /** When set, restricts the Print Sides selector to just these slug(s).
+   *  Used by Flyers to hide the wrong side once the upload's page count
+   *  makes it unambiguous. */
+  allowedSides?: string[];
 }
 
 
