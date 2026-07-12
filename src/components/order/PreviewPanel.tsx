@@ -788,26 +788,66 @@ export default function PreviewPanel({
     const preflight = doc.preflight_data as Record<string, unknown> | null;
     const boxes = preflight?.boxes as Record<string, number[]> | undefined;
     const PT_TO_MM = 25.4 / 72;
-    let mediaWmm = Number(doc.page_width_mm);
-    let mediaHmm = Number(doc.page_height_mm);
-    // If boxes.MediaBox exists, use it as the authoritative MediaBox since
-    // page_width_mm may have already been set to the TrimBox dimensions.
-    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
-      const mbW = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
-      const mbH = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
-      if (mbW > 0 && mbH > 0) {
-        mediaWmm = mbW;
-        mediaHmm = mbH;
-      }
-    }
-    if (!mediaWmm || !mediaHmm) return undefined;
+
     const trimW = Math.abs(resolvedTrimBox[2] - resolvedTrimBox[0]) * PT_TO_MM;
     const trimH = Math.abs(resolvedTrimBox[3] - resolvedTrimBox[1]) * PT_TO_MM;
+
+    // MediaBox from preflight is authoritative. page_width_mm reflects the
+    // rendered / processed PDF's own page size, not the original MediaBox.
+    let mediaWmm = 0;
+    let mediaHmm = 0;
+    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
+      mediaWmm = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
+      mediaHmm = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
+    }
+    // Without a MediaBox to anchor the fractions, we cannot safely crop —
+    // the previous fallback (page_width_mm) would over-crop whenever the
+    // stored dimensions were already at TrimBox size.
+    if (!mediaWmm || !mediaHmm) return undefined;
+
     // Only apply crop if trim is meaningfully smaller than media (>1mm difference)
     if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
+
+    // GUARD: if the file the browser is about to render has already been
+    // cropped to the TrimBox on the server (its own page size ~= trim), a
+    // second CSS clip would over-crop by the trim inset on every side.
+    // Detect this by comparing the doc's reported page size against the
+    // TrimBox and the MediaBox — closer to TrimBox = already trimmed.
+    const pageW = Number(doc.page_width_mm) || 0;
+    const pageH = Number(doc.page_height_mm) || 0;
+    if (pageW > 0 && pageH > 0) {
+      const distTrim = Math.abs(pageW - trimW) + Math.abs(pageH - trimH);
+      const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
+      // Tolerance: within 1mm on both axes of trim, and clearly closer to
+      // trim than to media (>2mm delta).
+      if (distTrim < 2 && distMedia - distTrim > 2) {
+        if (import.meta.env.DEV) {
+          // eslint-disable-next-line no-console
+          console.debug(
+            "[PreviewPanel] Skipping trim crop — processed PDF already sized to TrimBox",
+            { file: doc.file_name, pageW, pageH, trimW, trimH, mediaWmm, mediaHmm },
+          );
+        }
+        return undefined;
+      }
+    }
+
     const left = Math.min(resolvedTrimBox[0], resolvedTrimBox[2]) * PT_TO_MM / mediaWmm;
     const top = 1 - (Math.max(resolvedTrimBox[1], resolvedTrimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
-    return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
+    const width = trimW / mediaWmm;
+    const height = trimH / mediaHmm;
+
+    // Dev-only sanity warning: a suspiciously tight crop usually indicates
+    // stale MediaBox data or a double-crop scenario the guards above missed.
+    if (import.meta.env.DEV && (width < 0.8 || height < 0.8)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[PreviewPanel] trimCrop is <80% of media on one axis — check for stale MediaBox / double-crop",
+        { file: doc.file_name, width, height, trimW, trimH, mediaWmm, mediaHmm },
+      );
+    }
+
+    return { left, top, width, height };
   }, [documents, resolvedTrimBox]);
 
   const SCALE_TOGGLE_SLUGS = new Set(["poster", "flyers", "flyer", "business-cards", "business_cards"]);
