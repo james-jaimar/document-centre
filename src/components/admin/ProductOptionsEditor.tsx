@@ -715,7 +715,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         </Button>
       </div>
 
-      {visibleOptions.length === 0 ? (
+      {visibleOptions.length === 0 && !isBlocksFamily ? (
         <p className="text-sm text-muted-foreground">No options configured yet.</p>
       ) : (
         <Table>
@@ -730,6 +730,35 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {isBlocksFamily && (
+              <TableRow className="bg-primary/5 hover:bg-primary/10">
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <PackageOpen className="h-4 w-4 text-primary" />
+                    Pack Pricing
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="default" className="text-xs">master pricing</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary">pack matrix</Badge>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  Fixed pack sizes (Size × Paper × Sides × Qty)
+                </TableCell>
+                <TableCell>Yes</TableCell>
+                <TableCell>
+                  <Link
+                    to={`/platform/master-pricing?family=${productFamilyId}`}
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    title="Manage pack prices in Master Pricing → Pack Pricing"
+                  >
+                    Manage <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </TableCell>
+              </TableRow>
+            )}
             {visibleOptions.map((opt) => {
               const vals = opt.values;
               const structured = isStructuredValues(vals);
