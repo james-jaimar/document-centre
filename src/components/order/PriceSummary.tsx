@@ -58,6 +58,7 @@ export default function PriceSummary({
   rateCard = null,
   quantityMode = "free",
   quantityBlocks = [],
+  allowedSides,
   onQuantityChange,
   onAddToCart,
   disabled,
@@ -74,6 +75,10 @@ export default function PriceSummary({
   const specPaper = spec.selected_options?.["Paper"] ?? null;
   const specSidesSlug = spec.selected_options?.["Print Sides"] ?? null;
   const specSides: "single" | "double" = (() => {
+    // Caller-forced sidedness (e.g. Flyers inferring from page count) wins.
+    if (allowedSides && allowedSides.length === 1) {
+      return allowedSides[0] === "double" ? "double" : "single";
+    }
     if (specSidesSlug) {
       const s = specSidesSlug.toLowerCase();
       if (s === "duplex" || s === "double" || s === "double_sided") return "double";
