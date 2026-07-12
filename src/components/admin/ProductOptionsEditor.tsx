@@ -49,9 +49,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, X, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, X, ExternalLink, PackageOpen } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 
 const OPTION_TYPES = ["select", "radio", "checkbox", "number", "text"];
@@ -291,6 +293,24 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const createOption = useCreateProductOption();
   const updateOption = useUpdateProductOption();
   const deleteOption = useDeleteProductOption();
+
+  // Family metadata — used to expose the "Pack Pricing" shortcut when the
+  // family is a fixed-pack (blocks) product. Pack prices themselves live in
+  // Master Pricing → Pack Pricing, not in the product-options table.
+  const { data: family } = useQuery({
+    queryKey: ["product_family_options_meta", productFamilyId],
+    enabled: !!productFamilyId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("product_families")
+        .select("id, quantity_mode")
+        .eq("id", productFamilyId)
+        .single();
+      if (error) throw error;
+      return data as { id: string; quantity_mode: "free" | "blocks" | null };
+    },
+  });
+  const isBlocksFamily = family?.quantity_mode === "blocks";
 
   // Live catalog data (used when source ≠ manual)
   const { data: catSizes = [] } = useCatalogSizes();
@@ -695,7 +715,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         </Button>
       </div>
 
-      {visibleOptions.length === 0 ? (
+      {visibleOptions.length === 0 && !isBlocksFamily ? (
         <p className="text-sm text-muted-foreground">No options configured yet.</p>
       ) : (
         <Table>
@@ -710,6 +730,35 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {isBlocksFamily && (
+              <TableRow className="bg-primary/5 hover:bg-primary/10">
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <PackageOpen className="h-4 w-4 text-primary" />
+                    Pack Pricing
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="default" className="text-xs">master pricing</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary">pack matrix</Badge>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  Fixed pack sizes (Size × Paper × Sides × Qty)
+                </TableCell>
+                <TableCell>Yes</TableCell>
+                <TableCell>
+                  <Link
+                    to={`/platform/master-pricing?family=${productFamilyId}`}
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    title="Manage pack prices in Master Pricing → Pack Pricing"
+                  >
+                    Manage <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </TableCell>
+              </TableRow>
+            )}
             {visibleOptions.map((opt) => {
               const vals = opt.values;
               const structured = isStructuredValues(vals);
