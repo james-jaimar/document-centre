@@ -143,22 +143,38 @@ Deno.serve(async (req) => {
         await admin.from("profiles").update({ display_name: b.name }).eq("id", profileId);
       }
 
-      // Check for existing membership in this tenant
-      const { data: existingMembership } = await admin
+      // Branch-aware reconciliation: adopt orphaned (branch_id NULL) rows
+      // left behind when a prior branch was deleted, otherwise add a new
+      // row so the same user can manage multiple branches.
+      const { data: allMemberships } = await admin
         .from("tenant_memberships")
-        .select("id, role, branch_id")
+        .select("id, branch_id, role, is_active")
         .eq("profile_id", profileId)
         .eq("tenant_id", tenant_id)
-        .eq("app_id", tenant.app_id)
-        .maybeSingle();
+        .eq("app_id", tenant.app_id);
+      const rows = (allMemberships ?? []) as Array<{ id: string; branch_id: string | null; role: string; is_active: boolean }>;
+      const exact = rows.find((r) => r.branch_id === b.id);
 
-      if (existingMembership) {
+      if (exact) {
         results.push({
-          branch: b.name,
-          email,
-          status: "membership_exists",
-          existing_role: existingMembership.role,
-          existing_branch_id: existingMembership.branch_id,
+          branch: b.name, email, status: "membership_exists",
+          existing_role: exact.role, existing_branch_id: exact.branch_id,
+        });
+        continue;
+      }
+
+      const orphan = rows.find((r) => r.branch_id === null && (r.role === "branch_manager" || r.role === "store_operator"));
+      if (orphan) {
+        const { error: upErr } = await admin.from("tenant_memberships").update({
+          branch_id: b.id, is_active: true, role: "branch_manager",
+        }).eq("id", orphan.id);
+        if (upErr) {
+          results.push({ branch: b.name, email, status: "membership_error", error: upErr.message });
+          continue;
+        }
+        results.push({
+          branch: b.name, email, profile_id: profileId,
+          status: createdUser ? "created_adopted_orphan" : "reused_user_adopted_orphan",
         });
         continue;
       }

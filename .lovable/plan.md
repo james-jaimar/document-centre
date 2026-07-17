@@ -1,68 +1,45 @@
+## The bug (reproduced)
 
-## Problem
+When you deleted the old demo branch and recreated `demo3new` with the same email (`james_b_hawkins@icloud.com`), the activation flow left you with a **branch_manager membership that has `branch_id = NULL`** — so the branch portal correctly says "No branch is assigned to your account".
 
-1. The activation email's PostNet logo renders far too large in Outlook/Gmail. The current inline style only sets `max-height:48px`, so wide logos stretch to their natural width.
-2. Every tracked link (and the open-pixel) in outbound emails points at `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/email-track?...`, exposing the raw Supabase project URL. It looks unprofessional and leaks infrastructure detail.
+Root cause chain:
 
-We already solved the same class of problem for logos: `/logo/<tenant>.png` is served from the tenant/app origin and the `tenant-logo` edge function streams the file. `email-image` uses the same pattern (Amplify rewrites `/email-image/*` to the function). We should mirror that for tracking.
+1. `tenant_memberships.branch_id` FK is `ON DELETE SET NULL` (verified in schema).
+2. Deleting the previous demo branch nulled the `branch_id` on your existing membership row but left the row itself intact.
+3. `supabase/functions/_shared/sendBranchActivation.ts` (lines 132–141) checks for **any** membership matching `(profile_id, tenant_id, app_id)` and skips the insert when one exists — it never looks at `branch_id`.
+4. So `demo3new` was never linked. Login → no branch.
 
-## Plan
+DB confirms one row: `role=branch_manager, branch_id=NULL, is_active=true`.
 
-### 1. Serve tracking from the app/tenant origin
+## Fix
 
-Change tracking URL construction so links look like:
+**1. `supabase/functions/_shared/sendBranchActivation.ts` — make membership reconciliation branch-aware**
 
-```
-https://postnetprintcentre.com/email-track?t=<token>
-https://document-centre.com/email-track?t=<token>
-```
+Replace the current "if no membership, insert" block with:
 
-Files:
+- Load all memberships for `(profile_id, tenant_id, app_id)`.
+- If one already points to this `branchId` → do nothing.
+- Else if an orphaned `branch_manager` row exists with `branch_id IS NULL` → `UPDATE` it to set `branch_id = branchId`, `is_active = true` (adopt the orphan; covers the delete/recreate case and any manual cleanup).
+- Else → `INSERT` a new `branch_manager` membership for this branch (supports one user managing multiple branches).
 
-- `supabase/functions/_shared/emailTracking.ts`
-  - Add an optional `origin` argument (or a single `EmailTrackingContext { origin }` object) threaded through `injectTracking`, `rewriteLinksForTracking`, `appendTrackingPixel`, `buildPixelUrl`, `buildClickUrl`.
-  - Build the URL as `${origin}/email-track?t=...` when provided; keep the existing `SUPABASE_URL` fallback so nothing breaks if a caller forgets to pass one.
-- `supabase/functions/_shared/sendBranchActivation.ts`
-  - Pass the already-resolved `appOrigin` (from `resolveAppOriginDetailed`) into `injectTracking`.
-- `supabase/functions/send-branch-welcome-campaign/index.ts` and `supabase/functions/process-campaign-triggers/index.ts`
-  - Resolve the tenant's app origin the same way (they already know the tenant) and pass it into `injectTracking`.
+This is the whole functional fix — it repairs the user's account on the next activation send and prevents recurrence for the 500-branch rollout.
 
-### 2. Rewrite `/email-track/*` on the tenant/app origin
+**2. `supabase/functions/provision-branch-admins/index.ts` — same reconciliation**
 
-The `/email-image/*` function comment documents that AWS Amplify rewrites the path to the Supabase function URL. We need the same rewrite for `/email-track`:
+The bulk provisioner has the identical check (lines 147–164) and needs the same three-way logic so a re-run heals orphans instead of reporting `membership_exists` and moving on.
 
-```
-Source:      /email-track/<*>
-Target:      https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/email-track/<*>
-Type:        302 (Rewrite)
-```
+**3. One-shot repair for existing orphans (optional but recommended before you fan out)**
 
-This rewrite must be added in the AWS Amplify console for:
-- The Document Centre app (`document-centre.com`)
-- Each tenant custom domain served through the same Amplify app (postnetprintcentre.com, etc.)
-
-If a tenant custom domain is served by a different CDN/host, the same rewrite needs to be configured there. I will call this out in the delivery notes so you can add it once per host.
-
-No CORS/config change to the edge function itself — it already returns image/gif and 302 redirects that work identically when reached via the rewritten path.
-
-### 3. Shrink the logo in activation emails
-
-In `supabase/functions/_shared/sendBranchActivation.ts` update the `logoBlock` inline style so both dimensions are constrained:
-
-```html
-<img ... style="display:block;height:auto;width:auto;max-height:44px;max-width:180px;margin-bottom:24px;border:0;outline:none;text-decoration:none;" />
-```
-
-This keeps the aspect ratio, caps the height at ~44px and the width at ~180px, which is the standard email logo footprint in Gmail/Outlook.
+Add a small SQL migration that, for every `tenant_memberships` row where `role='branch_manager' AND branch_id IS NULL`, tries to relink it to a branch in the same tenant whose `email` matches the profile's email (case-insensitive). Rows with no match are left alone and surfaced via a `SELECT` in the migration description so you can review them. No destructive deletes.
 
 ## Out of scope
 
-- The `/welcome?token=...` URL itself is already on the tenant domain and stays unchanged.
-- No changes to token signing, event logging, or the `email-track` function body.
-- No template content edits.
+- Auth flow, reset-password page, email template/logo, tracking URL host — all unchanged.
+- No FK change: `ON DELETE SET NULL` stays (a hard delete + cascade would silently drop legitimate multi-branch managers).
+- No new tables or RLS changes.
 
-## Technical notes
+## Verification
 
-- Backwards compatibility: if `origin` is omitted, `emailTracking.ts` still uses `SUPABASE_URL`, so existing links in already-sent emails keep working (the function URL stays live).
-- Signed tokens remain identical — only the host in the URL changes, so historical opens/clicks continue to verify.
-- Amplify rewrite is a one-time infra step per domain; without it, `/email-track` would 404 on the tenant origin, so I will surface a clear pre-flight checklist in my delivery message.
+- Re-run activation for `demo3new` → the existing NULL-branch row gets adopted, sign in shows the branch.
+- Delete a branch, recreate with same email, re-send activation → new branch is linked automatically.
+- Send activation for a second branch to the same email → a second membership row is inserted (multi-branch manager works).
