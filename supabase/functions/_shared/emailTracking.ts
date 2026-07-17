@@ -58,24 +58,32 @@ export async function verifyTrackingToken(token: string): Promise<TrackingTokenP
   }
 }
 
-/** Returns the tracking endpoint URL for the email-track edge function. */
-function trackBaseUrl(): string {
+/** Returns the tracking endpoint URL for the email-track edge function.
+ *  Prefers a caller-supplied public origin (e.g. the tenant/app custom
+ *  domain) so outbound email links never expose our Supabase project URL.
+ *  Requires an Amplify (or equivalent CDN) rewrite from
+ *  `/email-track/*` → `<SUPABASE_URL>/functions/v1/email-track/*` on that
+ *  origin. Falls back to the raw Supabase function URL if none provided. */
+function trackBaseUrl(origin?: string | null): string {
+  if (origin) {
+    try { return `${new URL(origin).origin}/email-track`; } catch { /* fall through */ }
+  }
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   return `${supabaseUrl}/functions/v1/email-track`;
 }
 
 /** 1x1 GIF open-pixel URL. */
-export async function buildPixelUrl(campaignId: string, recipientId: string): Promise<string> {
+export async function buildPixelUrl(campaignId: string, recipientId: string, origin?: string | null): Promise<string> {
   const token = await signTrackingToken({ c: campaignId, r: recipientId, k: "o" });
-  return `${trackBaseUrl()}?t=${encodeURIComponent(token)}`;
+  return `${trackBaseUrl(origin)}?t=${encodeURIComponent(token)}`;
 }
 
 /** Wrap a single URL in a tracked redirect. */
 export async function buildClickUrl(
-  campaignId: string, recipientId: string, targetUrl: string,
+  campaignId: string, recipientId: string, targetUrl: string, origin?: string | null,
 ): Promise<string> {
   const token = await signTrackingToken({ c: campaignId, r: recipientId, k: "c", u: targetUrl });
-  return `${trackBaseUrl()}?t=${encodeURIComponent(token)}`;
+  return `${trackBaseUrl(origin)}?t=${encodeURIComponent(token)}`;
 }
 
 /**
@@ -83,9 +91,9 @@ export async function buildClickUrl(
  * Skips: mailto:, tel:, #anchors, and existing tracker URLs.
  */
 export async function rewriteLinksForTracking(
-  html: string, campaignId: string, recipientId: string,
+  html: string, campaignId: string, recipientId: string, origin?: string | null,
 ): Promise<string> {
-  const base = trackBaseUrl();
+  const base = trackBaseUrl(origin);
   const matches = [...html.matchAll(/href\s*=\s*"([^"]+)"/gi)];
   let out = html;
   // Build replacements first to allow async signing
@@ -96,7 +104,7 @@ export async function rewriteLinksForTracking(
     if (url.startsWith("mailto:") || url.startsWith("tel:") || url.startsWith("#")) continue;
     if (url.startsWith(base)) continue;
     if (!/^https?:\/\//i.test(url)) continue;
-    const tracked = await buildClickUrl(campaignId, recipientId, url);
+    const tracked = await buildClickUrl(campaignId, recipientId, url, origin);
     replacements.push([`href="${url}"`, `href="${tracked}"`]);
   }
   // Apply unique replacements
@@ -111,17 +119,18 @@ export async function rewriteLinksForTracking(
 
 /** Append a 1x1 tracking pixel to the closing </body> (or end of doc). */
 export async function appendTrackingPixel(
-  html: string, campaignId: string, recipientId: string,
+  html: string, campaignId: string, recipientId: string, origin?: string | null,
 ): Promise<string> {
-  const pixel = await buildPixelUrl(campaignId, recipientId);
+  const pixel = await buildPixelUrl(campaignId, recipientId, origin);
   const img = `<img src="${pixel}" width="1" height="1" alt="" style="display:block;border:0;outline:none;width:1px;height:1px;" />`;
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${img}</body>`);
   return html + img;
 }
 
 export async function injectTracking(
-  html: string, campaignId: string, recipientId: string,
+  html: string, campaignId: string, recipientId: string, origin?: string | null,
 ): Promise<string> {
-  const withLinks = await rewriteLinksForTracking(html, campaignId, recipientId);
-  return await appendTrackingPixel(withLinks, campaignId, recipientId);
+  const withLinks = await rewriteLinksForTracking(html, campaignId, recipientId, origin);
+  return await appendTrackingPixel(withLinks, campaignId, recipientId, origin);
 }
+

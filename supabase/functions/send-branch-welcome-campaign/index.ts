@@ -281,7 +281,7 @@ ${logoBlock}
           .single();
         if (rcptErr || !recipientRow) throw new Error(`recipient_insert: ${rcptErr?.message}`);
 
-        const trackedHtml = await injectTracking(html, campaignId!, recipientRow.id);
+        const trackedHtml = await injectTracking(html, campaignId!, recipientRow.id, appOrigin);
 
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",

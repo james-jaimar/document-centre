@@ -169,7 +169,7 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
   const primary = (typeof brandMap.primary_color === "string" && brandMap.primary_color) || "#1a1a2e";
   const logoUrl = await buildEmailLogoUrl(admin, tenantId, brandMap);
   const logoBlock = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;border:0;outline:none;text-decoration:none;display:block;" />`
+    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="display:block;height:auto;width:auto;max-height:44px;max-width:180px;margin-bottom:24px;border:0;outline:none;text-decoration:none;" />`
     : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
 
   // Preheader = the inbox "preview snippet". Without this Outlook scrapes the
@@ -193,7 +193,7 @@ ${logoBlock}
 </td></tr></table></body></html>`;
 
   const finalHtml = input.tracking
-    ? await injectTracking(html, input.tracking.campaignId, input.tracking.recipientId)
+    ? await injectTracking(html, input.tracking.campaignId, input.tracking.recipientId, appOrigin)
     : html;
 
   const finalText = textBody ?? htmlToText(htmlBody);
