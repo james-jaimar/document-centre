@@ -854,6 +854,7 @@ export type Database = {
           name: string
           phone: string | null
           postal_code: string | null
+          pricing_seeded_at: string | null
           province: string | null
           settings: Json
           slug: string
@@ -878,6 +879,7 @@ export type Database = {
           name: string
           phone?: string | null
           postal_code?: string | null
+          pricing_seeded_at?: string | null
           province?: string | null
           settings?: Json
           slug: string
@@ -902,6 +904,7 @@ export type Database = {
           name?: string
           phone?: string | null
           postal_code?: string | null
+          pricing_seeded_at?: string | null
           province?: string | null
           settings?: Json
           slug?: string
@@ -6884,6 +6887,10 @@ export type Database = {
       delete_payment_secret: {
         Args: { p_secret_id: string }
         Returns: undefined
+      }
+      ensure_branch_pricing_seeded: {
+        Args: { _branch_id: string }
+        Returns: boolean
       }
       expire_branch_trials: { Args: never; Returns: number }
       generate_invoice_number: {
