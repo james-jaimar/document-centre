@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { Outlet, Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { useBranchSubscription, useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
+import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
-import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { AlertCircle } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
@@ -44,42 +41,6 @@ function SubscriptionGateBanner() {
 export default function BranchLayout() {
   const { tenantId, tenantName, branchId } = useTenantContext();
   useDocumentBranding(tenantId, tenantName, "Branch Portal");
-  const qc = useQueryClient();
-  const startedRef = useRef<string | null>(null);
-  const { data: sub, isLoading: subLoading } = useBranchSubscription(branchId);
-
-  // Stamp trial_started_at on first authenticated load — but only when the
-  // branch has never started a trial and has no Stripe subscription. Otherwise
-  // the edge function correctly returns 409 (trial_already_used) and the call
-  // is just console noise.
-  useEffect(() => {
-    if (!branchId || subLoading) return;
-    if (startedRef.current === branchId) return;
-    // Nothing to start: no plan assigned, trial already started, already
-    // subscribed via Stripe, or trial already consumed.
-    if (
-      !sub ||
-      !sub.assigned_plan_slug ||
-      sub.trial_started_at ||
-      sub.trial_started_via ||
-      sub.stripe_subscription_id
-    ) {
-      startedRef.current = branchId;
-      return;
-    }
-    startedRef.current = branchId;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const res = await invokeEdgeFunctionVerbose("start-branch-trial", { branch_id: branchId });
-      if (res.ok) {
-        qc.invalidateQueries({ queryKey: ["branch_subscriptions"] });
-      } else if (res.status !== 409) {
-        // 409 = trial_already_used (benign — race with another tab/login).
-        console.warn("start-branch-trial failed (non-fatal):", res.error);
-      }
-    })();
-  }, [branchId, subLoading, sub, qc]);
 
 
   const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
