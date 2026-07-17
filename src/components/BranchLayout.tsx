@@ -42,6 +42,7 @@ function SubscriptionGateBanner() {
 export default function BranchLayout() {
   const { tenantId, tenantName, branchId } = useTenantContext();
   useDocumentBranding(tenantId, tenantName, "Branch Portal");
+  useEnsureBranchPricingSeeded(branchId);
 
 
   const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
