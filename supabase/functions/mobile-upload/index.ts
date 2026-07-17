@@ -81,9 +81,9 @@ async function handlePost(token: string, req: Request) {
     return json({ error: "No file provided" }, 400);
   }
 
-  // Max 50MB
-  if (file.size > 50 * 1024 * 1024) {
-    return json({ error: "File too large (max 50MB)" }, 413);
+  // Max 200MB
+  if (file.size > 200 * 1024 * 1024) {
+    return json({ error: "File too large (max 200MB)" }, 413);
   }
 
   const sb = getServiceClient();
