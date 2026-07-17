@@ -9,6 +9,7 @@ import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
+import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
