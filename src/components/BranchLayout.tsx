@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { Outlet, Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { useBranchSubscription, useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
+import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
-import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { AlertCircle } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
