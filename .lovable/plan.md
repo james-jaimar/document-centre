@@ -1,45 +1,41 @@
-## The bug (reproduced)
+## The bug (reproduced from the data)
 
-When you deleted the old demo branch and recreated `demo3new` with the same email (`james_b_hawkins@icloud.com`), the activation flow left you with a **branch_manager membership that has `branch_id = NULL`** — so the branch portal correctly says "No branch is assigned to your account".
+Your `demo3new` branch row shows `trial_status='active'`, `trial_started_at=2026-07-17 05:41:40` (about the time you signed in) — stamped **automatically** without you clicking anything. That's why the "Choose your subscription" modal flashed for ~3 seconds and vanished: the modal's `isActive` check flips to true the moment `trial_started_at` gets written.
 
-Root cause chain:
+Root cause: `src/components/BranchLayout.tsx` (lines 51–82) runs a `useEffect` on branch entry that calls the `start-branch-trial` edge function as soon as it sees an assigned plan with no trial yet. That silently burns the branch's one-shot 14-day no-card trial before the branch manager sees the modal, and never gives them the chance to pick the 30-day-with-card trial or pay upfront.
 
-1. `tenant_memberships.branch_id` FK is `ON DELETE SET NULL` (verified in schema).
-2. Deleting the previous demo branch nulled the `branch_id` on your existing membership row but left the row itself intact.
-3. `supabase/functions/_shared/sendBranchActivation.ts` (lines 132–141) checks for **any** membership matching `(profile_id, tenant_id, app_id)` and skips the insert when one exists — it never looks at `branch_id`.
-4. So `demo3new` was never linked. Login → no branch.
-
-DB confirms one row: `role=branch_manager, branch_id=NULL, is_active=true`.
+`BranchSubscriptionPanel` (the body of the modal) already exposes the correct three-way choice — "Start 14-day trial", "Start 30-day trial (card required)", "Pay now" — each wired to `start-branch-trial` / `create-branch-checkout` on explicit click. The auto-start effect duplicates the first option and short-circuits the decision.
 
 ## Fix
 
-**1. `supabase/functions/_shared/sendBranchActivation.ts` — make membership reconciliation branch-aware**
+**`src/components/BranchLayout.tsx`** — remove the auto-start block:
 
-Replace the current "if no membership, insert" block with:
+- Delete the `useEffect` at lines 51–82, the `startedRef` `useRef`, the `useBranchSubscription(branchId)` call at line 49, and the now-unused imports (`useEffect`, `useRef`, `useQueryClient`, `useBranchSubscription`, `invokeEdgeFunctionVerbose`, `supabase`).
+- Nothing else in `BranchLayout` depends on `sub` / `subLoading`, so the layout continues to render exactly as before.
 
-- Load all memberships for `(profile_id, tenant_id, app_id)`.
-- If one already points to this `branchId` → do nothing.
-- Else if an orphaned `branch_manager` row exists with `branch_id IS NULL` → `UPDATE` it to set `branch_id = branchId`, `is_active = true` (adopt the orphan; covers the delete/recreate case and any manual cleanup).
-- Else → `INSERT` a new `branch_manager` membership for this branch (supports one user managing multiple branches).
+The subscription decision is then owned entirely by `BranchSubscriptionRequiredModal` + `BranchSubscriptionPanel`, which is where the required-documents acceptance gate and per-option handlers already live. The modal stays open until the manager clicks one of the three buttons.
 
-This is the whole functional fix — it repairs the user's account on the next activation send and prevents recurrence for the 500-branch rollout.
+## One-shot data repair for your test branch
 
-**2. `supabase/functions/provision-branch-admins/index.ts` — same reconciliation**
+Your `demo3new` trial is already stamped from the auto-start. Roll it back so you can re-test the modal end-to-end:
 
-The bulk provisioner has the identical check (lines 147–164) and needs the same three-way logic so a re-run heals orphans instead of reporting `membership_exists` and moving on.
+```
+UPDATE branch_subscriptions
+SET trial_status = NULL, trial_started_at = NULL, trial_ends_at = NULL,
+    trial_started_via = NULL
+WHERE branch_id = 'f691ce51-5ad1-40ab-9713-49322ae5b68d';
+```
 
-**3. One-shot repair for existing orphans (optional but recommended before you fan out)**
-
-Add a small SQL migration that, for every `tenant_memberships` row where `role='branch_manager' AND branch_id IS NULL`, tries to relink it to a branch in the same tenant whose `email` matches the profile's email (case-insensitive). Rows with no match are left alone and surfaced via a `SELECT` in the migration description so you can review them. No destructive deletes.
+Scoped to that one branch only.
 
 ## Out of scope
 
-- Auth flow, reset-password page, email template/logo, tracking URL host — all unchanged.
-- No FK change: `ON DELETE SET NULL` stays (a hard delete + cascade would silently drop legitimate multi-branch managers).
-- No new tables or RLS changes.
+- No changes to `start-branch-trial`, `create-branch-checkout`, the modal itself, or the panel — they already do the right thing on explicit click.
+- No changes to the tenant-driven plan assignment, discounts, or trial-day config.
+- No change to the modal's "no assigned plan → don't block" fallback.
 
 ## Verification
 
-- Re-run activation for `demo3new` → the existing NULL-branch row gets adopted, sign in shows the branch.
-- Delete a branch, recreate with same email, re-send activation → new branch is linked automatically.
-- Send activation for a second branch to the same email → a second membership row is inserted (multi-branch manager works).
+- Reset the test branch (SQL above), sign in as branch manager → modal appears and **stays** open.
+- Click "Start 14-day trial" → trial starts, modal closes, dashboard loads.
+- Repeat with a fresh branch and click "Start 30-day trial (card required)" → routes to Stripe checkout instead. Same for "Pay now".
