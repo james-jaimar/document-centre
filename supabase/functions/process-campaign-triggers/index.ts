@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
             preheader: `Follow-up for ${escapeHtml(branch.name)}`,
             heading: subject, bodyHtml: htmlBody,
           });
-          const tracked = await injectTracking(wrappedHtml, camp.id, r.id);
+          const tracked = await injectTracking(wrappedHtml, camp.id, r.id, origin);
           const text = renderBrandedText({ heading: subject, bodyText: textBody });
 
           // Send via service-role: use anon as bearer
