@@ -1,41 +1,49 @@
-## The bug (reproduced from the data)
+## Goal
 
-Your `demo3new` branch row shows `trial_status='active'`, `trial_started_at=2026-07-17 05:41:40` (about the time you signed in) — stamped **automatically** without you clicking anything. That's why the "Choose your subscription" modal flashed for ~3 seconds and vanished: the modal's `isActive` check flips to true the moment `trial_started_at` gets written.
+When a brand-new branch is spun up, the branch admin should walk into a Pricing page that is already populated with the tenant's catalogue + rate-card rows — no manual "Pull missing from tenant" clicks. Pack pricing already cascades via fallback resolver so it needs no clone.
 
-Root cause: `src/components/BranchLayout.tsx` (lines 51–82) runs a `useEffect` on branch entry that calls the `start-branch-trial` edge function as soon as it sees an assigned plan with no trial yet. That silently burns the branch's one-shot 14-day no-card trial before the branch manager sees the modal, and never gives them the chance to pick the 30-day-with-card trial or pay upfront.
+## Approach
 
-`BranchSubscriptionPanel` (the body of the modal) already exposes the correct three-way choice — "Start 14-day trial", "Start 30-day trial (card required)", "Pay now" — each wired to `start-branch-trial` / `create-branch-checkout` on explicit click. The auto-start effect duplicates the first option and short-circuits the decision.
+Add a one-shot server-side seed that runs the two existing clone RPCs, guarded by a "seeded" flag so it's safe to call repeatedly and free after first run. Trigger it in two places for belt-and-braces:
 
-## Fix
+1. **At branch creation** (provision path), so the data is already there before the admin logs in.
+2. **On first branch-portal load** (safety net for existing empty branches and any race), via a cheap idempotent RPC call from `BranchLayout`.
 
-**`src/components/BranchLayout.tsx`** — remove the auto-start block:
+## Changes
 
-- Delete the `useEffect` at lines 51–82, the `startedRef` `useRef`, the `useBranchSubscription(branchId)` call at line 49, and the now-unused imports (`useEffect`, `useRef`, `useQueryClient`, `useBranchSubscription`, `invokeEdgeFunctionVerbose`, `supabase`).
-- Nothing else in `BranchLayout` depends on `sub` / `subLoading`, so the layout continues to render exactly as before.
+### 1. Migration — `ensure_branch_pricing_seeded(_branch_id uuid)`
 
-The subscription decision is then owned entirely by `BranchSubscriptionRequiredModal` + `BranchSubscriptionPanel`, which is where the required-documents acceptance gate and per-option handlers already live. The modal stays open until the manager clicks one of the three buttons.
+- Add `pricing_seeded_at timestamptz` column to `public.branches` (nullable).
+- New `SECURITY DEFINER` function `public.ensure_branch_pricing_seeded(_branch_id uuid)`:
+  - Returns early if `pricing_seeded_at IS NOT NULL`.
+  - Authorises the caller: must be platform admin, tenant owner/admin of the branch's tenant, or a member of the branch itself (reuse existing helpers like `has_role` / `is_tenant_admin`).
+  - Calls `public.clone_tenant_catalog_to_branch(_branch_id)` then `public.clone_tenant_pricing_to_branch(_branch_id)`.
+  - Sets `pricing_seeded_at = now()` on `branches`.
+  - Wrapped in exception block so a clone failure doesn't leave the flag half-set (only stamp on success).
+- `GRANT EXECUTE ... TO authenticated`.
 
-## One-shot data repair for your test branch
+### 2. Server-side trigger at branch creation
 
-Your `demo3new` trial is already stamped from the auto-start. Roll it back so you can re-test the modal end-to-end:
+- In the branch creation path (edge function that inserts into `branches` and/or `provision-branch-admins`), call `ensure_branch_pricing_seeded` for each newly created branch immediately after insert. Investigate which edge function is used today (`create-branch` / `provision-branch-admins` / direct client insert) and hook the call in the correct spot.
 
-```
-UPDATE branch_subscriptions
-SET trial_status = NULL, trial_started_at = NULL, trial_ends_at = NULL,
-    trial_started_via = NULL
-WHERE branch_id = 'f691ce51-5ad1-40ab-9713-49322ae5b68d';
-```
+### 3. Client safety net — `BranchLayout`
 
-Scoped to that one branch only.
+- New tiny hook `useEnsureBranchPricingSeeded(branchId)` that calls the RPC once per session per branch id (guarded by a `useRef`/session flag) and no-ops after the flag is set server-side.
+- Invoked from `BranchLayout.tsx` alongside the existing branding/unread hooks.
+- On success, invalidates the same query keys that `useClonePricingToBranch` + `useCloneTenantCatalogToBranch` invalidate, so the Pricing page reflects freshly seeded rows if the user is already sitting on it.
 
-## Out of scope
+### 4. One-shot backfill
 
-- No changes to `start-branch-trial`, `create-branch-checkout`, the modal itself, or the panel — they already do the right thing on explicit click.
-- No changes to the tenant-driven plan assignment, discounts, or trial-day config.
-- No change to the modal's "no assigned plan → don't block" fallback.
+- Data update (via insert tool): for every existing branch where `pricing_seeded_at IS NULL`, call `ensure_branch_pricing_seeded` so the current empty demo branches (like `Demo3new`) get populated without waiting for the next login.
+
+## Explicit non-goals
+
+- Pack pricing overrides — not cloned. The resolver already falls back branch → tenant → master, so a missing branch row is correct behaviour.
+- The manual "Pull missing from tenant" and "Re-sync from tenant" buttons stay put; they remain the way to re-pull after the tenant catalogue changes later.
+- No change to the onboarding "Mark prices reviewed" flow — it still needs an explicit click.
 
 ## Verification
 
-- Reset the test branch (SQL above), sign in as branch manager → modal appears and **stays** open.
-- Click "Start 14-day trial" → trial starts, modal closes, dashboard loads.
-- Repeat with a fresh branch and click "Start 30-day trial (card required)" → routes to Stripe checkout instead. Same for "Pay now".
+- Create a new demo branch → send activation → log in → navigate straight to Pricing: Paper Stocks, Finishing, Click Charges, Photo Prints and Business Cards tabs are all populated from the tenant without pressing any button.
+- Reload — no duplicate rows (RPCs are additive/idempotent, and the flag short-circuits).
+- Existing seeded branch: RPC returns instantly, no query invalidations churn.
