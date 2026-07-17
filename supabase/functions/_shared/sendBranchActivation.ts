@@ -129,15 +129,35 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
     );
   }
 
-  const { data: existingMembership } = await admin
+  // Branch-aware reconciliation. A membership row can:
+  //  (a) already point at this branch → leave it alone
+  //  (b) be an orphan (branch_id NULL) left behind after a prior branch was
+  //      deleted (branch_id FK is ON DELETE SET NULL) → adopt it for this branch
+  //  (c) point at a different branch (user manages multiple stores) → add a new row
+  const { data: allMemberships } = await admin
     .from("tenant_memberships")
-    .select("id").eq("profile_id", profileId!).eq("tenant_id", tenantId)
-    .eq("app_id", tenant.app_id).maybeSingle();
-  if (!existingMembership) {
-    await admin.from("tenant_memberships").insert({
-      profile_id: profileId, tenant_id: tenantId, app_id: tenant.app_id,
-      role: "branch_manager", branch_id: branchId, is_active: true,
-    });
+    .select("id, branch_id, role, is_active")
+    .eq("profile_id", profileId!)
+    .eq("tenant_id", tenantId)
+    .eq("app_id", tenant.app_id);
+  const rows = (allMemberships ?? []) as Array<{ id: string; branch_id: string | null; role: string; is_active: boolean }>;
+  const exact = rows.find((r) => r.branch_id === branchId);
+  if (exact) {
+    if (!exact.is_active) {
+      await admin.from("tenant_memberships").update({ is_active: true }).eq("id", exact.id);
+    }
+  } else {
+    const orphan = rows.find((r) => r.branch_id === null && (r.role === "branch_manager" || r.role === "store_operator"));
+    if (orphan) {
+      await admin.from("tenant_memberships").update({
+        branch_id: branchId, is_active: true, role: "branch_manager",
+      }).eq("id", orphan.id);
+    } else {
+      await admin.from("tenant_memberships").insert({
+        profile_id: profileId, tenant_id: tenantId, app_id: tenant.app_id,
+        role: "branch_manager", branch_id: branchId, is_active: true,
+      });
+    }
   }
 
   const { count: otherMembershipCount } = await admin
