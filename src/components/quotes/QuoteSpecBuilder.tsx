@@ -327,7 +327,7 @@ export default function QuoteSpecBuilder({
               sections: spec.sections ?? null,
             },
           },
-        })
+        } as any)
         .select("id, quote_number")
         .single();
       if (qErr) throw qErr;
