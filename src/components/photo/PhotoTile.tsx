@@ -111,6 +111,8 @@ export default function PhotoTile({
             alt={photo.file_name}
             className={cn("absolute inset-0 w-full h-full object-cover")}
             draggable={false}
+            loading="lazy"
+            decoding="async"
           />
         )}
 
