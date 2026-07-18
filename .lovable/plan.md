@@ -1,64 +1,81 @@
-## Configurable system email nudges
 
-Add a platform-controlled nudge scheduler that sends branch lifecycle emails on a cadence platform admins can toggle and time — no hard-coded schedules.
+# Admin / Branch Quote Mode (no artwork required)
 
-### Scope (v1 nudge types)
+Goal: let admin and branch staff build a real, priced quote for a customer **before** any artwork is uploaded, using the same product configurator and pricing engine as a normal order. When the customer later uploads real artwork, the system re-prices and shows any diff vs the original quote.
 
-1. **Trial expiring** — 7d, 3d, 1d before `trial_ends_at`
-2. **Trial expired** — on/after expiry, until subscribed
-3. **Payment failed / grace period** — while `past_due` with `grace_until` set (e.g. 3d, 1d before grace end)
-4. **Subscription cancelled** — once, when state flips to `cancelled`/`force_cancel`
-5. **Onboarding stalled** — branch activated but required checklist steps incomplete after N days (e.g. 3d, 7d)
+## 1. Configurator "Quote mode" entry
 
-### Settings — platform-only
+- Replace the current blank-line-item flow on `AdminQuoteCreate.tsx` (and add the equivalent under Branch → Quotes → New) with a proper configurator flow:
+  1. Pick customer (email + optional profile match, same as today).
+  2. Pick product family (Flyers, Booklet, etc.).
+  3. Open the standard `OrderBuild` configurator in **quote mode** — no upload required.
+- In quote mode the configurator:
+  - Hides the file upload / preview panels.
+  - Shows spec inputs directly: size, orientation, page count (for booklets), quantity, colour, sides, paper, finishing, pack (for Flyers).
+  - Runs the exact same pricing pipeline (`calculatePrice`, pack ladder, options) so the quoted total = what a real order would cost.
 
-New table `platform_nudge_settings` (single-row config, keyed by `nudge_key`):
+## 2. Synthetic document stub
 
-| Column | Purpose |
-|---|---|
-| `nudge_key` (pk) | e.g. `trial_expiring`, `trial_expired`, `payment_past_due`, `subscription_cancelled`, `onboarding_stalled` |
-| `enabled` | master on/off |
-| `offsets_days` | int[] — days before/after the anchor event (e.g. `{7,3,1}`, or `{3,7}` for stalled) |
-| `min_hours_between_sends` | dedupe guard, default 20h |
-| `updated_at`, `updated_by` | audit |
+To avoid forking the pricing engine, quote mode injects a synthetic document behind the scenes:
+- One `document` row flagged `is_synthetic = true` (new boolean column on `documents`).
+- One `document_section` matching the entered specs (page count, colour, duplex, size).
+- No real PDF, no storage upload, no preflight run.
+- Preview panel replaced with a "Quote — no artwork yet" placeholder.
 
-New platform admin page **Platform → Communications → Nudges**: one row per nudge with a toggle and comma-separated offset editor. No template editing in v1 (copy stays in code, per your choice).
+This means all existing hooks (`useOrderData`, options panel, price summary, pack ladder) work unchanged.
 
-### Recipients
+## 3. Persistence as a quote
 
-Branch owner/admin members only — resolve via `tenant_memberships` filtered to the branch's tenant with roles `Owner`/`Admin`, joined to `profiles.email`.
+- Reuse existing `quotes` + `quote_items` tables.
+- On "Save quote": snapshot the configured spec into `quote_items.configuration` (jsonb) and `quote_items.product_snapshot`, along with `product_family_id`, unit/net/gross prices, and quantity — same shape the order engine already produces.
+- Set `created_via = 'tenant_sales'` (admin) or `'branch_sales'` (branch).
+- Email the customer the standard quote link (existing flow).
 
-### Delivery + dedupe
+## 4. Customer uploads artwork against a quote
 
-- New table `nudge_send_log(branch_id, nudge_key, offset_day, recipient_email, sent_at)` with unique `(branch_id, nudge_key, offset_day, recipient_email)` to guarantee each nudge fires once per recipient per offset.
-- Sends go through the existing `send-email` edge function (custom SMTP, branded — no Supabase auth path).
+On `CustomerQuoteDetail.tsx`:
+- If any quote item has no real artwork, show an "Upload artwork" CTA per line item.
+- Upload flow reuses the standard `useDocumentUpload` + preflight pipeline, attached to a **draft order** cloned from the quote item's snapshot (lazy order creation, same as today).
+- After upload + preflight, re-run pricing on the real spec:
+  - Detected page count, actual size, orientation, colour usage.
+- Compare vs quoted spec and show a diff panel:
+  - Green rows = match.
+  - Amber rows = changed (e.g. quoted 24pp, uploaded 28pp).
+  - New total vs quoted total, with delta.
+- Customer can Accept new price → converts quote to order, or Reject → keeps quote open for revision.
 
-### Scheduler
+## 5. Admin conversion path
 
-- New edge function `nudge-dispatcher` — for each enabled nudge, query candidate branches, compute due offsets from anchor timestamp (`trial_ends_at`, `grace_until`, `cancelled_at`, `activated_at`), skip rows already in `nudge_send_log`, then enqueue emails.
-- Wire via `pg_cron` + `pg_net`, hourly.
+- On `AdminQuoteDetail.tsx` / `BranchQuoteDetail.tsx`:
+  - "Convert to order" button, enabled once artwork is attached (or if admin chooses to force-convert without artwork for offline jobs).
+  - Sets `quotes.converted_order_id` and `converted_at`; creates the order via existing engine using the snapshotted config.
 
-### Files
+## 6. Repricing logic
 
-**New**
-- `supabase/migrations/<ts>_platform_nudge_settings.sql` — 2 tables + grants + RLS (platform admin write, service_role full) + seed rows for the 5 nudge keys + cron job.
-- `supabase/functions/nudge-dispatcher/index.ts` — scheduler.
-- `supabase/functions/_shared/nudge-templates.ts` — subject/body per `nudge_key` with `{branch_name}`, `{days_left}`, `{portal_url}` substitutions.
-- `src/pages/platform/PlatformNudgeSettings.tsx` — admin UI.
-- `src/hooks/usePlatformNudgeSettings.ts`.
+Central helper `repriceQuoteItemFromArtwork(quoteItemId, realSpec)`:
+- Loads quote item's stored config.
+- Merges real spec (page count, size, orientation, sides inferred from doc).
+- Runs the same `calculatePrice` used by the configurator.
+- Returns `{ oldTotal, newTotal, diffs: [{field, from, to}], newConfig }`.
 
-**Edited**
-- `src/App.tsx` — route for the new platform page.
-- `src/components/platform/PlatformNav.tsx` (or equivalent) — nav entry under Communications.
+## Technical details
 
-### Out of scope (v1)
+- **DB migration**:
+  - `ALTER TABLE documents ADD COLUMN is_synthetic boolean NOT NULL DEFAULT false;`
+  - Optional: `quote_items.is_synthetic_spec boolean` for fast filtering.
+  - No new tables — reuse `quotes`, `quote_items`, `documents`, `document_sections`.
+- **New hook**: `useCreateQuoteFromSpec` — wraps synthetic-doc creation + `quote_items` insert.
+- **New hook**: `useRepriceQuoteItem` — used on customer artwork upload.
+- **Configurator changes**: add `mode: 'order' | 'quote'` prop threaded through `OrderBuild`, `OptionsPanel`, `PriceSummary`, `PreviewPanel`, `OrderFiles`. In quote mode, upload/preflight steps are bypassed and preview shows a placeholder.
+- **Routing**:
+  - Admin: `/admin/quotes/new` → product picker → `/admin/quotes/new/:familyId` (configurator).
+  - Branch: mirror under `/branch/quotes/new`.
+  - Customer: existing `/t/:slug/quotes/:id` gains upload + repricing UI.
+- **Emails**: reuse existing quote-sent template; add a second template for "quote repriced after artwork" when the delta is non-zero.
+- **Guards**: quote creation gated by `tenant_membership` role (Sales/Admin/Owner at tenant; same at branch).
 
-- Template editing UI (copy lives in `nudge-templates.ts`).
-- Tenant/branch overrides.
-- Non-lifecycle nudges (marketing, product tips).
-- Backfill of already-missed nudges — dispatcher only fires forward from deploy time.
+## Out of scope for this pass
 
-### Verification
-
-- Typecheck.
-- Manually trigger `nudge-dispatcher` via `supabase--curl_edge_functions` against `Demo3new` with a manipulated `trial_ends_at` to confirm one send + dedupe on re-run.
+- Multi-item quotes with different products in one quote (v1 = one item per quote; add-more later).
+- Automatic quote expiry emails (already covered by nudges plan).
+- PDF quote generation (already exists via `pdf_storage_path` — untouched).

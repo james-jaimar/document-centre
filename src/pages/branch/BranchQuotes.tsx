@@ -2,11 +2,12 @@ import { Link } from "react-router-dom";
 import { useBranchQuotes } from "@/hooks/useBranchQuotes";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, FileText, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -23,9 +24,14 @@ export default function BranchQuotes() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Quotes</h1>
-        <p className="text-muted-foreground">Quotations saved against this branch</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Quotes</h1>
+          <p className="text-muted-foreground">Quotations saved against this branch</p>
+        </div>
+        <Button asChild>
+          <Link to="/branch/quotes/new-spec"><Plus className="h-4 w-4 mr-1" /> Spec Quote</Link>
+        </Button>
       </div>
 
       {isLoading ? (
