@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Outlet, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
