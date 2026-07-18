@@ -40,8 +40,16 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [signingFailed, setSigningFailed] = useState(false);
 
+  // Prefer the small `thumb_path` derivative when present — the original
+  // can be tens of MB and forcing the browser to decode a dozen of them
+  // stutters admin scroll on the order-detail page.
   useEffect(() => {
-    const paths = photos.map((p) => p.original_storage_path).filter(Boolean) as string[];
+    const wanted = new Set<string>();
+    for (const p of photos) {
+      const pick = p.thumb_path || p.preview_path || p.original_storage_path;
+      if (pick) wanted.add(pick);
+    }
+    const paths = Array.from(wanted);
     if (paths.length === 0) return;
     let cancelled = false;
     resolveUrls(paths)
