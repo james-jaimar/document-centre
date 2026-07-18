@@ -1,49 +1,81 @@
-## Goal
 
-When a brand-new branch is spun up, the branch admin should walk into a Pricing page that is already populated with the tenant's catalogue + rate-card rows — no manual "Pull missing from tenant" clicks. Pack pricing already cascades via fallback resolver so it needs no clone.
+## 1. Default sender email for new branches
 
-## Approach
+Today new branches inherit `hello@document-centre.com` as the sender. Change so a new branch has **no** sender email until the manager configures one.
 
-Add a one-shot server-side seed that runs the two existing clone RPCs, guarded by a "seeded" flag so it's safe to call repeatedly and free after first run. Trigger it in two places for belt-and-braces:
+- Stop seeding a default `from_email` on branch creation (check `provision-branch-admins`, `create-branch`, and any `email_accounts` seed).
+- Branch Settings → Email tab: if no active `email_accounts` row for the branch, show a prominent amber warning banner: "No sender email configured — customer emails, quotes and invoices will not send until you set this up." with a CTA button to add one.
+- Order/quote/invoice send code: when branch has no sender email, block the send and surface a clear error to the user instead of silently falling back.
 
-1. **At branch creation** (provision path), so the data is already there before the admin logs in.
-2. **On first branch-portal load** (safety net for existing empty branches and any race), via a cheap idempotent RPC call from `BranchLayout`.
+## 2. Onboarding helper must be dynamic
 
-## Changes
+The "Get your branch ready" checklist currently shows static state. Wire each step to a real check via `recompute_branch_onboarding` and add checks that are missing:
 
-### 1. Migration — `ensure_branch_pricing_seeded(_branch_id uuid)`
+| Step | Signal |
+|---|---|
+| Confirm company details | `branch_settings.trading_name/address/phone` populated |
+| Add banking details | `branch_private.bank_*` populated |
+| Review your prices | `branches.pricing_reviewed_at` set (mark on first save in Pricing) OR user visited pricing page and dismissed |
+| Set sender email | active `email_accounts` row for the branch with `last_verified_at` not null |
+| Set up online payments (optional) | `branch_payment_gateways` row active — optional, not required to complete |
+| Invite your team | at least one additional `tenant_memberships` row for this branch |
 
-- Add `pricing_seeded_at timestamptz` column to `public.branches` (nullable).
-- New `SECURITY DEFINER` function `public.ensure_branch_pricing_seeded(_branch_id uuid)`:
-  - Returns early if `pricing_seeded_at IS NOT NULL`.
-  - Authorises the caller: must be platform admin, tenant owner/admin of the branch's tenant, or a member of the branch itself (reuse existing helpers like `has_role` / `is_tenant_admin`).
-  - Calls `public.clone_tenant_catalog_to_branch(_branch_id)` then `public.clone_tenant_pricing_to_branch(_branch_id)`.
-  - Sets `pricing_seeded_at = now()` on `branches`.
-  - Wrapped in exception block so a clone failure doesn't leave the flag half-set (only stamp on success).
-- `GRANT EXECUTE ... TO authenticated`.
+Recompute runs on portal load and after each relevant mutation (invalidate `branch_onboarding` after saves in settings, banking, pricing, email accounts, payments, invites).
 
-### 2. Server-side trigger at branch creation
+## 3. Slow scrolling on order pages with 12+ photos
 
-- In the branch creation path (edge function that inserts into `branches` and/or `provision-branch-admins`), call `ensure_branch_pricing_seeded` for each newly created branch immediately after insert. Investigate which edge function is used today (`create-branch` / `provision-branch-admins` / direct client insert) and hook the call in the correct spot.
+Applies to admin order detail and customer order detail. Likely causes to investigate and fix:
 
-### 3. Client safety net — `BranchLayout`
+- Signed-URL thumbnails are re-requested per scroll/render instead of using the existing `pdfBlobCache` / signed-URL cache.
+- Thumbnails rendered at full resolution instead of a 150-DPI (or smaller) preview.
+- Missing `loading="lazy"` / `decoding="async"` on `<img>` tags.
+- Re-rendering the whole document list on every parent state change (missing `React.memo` / stable keys).
 
-- New tiny hook `useEnsureBranchPricingSeeded(branchId)` that calls the RPC once per session per branch id (guarded by a `useRef`/session flag) and no-ops after the flag is set server-side.
-- Invoked from `BranchLayout.tsx` alongside the existing branding/unread hooks.
-- On success, invalidates the same query keys that `useClonePricingToBranch` + `useCloneTenantCatalogToBranch` invalidate, so the Pricing page reflects freshly seeded rows if the user is already sitting on it.
+Plan: profile the two order-detail pages, add lazy-loading, memoize the photo row component, and route thumbnails through the shared cache. No functional changes — pure perf.
 
-### 4. One-shot backfill
+## 4. Trial expiry — hard stop
 
-- Data update (via insert tool): for every existing branch where `pricing_seeded_at IS NULL`, call `ensure_branch_pricing_seeded` so the current empty demo branches (like `Demo3new`) get populated without waiting for the next login.
+Confirm and enforce the entitlement model already in `useBranchEntitlement`:
 
-## Explicit non-goals
+- Server: `resolve_branch_entitlement` returns `restricted` (or `cancelled`) once `trial_ends_at < now()` and no active subscription exists. Verify this branch of the SQL and add a scheduled job (pg_cron or edge cron) to transition `trial_status` → `expired` at the boundary so state is deterministic.
+- Storefront (`useBranchStorefrontGate`): already blocks checkout when state is not `active|trialing`. Add a full-page "Store temporarily unavailable" overlay on `/t/:slug/*` instead of just blocking checkout, so trial-expired branches go dark for customers.
+- Branch admin (`useBranchSubscriptionGate`): already forces billing-only. Add a persistent red banner across all admin pages while `restricted|cancelled` explaining why and linking to Subscription.
+- Notifications: send email at T-3, T-1, T+0, T+3 days via `platform_campaign_triggers` so the branch is warned before the hard stop.
 
-- Pack pricing overrides — not cloned. The resolver already falls back branch → tenant → master, so a missing branch row is correct behaviour.
-- The manual "Pull missing from tenant" and "Re-sync from tenant" buttons stay put; they remain the way to re-pull after the tenant catalogue changes later.
-- No change to the onboarding "Mark prices reviewed" flow — it still needs an explicit click.
+## 5. Admin-side quotes without artwork
 
-## Verification
+New "Quote mode" on the existing configurator so admins can quote a customer with only a spec.
 
-- Create a new demo branch → send activation → log in → navigate straight to Pricing: Paper Stocks, Finishing, Click Charges, Photo Prints and Business Cards tabs are all populated from the tenant without pressing any button.
-- Reload — no duplicate rows (RPCs are additive/idempotent, and the flag short-circuits).
-- Existing seeded branch: RPC returns instantly, no query invalidations churn.
+**Entry point**: Admin → Quotes → "New Quote" opens the customer picker, then the standard product configurator inside a `quoteMode=true` wrapper.
+
+**Behaviour differences in quote mode**:
+- Upload step is replaced by a **Spec form**: page count, size (from pack pricing or family sizes), sides, paper, quantity, finishing options. This spec seeds an in-memory "virtual document" so the rest of the engine (pricing, options, weight, delivery) works unchanged.
+- No files are written to storage; a `quote_documents` row is created with `is_placeholder=true` and the spec JSON.
+- Configurator computes price against pack pricing / rules exactly as if artwork existed.
+- "Save Quote" writes a `quotes` row with `created_via='admin_no_artwork'` and the spec snapshot on each `quote_items` row.
+- Email the customer the standard quote link.
+
+**Customer converts quote → order**:
+- Customer opens quote, clicks "Accept & upload artwork".
+- Standard order flow starts, pre-filled from the quote spec, but requires real artwork upload.
+- After upload, run reprice: compare actual page-count/size/sides against the quoted spec.
+- If pricing differs, show a blocking banner: *"Your artwork is 32 pages, quoted for 24. Price updated from R450 to R580."* Customer must click "Accept new price" to continue; declining voids the conversion and keeps the quote open.
+- Store the drift on the order (`quote_price_drift` JSON) for audit.
+
+**Schema additions** (single migration):
+- `quote_items.spec_snapshot jsonb` (may already exist — verify) storing the full quote-time spec.
+- `quote_documents.is_placeholder boolean default false`.
+- `orders.quoted_price numeric`, `orders.quote_price_drift jsonb` for reprice audit.
+
+### Technical notes
+
+- Quote mode wrapper lives in `src/pages/admin/AdminNewQuote.tsx`; reuses `OrderBuild.tsx` with a `mode="quote"` prop that swaps `OrderFiles` for `QuoteSpecForm`.
+- Virtual document injected via a new `useVirtualDocumentFromSpec` hook feeding the existing `useOrderBuilder` shape.
+- Reprice logic in a new `supabase/functions/reprice-quote-conversion` edge function called from the customer's upload-complete handler.
+- All existing pricing/rate-card/pack-pricing code paths remain untouched.
+
+### Rollout order
+
+1. Fixes 1–3 (small, isolated).
+2. Fix 4 (verify + banner + cron).
+3. Fix 5 (largest — build behind an `admin_quote_mode` feature flag on `platform_settings` so it can be enabled per environment).
