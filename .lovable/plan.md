@@ -1,58 +1,64 @@
-# Trial expiry hard-stop
+## Configurable system email nudges
 
-The DB entitlement (`resolve_branch_entitlement`) already flips a branch to `restricted` the moment `trial_ends_at` passes without a Stripe sub. Three gaps prevent this from being a real hard-stop:
+Add a platform-controlled nudge scheduler that sends branch lifecycle emails on a cadence platform admins can toggle and time — no hard-coded schedules.
 
-1. Customers can still browse/configure orders on a restricted branch — only the Checkout submit is blocked.
-2. Branch admin only shows a warning banner — all admin routes remain fully usable.
-3. The activation modal (`BranchSubscriptionRequiredModal`) treats `trial_started_at` as "already active", so it never reappears after the trial expires.
+### Scope (v1 nudge types)
 
-Plan closes those three gaps and locks the recovery path to paid-subscription only.
+1. **Trial expiring** — 7d, 3d, 1d before `trial_ends_at`
+2. **Trial expired** — on/after expiry, until subscribed
+3. **Payment failed / grace period** — while `past_due` with `grace_until` set (e.g. 3d, 1d before grace end)
+4. **Subscription cancelled** — once, when state flips to `cancelled`/`force_cancel`
+5. **Onboarding stalled** — branch activated but required checklist steps incomplete after N days (e.g. 3d, 7d)
 
-## 1. Customer storefront — dark page when restricted/cancelled
+### Settings — platform-only
 
-- Add a small `<StorefrontEntitlementGuard>` wrapping the branch-scoped storefront routes inside `BranchSlugRoute` (both `/t/:slug/:branchSlug/*` and the subdomain equivalent in `src/App.tsx`).
-- Uses `useBranchStorefrontGate(branchId)`. When `checkoutBlocked`, render a full-page "This store is temporarily unavailable" panel (tenant-branded, no configurator/cart routes rendered). Auth, legal, and `/settings` remain reachable.
-- Tenant-root `/t/:slug` (branch picker) stays open — restricted branches are simply not orderable once picked.
+New table `platform_nudge_settings` (single-row config, keyed by `nudge_key`):
 
-## 2. Branch admin — billing-only lockdown
+| Column | Purpose |
+|---|---|
+| `nudge_key` (pk) | e.g. `trial_expiring`, `trial_expired`, `payment_past_due`, `subscription_cancelled`, `onboarding_stalled` |
+| `enabled` | master on/off |
+| `offsets_days` | int[] — days before/after the anchor event (e.g. `{7,3,1}`, or `{3,7}` for stalled) |
+| `min_hours_between_sends` | dedupe guard, default 20h |
+| `updated_at`, `updated_by` | audit |
 
-- Add `<BranchAdminBillingOnlyGuard>` inside `BranchLayout` (below the existing banner).
-- If `useBranchSubscriptionGate(branchId).billingOnly === true`, redirect via `<Navigate>` to `/branch/settings?tab=subscription` unless the current path is already `/branch/settings` (any tab) or `/branch/logout`.
-- Sidebar links stay visible but non-billing items get `aria-disabled` styling; clicking still routes through the guard so redirection is enforced server-independently.
-- Existing banner copy is kept; guard only fires for `restricted` / `cancelled` states (grace still allows normal use).
+New platform admin page **Platform → Communications → Nudges**: one row per nudge with a toggle and comma-separated offset editor. No template editing in v1 (copy stays in code, per your choice).
 
-## 3. Fix the activation modal so it reappears after expiry
+### Recipients
 
-`src/components/branch/BranchSubscriptionRequiredModal.tsx`:
-- Replace the ad-hoc `isActive` boolean with `useBranchEntitlement(branchId)`.
-- Show the blocking modal whenever `state ∈ {restricted, cancelled}` and a plan is assigned. Hide on `active` / `trialing` / `grace`.
-- Because the underlying panel already hides trial choices once `trial_started_via`, `trial_started_at`, or `stripe_subscription_id` is set, the expired branch will only see the "Subscribe now" card — no re-trial possible.
+Branch owner/admin members only — resolve via `tenant_memberships` filtered to the branch's tenant with roles `Owner`/`Admin`, joined to `profiles.email`.
 
-## 4. Make "trial expired" copy accurate even without cron
+### Delivery + dedupe
 
-`BranchSubscriptionPanel` currently keys "trial ended" off `trial_status === 'expired'`, which requires a background sweep. Change the derivation to also treat `trial_ends_at < now()` (with any of `trial_started_at`, `trial_started_via`, `trial_status='active'`) as expired, so the correct copy appears the instant the timer runs out. No cron dependency.
+- New table `nudge_send_log(branch_id, nudge_key, offset_day, recipient_email, sent_at)` with unique `(branch_id, nudge_key, offset_day, recipient_email)` to guarantee each nudge fires once per recipient per offset.
+- Sends go through the existing `send-email` edge function (custom SMTP, branded — no Supabase auth path).
 
-## 5. Guarantee paid-only recovery path
+### Scheduler
 
-Belt-and-braces server check in `supabase/functions/start-branch-trial/index.ts`:
-- Reject if the branch already has `trial_started_at`, `trial_started_via`, `stripe_subscription_id`, or a passed `trial_ends_at`. Returns `409 trial_already_consumed`. Prevents any client bug from re-granting a free trial.
+- New edge function `nudge-dispatcher` — for each enabled nudge, query candidate branches, compute due offsets from anchor timestamp (`trial_ends_at`, `grace_until`, `cancelled_at`, `activated_at`), skip rows already in `nudge_send_log`, then enqueue emails.
+- Wire via `pg_cron` + `pg_net`, hourly.
 
-Reactivation itself already works: `stripe-webhook` writes `status='active'` on successful checkout, and `resolve_branch_entitlement` immediately returns `active`, releasing both guards.
+### Files
 
-## Technical details
+**New**
+- `supabase/migrations/<ts>_platform_nudge_settings.sql` — 2 tables + grants + RLS (platform admin write, service_role full) + seed rows for the 5 nudge keys + cron job.
+- `supabase/functions/nudge-dispatcher/index.ts` — scheduler.
+- `supabase/functions/_shared/nudge-templates.ts` — subject/body per `nudge_key` with `{branch_name}`, `{days_left}`, `{portal_url}` substitutions.
+- `src/pages/platform/PlatformNudgeSettings.tsx` — admin UI.
+- `src/hooks/usePlatformNudgeSettings.ts`.
 
-- Files edited:
-  - `src/App.tsx` — wrap branch-scoped customer routes with `StorefrontEntitlementGuard`.
-  - `src/components/customer/StorefrontEntitlementGuard.tsx` *(new)* — reads `useBranchStorefrontGate`, renders closed-store panel or `<Outlet/>`.
-  - `src/components/BranchLayout.tsx` — mount `BranchAdminBillingOnlyGuard`.
-  - `src/components/branch/BranchAdminBillingOnlyGuard.tsx` *(new)* — route allow-list + `Navigate`.
-  - `src/components/branch/BranchSubscriptionRequiredModal.tsx` — drive from `useBranchEntitlement`.
-  - `src/components/branch/BranchSubscriptionPanel.tsx` — derive `trialExpired` from `trial_ends_at`.
-  - `supabase/functions/start-branch-trial/index.ts` — server-side trial-consumed guard.
-- No DB migration required (`resolve_branch_entitlement` already correct).
-- Reactivation flow (`stripe-webhook` → entitlement recompute → guards release) is unchanged.
+**Edited**
+- `src/App.tsx` — route for the new platform page.
+- `src/components/platform/PlatformNav.tsx` (or equivalent) — nav entry under Communications.
 
-## Out of scope
+### Out of scope (v1)
 
-- Nightly cron to also stamp `trial_status='expired'` on rows — nice-to-have for reporting, not required for enforcement. Can be added later if reporting needs it.
-- Email nudges before expiry — separate task.
+- Template editing UI (copy lives in `nudge-templates.ts`).
+- Tenant/branch overrides.
+- Non-lifecycle nudges (marketing, product tips).
+- Backfill of already-missed nudges — dispatcher only fires forward from deploy time.
+
+### Verification
+
+- Typecheck.
+- Manually trigger `nudge-dispatcher` via `supabase--curl_edge_functions` against `Demo3new` with a manipulated `trial_ends_at` to confirm one send + dedupe on re-run.
