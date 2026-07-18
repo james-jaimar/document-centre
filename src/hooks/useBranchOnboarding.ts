@@ -20,6 +20,11 @@ export function useBranchOnboarding(branchId?: string) {
   return useQuery({
     queryKey: ["branch_onboarding", branchId],
     enabled: !!branchId,
+    // Always recompute on mount / focus so the checklist reflects the latest
+    // state after the user saves company details, banking, email, team, etc.
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       // Trigger a recompute first so freshly-completed steps show up
       await (supabase as any).rpc("recompute_branch_onboarding", { _branch_id: branchId! });
