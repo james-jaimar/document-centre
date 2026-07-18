@@ -102,6 +102,35 @@ function getRotatedCanvas(
 }
 
 export async function renderPhotoPreview(
+  opts: RenderPreviewOpts & { cacheKey?: string },
+): Promise<string> {
+  const { cacheKey } = opts;
+  if (cacheKey) {
+    const hit = getCachedPreview(cacheKey);
+    if (hit) return hit;
+    const pending = inflight.get(cacheKey);
+    if (pending) return pending;
+  }
+
+  const run = _renderPhotoPreviewImpl(opts);
+  if (cacheKey) {
+    const wrapped = run
+      .then((url) => {
+        cachePreview(cacheKey, url);
+        inflight.delete(cacheKey);
+        return url;
+      })
+      .catch((err) => {
+        inflight.delete(cacheKey);
+        throw err;
+      });
+    inflight.set(cacheKey, wrapped);
+    return wrapped;
+  }
+  return run;
+}
+
+async function _renderPhotoPreviewImpl(
   opts: RenderPreviewOpts,
 ): Promise<string> {
   const {
