@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PhotoPrintEntry } from "@/lib/photoPrints/types";
 import { getPhotoPrintSize, type PhotoPrintSize } from "@/lib/photoPrints/sizes";
-import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
+import { renderPhotoPreview, borderFractionFor, getCachedPreview } from "@/lib/photoPrints/renderPreview";
 
 interface PhotoTileProps {
   photo: PhotoPrintEntry;
