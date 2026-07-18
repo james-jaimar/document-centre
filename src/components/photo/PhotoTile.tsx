@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PhotoPrintEntry } from "@/lib/photoPrints/types";
 import { getPhotoPrintSize, type PhotoPrintSize } from "@/lib/photoPrints/sizes";
-import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
+import { renderPhotoPreview, borderFractionFor, getCachedPreview } from "@/lib/photoPrints/renderPreview";
 
 interface PhotoTileProps {
   photo: PhotoPrintEntry;
@@ -34,15 +34,31 @@ export default function PhotoTile({
   const longEdgeMm = Math.max(size.width_mm, size.height_mm);
   const borderFraction = borderFractionFor(longEdgeMm, borderMm);
 
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Stable cache key — independent of signed URL rotation, so navigating
+  // away and back (or the URL being re-signed) still hits the cache.
+  const cropSig = photo.croppedAreaPixels
+    ? `${photo.croppedAreaPixels.x},${photo.croppedAreaPixels.y},${photo.croppedAreaPixels.width},${photo.croppedAreaPixels.height}`
+    : "none";
+  const pathKey = photo.thumb_path || photo.original_storage_path || photo.id;
+  const cacheKey = `${pathKey}|${cropSig}|${photo.rotation ?? 0}|${size.aspect}|${borderFraction}|480`;
+
+  // Seed synchronously from the module cache so re-renders (scroll, option
+  // changes) don't flash the spinner.
+  const cachedNow = getCachedPreview(cacheKey);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(cachedNow);
   const [rendering, setRendering] = useState(false);
-  const renderKey = `${signedUrl}|${photo.croppedAreaPixels?.x ?? "n"},${photo.croppedAreaPixels?.y ?? "n"},${photo.croppedAreaPixels?.width ?? "n"},${photo.croppedAreaPixels?.height ?? "n"}|${photo.rotation}|${size.aspect}|${borderFraction}`;
-  const lastKeyRef = useRef<string | null>(null);
+  const lastKeyRef = useRef<string | null>(cachedNow ? cacheKey : null);
 
   useEffect(() => {
     if (!signedUrl) return;
-    if (lastKeyRef.current === renderKey) return;
-    lastKeyRef.current = renderKey;
+    if (lastKeyRef.current === cacheKey) return;
+    const cached = getCachedPreview(cacheKey);
+    if (cached) {
+      lastKeyRef.current = cacheKey;
+      setPreviewUrl(cached);
+      return;
+    }
+    lastKeyRef.current = cacheKey;
     let cancelled = false;
     setRendering(true);
     renderPhotoPreview({
@@ -52,11 +68,9 @@ export default function PhotoTile({
       aspect: size.aspect,
       borderFraction,
       outputLongEdgePx: 480,
-      // The tile may be rendering from the small thumb derivative, but
-      // `croppedAreaPixels` is stored in source-pixel coords. Pass source
-      // dims so renderPhotoPreview can scale the crop rect to match.
       sourceWidth: photo.source_width_px,
       sourceHeight: photo.source_height_px,
+      cacheKey,
     })
       .then((url) => {
         if (!cancelled) setPreviewUrl(url);
@@ -70,14 +84,17 @@ export default function PhotoTile({
     return () => {
       cancelled = true;
     };
-  }, [renderKey, signedUrl, photo.croppedAreaPixels, photo.rotation, photo.source_width_px, photo.source_height_px, size.aspect, borderFraction]);
+  }, [cacheKey, signedUrl, photo.croppedAreaPixels, photo.rotation, photo.source_width_px, photo.source_height_px, size.aspect, borderFraction]);
 
   // Low-res check
   const longEdgePx = Math.max(photo.source_width_px, photo.source_height_px);
   const isLowRes = longEdgePx > 0 && longEdgePx < size.min_pixels_long_edge;
 
   return (
-    <div className="group relative rounded-xl border border-border bg-card overflow-hidden transition-all hover:shadow-md hover:border-primary/40">
+    <div
+      className="group relative rounded-xl border border-border bg-card overflow-hidden transition-all hover:shadow-md hover:border-primary/40"
+      style={{ contentVisibility: "auto", containIntrinsicSize: "320px 320px" } as React.CSSProperties}
+    >
       {/* Aspect-ratio thumbnail clipped to print frame */}
       <div
         className="relative w-full bg-white overflow-hidden"
@@ -94,6 +111,8 @@ export default function PhotoTile({
             alt={photo.file_name}
             className={cn("absolute inset-0 w-full h-full object-cover")}
             draggable={false}
+            loading="lazy"
+            decoding="async"
           />
         )}
 

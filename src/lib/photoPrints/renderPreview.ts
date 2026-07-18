@@ -35,6 +35,35 @@ export interface RenderPreviewOpts {
   sourceHeight?: number;
 }
 
+/**
+ * Optional stable cache key. When supplied on `renderPhotoPreview`, the
+ * resulting data URL is memoised in a module-level LRU so repeat renders
+ * (scroll, remount, signed-URL refresh) return instantly without
+ * re-decoding the image or repainting the canvas.
+ */
+const MAX_CACHE_ENTRIES = 128;
+const previewCache = new Map<string, string>();
+const inflight = new Map<string, Promise<string>>();
+
+export function getCachedPreview(key: string | undefined | null): string | null {
+  if (!key) return null;
+  const hit = previewCache.get(key);
+  if (!hit) return null;
+  previewCache.delete(key);
+  previewCache.set(key, hit);
+  return hit;
+}
+
+function cachePreview(key: string, url: string) {
+  if (previewCache.has(key)) previewCache.delete(key);
+  previewCache.set(key, url);
+  while (previewCache.size > MAX_CACHE_ENTRIES) {
+    const oldest = previewCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    previewCache.delete(oldest);
+  }
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -73,6 +102,35 @@ function getRotatedCanvas(
 }
 
 export async function renderPhotoPreview(
+  opts: RenderPreviewOpts & { cacheKey?: string },
+): Promise<string> {
+  const { cacheKey } = opts;
+  if (cacheKey) {
+    const hit = getCachedPreview(cacheKey);
+    if (hit) return hit;
+    const pending = inflight.get(cacheKey);
+    if (pending) return pending;
+  }
+
+  const run = _renderPhotoPreviewImpl(opts);
+  if (cacheKey) {
+    const wrapped = run
+      .then((url) => {
+        cachePreview(cacheKey, url);
+        inflight.delete(cacheKey);
+        return url;
+      })
+      .catch((err) => {
+        inflight.delete(cacheKey);
+        throw err;
+      });
+    inflight.set(cacheKey, wrapped);
+    return wrapped;
+  }
+  return run;
+}
+
+async function _renderPhotoPreviewImpl(
   opts: RenderPreviewOpts,
 ): Promise<string> {
   const {

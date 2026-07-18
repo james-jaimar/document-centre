@@ -11,6 +11,8 @@ interface PhotoEntry {
   quantity?: number;
   rotation?: number;
   original_storage_path?: string;
+  thumb_path?: string;
+  preview_path?: string;
   croppedAreaPixels?: { x: number; y: number; width: number; height: number } | null;
 }
 
@@ -38,8 +40,16 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [signingFailed, setSigningFailed] = useState(false);
 
+  // Prefer the small `thumb_path` derivative when present — the original
+  // can be tens of MB and forcing the browser to decode a dozen of them
+  // stutters admin scroll on the order-detail page.
   useEffect(() => {
-    const paths = photos.map((p) => p.original_storage_path).filter(Boolean) as string[];
+    const wanted = new Set<string>();
+    for (const p of photos) {
+      const pick = p.thumb_path || p.preview_path || p.original_storage_path;
+      if (pick) wanted.add(pick);
+    }
+    const paths = Array.from(wanted);
     if (paths.length === 0) return;
     let cancelled = false;
     resolveUrls(paths)
@@ -82,7 +92,7 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
         {photos.map((p, idx) => {
           const size = getPhotoPrintSize(p.print_size_slug);
           const id = p.id || `${idx}`;
-          const path = p.original_storage_path;
+          const path = p.thumb_path || p.preview_path || p.original_storage_path;
           const signed = path ? signedUrls[path] : undefined;
           const unavailable = signingFailed && !signed;
 
@@ -90,6 +100,7 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
             <div
               key={id}
               className="rounded-md border border-border bg-white overflow-hidden"
+              style={{ contentVisibility: "auto", containIntrinsicSize: "200px 200px" } as React.CSSProperties}
             >
               <div
                 className="relative w-full bg-muted"
@@ -100,6 +111,8 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
                     src={signed}
                     alt={p.file_name || `Photo ${idx + 1}`}
                     className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
