@@ -11,6 +11,8 @@ interface PhotoEntry {
   quantity?: number;
   rotation?: number;
   original_storage_path?: string;
+  thumb_path?: string;
+  preview_path?: string;
   croppedAreaPixels?: { x: number; y: number; width: number; height: number } | null;
 }
 
