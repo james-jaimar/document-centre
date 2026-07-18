@@ -176,6 +176,68 @@ export default function QuoteSpecBuilder({
   const handleOptionChange = (optionName: string, slug: string) =>
     setSelectedOptions((prev) => ({ ...prev, [optionName]: slug }));
 
+  // ── Dummy A4 seed ───────────────────────────────────────
+  // The customer configurator only unlocks after the PDF engine reports
+  // page dimensions. Spec quotes have no artwork, so we simulate an A4
+  // portrait upload: pre-select the Document Size option to whichever
+  // value matches 210×297mm. Admin can change it afterwards; on artwork
+  // upload the real size supersedes this seed.
+  useEffect(() => {
+    if (!familyId || options.length === 0) return;
+    if (blocksActive) return; // pack ladder handles its own size selector
+    const sizeOpt = options.find(
+      (o) => o.name.trim().toLowerCase() === "document size",
+    );
+    if (!sizeOpt) return;
+    const existingKey = Object.keys(selectedOptions).find(
+      (k) => k.toLowerCase() === "document size",
+    );
+    if (existingKey && selectedOptions[existingKey]) return;
+    const values = Array.isArray((sizeOpt as any).values)
+      ? ((sizeOpt as any).values as any[])
+      : [];
+    const TOL = 3;
+    const a4 = values.find((v) => {
+      const m = (v?.metadata ?? {}) as Record<string, any>;
+      const w = Number(m.width_mm ?? 0);
+      const h = Number(m.height_mm ?? 0);
+      if (!w || !h) return false;
+      return (
+        (Math.abs(w - 210) <= TOL && Math.abs(h - 297) <= TOL) ||
+        (Math.abs(w - 297) <= TOL && Math.abs(h - 210) <= TOL)
+      );
+    }) ?? values.find((v) => String(v?.slug ?? "").toLowerCase() === "a4");
+    if (a4?.slug) {
+      setSelectedOptions((prev) => ({ ...prev, [sizeOpt.name]: a4.slug }));
+    }
+  }, [familyId, options, blocksActive, selectedOptions]);
+
+  // Pack-mode (Flyers) equivalent: seed Document Size / Paper / Sides
+  // from the first pack row that mentions A4, otherwise from the first
+  // row. Mirrors the customer-side seed in OrderBuild.
+  useEffect(() => {
+    if (!familyId || !blocksActive || packBlocks.length === 0) return;
+    const has = (key: string) =>
+      !!Object.keys(selectedOptions).find(
+        (k) => k.toLowerCase() === key.toLowerCase(),
+      );
+    if (has("Document Size") || has("Paper") || has("Print Sides")) return;
+    const preferred =
+      packBlocks.find((b) => (b.size ?? "").toLowerCase() === "a4") ??
+      packBlocks[0];
+    if (!preferred) return;
+    setSelectedOptions((prev) => ({
+      ...prev,
+      ...(preferred.size && preferred.size !== "*"
+        ? { "Document Size": preferred.size }
+        : {}),
+      ...(preferred.paper && preferred.paper !== "*"
+        ? { Paper: preferred.paper }
+        : {}),
+      ...(preferred.sides ? { "Print Sides": preferred.sides } : {}),
+    }));
+  }, [familyId, blocksActive, packBlocks, selectedOptions]);
+
   // ── Derived spec ────────────────────────────────────────
   const spec: ItemSpec = useMemo(() => {
     if (isMultiSection && sections.length > 0) {
