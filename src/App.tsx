@@ -89,6 +89,7 @@ import AdminBindingArtworkAudit from "@/pages/admin/AdminBindingArtworkAudit";
 import AdminQuotes from "@/pages/admin/AdminQuotes";
 import AdminQuoteDetail from "@/pages/admin/AdminQuoteDetail";
 import AdminQuoteCreate from "@/pages/admin/AdminQuoteCreate";
+import AdminQuoteSpecCreate from "@/pages/admin/AdminQuoteSpecCreate";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -100,6 +101,7 @@ import BranchCatalogPricing from "@/pages/branch/BranchCatalogPricing";
 import BranchDelivery from "@/pages/branch/BranchDelivery";
 import BranchQuotes from "@/pages/branch/BranchQuotes";
 import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
+import BranchQuoteSpecCreate from "@/pages/branch/BranchQuoteSpecCreate";
 import BranchSettings from "@/pages/branch/BranchSettings";
 import BranchCustomers from "@/pages/branch/BranchCustomers";
 import BranchSentMail from "@/pages/branch/BranchSentMail";
@@ -312,6 +314,11 @@ function AppRoutes() {
         <Route path="/admin/quotes/new" element={
           <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
             <AdminQuoteCreate />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/quotes/new-spec" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuoteSpecCreate />
           </ProtectedRoute>
         } />
         <Route path="/admin/quotes/:id" element={
