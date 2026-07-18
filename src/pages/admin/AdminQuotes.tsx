@@ -29,9 +29,14 @@ export default function AdminQuotes() {
           <h1 className="text-2xl font-bold text-foreground">Quotes</h1>
           <p className="text-muted-foreground">Saved quotations for customers across this tenant</p>
         </div>
-        <Button asChild>
-          <Link to="/admin/quotes/new"><Plus className="h-4 w-4 mr-1" /> New Quote</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link to="/admin/quotes/new"><Plus className="h-4 w-4 mr-1" /> Blank Quote</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/admin/quotes/new-spec"><Plus className="h-4 w-4 mr-1" /> Spec Quote</Link>
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

@@ -278,6 +278,7 @@ function AppRoutes() {
 
         <Route path="/branch/delivery" element={<BranchDelivery />} />
         <Route path="/branch/quotes" element={<BranchQuotes />} />
+        <Route path="/branch/quotes/new-spec" element={<BranchQuoteSpecCreate />} />
         <Route path="/branch/quotes/:id" element={<BranchQuoteDetail />} />
         <Route path="/branch/customers" element={<BranchCustomers />} />
         <Route path="/branch/sent-mail" element={<BranchSentMail />} />
