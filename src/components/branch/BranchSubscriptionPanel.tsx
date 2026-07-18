@@ -126,9 +126,15 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
   const status = subscription?.status || "";
   const trialStatus = (subscription as any)?.trial_status || "";
   const trialEndsAt = (subscription as any)?.trial_ends_at;
-  const inTrial = trialStatus === "active" && trialEndsAt && new Date(trialEndsAt) > new Date();
-  const trialExpired = trialStatus === "expired";
-  const isActive = status === "active" || status === "trialing" || billing === "paid" || inTrial;
+  const trialEndsAtDate = trialEndsAt ? new Date(trialEndsAt) : null;
+  const trialEndsInPast = !!trialEndsAtDate && trialEndsAtDate.getTime() <= Date.now();
+  const inTrial = trialStatus === "active" && !!trialEndsAtDate && !trialEndsInPast;
+  // Consider the trial expired the moment `trial_ends_at` passes on a branch
+  // that ever started a trial, even if a background job hasn't yet stamped
+  // `trial_status='expired'`. This keeps copy + gating accurate in real time.
+  const trialWasStarted = !!(subscription as any)?.trial_started_at || !!(subscription as any)?.trial_started_via || trialStatus === "active" || trialStatus === "expired";
+  const trialExpired = trialStatus === "expired" || (trialWasStarted && trialEndsInPast && !subscription?.stripe_subscription_id);
+  const isActive = status === "active" || (status === "trialing" && !trialEndsInPast) || billing === "paid" || inTrial;
   const isPending = (!isActive && !!subscription?.assigned_plan_slug) || trialExpired;
   const noPlan = !subscription?.assigned_plan_slug;
   const anyLoading = loading !== null;
