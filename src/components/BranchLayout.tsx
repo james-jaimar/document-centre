@@ -63,7 +63,7 @@ export default function BranchLayout() {
         </header>
         <SubscriptionGateBanner />
         <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+          <BranchAdminBillingOnlyGuard />
         </main>
       </div>
     </div>
