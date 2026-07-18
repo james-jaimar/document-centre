@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Outlet, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
@@ -10,6 +10,7 @@ import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
+import BranchAdminBillingOnlyGuard from "@/components/branch/BranchAdminBillingOnlyGuard";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
@@ -62,7 +63,7 @@ export default function BranchLayout() {
         </header>
         <SubscriptionGateBanner />
         <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+          <BranchAdminBillingOnlyGuard />
         </main>
       </div>
     </div>

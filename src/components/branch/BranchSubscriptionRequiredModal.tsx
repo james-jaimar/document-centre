@@ -1,41 +1,29 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
+import { useBranchEntitlement, useBranchSubscription } from "@/hooks/useBranchSubscriptions";
 import { BranchSubscriptionPanel } from "./BranchSubscriptionPanel";
 
 /**
- * Blocking modal shown on branch entry when no subscription/trial has been
- * activated yet. Cannot be dismissed — the user must pick a plan (or start a
- * trial) before they can interact with the branch admin.
+ * Blocking modal shown on branch entry when the branch is NOT entitled to
+ * operate — i.e. entitlement state is `restricted` or `cancelled`.
+ * Cannot be dismissed; the user must pick a plan (or, once the trial has
+ * been consumed, subscribe) before they can interact with the branch admin.
  *
- * Once the subscription becomes active/trialing (or a trial has been started),
- * the modal disappears automatically because the underlying subscription
- * query is invalidated by the panel's actions.
+ * Reactivation is immediate — once the entitlement returns `active` /
+ * `trialing` / `grace`, the modal disappears.
  */
 export function BranchSubscriptionRequiredModal({ branchId }: { branchId: string }) {
-  const { data: subscription, isLoading } = useBranchSubscription(branchId);
+  const { data: subscription, isLoading: subLoading } = useBranchSubscription(branchId);
+  const { data: entitlement, isLoading: entLoading } = useBranchEntitlement(branchId);
 
-  if (isLoading) return null;
-
-  const status = subscription?.status || "";
-  const billing = subscription?.billing_status || "";
-  const trialStatus = (subscription as any)?.trial_status || "";
-  const trialEndsAt = (subscription as any)?.trial_ends_at;
-  const inTrial =
-    trialStatus === "active" && trialEndsAt && new Date(trialEndsAt) > new Date();
-  const isActive =
-    status === "active" ||
-    status === "trialing" ||
-    billing === "paid" ||
-    inTrial ||
-    !!subscription?.stripe_subscription_id ||
-    !!subscription?.trial_started_at;
+  if (subLoading || entLoading) return null;
 
   // No plan assigned yet by tenant admin — nothing the branch manager can do,
   // so don't block them; the panel on Settings will explain.
   if (!subscription?.assigned_plan_slug) return null;
 
-  // Already sorted — no need to block.
-  if (isActive) return null;
+  const state = entitlement?.state;
+  const mustBlock = state === "restricted" || state === "cancelled";
+  if (!mustBlock) return null;
 
   return (
     <Dialog open>
@@ -45,12 +33,10 @@ export function BranchSubscriptionRequiredModal({ branchId }: { branchId: string
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-
         <DialogHeader>
-          <DialogTitle>Choose your subscription to continue</DialogTitle>
+          <DialogTitle>Subscribe to continue</DialogTitle>
           <DialogDescription>
-            Select a trial or subscription option below to activate your branch.
-            You&rsquo;ll be able to explore your admin once a plan is chosen.
+            Your branch is currently paused. Activate a paid subscription below to reopen your store and restore admin access.
           </DialogDescription>
         </DialogHeader>
         <BranchSubscriptionPanel branchId={branchId} />

@@ -1,12 +1,14 @@
 import { useEffect } from "react";
-import { Outlet, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useBranch } from "@/contexts/BranchContext";
 import StoreNotAvailable from "@/components/StoreNotAvailable";
+import StorefrontEntitlementGuard from "@/components/customer/StorefrontEntitlementGuard";
 
 /**
  * Wrapper for routes nested under `:branchSlug`. Resolves the slug to a
  * branch in the current tenant. If valid + live, sets it as the active
- * branch and renders children. Otherwise shows the friendly fallback.
+ * branch and renders children (through the entitlement guard). Otherwise
+ * shows the friendly fallback.
  */
 export default function BranchSlugRoute() {
   const { branchSlug } = useParams<{ branchSlug: string }>();
@@ -18,7 +20,7 @@ export default function BranchSlugRoute() {
   }, [branchSlug, setUrlBranchSlug]);
 
   if (loading || !branchSlug) {
-    return <Outlet />;
+    return <StorefrontEntitlementGuard />;
   }
 
   const branch = findBranchBySlug(branchSlug);
@@ -28,5 +30,5 @@ export default function BranchSlugRoute() {
     return <StoreNotAvailable slug={branchSlug} />;
   }
 
-  return <Outlet />;
+  return <StorefrontEntitlementGuard />;
 }
