@@ -91,7 +91,10 @@ export default function PhotoTile({
   const isLowRes = longEdgePx > 0 && longEdgePx < size.min_pixels_long_edge;
 
   return (
-    <div className="group relative rounded-xl border border-border bg-card overflow-hidden transition-all hover:shadow-md hover:border-primary/40">
+    <div
+      className="group relative rounded-xl border border-border bg-card overflow-hidden transition-all hover:shadow-md hover:border-primary/40"
+      style={{ contentVisibility: "auto", containIntrinsicSize: "320px 320px" } as React.CSSProperties}
+    >
       {/* Aspect-ratio thumbnail clipped to print frame */}
       <div
         className="relative w-full bg-white overflow-hidden"
