@@ -2893,6 +2893,44 @@ export type Database = {
           },
         ]
       }
+      nudge_send_log: {
+        Row: {
+          branch_id: string
+          id: string
+          nudge_key: string
+          offset_day: number
+          outbox_id: string | null
+          recipient_email: string
+          sent_at: string
+        }
+        Insert: {
+          branch_id: string
+          id?: string
+          nudge_key: string
+          offset_day: number
+          outbox_id?: string | null
+          recipient_email: string
+          sent_at?: string
+        }
+        Update: {
+          branch_id?: string
+          id?: string
+          nudge_key?: string
+          offset_day?: number
+          outbox_id?: string | null
+          recipient_email?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nudge_send_log_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       number_sequences: {
         Row: {
           app_id: string
@@ -4504,6 +4542,39 @@ export type Database = {
             referencedColumns: ["slug"]
           },
         ]
+      }
+      platform_nudge_settings: {
+        Row: {
+          description: string | null
+          enabled: boolean
+          label: string
+          min_hours_between_sends: number
+          nudge_key: string
+          offsets_days: number[]
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          description?: string | null
+          enabled?: boolean
+          label: string
+          min_hours_between_sends?: number
+          nudge_key: string
+          offsets_days?: number[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          description?: string | null
+          enabled?: boolean
+          label?: string
+          min_hours_between_sends?: number
+          nudge_key?: string
+          offsets_days?: number[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
       }
       platform_onboarding_tokens: {
         Row: {
