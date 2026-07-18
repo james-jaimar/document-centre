@@ -63,16 +63,164 @@ export default function PlatformCommunications() {
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="triggers">Triggers</TabsTrigger>
+          <TabsTrigger value="nudges">Nudges</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="compose" className="mt-4"><ComposeTab /></TabsContent>
         <TabsContent value="templates" className="mt-4"><TemplatesTab /></TabsContent>
         <TabsContent value="triggers" className="mt-4"><TriggersTab /></TabsContent>
+        <TabsContent value="nudges" className="mt-4"><NudgesTab /></TabsContent>
         <TabsContent value="history" className="mt-4"><HistoryTab /></TabsContent>
       </Tabs>
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────
+// Nudges: platform-controlled toggles + timing offsets for
+// automated system emails (trial expiry, past-due, cancelled,
+// onboarding stalled). Copy stays in the edge function.
+// ─────────────────────────────────────────────────────────────
+interface NudgeSetting {
+  nudge_key: string;
+  label: string;
+  description: string | null;
+  enabled: boolean;
+  offsets_days: number[];
+  updated_at: string;
+}
+
+function NudgesTab() {
+  const { toast } = useToast();
+  const [rows, setRows] = useState<NudgeSetting[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("platform_nudge_settings" as any)
+      .select("*")
+      .order("label");
+    if (error) toast({ title: "Failed to load", description: error.message, variant: "destructive" });
+    setRows(((data ?? []) as unknown) as NudgeSetting[]);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const parseOffsets = (s: string): number[] | null => {
+    const parts = s.split(",").map(x => x.trim()).filter(Boolean);
+    const nums: number[] = [];
+    for (const p of parts) {
+      const n = Number(p);
+      if (!Number.isInteger(n) || n < 0 || n > 365) return null;
+      if (!nums.includes(n)) nums.push(n);
+    }
+    return nums;
+  };
+
+  const toggleEnabled = async (row: NudgeSetting, enabled: boolean) => {
+    setSaving(row.nudge_key);
+    const { error } = await supabase
+      .from("platform_nudge_settings" as any)
+      .update({ enabled, updated_at: new Date().toISOString() })
+      .eq("nudge_key", row.nudge_key);
+    setSaving(null);
+    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
+    setRows(rs => rs.map(r => r.nudge_key === row.nudge_key ? { ...r, enabled } : r));
+    toast({ title: enabled ? "Enabled" : "Disabled", description: row.label });
+  };
+
+  const saveOffsets = async (row: NudgeSetting) => {
+    const raw = drafts[row.nudge_key] ?? row.offsets_days.join(", ");
+    const parsed = parseOffsets(raw);
+    if (!parsed) {
+      toast({ title: "Invalid offsets", description: "Enter comma-separated whole numbers (0–365).", variant: "destructive" });
+      return;
+    }
+    setSaving(row.nudge_key);
+    const { error } = await supabase
+      .from("platform_nudge_settings" as any)
+      .update({ offsets_days: parsed, updated_at: new Date().toISOString() })
+      .eq("nudge_key", row.nudge_key);
+    setSaving(null);
+    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
+    setRows(rs => rs.map(r => r.nudge_key === row.nudge_key ? { ...r, offsets_days: parsed } : r));
+    setDrafts(d => { const n = { ...d }; delete n[row.nudge_key]; return n; });
+    toast({ title: "Saved", description: `${row.label}: ${parsed.join(", ")} days` });
+  };
+
+  const runNow = async () => {
+    setRunning(true);
+    const response = await invokeEdgeFunctionVerbose("nudge-dispatcher", {});
+    setRunning(false);
+    if (!response.ok) {
+      toast({ title: "Run failed", description: response.error ?? "Dispatcher error", variant: "destructive" });
+      return;
+    }
+    const d = response.data as any;
+    toast({ title: "Dispatcher run complete", description: `Sent ${d?.sent ?? 0} · Skipped ${d?.skipped ?? 0} · Errors ${d?.errors?.length ?? 0}` });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base">System email nudges</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Platform-controlled reminders sent automatically to branch owners and admins.
+              Offsets are days <em>before</em> the event (expiring, grace end) or <em>after</em> the event (expired, cancelled, onboarding started).
+              Runs hourly.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={runNow} disabled={running}>
+            {running && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Run now
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
+          {!loading && rows.map(row => {
+            const draft = drafts[row.nudge_key] ?? row.offsets_days.join(", ");
+            const dirty = draft !== row.offsets_days.join(", ");
+            return (
+              <div key={row.nudge_key} className="border rounded-md p-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Switch checked={row.enabled} onCheckedChange={(v) => toggleEnabled(row, v)} disabled={saving === row.nudge_key} />
+                      <span className="text-sm font-medium">{row.label}</span>
+                      {!row.enabled && <Badge variant="secondary" className="text-xs">Off</Badge>}
+                    </div>
+                    {row.description && <p className="text-xs text-muted-foreground mt-1">{row.description}</p>}
+                  </div>
+                </div>
+                <div className="mt-3 flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label className="text-xs">Offsets (days, comma-separated)</Label>
+                    <Input
+                      value={draft}
+                      onChange={(e) => setDrafts(d => ({ ...d, [row.nudge_key]: e.target.value }))}
+                      placeholder="e.g. 7, 3, 1"
+                      className="mt-1"
+                    />
+                  </div>
+                  <Button size="sm" onClick={() => saveOffsets(row)} disabled={!dirty || saving === row.nudge_key}>
+                    {saving === row.nudge_key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 
 function ComposeTab() {
   const { toast } = useToast();
