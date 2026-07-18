@@ -92,7 +92,7 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
         {photos.map((p, idx) => {
           const size = getPhotoPrintSize(p.print_size_slug);
           const id = p.id || `${idx}`;
-          const path = p.original_storage_path;
+          const path = p.thumb_path || p.preview_path || p.original_storage_path;
           const signed = path ? signedUrls[path] : undefined;
           const unavailable = signingFailed && !signed;
 
@@ -100,6 +100,7 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
             <div
               key={id}
               className="rounded-md border border-border bg-white overflow-hidden"
+              style={{ contentVisibility: "auto", containIntrinsicSize: "200px 200px" } as React.CSSProperties}
             >
               <div
                 className="relative w-full bg-muted"
@@ -110,6 +111,8 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
                     src={signed}
                     alt={p.file_name || `Photo ${idx + 1}`}
                     className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
