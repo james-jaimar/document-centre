@@ -35,6 +35,35 @@ export interface RenderPreviewOpts {
   sourceHeight?: number;
 }
 
+/**
+ * Optional stable cache key. When supplied on `renderPhotoPreview`, the
+ * resulting data URL is memoised in a module-level LRU so repeat renders
+ * (scroll, remount, signed-URL refresh) return instantly without
+ * re-decoding the image or repainting the canvas.
+ */
+const MAX_CACHE_ENTRIES = 128;
+const previewCache = new Map<string, string>();
+const inflight = new Map<string, Promise<string>>();
+
+export function getCachedPreview(key: string | undefined | null): string | null {
+  if (!key) return null;
+  const hit = previewCache.get(key);
+  if (!hit) return null;
+  previewCache.delete(key);
+  previewCache.set(key, hit);
+  return hit;
+}
+
+function cachePreview(key: string, url: string) {
+  if (previewCache.has(key)) previewCache.delete(key);
+  previewCache.set(key, url);
+  while (previewCache.size > MAX_CACHE_ENTRIES) {
+    const oldest = previewCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    previewCache.delete(oldest);
+  }
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
