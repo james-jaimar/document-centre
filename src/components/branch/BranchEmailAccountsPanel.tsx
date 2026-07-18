@@ -209,14 +209,27 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
     load();
   };
 
+  const hasActiveAccount = accounts.some((a) => a.is_active);
+
   return (
     <div className="space-y-6">
+      {!loading && !hasActiveAccount && (
+        <div className="rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-4">
+          <h3 className="text-base font-semibold text-amber-900 dark:text-amber-100 mb-1">
+            ⚠ No sender email configured
+          </h3>
+          <p className="text-sm text-amber-900/90 dark:text-amber-100/90">
+            Order confirmations, quotes and invoices <strong>will not send</strong> until you
+            connect a mailbox below. Choose Gmail, Microsoft 365, or SMTP.
+          </p>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-muted/30 p-4">
         <h3 className="text-base font-semibold mb-1">How this branch sends email</h3>
         <p className="text-sm text-muted-foreground">
           Connect one mailbox below (Gmail, Microsoft 365, or SMTP). All order, quote, and
-          notification emails from this branch will be sent from it. If nothing is configured,
-          emails fall back to the Document Centre platform sender.
+          notification emails from this branch will be sent from it.
         </p>
       </div>
 
