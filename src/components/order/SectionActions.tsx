@@ -82,9 +82,16 @@ function getActions(familySlug?: string | null): ActionDef[] {
   if (familySlug === "brochures") return BROCHURE_ACTIONS;
   if (familySlug === "flyers") return FLYER_ACTIONS;
   if (familySlug === "posters") return POSTER_ACTIONS;
+  if (
+    familySlug === "pull-up-banners" ||
+    familySlug === "pullup-banners" ||
+    familySlug === "pull-up-banner" ||
+    familySlug === "pull_up_banners"
+  ) return PULL_UP_BANNER_ACTIONS;
   if (familySlug === "business_cards" || familySlug === "business-cards") return BUSINESS_CARD_ACTIONS;
   if (familySlug === "ring_binders" || familySlug === "ring-binders") return RING_BINDER_ACTIONS;
   if (BOUND_SLUGS.has(familySlug)) return BOUND_ACTIONS;
+
   return BOUND_ACTIONS;
 }
 
