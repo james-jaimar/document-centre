@@ -1,65 +1,70 @@
-# VAT / Tax model — align system to "ex-VAT internally, incl-VAT to customers"
+# Generic Product Variant layer
 
-## Principle (locked in)
+Adds a first-class "variant" concept to any product family so tiered SKUs (Pull-up Banner Economy vs Executive, future Roller Banner Standard/Premium, canvas Thin/Deep, etc.) share a single family, size list and option surface, but carry their own pricing and label.
 
-- **All prices stored and edited in the system are ex-VAT.** Rate cards, pack pricing, product overrides, cost inputs, quote unit prices, order line-item prices — every number in the database is the net (ex-VAT) figure.
-- **Customer-facing prices are shown incl-VAT.** Product cards, configurator PriceSummary, cart line items, quote view, checkout, invoice — the number the customer sees is `net × (1 + rate)`.
-- **VAT is a display + totals concern**, computed from the resolved branch tax config (`resolveBranchTax` / `computeVat`). The engine (`calculatePrice.ts`, `useItemPricing`) does not change.
-- **Totals blocks** (cart, checkout, quote, invoice, order confirmation) always show three lines: `Subtotal (ex VAT)`, `VAT @ 15%`, `Total (incl VAT)`. If VAT is disabled for the branch, the VAT line is hidden and Total == Subtotal.
+The customer picks a variant like they'd pick a paper stock; the pricing engine looks up the variant-specific rate. No duplicated products, no hardware-as-paper fudges.
 
-## Scope of changes
+## Data model
 
-### 1. Admin / branch surfaces — label as ex-VAT, no maths change
-Add a small, consistent "ex VAT" suffix/hint (helper text under headings + column-header suffixes) on:
-- `src/components/pricing/MasterCatalogPricingEditor.tsx`
-- `src/components/pricing/RateCardEditor.tsx`
-- `src/components/pricing/PackPricingMatrixEditor.tsx`
-- `src/components/pricing/BranchPackPricingEditor.tsx`
-- Product override editors under `src/components/products/**` that expose price fields
-- `src/components/quotes/QuoteSpecBuilder.tsx` — unit price + total line clearly marked "ex VAT" with an incl-VAT hint below (informational only)
-- `src/pages/admin/settings/FinancialTab.tsx` + `src/components/branch/BranchTaxCard.tsx` — reword help copy to state the model explicitly ("All prices in the system are ex VAT. VAT is added on top when shown to customers and on quotes/invoices.")
+New master-catalogue kind, mirroring how `catalog_papers` / `catalog_finishing` work.
 
-No pricing maths touched here — labels + copy only.
+```text
+catalog_variants                       (master + tenant + branch scoped, like other catalogs)
+  id, scope_type, scope_id
+  code (e.g. 'economy' | 'executive')
+  label ('Economy', 'Executive')
+  description, sort_order, is_active
 
-### 2. Shared display helper (new)
-`src/lib/tax/displayPrice.ts`
-- `usePriceDisplay(branchId)` hook — memoised `ResolvedTax` for the active branch (via `useTenantContext`), returns `{ tax, toGross(net), formatGross(net), formatNet(net), vatOn(net) }`.
-- Removes duplicated `resolveBranchTax` calls; single source for gross conversion.
+product_variant_links                  (which variants a family offers)
+  id, product_family_id
+  catalog_variant_id
+  is_default boolean
+  sort_order
 
-### 3. Customer-facing storefront — convert display to incl-VAT
-Change **display only** (values passed in remain ex-VAT from the engine):
-- `src/components/order/PriceSummary.tsx` — render unit price and running total via `toGross`; append "incl VAT" suffix when VAT enabled, "ex VAT" when disabled.
-- `src/components/order/OptionSelector.tsx` — price-impact chips converted to gross with same suffix.
-- Product cards / catalogue listings under `src/components/storefront/**` and `src/pages/storefront/**` — same conversion.
-- `src/pages/dashboard/OrderBuild.tsx`, `PhotoPrintsBuilder.tsx` — any price readouts converted.
+rate_card_clicks.variant_code   TEXT NULL      -- optional discriminator on existing rate rows
+rate_card_photo_prints.variant_code TEXT NULL
+product_pack_pricing_overrides.variant_code TEXT NULL
+```
 
-### 4. Totals blocks — add VAT breakdown line
-`src/components/order/PriceTotals.tsx` (new shared component: Subtotal / VAT / Total, hides VAT when disabled) used by:
-- `src/pages/dashboard/Cart.tsx` (replaces the single "Total" block; loops items to get ex-VAT subtotal, then applies branch VAT).
-- `src/pages/dashboard/Checkout.tsx` (already stores `subtotal + vat + total` on the order via `useCart` — wire the existing values into the new block; remove the "Demo mode: no VAT" comment).
-- `src/pages/dashboard/OrderConfirmation.tsx`, `CustomerOrderDetail.tsx`, `CustomerQuoteDetail.tsx`.
-- Customer quote view + branch quote detail (`BranchQuoteDetail.tsx`) — quote line items shown ex-VAT with the same 3-line totals block.
-- Invoice/proforma templates (if rendered client-side) — same block.
+`variant_code` is NULL for products that don't use variants (100% backwards compatible — every existing row keeps working). When a family HAS variants, the pricing lookup prefers a row matching the selected `variant_code`, falling back to the NULL row if none exists.
 
-### 5. `useCart.ts`
-Already computes VAT correctly for order persistence. Confirm `tax_inclusive=false` path (net stored, VAT added) is the only path used; the `inclusive` branch stays for tenants who explicitly opt in but is not the default. No behavioural change expected — just verify subtotal/vat/total fields on `orders` line up with the new display blocks.
+All new tables get GRANTs + RLS (master = public read, tenant/branch scoped writes via `has_role` / `tenant_memberships`), matching the existing catalog pattern.
 
-### 6. Defaults & copy
-- Tenant `FinancialTab.tsx` default: `tax_inclusive = false` (already the default), VAT rate 15%, label "VAT". Add a locked-in help panel describing the model.
-- Branch `BranchTaxCard.tsx`: keep override capability but surface the tenant policy prominently so branch owners understand they're editing ex-VAT numbers.
+## Admin surfaces
 
-## Out of scope
-- No changes to `calculatePrice.ts`, `useItemPricing`, rate-card resolution, or any pricing maths.
-- No schema migrations — `tax_*` settings already exist; no new columns.
-- No change to how orders/quotes are persisted beyond confirming existing subtotal/vat/total fields render in the new totals block.
+1. **Platform → Master Pricing → new "Variants" tab**
+   Simple CRUD list of master variants (code, label, description, active). Ships with `economy` and `executive` seeded so pull-up banners work out of the box.
+
+2. **Admin → Products → Edit Product Family → new "Variants" section**
+   Multi-select of catalog variants to enable for this family + choose default. Empty = family has no variants (current behaviour).
+
+3. **Master Pricing → Click Charges dialog** (the one in the screenshot)
+   When the selected Size belongs to a family that has variants, show a **Variant** dropdown next to Colour/Sides. The row is saved with `variant_code`. Existing rows without variants keep working; the grid groups by variant.
+
+4. **Pack Pricing editor** — same treatment: variant column appears only when the family has variants.
+
+## Customer configurator
+
+`OptionsPanel.tsx` gains a "Variant" selector (rendered from `product_variant_links`, styled like the size/paper selectors) whenever the family has variants. Selection is stored on the order item as `variant_code`.
+
+`useItemPricing` / `calculatePrice` pass the selected `variant_code` into the rate lookups so Economy and Executive resolve to their own prices, with graceful NULL fallback.
+
+`QuoteSpecBuilder` seeds the family's default variant (same pattern as the A4 dummy size) so spec quotes price correctly.
+
+## Migration & rollout
+
+- Schema migration creates the two tables, adds the three nullable `variant_code` columns, seeds `economy` + `executive` at master scope, and links them to any family flagged "banners". No existing pricing rows are touched.
+- Backwards compatibility: every existing family has zero `product_variant_links` → variant selector hidden → engine behaves exactly as today.
+- Pull-up banners: create the family, attach both variants, then add two click-charge rows (one per variant) at your Economy / Executive prices.
+
+## Out of scope (call-outs)
+
+- No changes to finishing/paper catalogues — variants are orthogonal.
+- No automatic price deltas ("Executive = Economy × 1.4"). Each variant is priced explicitly, which matches how you price everything else.
+- Reporting/analytics filters by variant can come later; the `variant_code` on order items makes it trivial when needed.
 
 ## Technical notes
-- Rounding: VAT rounded to 2dp per line for display; totals summed from ex-VAT lines then VAT applied to the sum (matches `useCart.ts` today) to avoid per-line rounding drift.
-- Currency formatting continues via `formatPrice`.
-- Suffix strings are constants in `src/lib/tax/displayPrice.ts` so we can localise later.
 
-## Verification
-- Configurator for A5 flyer at a VAT-enabled branch: unit and total display gross; cart shows Subtotal (net) / VAT / Total; numbers reconcile.
-- Same product at a branch with VAT disabled: no suffix, no VAT line, Total == Subtotal.
-- Admin rate-card editor for the same branch: values match what's stored (ex-VAT), with "ex VAT" hint.
-- Quote builder: unit price entered/derived ex-VAT, customer-facing quote PDF/view shows incl-VAT with VAT line.
+- Files touched: new `catalog_variants` + `product_variant_links` hooks, `MasterCatalogVariantsEditor.tsx`, extend `RateCardEditor.tsx` + `MasterPackPricingEditor.tsx` + `PackPricingMatrixEditor.tsx`, `ProductFamilyEditor` (variants section), `OptionsPanel.tsx`, `PriceSummary.tsx`, `useItemPricing.ts`, `calculatePrice.ts`, `useOrderBuilder.ts` (persist `variant_code`), `QuoteSpecBuilder.tsx`.
+- Order item persistence: add `variant_code TEXT NULL` to `order_items` and `quote_items` so the choice snapshots with the order (immutable pricing rule).
+- All rate-card lookups become `WHERE ... AND (variant_code = $v OR (variant_code IS NULL AND NOT EXISTS variant-specific row))`.
