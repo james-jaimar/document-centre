@@ -1017,7 +1017,7 @@ export default function OrderFiles() {
       backendAssetId: candidate.backend_asset_id,
       lockedSize: sessionSizeLock.size,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock]);
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock, allowedCustomSizes]);
 
   // Orientation handlers — rotates 90° in the direction the advisory was opened for.
   const handleRotateOrientation = useCallback(async () => {
