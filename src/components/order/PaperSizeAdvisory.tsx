@@ -59,6 +59,7 @@ export default function PaperSizeAdvisory({
   lockedSize,
   productFamilySlug,
   allowedSizeNames,
+  allowedCustomSizes,
 }: PaperSizeAdvisoryProps) {
   const suggestionsAll = getSuggestedIsoSizes(widthMm, heightMm, productFamilySlug);
 
