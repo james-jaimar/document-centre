@@ -128,13 +128,6 @@ export default function QuoteSpecBuilder({
   const isMultiSection = !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug);
 
   const { data: options = [] } = useCatalogBackedOptions(familyId || null, branchId ?? null);
-  const { data: rulesRaw = [] } = usePricingRules(tenantId, currency, {
-    masterOnly: true,
-  });
-  const rules = useMemo(
-    () => rulesRaw.filter((r) => r.product_family_id === familyId),
-    [rulesRaw, familyId],
-  );
 
   // Pack-pricing ladder (branch > tenant > master).
   const { data: packOverrides = [] } = usePackPricingOverridesForFamily(
