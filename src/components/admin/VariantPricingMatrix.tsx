@@ -42,16 +42,24 @@ import TiersButton from "@/components/pricing/TiersButton";
 interface Props {
   productFamilyId: string;
   variantLinks: ProductVariantLink[];
+  scope?: "master" | "branch";
+  tenantId?: string | null;
+  branchId?: string | null;
 }
 
 /**
- * Inline per-variant pricing matrix rendered on the Product Family's Variants
- * tab. Reads and writes the same `rate_card_clicks` rows the Master Pricing
- * → Click Charges tab uses (scope = master), pre-filtered to this family's
- * linked sizes × linked variants.
+ * Inline per-variant pricing matrix. Reads and writes `rate_card_clicks` rows
+ * at the requested scope (master by default, or branch when tenant/branch ids
+ * are supplied), pre-filtered to this family's linked sizes × linked variants.
  */
-export default function VariantPricingMatrix({ productFamilyId, variantLinks }: Props) {
-  const { data: allClicks = [] } = useRateCardClicks({ scope: "master" });
+export default function VariantPricingMatrix({
+  productFamilyId,
+  variantLinks,
+  scope = "master",
+  tenantId = null,
+  branchId = null,
+}: Props) {
+  const { data: allClicks = [] } = useRateCardClicks({ scope, tenantId, branchId });
   const { data: sizes = [] } = useCatalogSizes();
   const { data: catalogLinks = [] } = useProductCatalogLinks(productFamilyId);
   const update = useUpdateRateCardClick();
@@ -144,9 +152,9 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
     const size = sizes.find((s) => s.code.toLowerCase() === adding.sizeCode.toLowerCase());
     try {
       await insert.mutateAsync({
-        scope_type: "master",
-        tenant_id: null,
-        branch_id: null,
+        scope_type: scope,
+        tenant_id: scope === "master" ? null : tenantId,
+        branch_id: scope === "branch" ? branchId : null,
         size: size?.label ?? adding.sizeCode,
         catalog_size_code: size?.code ?? adding.sizeCode.toLowerCase(),
         colour: adding.colour,
@@ -181,13 +189,16 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
   return (
     <Card className="p-4 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-foreground">Variant pricing (Master)</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          Variant pricing ({scope === "branch" ? "Branch override" : "Master"})
+        </h3>
         <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-          Set the master sell/cost price per variant, per size. These rows are the same
-          click-charges used across the platform — branches inherit them and can override under
-          Branch → Pricing → Click Charges. All prices are entered ex&nbsp;VAT.
+          {scope === "branch"
+            ? "Your branch's variant prices per size. If a variant row is missing, use 'Pull missing from tenant' in the Click Charges section above. All prices are entered ex\u00a0VAT."
+            : "Set the master sell/cost price per variant, per size. These rows are the same click-charges used across the platform — branches inherit them and can override under Branch → Pricing → Click Charges. All prices are entered ex\u00a0VAT."}
         </p>
       </div>
+
 
       {familySizes.map((size) => (
         <div key={size.id} className="border border-border rounded-md overflow-hidden">
@@ -263,9 +274,9 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
                                   table="clicks"
                                   lineId={row.id}
                                   label={`${size.label} · ${row.colour} · ${row.sides} · ${vLabel}`}
-                                  scope="master"
-                                  tenantId={null}
-                                  branchId={null}
+                                  scope={scope}
+                                  tenantId={scope === "master" ? null : tenantId}
+                                  branchId={scope === "branch" ? branchId : null}
                                   fallbackSell={row.sell_price}
                                   fallbackCost={row.cost_price}
                                 />
