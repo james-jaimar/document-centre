@@ -23,16 +23,15 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
-import { usePricingRules } from "@/hooks/usePricingRules";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
-  calculateItemPrice,
   type ItemSpec,
   type ItemSpecSection,
-  type PriceBreakdown,
 } from "@/lib/calculatePrice";
+import { useItemPricing } from "@/hooks/useItemPricing";
+import { normaliseQuoteSections } from "@/lib/quotes/normaliseQuoteSections";
 import { formatPrice } from "@/lib/formatCurrency";
 import { toast } from "sonner";
 
