@@ -1,5 +1,6 @@
 import { useProductFamilies } from "@/hooks/useProductFamilies";
 import { useProductVariantLinks } from "@/hooks/useCatalogVariants";
+import { useCatalogSizes, useProductCatalogLinks } from "@/hooks/useCatalog";
 import VariantPricingMatrix from "@/components/admin/VariantPricingMatrix";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -64,7 +65,20 @@ function FamilyVariantBlock({
   branchId: string;
 }) {
   const { data: links = [] } = useProductVariantLinks(familyId);
+  const { data: sizes = [] } = useCatalogSizes();
+  const { data: catalogLinks = [] } = useProductCatalogLinks(familyId);
   if (links.length === 0) return null;
+
+  const familySizeCodes = new Set(
+    catalogLinks
+      .filter((l: any) => l.catalog === "size")
+      .map((l: any) => String(l.item_code).toLowerCase()),
+  );
+  const liveLinkedSizes = sizes.filter((s: any) =>
+    familySizeCodes.has(String(s.code).toLowerCase()),
+  );
+  if (liveLinkedSizes.length === 0) return null;
+
   return (
     <Card>
       <CardHeader className="pb-2">
