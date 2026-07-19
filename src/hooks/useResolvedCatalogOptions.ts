@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { matchKnownSize, type PaperSize } from "@/lib/paperSizes";
 
 export type CatalogKind = "size" | "print_attr" | "paper" | "finishing";
 
