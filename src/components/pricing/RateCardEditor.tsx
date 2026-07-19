@@ -532,7 +532,21 @@ function ClicksTab({
                   </SelectContent>
                 </Select>
               </div>
-              <div />
+              <div>
+                <Label className="text-xs">Variant (optional)</Label>
+                <Select
+                  value={adding.variant_code || "__none__"}
+                  onValueChange={(v) => setAdding({ ...adding, variant_code: v === "__none__" ? "" : v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {variants.map((v) => (
+                      <SelectItem key={v.code} value={v.code}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label className="text-xs">Sell price (R)</Label>
                 <Input
