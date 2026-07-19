@@ -289,6 +289,7 @@ function ClicksTab({
   const colourOptions = printAttrs.filter((a) => a.attribute === "colour_mode" && a.is_active && (a.code === "mono" || a.code === "colour"));
   const sidesOptions = printAttrs.filter((a) => a.attribute === "sides" && a.is_active && (a.code === "simplex" || a.code === "duplex"));
   const [drafts, setDrafts] = useState<Record<string, { sell?: string; cost?: string }>>({});
+  const [variantFilter, setVariantFilter] = useState<string>("__all__");
   const [adding, setAdding] = useState<{
     size: string;
     colour: "mono" | "colour";
@@ -297,6 +298,13 @@ function ClicksTab({
     sell_price: number;
     cost_price: number;
   } | null>(null);
+
+  const filteredClicks = clicks.filter((c) => {
+    if (variantFilter === "__all__") return true;
+    const vc = ((c as any).variant_code ?? "") as string;
+    if (variantFilter === "__none__") return !vc;
+    return vc === variantFilter;
+  });
 
   function setDraft(id: string, field: "sell" | "cost", value: string) {
     setDrafts((d) => ({ ...d, [id]: { ...d[id], [field]: value } }));
