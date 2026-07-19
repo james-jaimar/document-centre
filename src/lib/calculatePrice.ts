@@ -707,8 +707,9 @@ export function calculatePriceFromRateCard(
       // n-up: parent rate divided across the imposed pieces.
       const unit = tieredParentUnit / rate.nUp;
       const sectionLabel = section.label ? `${section.label}: ` : "";
+      const impNote = rate.nUp > 1 ? ` (${rate.nUp}-up on ${rate.sourceSize})` : "";
       lines.push({
-        label: `${sectionLabel}Print ${size} ${sectionColour} ${sectionSides}`,
+        label: `${sectionLabel}Print ${size} ${sectionColour} ${sectionSides}${impNote}`,
         type: "per_page",
         unit_amount: unit,
         multiplier: clicks,
