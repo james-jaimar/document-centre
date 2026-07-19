@@ -967,7 +967,7 @@ export default function OrderFiles() {
       heightMm: Number(nonIsoDoc.page_height_mm),
       backendAssetId: nonIsoDoc.backend_asset_id,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo]);
+  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo, allowedCustomSizes]);
 
   // ISO uploads: set lock if none exists, otherwise prompt locked-variant
   // advisory if the doc's ISO size differs from the lock.
