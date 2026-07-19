@@ -440,6 +440,19 @@ export default function OrderBuild() {
     });
   }, [options, isMultiSectionFamily]);
 
+  // Seed default variant when the family has variants configured.
+  useEffect(() => {
+    if (variantOptions.length === 0 || !defaultVariantCode) return;
+    setSpec((prev) => {
+      const current = prev.selected_options["Variant"];
+      if (current && variantOptions.some((v) => v.code === current)) return prev;
+      return {
+        ...prev,
+        selected_options: { ...prev.selected_options, Variant: defaultVariantCode },
+      };
+    });
+  }, [variantOptions, defaultVariantCode]);
+
   // ── Mirror Print Colour / Print Sides → body section is_color / is_duplex.
   // Only applies to single-section families. The pricing engine reads
   // section-level flags (so per-section mixed-colour bound documents work);
