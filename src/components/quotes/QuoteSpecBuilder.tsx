@@ -23,16 +23,14 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
-import { usePricingRules } from "@/hooks/usePricingRules";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
-  calculateItemPrice,
   type ItemSpec,
-  type ItemSpecSection,
-  type PriceBreakdown,
 } from "@/lib/calculatePrice";
+import { useItemPricing } from "@/hooks/useItemPricing";
+import { normaliseQuoteSections } from "@/lib/quotes/normaliseQuoteSections";
 import { formatPrice } from "@/lib/formatCurrency";
 import { toast } from "sonner";
 
@@ -129,13 +127,6 @@ export default function QuoteSpecBuilder({
   const isMultiSection = !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug);
 
   const { data: options = [] } = useCatalogBackedOptions(familyId || null, branchId ?? null);
-  const { data: rulesRaw = [] } = usePricingRules(tenantId, currency, {
-    masterOnly: true,
-  });
-  const rules = useMemo(
-    () => rulesRaw.filter((r) => r.product_family_id === familyId),
-    [rulesRaw, familyId],
-  );
 
   // Pack-pricing ladder (branch > tenant > master).
   const { data: packOverrides = [] } = usePackPricingOverridesForFamily(
@@ -239,24 +230,21 @@ export default function QuoteSpecBuilder({
   }, [familyId, blocksActive, packBlocks, selectedOptions]);
 
   // ── Derived spec ────────────────────────────────────────
+  // Matches how `OrderBuild` (customer flow) builds its `pricingSpec` so
+  // quote pricing == customer-facing pricing for the same options.
   const spec: ItemSpec = useMemo(() => {
     if (isMultiSection && sections.length > 0) {
-      const specSections: ItemSpecSection[] = sections.map((s) => ({
-        label: s.label || s.role,
-        page_count: Math.max(0, s.page_count),
-        is_color: s.is_color,
-        is_duplex: s.is_duplex,
-      }));
-      const totalPages = specSections.reduce((sum, s) => sum + s.page_count, 0);
-      const anyColor = specSections.some((s) => s.is_color);
-      const anyDuplex = specSections.some((s) => s.is_duplex);
+      const normalised = normaliseQuoteSections(sections);
+      const totalPages = normalised.reduce((sum, s) => sum + s.page_count, 0);
+      const anyColor = normalised.some((s) => s.is_color);
+      const anyDuplex = normalised.some((s) => s.is_duplex);
       return {
         page_count: Math.max(1, totalPages),
         quantity: Math.max(1, quantity),
         is_color: anyColor,
         is_duplex: anyDuplex,
         selected_options: selectedOptions,
-        sections: specSections,
+        sections: normalised,
       };
     }
     return {
@@ -276,17 +264,14 @@ export default function QuoteSpecBuilder({
     selectedOptions,
   ]);
 
-  const breakdown: PriceBreakdown | null = useMemo(() => {
-    if (!familyId) return null;
-    try {
-      return calculateItemPrice(spec, options, rules, currency);
-    } catch {
-      return null;
-    }
-  }, [familyId, spec, options, rules, currency]);
-
-  const unitPrice = breakdown?.subtotal_per_unit ?? 0;
-  const total = breakdown?.total ?? 0;
+  const { breakdown, unitPrice, total } = useItemPricing({
+    tenantId,
+    branchId: branchId ?? null,
+    productFamilyId: familyId || null,
+    currency,
+    spec,
+    options,
+  });
 
   const canSave =
     !!user &&
