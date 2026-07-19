@@ -152,7 +152,13 @@ export default function OrderFiles() {
   const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
 
   const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress } =
-    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null, sessionSizeLock?.size ?? null);
+    useDocumentUpload(
+      orderItem?.id,
+      productFamily?.slug ?? null,
+      productFamily ?? null,
+      sessionSizeLock?.size ?? null,
+      allowedCustomSizes,
+    );
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
@@ -354,6 +360,9 @@ export default function OrderFiles() {
   // Tracks docs we've already auto-resolved against the lock so the effect
   // doesn't re-fire while DB updates are in flight.
   const autoAppliedDocIds = useRef<Set<string>>(new Set());
+  // Tracks resolved-but-not-rendered docs that we're finishing in the
+  // background, so a refetch cannot start duplicate render jobs.
+  const finalizingResolvedDocIds = useRef<Set<string>>(new Set());
   // Tracks docs whose ISO size has been recorded (or used to set the lock)
   // so the ISO-detection effect runs once per doc.
   const isoCheckedDocIds = useRef<Set<string>>(new Set());
@@ -650,13 +659,31 @@ export default function OrderFiles() {
       .select("preflight_data")
       .eq("id", doc.id)
       .maybeSingle();
-    const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+      const matchedOriginal = matchKnownSize(doc.widthMm, doc.heightMm) ?? matchesAnySize(doc.widthMm, doc.heightMm, allowedCustomSizes);
     await supabase
       .from("documents")
       .update({
         preflight_data: { ...freshPreflight, awaiting_review: false, size_resolved: true, size_action: "keep", locked_size_mismatch: false },
       })
       .eq("id", doc.id);
+      if (matchedOriginal) {
+        const { data: postDoc } = await supabase
+          .from("documents")
+          .select("preflight_data")
+          .eq("id", doc.id)
+          .maybeSingle();
+        const postPreflight = (postDoc?.preflight_data as Record<string, any>) ?? {};
+        await supabase
+          .from("documents")
+          .update({
+            preflight_data: {
+              ...postPreflight,
+              detected_size: matchedOriginal.name,
+            },
+          })
+          .eq("id", doc.id);
+      }
     resolvedDocIds.current.add(doc.id);
     refetchDocuments();
 
@@ -665,7 +692,7 @@ export default function OrderFiles() {
     } else {
       toast.success("Keeping original size");
     }
-  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress]);
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress, allowedCustomSizes]);
 
   /** Core: scale the doc to a target paper size and finalise it.
    *
@@ -939,29 +966,21 @@ export default function OrderFiles() {
       if (matched) {
         // Stale non-ISO classification — the doc's dimensions now match an
         // ISO or product-family custom size (e.g. Pull Up Banner 850×2000mm
-        // added to the catalogue after upload). Persist the resolution to
-        // the DB so the "Review needed" chip clears and the ISO/custom-size
-        // effect below can pick it up on the next render.
+        // added to the catalogue after upload). Finish it through the normal
+        // keep-original path so it cannot be left in processing with no
+        // thumbnails.
         resolvedDocIds.current.add(d.id);
         void (async () => {
-          const { data: freshDoc } = await supabase
-            .from("documents")
-            .select("preflight_data")
-            .eq("id", d.id)
-            .maybeSingle();
-          const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
-          await supabase
-            .from("documents")
-            .update({
-              preflight_data: {
-                ...freshPreflight,
-                awaiting_review: false,
-                size_resolved: true,
-                detected_size: matched.name,
-              },
-            })
-            .eq("id", d.id);
-          refetchDocuments();
+          await applyKeepOriginal(
+            {
+              id: d.id,
+              fileName: d.file_name,
+              widthMm: w,
+              heightMm: h,
+              backendAssetId: d.backend_asset_id,
+            },
+            { silent: true, lockedSize: matched },
+          );
         })();
         return false;
       }
