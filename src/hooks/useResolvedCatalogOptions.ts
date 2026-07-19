@@ -63,3 +63,35 @@ export function useResolvedAllowedSizeLabels(
   );
   return { labels, isLoading: q.isLoading };
 }
+
+/**
+ * Product-family sizes with real millimetre dimensions in metadata
+ * (e.g. "Pull Up Banner" 850 × 2000mm) that are NOT already covered by the
+ * built-in ISO/non-ISO tables. Used by the paper-size advisory so a
+ * catalogue-defined size is treated as a first-class standard for that
+ * product family.
+ */
+export function useResolvedAllowedCustomSizes(
+  productFamilyId: string | null,
+  branchId: string | null,
+): { sizes: PaperSize[]; isLoading: boolean } {
+  const q = useResolvedCatalogOptions(productFamilyId, branchId);
+  const rows = q.data ?? [];
+  const seen = new Set<string>();
+  const sizes: PaperSize[] = [];
+  for (const r of rows) {
+    if (r.catalog !== "size" || !r.is_enabled) continue;
+    const w = Number(r.metadata?.width_mm);
+    const h = Number(r.metadata?.height_mm);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) continue;
+    // Skip sizes already covered by ISO/non-ISO tables — those flow through
+    // the normal matchKnownSize path.
+    if (matchKnownSize(w, h)) continue;
+    const iso = (r.metadata?.iso as string | undefined) ?? null;
+    const name = iso || r.label;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    sizes.push({ name, widthMm: w, heightMm: h });
+  }
+  return { sizes, isLoading: q.isLoading };
+}
