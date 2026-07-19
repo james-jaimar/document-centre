@@ -7,11 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, ClipboardList, Plus, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { formatPrice } from "@/lib/formatCurrency";
+import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 
 export default function OrderConfirmation() {
   const { id: orderId } = useParams<{ id: string }>();
   const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
+  const { inclSuffix } = usePriceDisplay();
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["order_confirmation", orderId],
@@ -78,7 +80,9 @@ export default function OrderConfirmation() {
             <span className="text-foreground">{jobs.length}</span>
           </div>
           <div className="border-t border-border pt-2 flex justify-between">
-            <span className="font-medium text-foreground">Total</span>
+            <span className="font-medium text-foreground">
+              Total {inclSuffix && <span className="text-[10px] font-normal text-muted-foreground">{inclSuffix}</span>}
+            </span>
             <span className="font-mono font-bold text-foreground">
               {formatPrice(total, (order.currency as string | undefined) ?? "ZAR")}
             </span>
