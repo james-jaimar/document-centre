@@ -1007,16 +1007,23 @@ export default function OrderFiles() {
       if (isoCheckedDocIds.current.has(d.id)) return false;
       if (resolvedDocIds.current.has(d.id)) return false;
       const preflight = d.preflight_data as Record<string, any> | null;
-      if (preflight?.detected_size && !preflight?.size_resolved) return false;
+      const w = Number(d.page_width_mm);
+      const h = Number(d.page_height_mm);
+      if (!(w > 0 && h > 0)) return false;
+      const currentMatch = matchIsoSize(w, h) ?? matchesAnySize(w, h, allowedCustomSizes);
+      // If the doc's current dims match ISO or an allowed custom size,
+      // let it through even when preflight still carries a stale
+      // `detected_size` + unresolved flag (the non-ISO effect above
+      // persists the fix asynchronously; this is a belt-and-braces guard).
+      if (!currentMatch) {
+        if (preflight?.detected_size && !preflight?.size_resolved) return false;
+      }
       if (preflight?.near_iso_match && !preflight?.bleed_resolved) return false;
       // Allow docs flagged by the upload hook as locked-size-mismatch
       // through even though awaiting_review is true — that flag IS the
       // signal that the lock-mismatch dialog should open before render.
-      if (preflight?.awaiting_review && !preflight?.locked_size_mismatch) return false;
-      const w = Number(d.page_width_mm);
-      const h = Number(d.page_height_mm);
-      if (!(w > 0 && h > 0)) return false;
-      return matchIsoSize(w, h) !== null || matchesAnySize(w, h, allowedCustomSizes) !== null;
+      if (preflight?.awaiting_review && !preflight?.locked_size_mismatch && !currentMatch) return false;
+      return currentMatch !== null;
     });
 
     if (!candidate) return;
