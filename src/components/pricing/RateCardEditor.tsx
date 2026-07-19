@@ -504,10 +504,12 @@ function ClicksTab({
             );
           })}
 
-          {clicks.length === 0 && (
+          {filteredClicks.length === 0 && (
             <TableRow>
               <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-6">
-                No click charges configured.
+                {clicks.length === 0
+                  ? "No click charges configured."
+                  : "No rows match the current variant filter."}
               </TableCell>
             </TableRow>
           )}
