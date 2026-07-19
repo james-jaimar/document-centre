@@ -418,6 +418,13 @@ function ClicksTab({
             return (
               <TableRow key={row.id}>
                 <TableCell className="font-medium">{sizeLabel}</TableCell>
+                <TableCell className="text-xs">
+                  {(() => {
+                    const vc = (row as any).variant_code as string | null | undefined;
+                    if (!vc) return <span className="text-muted-foreground">—</span>;
+                    return variants.find((v) => v.code === vc)?.label ?? vc;
+                  })()}
+                </TableCell>
                 <TableCell className="capitalize">{row.colour}</TableCell>
                 <TableCell className="capitalize">{row.sides}</TableCell>
                 <TableCell>
