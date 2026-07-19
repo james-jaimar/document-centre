@@ -1368,7 +1368,7 @@ export default function OrderBuild() {
               packBlocks={allBlocks}
               blocksActive={blocksMode}
               allowedSides={allowedSides}
-              suppressPriceDeltaFor={(() => {
+              variants={variantOptions}
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug === "business-cards" || slug === "business_cards") {
                   return ["Lamination", "Corner Style", "Paper Stock", "Pack Size"];
