@@ -46,9 +46,9 @@ import { getPdfBlob } from "@/lib/pdfBlobCache";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
-import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, sizesMatch, resolveAllowedSizesFromSlugs } from "@/lib/paperSizes";
+import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, matchesAnySize, sizesMatch, resolveAllowedSizesFromSlugs } from "@/lib/paperSizes";
 import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
-import { useResolvedAllowedSizeLabels } from "@/hooks/useResolvedCatalogOptions";
+import { useResolvedAllowedSizeLabels, useResolvedAllowedCustomSizes } from "@/hooks/useResolvedCatalogOptions";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, X as XIcon } from "lucide-react";
