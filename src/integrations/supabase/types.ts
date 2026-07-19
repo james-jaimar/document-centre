@@ -7233,6 +7233,10 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: boolean
       }
+      user_can_insert_order_item_for_order: {
+        Args: { p_order_id: string }
+        Returns: boolean
+      }
       user_can_manage_branch: {
         Args: { p_branch_id: string }
         Returns: boolean
