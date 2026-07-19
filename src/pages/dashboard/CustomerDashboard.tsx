@@ -40,7 +40,7 @@ import imgFlyers from "@/assets/products/flyers.jpg";
 import imgBrochures from "@/assets/products/brochures.jpg";
 import imgBusinessCards from "@/assets/product-business-cards.jpg";
 import imgPhotoPrints from "@/assets/products/photo-prints.jpg";
-import imgPullUpBanners from "@/assets/products/pull-up-banners.jpg.asset.json";
+import imgPullUpBanners from "@/assets/products/pull-up-banners.jpg";
 
 const SLUG_IMAGE_MAP: Record<string, string> = {
   "bound-documents": imgBoundDocuments,
@@ -53,9 +53,9 @@ const SLUG_IMAGE_MAP: Record<string, string> = {
   brochures: imgBrochures,
   "business-cards": imgBusinessCards,
   "photo-prints": imgPhotoPrints,
-  "pull-up-banners": imgPullUpBanners.url,
-  "pullup-banners": imgPullUpBanners.url,
-  "pull-up-banner": imgPullUpBanners.url,
+  "pull-up-banners": imgPullUpBanners,
+  "pullup-banners": imgPullUpBanners,
+  "pull-up-banner": imgPullUpBanners,
 };
 
 /* ── Icon map ── */
