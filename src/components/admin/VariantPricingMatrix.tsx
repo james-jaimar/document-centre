@@ -220,6 +220,7 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
                           <TableHead className="w-32">Sell (ex VAT)</TableHead>
                           <TableHead className="w-32">Cost (ex VAT)</TableHead>
                           <TableHead className="w-20">Active</TableHead>
+                          <TableHead className="w-16">Tiers</TableHead>
                           <TableHead className="w-10" />
                         </TableRow>
                       </TableHeader>
