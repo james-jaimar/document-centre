@@ -390,6 +390,7 @@ function ClicksTab({
         <TableHeader>
           <TableRow>
             <TableHead>Size</TableHead>
+            <TableHead>Variant</TableHead>
             <TableHead>Colour</TableHead>
             <TableHead>Sides</TableHead>
             <TableHead className="w-32">Sell (R)</TableHead>
