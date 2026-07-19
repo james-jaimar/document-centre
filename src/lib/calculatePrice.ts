@@ -615,15 +615,26 @@ export function calculatePriceFromRateCard(
     cellSides: "simplex" | "duplex"
   ): { unit: number; sourceSize: string; nUp: number; lineId: string } | null {
     const candidates = CHILD_PARENTS[finishedSize] ?? [{ parent: finishedSize, nUp: 1 }];
+    // Variant precedence: spec.variant_code → selected_options["Variant"] → null.
+    const variantCode =
+      (spec.variant_code ?? spec.selected_options?.["Variant"] ?? null) || null;
     let best: { unit: number; sourceSize: string; nUp: number; lineId: string } | null = null;
     for (const cand of candidates) {
-      const row = rc.clicks.find(
+      // Prefer a row that matches the variant exactly; otherwise fall back
+      // to a variant-less row (legacy / non-variant products).
+      const matches = rc.clicks.filter(
         (c) =>
           c.is_active &&
           String(c.size).toUpperCase() === cand.parent &&
           c.colour === cellColour &&
           c.sides === cellSides,
       );
+      const row =
+        matches.find((c) => (c as any).variant_code === variantCode) ??
+        (variantCode
+          ? matches.find((c) => !(c as any).variant_code)
+          : matches.find((c) => !(c as any).variant_code)) ??
+        null;
       if (!row) continue;
       const perPiece = Number(row.sell_price) / cand.nUp;
       if (!best || perPiece < Number(best.unit) / best.nUp) {
