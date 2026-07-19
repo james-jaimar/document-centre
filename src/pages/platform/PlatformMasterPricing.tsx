@@ -1,6 +1,7 @@
 import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
 import MasterPackPricingEditor from "@/components/pricing/MasterPackPricingEditor";
+import CatalogVariantsEditor from "@/components/pricing/CatalogVariantsEditor";
 
 export default function PlatformMasterPricing() {
   return (
@@ -17,6 +18,10 @@ export default function PlatformMasterPricing() {
 
       <div className="border-t border-border pt-6">
         <MasterPackPricingEditor />
+      </div>
+
+      <div className="border-t border-border pt-6">
+        <CatalogVariantsEditor />
       </div>
     </div>
   );
