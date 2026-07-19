@@ -1,5 +1,6 @@
 import { useProductFamilies } from "@/hooks/useProductFamilies";
 import { useProductVariantLinks } from "@/hooks/useCatalogVariants";
+import { useCatalogSizes, useProductCatalogLinks } from "@/hooks/useCatalog";
 import VariantPricingMatrix from "@/components/admin/VariantPricingMatrix";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
