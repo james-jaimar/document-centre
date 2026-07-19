@@ -107,7 +107,7 @@ export function useSetProductVariantLinks() {
   return useMutation({
     mutationFn: async (input: {
       productFamilyId: string;
-      links: Array<{ variant_id: string; is_default: boolean; sort_order: number }>;
+      links: Array<{ catalog_variant_id: string; is_default: boolean; sort_order: number }>;
     }) => {
       // Replace-all strategy: delete existing rows then insert the new set.
       const del = await supabase
@@ -118,7 +118,7 @@ export function useSetProductVariantLinks() {
       if (input.links.length === 0) return;
       const rows = input.links.map((l) => ({
         product_family_id: input.productFamilyId,
-        variant_id: l.variant_id,
+        catalog_variant_id: l.catalog_variant_id,
         is_default: l.is_default,
         sort_order: l.sort_order,
       }));
