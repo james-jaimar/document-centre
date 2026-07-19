@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, FileText, ArrowRight, Lock } from "lucide-react";
-import { type PaperSize, getSuggestedIsoSizes, isLandscape, UNKNOWN_SIZE_LABEL, matchKnownSize } from "@/lib/paperSizes";
+import { type PaperSize, getSuggestedIsoSizes, isLandscape, UNKNOWN_SIZE_LABEL, matchKnownSize, matchesAnySize } from "@/lib/paperSizes";
 import { cn } from "@/lib/utils";
 
 interface PaperSizeAdvisoryProps {
