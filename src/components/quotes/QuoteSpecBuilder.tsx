@@ -22,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useProductOptions } from "@/hooks/useProductOptions";
+import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
 import { usePricingRules } from "@/hooks/usePricingRules";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
@@ -128,7 +128,7 @@ export default function QuoteSpecBuilder({
   const familySlug = (family?.slug ?? "").toLowerCase();
   const isMultiSection = !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug);
 
-  const { data: options = [] } = useProductOptions(familyId || null);
+  const { data: options = [] } = useCatalogBackedOptions(familyId || null, branchId ?? null);
   const { data: rulesRaw = [] } = usePricingRules(tenantId, currency, {
     masterOnly: true,
   });
