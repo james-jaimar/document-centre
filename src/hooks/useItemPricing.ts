@@ -26,7 +26,9 @@ import {
   useResolvedRateCardPriceBreaksBundle,
 } from "@/hooks/useResolvedRateCard";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
-import type { ProductOption } from "@/lib/calculatePrice";
+import type { Tables } from "@/integrations/supabase/types";
+
+type ProductOption = Tables<"product_options">;
 
 interface Args {
   tenantId: string | null | undefined;
