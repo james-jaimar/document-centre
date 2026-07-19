@@ -244,13 +244,54 @@ export default function OptionsPanel({
   const packAccordionValues = packManagedRows.map((r) => `pack::${r.key}`);
   const standardAccordionValues = sortedOptions.map((o) => o.id);
 
+  const hasVariants = (variants?.length ?? 0) > 0;
+  const selectedVariant = selectedOptions["Variant"] ?? "";
+  const variantAccordionValues = hasVariants ? ["variant::selector"] : [];
+
   return (
     <div className="space-y-1">
       <Accordion
         type="multiple"
-        defaultValue={[...packAccordionValues, ...standardAccordionValues]}
+        defaultValue={[...variantAccordionValues, ...packAccordionValues, ...standardAccordionValues]}
         className="space-y-0"
       >
+        {hasVariants && (
+          <AccordionItem
+            value="variant::selector"
+            className="border-b border-border"
+          >
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center justify-between w-full pr-2">
+                <span className="text-xs font-medium text-foreground">Variant</span>
+                <span className="text-[11px] text-muted-foreground ml-2 truncate max-w-[140px]">
+                  {variants!.find((v) => v.code === selectedVariant)?.label ?? "Not selected"}
+                </span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pb-2">
+              <Select
+                value={selectedVariant}
+                onValueChange={(v) => onOptionChange("Variant", v)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a variant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {variants!.map((v) => (
+                    <SelectItem key={v.code} value={v.code}>
+                      {v.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {variants!.find((v) => v.code === selectedVariant)?.description && (
+                <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                  {variants!.find((v) => v.code === selectedVariant)?.description}
+                </p>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        )}
         {packManagedRows.map((row) => {
           const current = row.current ?? "";
           const displayLabel = current ? labelForPackValue(row, current) : "Not selected";
