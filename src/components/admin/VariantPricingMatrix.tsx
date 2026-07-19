@@ -189,13 +189,16 @@ export default function VariantPricingMatrix({
   return (
     <Card className="p-4 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-foreground">Variant pricing (Master)</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          Variant pricing ({scope === "branch" ? "Branch override" : "Master"})
+        </h3>
         <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-          Set the master sell/cost price per variant, per size. These rows are the same
-          click-charges used across the platform — branches inherit them and can override under
-          Branch → Pricing → Click Charges. All prices are entered ex&nbsp;VAT.
+          {scope === "branch"
+            ? "Your branch's variant prices per size. If a variant row is missing, use 'Pull missing from tenant' in the Click Charges section above. All prices are entered ex\u00a0VAT."
+            : "Set the master sell/cost price per variant, per size. These rows are the same click-charges used across the platform — branches inherit them and can override under Branch → Pricing → Click Charges. All prices are entered ex\u00a0VAT."}
         </p>
       </div>
+
 
       {familySizes.map((size) => (
         <div key={size.id} className="border border-border rounded-md overflow-hidden">
