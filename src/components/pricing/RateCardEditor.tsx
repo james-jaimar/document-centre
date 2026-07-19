@@ -336,6 +336,7 @@ function ClicksTab({
       size: "A4",
       colour: "mono",
       sides: "simplex",
+      variant_code: "",
       sell_price: 0,
       cost_price: 0,
     });
