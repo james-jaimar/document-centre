@@ -41,6 +41,8 @@ export interface ItemSpec {
   binding_edge_override?: "long" | null;
   /** How the uploaded PDF is scaled to fit the selected canvas size (posters, flyers, business cards) */
   scale_mode?: "fit" | "fill";
+  /** Optional variant code (e.g. "economy" / "executive" for pull-up banners). Filters click charges. */
+  variant_code?: string | null;
 }
 
 export interface PriceLineItem {
