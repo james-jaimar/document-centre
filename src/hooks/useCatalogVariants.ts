@@ -13,7 +13,7 @@ export interface CatalogVariant {
 export interface ProductVariantLink {
   id: string;
   product_family_id: string;
-  variant_id: string;
+  catalog_variant_id: string;
   is_default: boolean;
   sort_order: number;
   variant?: CatalogVariant;
