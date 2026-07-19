@@ -2788,6 +2788,7 @@ export default function OrderFiles() {
           lockedSize={advisoryDoc.lockedSize ?? null}
           productFamilySlug={familySlug}
           allowedSizeNames={allowedSizeNames}
+          allowedCustomSizes={allowedCustomSizes}
           onKeepOriginal={handleKeepOriginal}
           onScaleTo={handleScaleTo}
         />
