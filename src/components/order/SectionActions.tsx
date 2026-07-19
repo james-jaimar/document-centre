@@ -57,6 +57,11 @@ const POSTER_ACTIONS: ActionDef[] = [
   { type: "front_cover", label: "Add as Print", icon: Image },
 ];
 
+const PULL_UP_BANNER_ACTIONS: ActionDef[] = [
+  { type: "front_cover", label: "Add as Banner", icon: Image },
+];
+
+
 const BUSINESS_CARD_ACTIONS: ActionDef[] = [
   { type: "front_cover", label: "Front", icon: Image },
   { type: "back_cover", label: "Back", icon: Image },
