@@ -116,6 +116,10 @@ export default function OrderFiles() {
     productFamilyId,
     activeBranch?.id ?? null,
   );
+  const { sizes: allowedCustomSizes } = useResolvedAllowedCustomSizes(
+    productFamilyId,
+    activeBranch?.id ?? null,
+  );
   const { data: resolvedOptions } = useResolvedProductOptions(
     productFamilyId,
     activeBranch?.id ?? null,
