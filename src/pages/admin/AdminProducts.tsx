@@ -209,10 +209,14 @@ const AdminProducts = () => {
                             <Tabs defaultValue="catalogue" className="w-full">
                               <TabsList className="mb-3">
                                 <TabsTrigger value="catalogue">Catalogue</TabsTrigger>
+                                <TabsTrigger value="variants">Variants</TabsTrigger>
                                 <TabsTrigger value="options">Options</TabsTrigger>
                               </TabsList>
                               <TabsContent value="catalogue">
                                 <ProductCatalogueLinksTab productFamilyId={f.id} />
+                              </TabsContent>
+                              <TabsContent value="variants">
+                                <ProductFamilyVariantsEditor productFamilyId={f.id} />
                               </TabsContent>
                               <TabsContent value="options">
                                 <ProductOptionsEditor productFamilyId={f.id} />
