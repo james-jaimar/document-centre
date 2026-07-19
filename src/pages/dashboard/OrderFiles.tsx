@@ -933,8 +933,36 @@ export default function OrderFiles() {
       // non-ISO branch so the ISO/custom-size effect below handles it.
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
-      if (w > 0 && h > 0 && (matchIsoSize(w, h) || matchesAnySize(w, h, allowedCustomSizes))) {
+      const matched = w > 0 && h > 0
+        ? (matchIsoSize(w, h) ?? matchesAnySize(w, h, allowedCustomSizes))
+        : null;
+      if (matched) {
+        // Stale non-ISO classification — the doc's dimensions now match an
+        // ISO or product-family custom size (e.g. Pull Up Banner 850×2000mm
+        // added to the catalogue after upload). Persist the resolution to
+        // the DB so the "Review needed" chip clears and the ISO/custom-size
+        // effect below can pick it up on the next render.
         resolvedDocIds.current.add(d.id);
+        void (async () => {
+          const { data: freshDoc } = await supabase
+            .from("documents")
+            .select("preflight_data")
+            .eq("id", d.id)
+            .maybeSingle();
+          const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+          await supabase
+            .from("documents")
+            .update({
+              preflight_data: {
+                ...freshPreflight,
+                awaiting_review: false,
+                size_resolved: true,
+                detected_size: matched.name,
+              },
+            })
+            .eq("id", d.id);
+          refetchDocuments();
+        })();
         return false;
       }
       return true;
