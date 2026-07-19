@@ -152,9 +152,9 @@ export default function VariantPricingMatrix({
     const size = sizes.find((s) => s.code.toLowerCase() === adding.sizeCode.toLowerCase());
     try {
       await insert.mutateAsync({
-        scope_type: "master",
-        tenant_id: null,
-        branch_id: null,
+        scope_type: scope,
+        tenant_id: scope === "master" ? null : tenantId,
+        branch_id: scope === "branch" ? branchId : null,
         size: size?.label ?? adding.sizeCode,
         catalog_size_code: size?.code ?? adding.sizeCode.toLowerCase(),
         colour: adding.colour,
