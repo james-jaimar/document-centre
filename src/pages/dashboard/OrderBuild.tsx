@@ -84,6 +84,22 @@ export default function OrderBuild() {
   // Document Size overlaid from the master catalogue (catalog_papers,
   // catalog_sizes) so what the customer sees matches what admins curate.
   const { data: options = [] } = useCatalogBackedOptions(productFamilyId, effectiveBranchId);
+  const { data: variantLinks = [] } = useProductVariantLinks(productFamilyId);
+  const variantOptions = useMemo(
+    () =>
+      (variantLinks ?? [])
+        .filter((l) => l.variant?.is_active)
+        .map((l) => ({
+          code: l.variant!.code,
+          label: l.variant!.label,
+          description: l.variant?.description,
+        })),
+    [variantLinks],
+  );
+  const defaultVariantCode = useMemo(() => {
+    const defaultLink = (variantLinks ?? []).find((l) => l.is_default && l.variant?.is_active);
+    return defaultLink?.variant?.code ?? variantOptions[0]?.code ?? null;
+  }, [variantLinks, variantOptions]);
 
   // Fetch product family to get slug for preview type
   const { data: productFamily } = useQuery({
