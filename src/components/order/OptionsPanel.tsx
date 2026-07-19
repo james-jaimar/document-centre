@@ -48,6 +48,10 @@ interface OptionsPanelProps {
    *  Used by Flyers to hide the wrong side once the upload's page count
    *  makes it unambiguous. */
   allowedSides?: string[];
+  /** Product variants (e.g. Economy / Executive pull-up banner). When
+   *  provided and non-empty, a "Variant" selector renders at the top of
+   *  the panel and its value is written to `selected_options["Variant"]`. */
+  variants?: Array<{ code: string; label: string; description?: string | null }>;
 }
 
 
