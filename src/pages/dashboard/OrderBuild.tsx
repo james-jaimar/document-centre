@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
+import { useProductVariantLinks } from "@/hooks/useCatalogVariants";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
