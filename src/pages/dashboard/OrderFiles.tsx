@@ -116,7 +116,7 @@ export default function OrderFiles() {
     productFamilyId,
     activeBranch?.id ?? null,
   );
-  const { sizes: allowedCustomSizes } = useResolvedAllowedCustomSizes(
+  const { sizes: allowedCustomSizes, isLoading: customSizesLoading } = useResolvedAllowedCustomSizes(
     productFamilyId,
     activeBranch?.id ?? null,
   );
@@ -1584,6 +1584,11 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      if (customSizesLoading) {
+        toast.info("Product sizes are still loading. Please try again in a moment.");
+        return;
+      }
+
       // Ensure order exists before uploading — capture the ID directly
       let itemId: string;
       try {
@@ -1626,7 +1631,7 @@ export default function OrderFiles() {
       setUploadModalOpen(true);
       await uploadFiles(files, undefined, itemId);
     },
-    [uploadFiles, ensureOrder, productFamily?.slug]
+    [uploadFiles, ensureOrder, productFamily?.slug, customSizesLoading]
   );
 
   // Tracks the most-recently-uploaded poster_image source so we can stamp
@@ -2733,7 +2738,7 @@ export default function OrderFiles() {
               </div>
             )}
           </div>
-          <FileUploader onFiles={handleFiles} />
+          <FileUploader onFiles={handleFiles} disabled={customSizesLoading} />
           <FileList
             documents={documents}
             selectedDocId={selectedDocId}
