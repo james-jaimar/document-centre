@@ -81,24 +81,38 @@ export default function PaperSizeAdvisory({
   const isPoster = (productFamilySlug ?? "").toLowerCase().startsWith("poster");
   const recommendedLabel = isPoster ? "A2, A1 or A0" : "A4 or A3";
 
+  // Match against product-family custom sizes (e.g. Pull Up Banner 850×2000mm)
+  // so an upload that already aligns with a catalogue-defined size can "Keep
+  // original", and the size appears as a first-class scale target.
+  const customSizes = allowedCustomSizes ?? [];
+  const matchedCustom = useMemo(
+    () => matchesAnySize(widthMm, heightMm, customSizes),
+    [widthMm, heightMm, customSizes],
+  );
+
   // Hide "Keep original" when the branch doesn't sell the uploaded file's size.
   const originalCanonical = useMemo(
-    () => matchKnownSize(widthMm, heightMm),
-    [widthMm, heightMm],
+    () => matchKnownSize(widthMm, heightMm) ?? matchedCustom,
+    [widthMm, heightMm, matchedCustom],
   );
   const canKeepOriginal = useMemo(() => {
-    if (!allowedSet) return true;
+    if (!allowedSet && customSizes.length === 0) return true;
     if (!originalCanonical) return false;
+    if (matchedCustom && originalCanonical.name === matchedCustom.name) return true;
+    if (!allowedSet) return false;
     return allowedSet.has(originalCanonical.name);
-  }, [allowedSet, originalCanonical]);
+  }, [allowedSet, originalCanonical, matchedCustom, customSizes.length]);
 
   // In locked mode, the locked size is the primary (and pre-selected) option,
-  // even if it's not in the auto-suggested list.
+  // even if it's not in the auto-suggested list. Product-family custom sizes
+  // are prepended so operators/customers see them ahead of generic ISO targets.
   const orderedOptions = useMemo<PaperSize[]>(() => {
-    if (!lockedSize) return suggestions;
-    const rest = suggestions.filter((s) => s.name !== lockedSize.name);
-    return [lockedSize, ...rest];
-  }, [suggestions, lockedSize]);
+    const base = lockedSize
+      ? [lockedSize, ...suggestions.filter((s) => s.name !== lockedSize.name)]
+      : [...suggestions];
+    const withCustom = [...customSizes.filter((c) => !base.some((b) => b.name === c.name)), ...base];
+    return withCustom;
+  }, [suggestions, lockedSize, customSizes]);
 
   const [selectedTarget, setSelectedTarget] = useState<PaperSize | null>(
     lockedSize ?? (orderedOptions.length > 0 ? orderedOptions[0] : null),
