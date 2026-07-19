@@ -1,27 +1,10 @@
-## Goal
-Add quantity price-break tiers (1–99, 100–249, etc.) to the Variant Pricing matrix on the Product Family → Variants tab, matching the ladder editor already used on the Master / Branch Click Charges rows.
+## Problem
+The pull-up banners product tile shows a broken image (alt text only). The current asset (`src/assets/products/pull-up-banners.png.asset.json`, 1.6MB PNG) isn't loading in the preview.
 
-## Change
+## Plan
+1. Delete the existing asset pointer via `lovable-assets delete` to remove the orphaned CDN object.
+2. Upload the new smaller image from `/mnt/user-uploads/PULL_UP_BANNERS.jpg` using `lovable-assets create`, writing the pointer to `src/assets/products/pull-up-banners.jpg.asset.json`.
+3. Update the import in `src/pages/dashboard/NewOrder.tsx` (and `CustomerDashboard.tsx` if it references the same file) to point at the new `.jpg.asset.json` pointer.
+4. Verify the tile renders by checking the preview.
 
-**File:** `src/components/admin/VariantPricingMatrix.tsx`
-
-- Import `TiersButton` from `src/components/pricing/TiersButton.tsx`.
-- Add a new column (`Tiers`) to each price row's table, rendering:
-  ```tsx
-  <TiersButton
-    table="clicks"
-    lineId={row.id}
-    label={`${size.label} · ${row.colour} · ${row.sides} · ${vLabel}`}
-    scope="master"
-    tenantId={null}
-    branchId={null}
-    fallbackSell={row.sell_price}
-    fallbackCost={row.cost_price}
-  />
-  ```
-
-That's it — `PriceBreaksModal` + `useReplaceRateCardPriceBreaks` already handle the tier CRUD against `rate_card_price_breaks` for the `clicks` table, and `calculatePrice.ts` already resolves tiers via `resolveTier` for click charges. Branches inherit the master tiers the same way they inherit the base rate.
-
-## Out of scope
-- Tier editing at branch scope inside the product editor (branches still edit tiers via Branch → Pricing → Click Charges → Tiers icon).
-- Schema changes — `rate_card_price_breaks` already supports `rate_card_table = 'clicks'` with `variant_code` scoped indirectly through the `rate_card_id` FK.
+No other logic changes.
