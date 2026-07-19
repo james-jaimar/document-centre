@@ -40,7 +40,7 @@ import imgFlyers from "@/assets/products/flyers.jpg";
 import imgBrochures from "@/assets/products/brochures.jpg";
 import imgBusinessCards from "@/assets/product-business-cards.jpg";
 import imgPhotoPrints from "@/assets/products/photo-prints.jpg";
-import imgPullUpBanners from "@/assets/products/pull-up-banners.png.asset.json";
+import imgPullUpBanners from "@/assets/products/pull-up-banners.jpg.asset.json";
 
 const SLUG_IMAGE_MAP: Record<string, string> = {
   "bound-documents": imgBoundDocuments,
