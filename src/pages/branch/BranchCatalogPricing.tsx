@@ -108,6 +108,10 @@ export default function BranchCatalogPricing() {
       </div>
 
       <div className="border-t border-border pt-6">
+        <BranchVariantPricingSection tenantId={tenantId} branchId={branchId} />
+      </div>
+
+      <div className="border-t border-border pt-6">
         <BranchPackPricingEditor tenantId={tenantId} branchId={branchId} />
       </div>
     </div>
