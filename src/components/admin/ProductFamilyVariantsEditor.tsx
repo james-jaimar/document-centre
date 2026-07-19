@@ -128,6 +128,10 @@ export default function ProductFamilyVariantsEditor({ productFamilyId }: Props) 
           Save variants
         </Button>
       </div>
+
+      {links.length > 0 && (
+        <VariantPricingMatrix productFamilyId={productFamilyId} variantLinks={links} />
+      )}
     </Card>
   );
 }
