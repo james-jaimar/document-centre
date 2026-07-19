@@ -974,6 +974,7 @@ export default function OrderFiles() {
   // Non-ISO advisory: silent auto-apply when locked, prompt otherwise.
   useEffect(() => {
     if (uploadModalOpen) return;
+    if (customSizesLoading) return;
     if (advisoryDoc) return;
     const nonIsoDoc = documents.find((d) => {
       if (resolvedDocIds.current.has(d.id)) return false;
@@ -1042,12 +1043,13 @@ export default function OrderFiles() {
       heightMm: Number(nonIsoDoc.page_height_mm),
       backendAssetId: nonIsoDoc.backend_asset_id,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo, allowedCustomSizes]);
+  }, [documents, uploadModalOpen, customSizesLoading, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo, allowedCustomSizes]);
 
   // ISO uploads: set lock if none exists, otherwise prompt locked-variant
   // advisory if the doc's ISO size differs from the lock.
   useEffect(() => {
     if (uploadModalOpen) return;
+    if (customSizesLoading) return;
     if (advisoryDoc || bleedDoc || orientationDoc) return;
 
     const candidate = documents.find((d) => {
@@ -1099,7 +1101,7 @@ export default function OrderFiles() {
       backendAssetId: candidate.backend_asset_id,
       lockedSize: sessionSizeLock.size,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock, allowedCustomSizes]);
+  }, [documents, uploadModalOpen, customSizesLoading, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock, allowedCustomSizes]);
 
   // Orientation handlers — rotates 90° in the direction the advisory was opened for.
   const handleRotateOrientation = useCallback(async () => {
