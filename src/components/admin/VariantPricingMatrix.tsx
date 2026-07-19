@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import TiersButton from "@/components/pricing/TiersButton";
 
 interface Props {
   productFamilyId: string;
@@ -219,6 +220,7 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
                           <TableHead className="w-32">Sell (ex VAT)</TableHead>
                           <TableHead className="w-32">Cost (ex VAT)</TableHead>
                           <TableHead className="w-20">Active</TableHead>
+                          <TableHead className="w-16">Tiers</TableHead>
                           <TableHead className="w-10" />
                         </TableRow>
                       </TableHeader>
@@ -254,6 +256,18 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
                                 <Switch
                                   checked={row.is_active}
                                   onCheckedChange={(v) => toggleActive(row, v)}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <TiersButton
+                                  table="clicks"
+                                  lineId={row.id}
+                                  label={`${size.label} · ${row.colour} · ${row.sides} · ${vLabel}`}
+                                  scope="master"
+                                  tenantId={null}
+                                  branchId={null}
+                                  fallbackSell={row.sell_price}
+                                  fallbackCost={row.cost_price}
                                 />
                               </TableCell>
                               <TableCell>
