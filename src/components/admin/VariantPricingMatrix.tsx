@@ -259,6 +259,18 @@ export default function VariantPricingMatrix({ productFamilyId, variantLinks }: 
                                 />
                               </TableCell>
                               <TableCell>
+                                <TiersButton
+                                  table="clicks"
+                                  lineId={row.id}
+                                  label={`${size.label} · ${row.colour} · ${row.sides} · ${vLabel}`}
+                                  scope="master"
+                                  tenantId={null}
+                                  branchId={null}
+                                  fallbackSell={row.sell_price}
+                                  fallbackCost={row.cost_price}
+                                />
+                              </TableCell>
+                              <TableCell>
                                 <Button
                                   size="icon"
                                   variant="ghost"
