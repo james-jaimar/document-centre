@@ -425,7 +425,7 @@ function ClicksTab({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {clicks.map((row) => {
+          {filteredClicks.map((row) => {
             const sell = drafts[row.id]?.sell ?? String(row.sell_price);
             const cost = drafts[row.id]?.cost ?? String(row.cost_price);
             const catCode = (row as any).catalog_size_code as string | null | undefined;
