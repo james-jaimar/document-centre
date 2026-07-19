@@ -32,17 +32,17 @@ export default function ProductFamilyVariantsEditor({ productFamilyId }: Props) 
 
   useEffect(() => {
     const map: Record<string, boolean> = {};
-    for (const l of links) map[l.variant_id] = true;
+    for (const l of links) map[l.catalog_variant_id] = true;
     setSelected(map);
-    setDefaultId(links.find((l) => l.is_default)?.variant_id ?? null);
+    setDefaultId(links.find((l) => l.is_default)?.catalog_variant_id ?? null);
   }, [links]);
 
   const dirty = useMemo(() => {
-    const original = new Set(links.map((l) => l.variant_id));
+    const original = new Set(links.map((l) => l.catalog_variant_id));
     const now = new Set(Object.entries(selected).filter(([, v]) => v).map(([k]) => k));
     if (original.size !== now.size) return true;
     for (const id of now) if (!original.has(id)) return true;
-    const origDefault = links.find((l) => l.is_default)?.variant_id ?? null;
+    const origDefault = links.find((l) => l.is_default)?.catalog_variant_id ?? null;
     if (origDefault !== defaultId) return true;
     return false;
   }, [links, selected, defaultId]);
@@ -50,9 +50,9 @@ export default function ProductFamilyVariantsEditor({ productFamilyId }: Props) 
   async function save() {
     const rows = Object.entries(selected)
       .filter(([, v]) => v)
-      .map(([variant_id], idx) => ({
-        variant_id,
-        is_default: variant_id === defaultId,
+      .map(([catalog_variant_id], idx) => ({
+        catalog_variant_id,
+        is_default: catalog_variant_id === defaultId,
         sort_order: idx * 10,
       }));
     // Guarantee exactly one default when rows exist.
