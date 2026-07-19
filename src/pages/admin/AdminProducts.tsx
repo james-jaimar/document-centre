@@ -9,6 +9,7 @@ import type { ProductFamily } from "@/hooks/useProductFamilies";
 import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 import ProductCatalogueLinksTab from "@/components/admin/ProductCatalogueLinksTab";
+import ProductFamilyVariantsEditor from "@/components/admin/ProductFamilyVariantsEditor";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
