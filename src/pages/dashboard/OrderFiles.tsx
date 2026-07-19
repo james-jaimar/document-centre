@@ -116,7 +116,7 @@ export default function OrderFiles() {
     productFamilyId,
     activeBranch?.id ?? null,
   );
-  const { sizes: allowedCustomSizes } = useResolvedAllowedCustomSizes(
+  const { sizes: allowedCustomSizes, isLoading: customSizesLoading } = useResolvedAllowedCustomSizes(
     productFamilyId,
     activeBranch?.id ?? null,
   );
@@ -152,7 +152,13 @@ export default function OrderFiles() {
   const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
 
   const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress } =
-    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null, sessionSizeLock?.size ?? null);
+    useDocumentUpload(
+      orderItem?.id,
+      productFamily?.slug ?? null,
+      productFamily ?? null,
+      sessionSizeLock?.size ?? null,
+      allowedCustomSizes,
+    );
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
@@ -354,6 +360,9 @@ export default function OrderFiles() {
   // Tracks docs we've already auto-resolved against the lock so the effect
   // doesn't re-fire while DB updates are in flight.
   const autoAppliedDocIds = useRef<Set<string>>(new Set());
+  // Tracks resolved-but-not-rendered docs that we're finishing in the
+  // background, so a refetch cannot start duplicate render jobs.
+  const finalizingResolvedDocIds = useRef<Set<string>>(new Set());
   // Tracks docs whose ISO size has been recorded (or used to set the lock)
   // so the ISO-detection effect runs once per doc.
   const isoCheckedDocIds = useRef<Set<string>>(new Set());
@@ -651,21 +660,67 @@ export default function OrderFiles() {
       .eq("id", doc.id)
       .maybeSingle();
     const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+    const matchedOriginal = matchKnownSize(doc.widthMm, doc.heightMm) ?? matchesAnySize(doc.widthMm, doc.heightMm, allowedCustomSizes);
     await supabase
       .from("documents")
       .update({
-        preflight_data: { ...freshPreflight, awaiting_review: false, size_resolved: true, size_action: "keep", locked_size_mismatch: false },
+        preflight_data: {
+          ...freshPreflight,
+          awaiting_review: false,
+          size_resolved: true,
+          size_action: "keep",
+          locked_size_mismatch: false,
+          ...(matchedOriginal ? { detected_size: matchedOriginal.name } : {}),
+        },
       })
       .eq("id", doc.id);
     resolvedDocIds.current.add(doc.id);
     refetchDocuments();
 
-    if (opts?.silent && opts?.lockedSize) {
-      toast.info(`Kept ${opts.lockedSize.name} size to match other files`);
+    if (opts?.silent) {
+      if (opts.lockedSize) toast.info(`Kept ${opts.lockedSize.name} size to match other files`);
     } else {
       toast.success("Keeping original size");
     }
-  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress]);
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress, allowedCustomSizes]);
+
+  // Self-heal rows that were already reclassified as a valid size but never
+  // reached thumbnail rendering. This covers the broken intermediate state:
+  // processing + size_resolved + awaiting_review=false + no thumbnails.
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
+    const doc = documents.find((d) => {
+      if (d.document_status !== "processing") return false;
+      if (!d.backend_asset_id) return false;
+      if (finalizingResolvedDocIds.current.has(d.id)) return false;
+      if (Array.isArray(d.thumbnail_urls) && d.thumbnail_urls.length > 0) return false;
+      const preflight = (d.preflight_data as Record<string, any> | null) ?? {};
+      if (preflight.awaiting_review === true) return false;
+      return preflight.size_resolved === true;
+    });
+    if (!doc) return;
+    const w = Number(doc.page_width_mm);
+    const h = Number(doc.page_height_mm);
+    if (!(w > 0 && h > 0)) return;
+    const matched = matchKnownSize(w, h) ?? matchesAnySize(w, h, allowedCustomSizes) ?? {
+      name: `${Math.round(w)}×${Math.round(h)}mm`,
+      widthMm: w,
+      heightMm: h,
+    };
+    finalizingResolvedDocIds.current.add(doc.id);
+    void applyKeepOriginal(
+      {
+        id: doc.id,
+        fileName: doc.file_name,
+        widthMm: w,
+        heightMm: h,
+        backendAssetId: doc.backend_asset_id,
+      },
+      { silent: true, lockedSize: matched },
+    ).finally(() => {
+      finalizingResolvedDocIds.current.delete(doc.id);
+    });
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, allowedCustomSizes, applyKeepOriginal]);
 
   /** Core: scale the doc to a target paper size and finalise it.
    *
@@ -919,6 +974,7 @@ export default function OrderFiles() {
   // Non-ISO advisory: silent auto-apply when locked, prompt otherwise.
   useEffect(() => {
     if (uploadModalOpen) return;
+    if (customSizesLoading) return;
     if (advisoryDoc) return;
     const nonIsoDoc = documents.find((d) => {
       if (resolvedDocIds.current.has(d.id)) return false;
@@ -939,29 +995,24 @@ export default function OrderFiles() {
       if (matched) {
         // Stale non-ISO classification — the doc's dimensions now match an
         // ISO or product-family custom size (e.g. Pull Up Banner 850×2000mm
-        // added to the catalogue after upload). Persist the resolution to
-        // the DB so the "Review needed" chip clears and the ISO/custom-size
-        // effect below can pick it up on the next render.
+        // added to the catalogue after upload). Finish it through the normal
+        // keep-original path so it cannot be left in processing with no
+        // thumbnails.
         resolvedDocIds.current.add(d.id);
+        if (!sessionSizeLock) {
+          setSessionSizeLock({ size: matched, source: "first_iso_upload", action: "scale" });
+        }
         void (async () => {
-          const { data: freshDoc } = await supabase
-            .from("documents")
-            .select("preflight_data")
-            .eq("id", d.id)
-            .maybeSingle();
-          const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
-          await supabase
-            .from("documents")
-            .update({
-              preflight_data: {
-                ...freshPreflight,
-                awaiting_review: false,
-                size_resolved: true,
-                detected_size: matched.name,
-              },
-            })
-            .eq("id", d.id);
-          refetchDocuments();
+          await applyKeepOriginal(
+            {
+              id: d.id,
+              fileName: d.file_name,
+              widthMm: w,
+              heightMm: h,
+              backendAssetId: d.backend_asset_id,
+            },
+            { silent: true, lockedSize: matched },
+          );
         })();
         return false;
       }
@@ -995,12 +1046,13 @@ export default function OrderFiles() {
       heightMm: Number(nonIsoDoc.page_height_mm),
       backendAssetId: nonIsoDoc.backend_asset_id,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo, allowedCustomSizes]);
+  }, [documents, uploadModalOpen, customSizesLoading, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo, allowedCustomSizes]);
 
   // ISO uploads: set lock if none exists, otherwise prompt locked-variant
   // advisory if the doc's ISO size differs from the lock.
   useEffect(() => {
     if (uploadModalOpen) return;
+    if (customSizesLoading) return;
     if (advisoryDoc || bleedDoc || orientationDoc) return;
 
     const candidate = documents.find((d) => {
@@ -1052,7 +1104,7 @@ export default function OrderFiles() {
       backendAssetId: candidate.backend_asset_id,
       lockedSize: sessionSizeLock.size,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock, allowedCustomSizes]);
+  }, [documents, uploadModalOpen, customSizesLoading, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock, allowedCustomSizes]);
 
   // Orientation handlers — rotates 90° in the direction the advisory was opened for.
   const handleRotateOrientation = useCallback(async () => {
@@ -1537,6 +1589,11 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      if (customSizesLoading) {
+        toast.info("Product sizes are still loading. Please try again in a moment.");
+        return;
+      }
+
       // Ensure order exists before uploading — capture the ID directly
       let itemId: string;
       try {
@@ -1579,7 +1636,7 @@ export default function OrderFiles() {
       setUploadModalOpen(true);
       await uploadFiles(files, undefined, itemId);
     },
-    [uploadFiles, ensureOrder, productFamily?.slug]
+    [uploadFiles, ensureOrder, productFamily?.slug, customSizesLoading]
   );
 
   // Tracks the most-recently-uploaded poster_image source so we can stamp
@@ -2686,7 +2743,7 @@ export default function OrderFiles() {
               </div>
             )}
           </div>
-          <FileUploader onFiles={handleFiles} />
+          <FileUploader onFiles={handleFiles} disabled={customSizesLoading} />
           <FileList
             documents={documents}
             selectedDocId={selectedDocId}

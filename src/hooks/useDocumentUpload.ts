@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { PaperSize } from "@/lib/paperSizes";
-import { sizesMatch as sizesMatchHelper } from "@/lib/paperSizes";
+import { matchesAnySize, sizesMatch as sizesMatchHelper } from "@/lib/paperSizes";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -511,6 +511,7 @@ export function useDocumentUpload(
   productFamilySlug?: string | null,
   productFamilyPrintConfig?: FamilyPrintConfig | null,
   sessionLockedSize?: PaperSize | null,
+  allowedCustomSizes?: PaperSize[] | null,
 ) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
@@ -522,6 +523,14 @@ export function useDocumentUpload(
   useEffect(() => {
     sessionLockedSizeRef.current = sessionLockedSize ?? null;
   }, [sessionLockedSize]);
+
+  // Product-family catalogue sizes that are not built-in ISO sizes, e.g.
+  // Pull Up Banner 850 × 2000mm. Keep these in a ref so in-flight upload
+  // closures classify against the latest resolved catalogue options.
+  const allowedCustomSizesRef = useRef<PaperSize[]>(allowedCustomSizes ?? []);
+  useEffect(() => {
+    allowedCustomSizesRef.current = allowedCustomSizes ?? [];
+  }, [allowedCustomSizes]);
 
 
   const updateUpload = useCallback(
@@ -758,11 +767,15 @@ export function useDocumentUpload(
         const isBcFamily = isBusinessCardFamily(productFamilySlug);
         const bcSizeMatch = isBcFamily ? matchBusinessCardSize(pageWidthMm, pageHeightMm) : null;
         const isoMatch = bcSizeMatch ? null : matchIsoSize(pageWidthMm, pageHeightMm);
-        const knownNonIso = bcSizeMatch || isoMatch ? null : detectNonIsoSize(pageWidthMm, pageHeightMm);
-        const nearIsoMatch = bcSizeMatch || isoMatch || knownNonIso
+        const customSizeMatch = bcSizeMatch || isoMatch
+          ? null
+          : matchesAnySize(pageWidthMm, pageHeightMm, allowedCustomSizesRef.current);
+        const cleanSizeMatch = bcSizeMatch || isoMatch || customSizeMatch;
+        const knownNonIso = cleanSizeMatch ? null : detectNonIsoSize(pageWidthMm, pageHeightMm);
+        const nearIsoMatch = cleanSizeMatch || knownNonIso
           ? null
           : detectNearIsoWithBleed(pageWidthMm, pageHeightMm, productFamilySlug);
-        const isUnknownSize = !bcSizeMatch && !isoMatch && !knownNonIso && !nearIsoMatch;
+        const isUnknownSize = !cleanSizeMatch && !knownNonIso && !nearIsoMatch;
         const detectedSize = knownNonIso ?? (isUnknownSize ? UNKNOWN_SIZE_LABEL : null);
 
         // TrimBox differs from MediaBox? Treat it as an explicit author intent
@@ -790,9 +803,10 @@ export function useDocumentUpload(
         // advisory so we DEFER the (potentially slow) thumbnail render
         // until the user chooses Scale-to-lock or Keep-original.
         const lockedSize = sessionLockedSizeRef.current;
+        const currentStandardSize = isoMatch ?? customSizeMatch ?? bcSizeMatch;
         const lockedSizeMismatch =
           !!lockedSize &&
-          !!isoMatch &&
+          !!currentStandardSize &&
           !sizesMatchHelper(
             pageWidthMm,
             pageHeightMm,
@@ -859,6 +873,11 @@ export function useDocumentUpload(
         };
         if (printReadyDone) preflight.print_ready_done = true;
         if (detectedSize) preflight.detected_size = detectedSize;
+        if (customSizeMatch) {
+          preflight.detected_size = customSizeMatch.name;
+          preflight.size_resolved = true;
+          preflight.size_action = "keep";
+        }
         if (nearIsoMatch) {
           preflight.near_iso_match = nearIsoMatch.matchedSize.name;
           preflight.estimated_bleed_w = nearIsoMatch.bleedW;
@@ -880,10 +899,10 @@ export function useDocumentUpload(
         if (orientationMismatch) {
           preflight.orientation_mismatch = orientationMismatch;
         }
-        if (lockedSizeMismatch && lockedSize && isoMatch) {
+        if (lockedSizeMismatch && lockedSize && currentStandardSize) {
           preflight.locked_size_mismatch = true;
           preflight.locked_against = lockedSize.name;
-          preflight.detected_iso_size = isoMatch.name;
+          preflight.detected_iso_size = currentStandardSize.name;
         }
 
         await supabase

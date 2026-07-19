@@ -1,25 +1,38 @@
-## What's actually happening
+## What I found
 
-The customer uploaded `pull up banner2.pdf` at 850 × 2000mm — which now matches the "Pull Up Banner" catalogue custom size exactly. The chip shows "Review needed" but no dialog appears.
+The latest uploaded `pull up banner2.pdf` is now correctly recognised as **850 × 2000mm** and the database row has already been changed to:
 
-Two effects in `src/pages/dashboard/OrderFiles.tsx` fight each other:
+- `detected_size: Pull Up Banner`
+- `size_resolved: true`
+- `awaiting_review: false`
 
-1. **Non-ISO effect (line 923)** finds the doc because `preflight.detected_size` is set and `size_resolved` is false. The stale-classification guard (line 936) sees the dims now match an allowed custom size (850×2000mm), adds the doc id to the in-memory `resolvedDocIds` set, and returns — nothing else happens and nothing is persisted.
+But it is still stuck as `document_status: processing` with **no thumbnails**. That means the modal no longer appears because the review flag was cleared, but the upload was never moved into the final render/ready path.
 
-2. **ISO / custom-size effect (line 978)** would otherwise handle it (line 991 matches `matchesAnySize` against `allowedCustomSizes`), but line 982 bails out for any doc with `preflight.detected_size && !preflight.size_resolved`. So the doc is skipped here too.
+## Fix plan
 
-Net result: doc stays `awaiting_review = true` forever, no modal opens, no lock is set.
+1. **Stop treating recognised custom sizes as a review case**
+   - In the upload inspection path, include the product-family custom sizes when deciding if a file is a valid size.
+   - If the uploaded dimensions match a catalogue size like `Pull Up Banner 850 × 2000mm`, do not set `awaiting_review` and do not defer rendering.
 
-## Fix
+2. **Finalize and render matched custom-size files automatically**
+   - When a file matches an allowed custom size, run the same print-ready and thumbnail render path as a normal ISO upload.
+   - Set the session size lock to that custom size so later uploads in the same order remain consistent.
 
-Edit `src/pages/dashboard/OrderFiles.tsx` only.
+3. **Repair the stale fallback path in `OrderFiles.tsx`**
+   - The current fallback clears `awaiting_review` for a stale custom-size row, but only updates preflight data.
+   - Change it so it also kicks off finalization/rendering, or uses the existing keep-original flow, so the file cannot sit forever as `processing`.
 
-1. **Non-ISO effect**: when the stale-classification guard fires (dims now match ISO or an allowed custom size), persist the change to the DB instead of just marking it in memory — set `preflight_data.size_resolved = true`, `awaiting_review = false`, `detected_size` to the matched canonical name, then let the next render fall through to the ISO/custom-size effect. This clears the "Review needed" chip and unblocks downstream logic.
+4. **Add a self-heal for rows already in this broken state**
+   - If a document is `processing`, has `size_resolved: true`, has no thumbnails, and has a backend asset, reconcile/render it automatically.
+   - This should recover the file you just uploaded without needing another re-upload.
 
-2. **ISO / custom-size effect**: relax the guard on line 982 so a doc whose current dimensions match ISO or an allowed custom size is not blocked by a stale `detected_size && !size_resolved` flag. This is a belt-and-braces guard in case (1) hasn't landed yet on that render.
+5. **Verify against the real data path**
+   - Confirm the latest `pull up banner2.pdf` moves from `processing` to `ready` and receives thumbnails.
+   - Confirm no advisory modal appears for a valid 850 × 2000mm Pull Up Banner upload.
 
-No changes needed to `paperSizes.ts` or `PaperSizeAdvisory.tsx` — the 850×2000mm catalogue entry is being resolved correctly; the bug is purely in the OrderFiles effect coordination.
+## Files to change
 
-## Follow-up note (not part of this fix)
+- `src/hooks/useDocumentUpload.ts`
+- `src/pages/dashboard/OrderFiles.tsx`
 
-The user's earlier test file was 850 × **2200**mm while the catalogue is 850 × **2000**mm — 100mm out per side, well beyond the 3mm tolerance. If real pull-up artwork ships at 2200mm, the catalogue entry needs updating (or a second size added). Confirm the intended banner height before we touch the catalogue.
+No database schema changes are needed.
