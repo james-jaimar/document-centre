@@ -999,6 +999,9 @@ export default function OrderFiles() {
         // keep-original path so it cannot be left in processing with no
         // thumbnails.
         resolvedDocIds.current.add(d.id);
+        if (!sessionSizeLock) {
+          setSessionSizeLock({ size: matched, source: "first_iso_upload", action: "scale" });
+        }
         void (async () => {
           await applyKeepOriginal(
             {
