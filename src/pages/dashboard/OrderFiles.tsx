@@ -988,13 +988,13 @@ export default function OrderFiles() {
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
-      return matchIsoSize(w, h) !== null;
+      return matchIsoSize(w, h) !== null || matchesAnySize(w, h, allowedCustomSizes) !== null;
     });
 
     if (!candidate) return;
     const w = Number(candidate.page_width_mm);
     const h = Number(candidate.page_height_mm);
-    const matched = matchIsoSize(w, h)!;
+    const matched = matchIsoSize(w, h) ?? matchesAnySize(w, h, allowedCustomSizes)!;
 
     if (!sessionSizeLock) {
       isoCheckedDocIds.current.add(candidate.id);
