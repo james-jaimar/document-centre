@@ -274,9 +274,9 @@ export default function VariantPricingMatrix({
                                   table="clicks"
                                   lineId={row.id}
                                   label={`${size.label} · ${row.colour} · ${row.sides} · ${vLabel}`}
-                                  scope="master"
-                                  tenantId={null}
-                                  branchId={null}
+                                  scope={scope}
+                                  tenantId={scope === "master" ? null : tenantId}
+                                  branchId={scope === "branch" ? branchId : null}
                                   fallbackSell={row.sell_price}
                                   fallbackCost={row.cost_price}
                                 />
