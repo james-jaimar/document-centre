@@ -1,0 +1,3 @@
+CREATE POLICY orders_insert_staff_membership ON public.orders FOR INSERT TO authenticated WITH CHECK ((app_id IS NOT NULL) AND user_is_staff_for_branch(app_id, tenant_id, branch_id));
+
+CREATE POLICY order_items_insert_staff_membership ON public.order_items FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.orders o WHERE o.id = order_items.order_id AND o.app_id IS NOT NULL AND user_is_staff_for_branch(o.app_id, o.tenant_id, o.branch_id)));
