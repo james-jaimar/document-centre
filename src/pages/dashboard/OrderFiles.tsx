@@ -659,8 +659,8 @@ export default function OrderFiles() {
       .select("preflight_data")
       .eq("id", doc.id)
       .maybeSingle();
-      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
-      const matchedOriginal = matchKnownSize(doc.widthMm, doc.heightMm) ?? matchesAnySize(doc.widthMm, doc.heightMm, allowedCustomSizes);
+    const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+    const matchedOriginal = matchKnownSize(doc.widthMm, doc.heightMm) ?? matchesAnySize(doc.widthMm, doc.heightMm, allowedCustomSizes);
     await supabase
       .from("documents")
       .update({
