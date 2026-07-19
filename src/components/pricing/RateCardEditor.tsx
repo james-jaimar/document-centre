@@ -58,6 +58,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { useCatalogVariants } from "@/hooks/useCatalogVariants";
 import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
