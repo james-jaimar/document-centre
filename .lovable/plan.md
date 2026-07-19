@@ -1,27 +1,38 @@
-## Problem
+## Goal
+Let admins price each product variant (e.g. Economy / Executive pull-up banners) without leaving the product editor. Pricing stays in the existing `rate_card_clicks` table (single source of truth) — the family's Variants tab gains an inline editor that reads/writes those rows filtered to that family's sizes and linked variants.
 
-Saving variants on a product family fails with:
-> Could not find the 'variant_id' column of 'product_variant_links' in the schema cache
+## Current state (verified)
+- `rate_card_clicks` already has a `variant_code` column and `resolveClickRate` in `src/lib/calculatePrice.ts` filters by it (variant-specific row wins, falls back to variant-less).
+- `RateCardEditor` (Master / Branch pricing) supports adding rows with a variant. This works, but is disconnected from the product editor, so from the Variants tab there is no visible price and no way to add one.
+- `ProductFamilyVariantsEditor` (Admin → Products → [family] → Variants) only toggles which variants apply + default. No pricing surface.
 
-## Root cause (verified via schema query)
+## Changes
 
-The `product_variant_links` table's foreign key column is named **`catalog_variant_id`**, not `variant_id`. The client hook `useCatalogVariants.ts` (and the join in the family editor) writes/reads `variant_id`, so PostgREST rejects it.
+### 1. New inline component: `VariantPricingMatrix`
+Path: `src/components/admin/VariantPricingMatrix.tsx`
 
-The master table `catalog_variants` and the click-charge column `rate_card_clicks.variant_code` already exist and are named correctly — no migration needed.
+- Props: `productFamilyId`, `variantLinks` (from parent), `scope` (`master` for now — branch scope can be added later via the existing Branch Pricing page).
+- Reads:
+  - Sizes assigned to the family via `product_catalog_links` (existing hook / `catalog_sizes`).
+  - `rate_card_clicks` rows matching those size codes + the linked variant codes (resolved via `useResolvedRateCardClicks` at master scope).
+- Renders a compact matrix grouped by size, with rows per variant × (Colour × Sides) combinations that already exist, plus an "Add row" button per variant that opens the same Add-click-charge dialog pre-filled with the size + variant.
+- Sell / Cost cells are inline-editable (same commit-on-blur pattern as `RateCardEditor`).
+- Empty state per variant explains "No price yet — Add row" so the user immediately sees where to enter pricing.
 
-## Fix
+### 2. Wire the matrix into the Variants tab
+File: `src/components/admin/ProductFamilyVariantsEditor.tsx`
 
-Rename all client references from `variant_id` → `catalog_variant_id` on the `product_variant_links` shape only:
+- After the existing variants checklist, render `<VariantPricingMatrix productFamilyId={...} variantLinks={links} />` when there is at least one linked variant.
+- Keep the "manage under Platform → Master Pricing" hint as a secondary link for bulk edits.
 
-1. **`src/hooks/useCatalogVariants.ts`**
-   - `ProductVariantLink.variant_id` → `catalog_variant_id`
-   - Select join: `variant:catalog_variants(*)` keyed off `catalog_variant_id`
-   - `useSetProductVariantLinks` insert rows use `catalog_variant_id`
+### 3. Filter helper on Click Charges table
+File: `src/components/pricing/RateCardEditor.tsx`
 
-2. **`src/components/admin/ProductFamilyVariantsEditor.tsx`**
-   - Read `l.catalog_variant_id` when building the selected map and default lookup
-   - Emit `catalog_variant_id` in the payload passed to `setLinks.mutateAsync`
+- Add a small "Variant" filter dropdown above the click-charges table (All / each variant / None) so bulk edits from Master/Branch Pricing can be narrowed. Purely client-side filter on the existing `clicks` array.
 
-3. **`src/pages/dashboard/OrderBuild.tsx`** — anywhere it reads `link.variant_id` from `useProductVariantLinks`, switch to `link.catalog_variant_id` (default seeding + variant list for `OptionsPanel`).
+### 4. No schema, no RLS, no engine changes
+`variant_code` already flows end-to-end (spec → resolver → pricing). Nothing to migrate.
 
-No database migration, no SQL, no schema change. Purely a client rename to match the existing DB.
+## Out of scope
+- Branch-scoped variant matrix inside the product editor (branches still use Branch Pricing → Click Charges with the new variant filter; can be lifted into a branch product editor later if wanted).
+- Per-variant pack pricing (banners are click-charge priced, not pack-priced).

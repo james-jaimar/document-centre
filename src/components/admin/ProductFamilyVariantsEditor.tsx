@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import VariantPricingMatrix from "./VariantPricingMatrix";
 
 interface Props {
   productFamilyId: string;
@@ -127,6 +128,10 @@ export default function ProductFamilyVariantsEditor({ productFamilyId }: Props) 
           Save variants
         </Button>
       </div>
+
+      {links.length > 0 && (
+        <VariantPricingMatrix productFamilyId={productFamilyId} variantLinks={links} />
+      )}
     </Card>
   );
 }
