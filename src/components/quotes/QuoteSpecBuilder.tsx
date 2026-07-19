@@ -12,10 +12,8 @@
  *   3. Choose specs via the shared OptionsPanel (single-section) OR the
  *      QuoteSectionsEditor (multi-section families like bound documents).
  *   4. Live price via `calculateItemPrice`.
- *   5. Save → creates a `quoted` holding order + order_item carrying the
- *      full spec (incl. sections) + a `quotes` row pointing at it, so the
- *      existing `useReactivateQuote` can clone it into a real cart when
- *      the customer uploads artwork.
+ *   5. Save → calls `create_spec_quote`, which atomically creates the
+ *      quoted holding order, order item, quote, and quote item snapshot.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -297,104 +295,38 @@ export default function QuoteSpecBuilder({
         profileId = matched?.id ?? null;
       }
 
-      // 2. Holding order — hidden from cart (status = quoted).
-      const { data: holdingOrder, error: orderErr } = await supabase
-        .from("orders")
-        .insert({
-          user_id: profileId ?? user.id,
-          tenant_id: tenantId,
-          app_id: appId,
-          branch_id: branchId ?? null,
-          order_status: "quoted" as any,
-          total_price: total,
-          currency,
-          metadata: { is_spec_quote_holding: true },
-        })
-        .select("id")
-        .single();
-      if (orderErr) throw orderErr;
-
-      // 3. order_item carrying the full spec (incl. sections).
-      const { data: holdingItem, error: itemErr } = await supabase
-        .from("order_items")
-        .insert({
-          order_id: holdingOrder.id,
-          product_family_id: familyId,
-          quantity,
-          unit_price: unitPrice,
-          build_status: "ready" as any,
-          spec: spec as any,
-          title: name || family.name,
-        })
-        .select("id")
-        .single();
-      if (itemErr) throw itemErr;
-
-      // 4. Quote number.
-      const { data: numberData, error: numErr } = await supabase.rpc(
-        "generate_quote_number",
-        { p_app_id: appId },
+      // 2. Create the quote through one audited database action. This keeps
+      //    the multi-table write atomic and avoids layering more table RLS
+      //    policies for an admin/branch business workflow.
+      const { data: quoteRows, error: quoteErr } = await (supabase.rpc as any)(
+        "create_spec_quote",
+        {
+          p_app_id: appId,
+          p_tenant_id: tenantId,
+          p_branch_id: branchId ?? null,
+          p_customer_profile_id: profileId,
+          p_customer_email: customer.email.trim(),
+          p_customer_name: customer.name.trim() || null,
+          p_quote_name: name || null,
+          p_validity_days: Math.max(1, validityDays),
+          p_notes_internal: notes || null,
+          p_created_via: createdVia,
+          p_product_family_id: familyId,
+          p_product_name: family.name,
+          p_product_slug: family.slug,
+          p_quantity: quantity,
+          p_unit_price: unitPrice,
+          p_total_amount: total,
+          p_currency: currency,
+          p_spec: spec as any,
+        },
       );
-      if (numErr) throw numErr;
+      if (quoteErr) throw quoteErr;
 
-      const validUntil = new Date(
-        Date.now() + Math.max(1, validityDays) * 86400_000,
-      ).toISOString();
-
-      // 5. quotes row.
-      const { data: quote, error: qErr } = await supabase
-        .from("quotes")
-        .insert({
-          app_id: appId,
-          tenant_id: tenantId,
-          branch_id: branchId ?? null,
-          quote_number: numberData as unknown as string,
-          name: name || null,
-          customer_profile_id: profileId ?? null,
-          customer_email: customer.email.trim(),
-          customer_name: customer.name.trim() || null,
-          created_by_profile_id: user.id,
-          created_via: createdVia,
-          source_order_id: holdingOrder.id,
-          quote_status: "active" as any,
-          valid_until: validUntil,
-          currency,
-          subtotal: total,
-          total_amount: total,
-          notes_internal: notes || null,
-          metadata: {
-            is_spec_quote: true,
-            spec_summary: {
-              product: family.name,
-              quantity,
-              page_count: spec.page_count,
-              is_color: spec.is_color,
-              is_duplex: spec.is_duplex,
-              options: selectedOptions,
-              sections: spec.sections ?? null,
-            },
-          },
-        } as any)
-        .select("id, quote_number")
-        .single();
-      if (qErr) throw qErr;
-
-      // 6. quote_items snapshot.
-      const { error: snapErr } = await supabase.from("quote_items").insert({
-        quote_id: quote.id,
-        sequence_no: 1,
-        product_family_id: familyId,
-        product_name: family.name,
-        job_name: name || null,
-        quantity,
-        unit_price: unitPrice,
-        net_price: total,
-        gross_price: total,
-        source_job_id: holdingItem.id,
-        product_snapshot: { name: family.name, slug: family.slug },
-        configuration: spec as any,
-      } as any);
-      if (snapErr) throw snapErr;
+      const quote = Array.isArray(quoteRows) ? quoteRows[0] : quoteRows;
+      if (!quote?.id || !quote?.quote_number) {
+        throw new Error("Quote creation did not return a quote number");
+      }
 
       toast.success(`Quote ${quote.quote_number} created`);
       onCreated({ id: quote.id, quote_number: quote.quote_number });

@@ -6950,6 +6950,32 @@ export type Database = {
         Args: { p_name: string; p_secret: string }
         Returns: string
       }
+      create_spec_quote: {
+        Args: {
+          p_app_id: string
+          p_branch_id: string
+          p_created_via: string
+          p_currency: string
+          p_customer_email: string
+          p_customer_name: string
+          p_customer_profile_id: string
+          p_notes_internal: string
+          p_product_family_id: string
+          p_product_name: string
+          p_product_slug: string
+          p_quantity: number
+          p_quote_name: string
+          p_spec: Json
+          p_tenant_id: string
+          p_total_amount: number
+          p_unit_price: number
+          p_validity_days: number
+        }
+        Returns: {
+          id: string
+          quote_number: string
+        }[]
+      }
       current_storefront_tenant_id: { Args: never; Returns: string }
       delete_email_account_secret: {
         Args: { p_secret_id: string }
@@ -7231,10 +7257,6 @@ export type Database = {
       }
       user_can_bypass_branch_gate: {
         Args: { p_branch_id: string }
-        Returns: boolean
-      }
-      user_can_insert_order_item_for_order: {
-        Args: { p_order_id: string }
         Returns: boolean
       }
       user_can_manage_branch: {
