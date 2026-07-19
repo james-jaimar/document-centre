@@ -38,6 +38,13 @@ interface PaperSizeAdvisoryProps {
    * When null/empty, fall back to the previous unrestricted behaviour.
    */
   allowedSizeNames?: string[] | null;
+  /**
+   * Product-family custom sizes (with real mm dimensions) from the master
+   * catalogue — e.g. Pull Up Banner 850 × 2000mm. Rendered as first-class
+   * scale targets alongside ISO suggestions, and treated as a match for
+   * "keep original" when the upload's dimensions align with one of them.
+   */
+  allowedCustomSizes?: PaperSize[] | null;
 }
 
 export default function PaperSizeAdvisory({
