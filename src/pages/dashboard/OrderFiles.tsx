@@ -677,8 +677,8 @@ export default function OrderFiles() {
     resolvedDocIds.current.add(doc.id);
     refetchDocuments();
 
-    if (opts?.silent && opts?.lockedSize) {
-      toast.info(`Kept ${opts.lockedSize.name} size to match other files`);
+    if (opts?.silent) {
+      if (opts.lockedSize) toast.info(`Kept ${opts.lockedSize.name} size to match other files`);
     } else {
       toast.success("Keeping original size");
     }
