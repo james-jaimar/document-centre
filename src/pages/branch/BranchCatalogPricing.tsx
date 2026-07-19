@@ -1,6 +1,7 @@
 import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
 import BranchPackPricingEditor from "@/components/pricing/BranchPackPricingEditor";
+import BranchVariantPricingSection from "@/components/pricing/BranchVariantPricingSection";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
