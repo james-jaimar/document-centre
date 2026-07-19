@@ -104,6 +104,7 @@ export default function OptionsPanel({
   packBlocks,
   blocksActive,
   allowedSides,
+  variants,
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
