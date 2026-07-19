@@ -363,6 +363,7 @@ function ClicksTab({
         catalog_size_code: sizeCode,
         colour: adding.colour,
         sides: adding.sides,
+        variant_code: adding.variant_code || null,
         sell_price: adding.sell_price,
         cost_price: adding.cost_price,
         is_active: true,
