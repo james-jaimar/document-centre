@@ -694,6 +694,44 @@ export default function OrderFiles() {
     }
   }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress, allowedCustomSizes]);
 
+  // Self-heal rows that were already reclassified as a valid size but never
+  // reached thumbnail rendering. This covers the broken intermediate state:
+  // processing + size_resolved + awaiting_review=false + no thumbnails.
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
+    const doc = documents.find((d) => {
+      if (d.document_status !== "processing") return false;
+      if (!d.backend_asset_id) return false;
+      if (finalizingResolvedDocIds.current.has(d.id)) return false;
+      if (Array.isArray(d.thumbnail_urls) && d.thumbnail_urls.length > 0) return false;
+      const preflight = (d.preflight_data as Record<string, any> | null) ?? {};
+      if (preflight.awaiting_review === true) return false;
+      return preflight.size_resolved === true;
+    });
+    if (!doc) return;
+    const w = Number(doc.page_width_mm);
+    const h = Number(doc.page_height_mm);
+    if (!(w > 0 && h > 0)) return;
+    const matched = matchKnownSize(w, h) ?? matchesAnySize(w, h, allowedCustomSizes) ?? {
+      name: `${Math.round(w)}×${Math.round(h)}mm`,
+      widthMm: w,
+      heightMm: h,
+    };
+    finalizingResolvedDocIds.current.add(doc.id);
+    void applyKeepOriginal(
+      {
+        id: doc.id,
+        fileName: doc.file_name,
+        widthMm: w,
+        heightMm: h,
+        backendAssetId: doc.backend_asset_id,
+      },
+      { silent: true, lockedSize: matched },
+    ).finally(() => {
+      finalizingResolvedDocIds.current.delete(doc.id);
+    });
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, allowedCustomSizes, applyKeepOriginal]);
+
   /** Core: scale the doc to a target paper size and finalise it.
    *
    * Uses the single-shot `prepareForProduct` server endpoint that performs
