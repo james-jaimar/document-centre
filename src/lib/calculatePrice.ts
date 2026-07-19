@@ -746,8 +746,18 @@ export function calculatePriceFromRateCard(
         Number(resolved.paper.sell_price),
       );
       const unit = tieredParentUnit / resolved.nUp;
+      // Strip the trailing size token from the paper label so the imposition
+      // note we append reads cleanly ("80gsm Bond (4-up on A3, 5 sheets)").
+      const cleanLabel = String(resolved.paper.label).replace(
+        /\s+(A\d|DL|SRA3|LETTER|LEGAL|TABLOID)$/i,
+        "",
+      );
+      const impNote =
+        resolved.nUp > 1
+          ? ` (${resolved.nUp}-up on ${resolved.sourceSize}, ${totalParentSheets} parent sheet${totalParentSheets === 1 ? "" : "s"})`
+          : "";
       lines.push({
-        label: `Paper: ${resolved.paper.label}`,
+        label: `Paper: ${cleanLabel}${impNote}`,
         type: "per_page",
         unit_amount: unit,
         multiplier: totalSheets,
