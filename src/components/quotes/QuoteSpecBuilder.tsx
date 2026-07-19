@@ -28,7 +28,6 @@ import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
   type ItemSpec,
-  type ItemSpecSection,
 } from "@/lib/calculatePrice";
 import { useItemPricing } from "@/hooks/useItemPricing";
 import { normaliseQuoteSections } from "@/lib/quotes/normaliseQuoteSections";
