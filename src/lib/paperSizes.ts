@@ -142,6 +142,22 @@ export function matchKnownSize(widthMm: number, heightMm: number): PaperSize | n
 }
 
 /**
+ * Match dimensions against an arbitrary list of PaperSize entries
+ * (e.g. product-family custom sizes resolved from the master catalogue).
+ * Uses the standard tolerance and is orientation-agnostic.
+ */
+export function matchesAnySize(
+  widthMm: number,
+  heightMm: number,
+  sizes: PaperSize[],
+): PaperSize | null {
+  for (const s of sizes) {
+    if (matchesSize(widthMm, heightMm, s)) return s;
+  }
+  return null;
+}
+
+/**
  * Extract dimensions encoded in a structured product_option value slug.
  * Conventional slug format ends in `-WIDTH-HEIGHTmm`, e.g.
  *   `a4-210-297mm` → { 210, 297 }

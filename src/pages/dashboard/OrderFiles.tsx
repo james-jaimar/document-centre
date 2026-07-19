@@ -46,9 +46,9 @@ import { getPdfBlob } from "@/lib/pdfBlobCache";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
-import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, sizesMatch, resolveAllowedSizesFromSlugs } from "@/lib/paperSizes";
+import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, matchesAnySize, sizesMatch, resolveAllowedSizesFromSlugs } from "@/lib/paperSizes";
 import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
-import { useResolvedAllowedSizeLabels } from "@/hooks/useResolvedCatalogOptions";
+import { useResolvedAllowedSizeLabels, useResolvedAllowedCustomSizes } from "@/hooks/useResolvedCatalogOptions";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, X as XIcon } from "lucide-react";
@@ -113,6 +113,10 @@ export default function OrderFiles() {
   // `product_options.values` shape only when the family has not yet been
   // linked to the master catalogue.
   const { labels: catalogAllowedSizeLabels } = useResolvedAllowedSizeLabels(
+    productFamilyId,
+    activeBranch?.id ?? null,
+  );
+  const { sizes: allowedCustomSizes } = useResolvedAllowedCustomSizes(
     productFamilyId,
     activeBranch?.id ?? null,
   );
@@ -922,12 +926,14 @@ export default function OrderFiles() {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (!(preflight?.detected_size && !preflight?.size_resolved)) return false;
       // Stale-classification guard: a doc may have been persisted as
-      // "Custom size" before an ISO table update (e.g. DL added). Re-check
-      // the current dimensions — if they now match an ISO size, skip the
-      // non-ISO branch so the ISO effect below handles it correctly.
+      // "Custom size" before an ISO table update (e.g. DL added) or before
+      // the product family had a custom size configured (e.g. Pull Up
+      // Banner 850×2000mm). Re-check the current dimensions against ISO
+      // sizes AND product-family custom sizes — if it matches, skip the
+      // non-ISO branch so the ISO/custom-size effect below handles it.
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
-      if (w > 0 && h > 0 && matchIsoSize(w, h)) {
+      if (w > 0 && h > 0 && (matchIsoSize(w, h) || matchesAnySize(w, h, allowedCustomSizes))) {
         resolvedDocIds.current.add(d.id);
         return false;
       }
@@ -961,7 +967,7 @@ export default function OrderFiles() {
       heightMm: Number(nonIsoDoc.page_height_mm),
       backendAssetId: nonIsoDoc.backend_asset_id,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo]);
+  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo, allowedCustomSizes]);
 
   // ISO uploads: set lock if none exists, otherwise prompt locked-variant
   // advisory if the doc's ISO size differs from the lock.
@@ -982,13 +988,13 @@ export default function OrderFiles() {
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
-      return matchIsoSize(w, h) !== null;
+      return matchIsoSize(w, h) !== null || matchesAnySize(w, h, allowedCustomSizes) !== null;
     });
 
     if (!candidate) return;
     const w = Number(candidate.page_width_mm);
     const h = Number(candidate.page_height_mm);
-    const matched = matchIsoSize(w, h)!;
+    const matched = matchIsoSize(w, h) ?? matchesAnySize(w, h, allowedCustomSizes)!;
 
     if (!sessionSizeLock) {
       isoCheckedDocIds.current.add(candidate.id);
@@ -1011,7 +1017,7 @@ export default function OrderFiles() {
       backendAssetId: candidate.backend_asset_id,
       lockedSize: sessionSizeLock.size,
     });
-  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock]);
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock, allowedCustomSizes]);
 
   // Orientation handlers — rotates 90° in the direction the advisory was opened for.
   const handleRotateOrientation = useCallback(async () => {
@@ -2782,6 +2788,7 @@ export default function OrderFiles() {
           lockedSize={advisoryDoc.lockedSize ?? null}
           productFamilySlug={familySlug}
           allowedSizeNames={allowedSizeNames}
+          allowedCustomSizes={allowedCustomSizes}
           onKeepOriginal={handleKeepOriginal}
           onScaleTo={handleScaleTo}
         />
