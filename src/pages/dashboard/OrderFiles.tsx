@@ -664,14 +664,14 @@ export default function OrderFiles() {
     await supabase
       .from("documents")
       .update({
-          preflight_data: {
-            ...freshPreflight,
-            awaiting_review: false,
-            size_resolved: true,
-            size_action: "keep",
-            locked_size_mismatch: false,
-            ...(matchedOriginal ? { detected_size: matchedOriginal.name } : {}),
-          },
+        preflight_data: {
+          ...freshPreflight,
+          awaiting_review: false,
+          size_resolved: true,
+          size_action: "keep",
+          locked_size_mismatch: false,
+          ...(matchedOriginal ? { detected_size: matchedOriginal.name } : {}),
+        },
       })
       .eq("id", doc.id);
     resolvedDocIds.current.add(doc.id);
