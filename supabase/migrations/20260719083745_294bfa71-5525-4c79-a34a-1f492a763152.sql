@@ -1,0 +1,4 @@
+REVOKE EXECUTE ON FUNCTION public.create_spec_quote(uuid, uuid, uuid, uuid, text, text, text, integer, text, text, uuid, text, text, integer, numeric, numeric, text, jsonb) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.create_spec_quote(uuid, uuid, uuid, uuid, text, text, text, integer, text, text, uuid, text, text, integer, numeric, numeric, text, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_spec_quote(uuid, uuid, uuid, uuid, text, text, text, integer, text, text, uuid, text, text, integer, numeric, numeric, text, jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_spec_quote(uuid, uuid, uuid, uuid, text, text, text, integer, text, text, uuid, text, text, integer, numeric, numeric, text, jsonb) TO service_role;
