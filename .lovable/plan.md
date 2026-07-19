@@ -1,10 +1,14 @@
-## Problem
-The pull-up banners product tile shows a broken image (alt text only). The current asset (`src/assets/products/pull-up-banners.png.asset.json`, 1.6MB PNG) isn't loading in the preview.
-
 ## Plan
-1. Delete the existing asset pointer via `lovable-assets delete` to remove the orphaned CDN object.
-2. Upload the new smaller image from `/mnt/user-uploads/PULL_UP_BANNERS.jpg` using `lovable-assets create`, writing the pointer to `src/assets/products/pull-up-banners.jpg.asset.json`.
-3. Update the import in `src/pages/dashboard/NewOrder.tsx` (and `CustomerDashboard.tsx` if it references the same file) to point at the new `.jpg.asset.json` pointer.
-4. Verify the tile renders by checking the preview.
 
-No other logic changes.
+1. Replace the pull-up banner image asset with a normal local product image import, matching the existing product tiles such as Photo Prints.
+2. Add `src/assets/products/pull-up-banners.jpg` from the uploaded JPG and remove the `.asset.json` usage from the product tile code.
+3. Update both product image maps:
+   - `src/pages/dashboard/NewOrder.tsx`
+   - `src/pages/dashboard/CustomerDashboard.tsx`
+4. Verify the rendered `<img>` source is emitted through Vite’s normal `/assets/...jpg` pipeline, not `/__l5e/assets-v1/...`.
+
+## Confirmed current state
+
+- Existing working product images are imported directly from `src/assets/products/*.jpg`, which Vite serves as `/assets/name-hash.jpg`.
+- Pull-up banners currently imports `src/assets/products/pull-up-banners.jpg.asset.json` and uses `imgPullUpBanners.url`, producing `/__l5e/assets-v1/...`.
+- The local dev server is returning `text/html` for that `/__l5e/assets-v1/...jpg` path, so the browser cannot display it as an image in the preview.

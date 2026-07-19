@@ -18,7 +18,7 @@ import flyersImg from "@/assets/products/flyers.jpg";
 import brochuresImg from "@/assets/products/brochures.jpg";
 import businessCardsImg from "@/assets/product-business-cards.jpg";
 import photoPrintsImg from "@/assets/products/photo-prints.jpg";
-import pullUpBannersImg from "@/assets/products/pull-up-banners.jpg.asset.json";
+import pullUpBannersImg from "@/assets/products/pull-up-banners.jpg";
 
 const SLUG_IMAGE_MAP: Record<string, string> = {
   "bound-documents": boundDocumentsImg,
@@ -31,9 +31,9 @@ const SLUG_IMAGE_MAP: Record<string, string> = {
   "brochures": brochuresImg,
   "business-cards": businessCardsImg,
   "photo-prints": photoPrintsImg,
-  "pull-up-banners": pullUpBannersImg.url,
-  "pullup-banners": pullUpBannersImg.url,
-  "pull-up-banner": pullUpBannersImg.url,
+  "pull-up-banners": pullUpBannersImg,
+  "pullup-banners": pullUpBannersImg,
+  "pull-up-banner": pullUpBannersImg,
 };
 
 const ICON_MAP: Record<string, React.ElementType> = {
