@@ -926,12 +926,14 @@ export default function OrderFiles() {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (!(preflight?.detected_size && !preflight?.size_resolved)) return false;
       // Stale-classification guard: a doc may have been persisted as
-      // "Custom size" before an ISO table update (e.g. DL added). Re-check
-      // the current dimensions — if they now match an ISO size, skip the
-      // non-ISO branch so the ISO effect below handles it correctly.
+      // "Custom size" before an ISO table update (e.g. DL added) or before
+      // the product family had a custom size configured (e.g. Pull Up
+      // Banner 850×2000mm). Re-check the current dimensions against ISO
+      // sizes AND product-family custom sizes — if it matches, skip the
+      // non-ISO branch so the ISO/custom-size effect below handles it.
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
-      if (w > 0 && h > 0 && matchIsoSize(w, h)) {
+      if (w > 0 && h > 0 && (matchIsoSize(w, h) || matchesAnySize(w, h, allowedCustomSizes))) {
         resolvedDocIds.current.add(d.id);
         return false;
       }
