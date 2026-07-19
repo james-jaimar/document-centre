@@ -386,13 +386,30 @@ function ClicksTab({
 
   return (
     <Card className="p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <p className="text-xs text-muted-foreground">
           Per-impression (per side) print charge. Add rows for any paper size you bill on (A4, A3, SRA3, A5…).
         </p>
-        <Button size="sm" onClick={openAdd}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add row
-        </Button>
+        <div className="flex items-center gap-2">
+          {variants.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs text-muted-foreground">Variant:</Label>
+              <Select value={variantFilter} onValueChange={setVariantFilter}>
+                <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {variants.map((v) => (
+                    <SelectItem key={v.code} value={v.code}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <Button size="sm" onClick={openAdd}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Add row
+          </Button>
+        </div>
       </div>
       <Table>
         <TableHeader>
