@@ -42,16 +42,24 @@ import TiersButton from "@/components/pricing/TiersButton";
 interface Props {
   productFamilyId: string;
   variantLinks: ProductVariantLink[];
+  scope?: "master" | "branch";
+  tenantId?: string | null;
+  branchId?: string | null;
 }
 
 /**
- * Inline per-variant pricing matrix rendered on the Product Family's Variants
- * tab. Reads and writes the same `rate_card_clicks` rows the Master Pricing
- * → Click Charges tab uses (scope = master), pre-filtered to this family's
- * linked sizes × linked variants.
+ * Inline per-variant pricing matrix. Reads and writes `rate_card_clicks` rows
+ * at the requested scope (master by default, or branch when tenant/branch ids
+ * are supplied), pre-filtered to this family's linked sizes × linked variants.
  */
-export default function VariantPricingMatrix({ productFamilyId, variantLinks }: Props) {
-  const { data: allClicks = [] } = useRateCardClicks({ scope: "master" });
+export default function VariantPricingMatrix({
+  productFamilyId,
+  variantLinks,
+  scope = "master",
+  tenantId = null,
+  branchId = null,
+}: Props) {
+  const { data: allClicks = [] } = useRateCardClicks({ scope, tenantId, branchId });
   const { data: sizes = [] } = useCatalogSizes();
   const { data: catalogLinks = [] } = useProductCatalogLinks(productFamilyId);
   const update = useUpdateRateCardClick();
