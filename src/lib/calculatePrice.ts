@@ -539,6 +539,37 @@ export function calculatePriceFromRateCard(
   };
 
   /**
+   * Candidate parents per finished size — ordered from smallest parent
+   * to largest, ending with SRA3. The resolver picks whichever active
+   * rate-card row yields the cheapest per-piece cost, so if A4 clicks
+   * are stocked the engine will price A5 as 2-up on A4 rather than
+   * always deriving from A3.
+   */
+  const CHILD_PARENTS: Record<string, Array<{ parent: string; nUp: number }>> = {
+    A3: [{ parent: "A3", nUp: 1 }, { parent: "SRA3", nUp: 1 }],
+    A4: [{ parent: "A4", nUp: 1 }, { parent: "A3", nUp: 2 }, { parent: "SRA3", nUp: 2 }],
+    A5: [
+      { parent: "A5", nUp: 1 },
+      { parent: "A4", nUp: 2 },
+      { parent: "A3", nUp: 4 },
+      { parent: "SRA3", nUp: 4 },
+    ],
+    A6: [
+      { parent: "A6", nUp: 1 },
+      { parent: "A5", nUp: 2 },
+      { parent: "A4", nUp: 4 },
+      { parent: "A3", nUp: 8 },
+      { parent: "SRA3", nUp: 8 },
+    ],
+    DL: [
+      { parent: "DL", nUp: 1 },
+      { parent: "A4", nUp: 3 },
+      { parent: "A3", nUp: 6 },
+      { parent: "SRA3", nUp: 6 },
+    ],
+  };
+
+  /**
    * Finishing nUp: when a finishing row is priced per a parent stock
    * (e.g. lamination priced per SRA3) and the finished doc is smaller,
    * one parent sheet covers `nUp` finished sheets. SRA3 is treated as
@@ -549,8 +580,6 @@ export function calculatePriceFromRateCard(
     const parent = String(rowSize).toUpperCase();
     const imp = SIZE_IMPOSITION[size];
     if (imp && imp.parent === parent) return imp.nUp;
-    // SRA3 parent rolls (lamination) — A3 finished pieces still fit 1-up,
-    // but SRA3-priced finishes applied to A4/A5/A6/DL get the A3 imposition.
     if (parent === "SRA3" && imp && imp.parent === "A3") return imp.nUp;
     if (parent === "SRA3" && size === "A3") return 1;
     return 1;
@@ -575,67 +604,58 @@ export function calculatePriceFromRateCard(
 
   /**
    * Resolve the click price for a given finished size + colour + sides.
-   * Prefers a direct active row; otherwise derives from the parent sheet.
-   * Returns price per **printed sheet at the parent size**.
+   * Picks the CHEAPEST active parent from the imposition candidate list —
+   * so A5 comes off A4 when A4 is stocked & cheaper per piece than A3/4.
    */
   function resolveClickRate(
     finishedSize: string,
     cellColour: "mono" | "colour",
     cellSides: "simplex" | "duplex"
   ): { unit: number; sourceSize: string; nUp: number; lineId: string } | null {
-    const direct = rc.clicks.find(
-      (c) =>
-        c.is_active &&
-        String(c.size).toUpperCase() === finishedSize &&
-        c.colour === cellColour &&
-        c.sides === cellSides
-    );
-    if (direct) return { unit: Number(direct.sell_price), sourceSize: finishedSize, nUp: 1, lineId: direct.id };
-    const imp = SIZE_IMPOSITION[finishedSize];
-    if (imp) {
-      const parent = rc.clicks.find(
+    const candidates = CHILD_PARENTS[finishedSize] ?? [{ parent: finishedSize, nUp: 1 }];
+    let best: { unit: number; sourceSize: string; nUp: number; lineId: string } | null = null;
+    for (const cand of candidates) {
+      const row = rc.clicks.find(
         (c) =>
           c.is_active &&
-          String(c.size).toUpperCase() === imp.parent &&
+          String(c.size).toUpperCase() === cand.parent &&
           c.colour === cellColour &&
-          c.sides === cellSides
+          c.sides === cellSides,
       );
-      if (parent) return { unit: Number(parent.sell_price), sourceSize: imp.parent, nUp: imp.nUp, lineId: parent.id };
+      if (!row) continue;
+      const perPiece = Number(row.sell_price) / cand.nUp;
+      if (!best || perPiece < Number(best.unit) / best.nUp) {
+        best = { unit: Number(row.sell_price), sourceSize: cand.parent, nUp: cand.nUp, lineId: row.id };
+      }
     }
-    return null;
+    return best;
   }
 
   /**
-   * Resolve a paper row. The requested code can be either:
-   *   - a sized rate-card code (e.g. "80gsm-bond-a4"), or
-   *   - a bare catalog_papers.code (e.g. "80gsm-bond") — in which case we
-   *     append the finished size before looking up.
-   * Falls back to the n-up parent size when no direct row exists.
+   * Resolve a paper row. Picks the CHEAPEST active parent from the
+   * imposition candidate list. Accepts either a bare catalog_papers.code
+   * (e.g. "80gsm-bond") or a sized rate-card code ("80gsm-bond-a4").
    */
   function resolvePaper(
     requestedCode: string,
     finishedSize: string
-  ): { paper: typeof rc.papers[number]; nUp: number } | null {
-    const sizeSuffix = `-${finishedSize.toLowerCase()}`;
+  ): { paper: typeof rc.papers[number]; nUp: number; sourceSize: string } | null {
     const hasSizeSuffix = /-(a\d|dl|sra3|letter|legal|tabloid)$/i.test(requestedCode);
-    const candidate = hasSizeSuffix ? requestedCode : `${requestedCode}${sizeSuffix}`;
-
-    const direct = rc.papers.find((p) => p.code === candidate && p.is_active);
-    if (direct) {
-      const imp = SIZE_IMPOSITION[finishedSize];
-      if (imp && direct.size === imp.parent) return { paper: direct, nUp: imp.nUp };
-      return { paper: direct, nUp: 1 };
+    const baseCode = hasSizeSuffix
+      ? requestedCode.replace(/-(a\d|dl|sra3|letter|legal|tabloid)$/i, "")
+      : requestedCode;
+    const candidates = CHILD_PARENTS[finishedSize] ?? [{ parent: finishedSize, nUp: 1 }];
+    let best: { paper: typeof rc.papers[number]; nUp: number; sourceSize: string } | null = null;
+    for (const cand of candidates) {
+      const parentCode = `${baseCode}-${cand.parent.toLowerCase()}`;
+      const row = rc.papers.find((p) => p.code === parentCode && p.is_active);
+      if (!row) continue;
+      const perPiece = Number(row.sell_price) / cand.nUp;
+      if (!best || perPiece < Number(best.paper.sell_price) / best.nUp) {
+        best = { paper: row, nUp: cand.nUp, sourceSize: cand.parent };
+      }
     }
-    const imp = SIZE_IMPOSITION[finishedSize];
-    if (imp) {
-      const baseCode = hasSizeSuffix
-        ? requestedCode.replace(/-(a\d|dl|sra3|letter|legal|tabloid)$/i, "")
-        : requestedCode;
-      const parentCode = `${baseCode}-${imp.parent.toLowerCase()}`;
-      const parent = rc.papers.find((p) => p.code === parentCode && p.is_active);
-      if (parent) return { paper: parent, nUp: imp.nUp };
-    }
-    return null;
+    return best;
   }
 
   // ---- Build the section list -------------------------------------------
