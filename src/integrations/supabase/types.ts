@@ -1247,6 +1247,42 @@ export type Database = {
         }
         Relationships: []
       }
+      catalog_variants: {
+        Row: {
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          label: string
+          metadata: Json
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          label: string
+          metadata?: Json
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string
+          metadata?: Json
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contact_submissions: {
         Row: {
           company: string | null
@@ -3353,6 +3389,7 @@ export type Database = {
           title: string | null
           unit_price: number
           updated_at: string
+          variant_code: string | null
           weight_grams: number | null
         }
         Insert: {
@@ -3366,6 +3403,7 @@ export type Database = {
           title?: string | null
           unit_price?: number
           updated_at?: string
+          variant_code?: string | null
           weight_grams?: number | null
         }
         Update: {
@@ -3379,6 +3417,7 @@ export type Database = {
           title?: string | null
           unit_price?: number
           updated_at?: string
+          variant_code?: string | null
           weight_grams?: number | null
         }
         Relationships: [
@@ -5156,6 +5195,7 @@ export type Database = {
           tenant_id: string
           updated_at: string
           updated_by: string | null
+          variant_code: string | null
         }
         Insert: {
           branch_id?: string | null
@@ -5165,6 +5205,7 @@ export type Database = {
           tenant_id: string
           updated_at?: string
           updated_by?: string | null
+          variant_code?: string | null
         }
         Update: {
           branch_id?: string | null
@@ -5174,6 +5215,7 @@ export type Database = {
           tenant_id?: string
           updated_at?: string
           updated_by?: string | null
+          variant_code?: string | null
         }
         Relationships: [
           {
@@ -5249,6 +5291,51 @@ export type Database = {
           weight_grams?: number | null
         }
         Relationships: []
+      }
+      product_variant_links: {
+        Row: {
+          catalog_variant_id: string
+          created_at: string
+          id: string
+          is_default: boolean
+          product_family_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          catalog_variant_id: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          product_family_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          catalog_variant_id?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          product_family_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variant_links_catalog_variant_id_fkey"
+            columns: ["catalog_variant_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_variants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_variant_links_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -5392,6 +5479,7 @@ export type Database = {
           source_job_id: string | null
           unit_label: string | null
           unit_price: number
+          variant_code: string | null
           vat_rate: number
         }
         Insert: {
@@ -5412,6 +5500,7 @@ export type Database = {
           source_job_id?: string | null
           unit_label?: string | null
           unit_price?: number
+          variant_code?: string | null
           vat_rate?: number
         }
         Update: {
@@ -5432,6 +5521,7 @@ export type Database = {
           source_job_id?: string | null
           unit_label?: string | null
           unit_price?: number
+          variant_code?: string | null
           vat_rate?: number
         }
         Relationships: [
@@ -5690,6 +5780,7 @@ export type Database = {
           size: string
           tenant_id: string | null
           updated_at: string
+          variant_code: string | null
         }
         Insert: {
           branch_id?: string | null
@@ -5706,6 +5797,7 @@ export type Database = {
           size: string
           tenant_id?: string | null
           updated_at?: string
+          variant_code?: string | null
         }
         Update: {
           branch_id?: string | null
@@ -5722,6 +5814,7 @@ export type Database = {
           size?: string
           tenant_id?: string | null
           updated_at?: string
+          variant_code?: string | null
         }
         Relationships: [
           {

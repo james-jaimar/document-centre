@@ -58,6 +58,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { useCatalogVariants } from "@/hooks/useCatalogVariants";
 import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -284,6 +285,7 @@ function ClicksTab({
   const del = useDeleteRateCardClick();
   const { data: sizes = [] } = useCatalogSizes();
   const { data: printAttrs = [] } = useCatalogPrintAttrs();
+  const { data: variants = [] } = useCatalogVariants({ activeOnly: true });
   const colourOptions = printAttrs.filter((a) => a.attribute === "colour_mode" && a.is_active && (a.code === "mono" || a.code === "colour"));
   const sidesOptions = printAttrs.filter((a) => a.attribute === "sides" && a.is_active && (a.code === "simplex" || a.code === "duplex"));
   const [drafts, setDrafts] = useState<Record<string, { sell?: string; cost?: string }>>({});
@@ -291,6 +293,7 @@ function ClicksTab({
     size: string;
     colour: "mono" | "colour";
     sides: "simplex" | "duplex";
+    variant_code: string; // "" = none
     sell_price: number;
     cost_price: number;
   } | null>(null);
@@ -333,6 +336,7 @@ function ClicksTab({
       size: "A4",
       colour: "mono",
       sides: "simplex",
+      variant_code: "",
       sell_price: 0,
       cost_price: 0,
     });
@@ -359,6 +363,7 @@ function ClicksTab({
         catalog_size_code: sizeCode,
         colour: adding.colour,
         sides: adding.sides,
+        variant_code: adding.variant_code || null,
         sell_price: adding.sell_price,
         cost_price: adding.cost_price,
         is_active: true,
@@ -385,6 +390,7 @@ function ClicksTab({
         <TableHeader>
           <TableRow>
             <TableHead>Size</TableHead>
+            <TableHead>Variant</TableHead>
             <TableHead>Colour</TableHead>
             <TableHead>Sides</TableHead>
             <TableHead className="w-32">Sell (R)</TableHead>
@@ -412,6 +418,13 @@ function ClicksTab({
             return (
               <TableRow key={row.id}>
                 <TableCell className="font-medium">{sizeLabel}</TableCell>
+                <TableCell className="text-xs">
+                  {(() => {
+                    const vc = (row as any).variant_code as string | null | undefined;
+                    if (!vc) return <span className="text-muted-foreground">—</span>;
+                    return variants.find((v) => v.code === vc)?.label ?? vc;
+                  })()}
+                </TableCell>
                 <TableCell className="capitalize">{row.colour}</TableCell>
                 <TableCell className="capitalize">{row.sides}</TableCell>
                 <TableCell>
@@ -468,7 +481,7 @@ function ClicksTab({
 
           {clicks.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+              <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-6">
                 No click charges configured.
               </TableCell>
             </TableRow>
@@ -519,7 +532,21 @@ function ClicksTab({
                   </SelectContent>
                 </Select>
               </div>
-              <div />
+              <div>
+                <Label className="text-xs">Variant (optional)</Label>
+                <Select
+                  value={adding.variant_code || "__none__"}
+                  onValueChange={(v) => setAdding({ ...adding, variant_code: v === "__none__" ? "" : v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {variants.map((v) => (
+                      <SelectItem key={v.code} value={v.code}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label className="text-xs">Sell price (R)</Label>
                 <Input

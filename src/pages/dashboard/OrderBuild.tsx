@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
+import { useProductVariantLinks } from "@/hooks/useCatalogVariants";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
@@ -83,6 +84,22 @@ export default function OrderBuild() {
   // Document Size overlaid from the master catalogue (catalog_papers,
   // catalog_sizes) so what the customer sees matches what admins curate.
   const { data: options = [] } = useCatalogBackedOptions(productFamilyId, effectiveBranchId);
+  const { data: variantLinks = [] } = useProductVariantLinks(productFamilyId);
+  const variantOptions = useMemo(
+    () =>
+      (variantLinks ?? [])
+        .filter((l) => l.variant?.is_active)
+        .map((l) => ({
+          code: l.variant!.code,
+          label: l.variant!.label,
+          description: l.variant?.description,
+        })),
+    [variantLinks],
+  );
+  const defaultVariantCode = useMemo(() => {
+    const defaultLink = (variantLinks ?? []).find((l) => l.is_default && l.variant?.is_active);
+    return defaultLink?.variant?.code ?? variantOptions[0]?.code ?? null;
+  }, [variantLinks, variantOptions]);
 
   // Fetch product family to get slug for preview type
   const { data: productFamily } = useQuery({
@@ -422,6 +439,19 @@ export default function OrderBuild() {
       return { ...prev, selected_options: selected };
     });
   }, [options, isMultiSectionFamily]);
+
+  // Seed default variant when the family has variants configured.
+  useEffect(() => {
+    if (variantOptions.length === 0 || !defaultVariantCode) return;
+    setSpec((prev) => {
+      const current = prev.selected_options["Variant"];
+      if (current && variantOptions.some((v) => v.code === current)) return prev;
+      return {
+        ...prev,
+        selected_options: { ...prev.selected_options, Variant: defaultVariantCode },
+      };
+    });
+  }, [variantOptions, defaultVariantCode]);
 
   // ── Mirror Print Colour / Print Sides → body section is_color / is_duplex.
   // Only applies to single-section families. The pricing engine reads
@@ -1338,6 +1368,7 @@ export default function OrderBuild() {
               packBlocks={allBlocks}
               blocksActive={blocksMode}
               allowedSides={allowedSides}
+              variants={variantOptions}
               suppressPriceDeltaFor={(() => {
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug === "business-cards" || slug === "business_cards") {
