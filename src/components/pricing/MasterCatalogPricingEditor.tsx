@@ -137,6 +137,7 @@ export default function MasterCatalogPricingEditor({
         <div>
           <h2 className="text-xl font-semibold text-foreground">{title ?? defaultTitle}</h2>
           <p className="text-sm text-muted-foreground">{description ?? defaultDescription}</p>
+          <p className="text-xs text-muted-foreground mt-1">All prices are entered <strong>ex VAT</strong>. VAT is added at customer checkout using each branch's tax settings.</p>
         </div>
         {showCascade && (
           <div className="flex gap-2 shrink-0">

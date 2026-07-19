@@ -391,6 +391,9 @@ export default function QuoteSpecBuilder({
         <h2 className="text-sm font-semibold text-foreground">
           Product &amp; specifications
         </h2>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Prices below are shown <strong>ex VAT</strong>. VAT is added to the customer-facing quote using the branch's tax settings.
+        </p>
 
         <div>
           <Label>Product</Label>

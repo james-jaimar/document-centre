@@ -5,6 +5,8 @@ import { useSaveCartAsQuote } from "@/hooks/useQuotes";
 import { useAuth } from "@/hooks/useAuth";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
+import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import PriceTotals from "@/components/order/PriceTotals";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -32,6 +34,7 @@ export default function Cart() {
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
   const { region } = useRegionalPricing();
+  const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
   // Prefer the currency stamped on the cart order itself (set at first add),
   // falling back to the active region for empty carts.
   const currency = (cart?.currency as string | undefined) ?? region?.currency_code ?? "ZAR";
@@ -155,7 +158,7 @@ export default function Cart() {
           <TableRow>
             <TableHead>Item</TableHead>
             <TableHead className="text-center">Qty</TableHead>
-            <TableHead className="text-right">Unit Price</TableHead>
+            <TableHead className="text-right">Unit Price {showVatBreakdown && <span className="text-[10px] font-normal text-muted-foreground">({inclSuffix})</span>}</TableHead>
             <TableHead className="text-right">Total</TableHead>
             <TableHead />
           </TableRow>
@@ -175,10 +178,10 @@ export default function Cart() {
                 </TableCell>
                 <TableCell className="text-center text-foreground">{item.quantity}</TableCell>
                 <TableCell className="text-right font-mono text-foreground">
-                  {formatPrice(Number(item.unit_price), currency)}
+                  {formatPrice(toGross(Number(item.unit_price)), currency)}
                 </TableCell>
                 <TableCell className="text-right font-mono font-medium text-foreground">
-                  {formatPrice(Number(item.unit_price) * item.quantity, currency)}
+                  {formatPrice(toGross(Number(item.unit_price) * item.quantity), currency)}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
@@ -216,9 +219,8 @@ export default function Cart() {
 
       {/* Cart footer */}
       <div className="flex flex-col items-end gap-4 border-t border-border pt-4">
-        <div className="text-right space-y-1">
-          <div className="text-sm text-muted-foreground">Total</div>
-          <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
+        <div className="w-full sm:w-80">
+          <PriceTotals currency={currency} subtotalNet={cartTotal} />
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>

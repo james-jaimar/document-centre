@@ -23,6 +23,8 @@ import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck, TicketPercent, X } from
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
+import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import PriceTotals from "@/components/order/PriceTotals";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
 import AddressPicker from "@/components/customer/AddressPicker";
@@ -47,6 +49,7 @@ export default function Checkout() {
   // Currency is locked at the cart level (set when items are added). Fall back
   // to the active region for empty-cart edge cases.
   const currency = ((cart as { currency?: string } | null)?.currency) ?? region?.currency_code ?? "ZAR";
+  const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
   const [notes, setNotes] = useState("");
@@ -776,63 +779,45 @@ export default function Checkout() {
                   {item.title || "Untitled"} × {item.quantity}
                 </span>
                 <span className="font-mono text-foreground shrink-0">
-                  {formatPrice(Number(item.unit_price) * item.quantity, currency)}
+                  {formatPrice(toGross(Number(item.unit_price) * item.quantity), currency)}
                 </span>
               </div>
             ))}
           </div>
-          <div className="border-t border-border pt-3 space-y-1.5">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-mono text-foreground">{formatPrice(subtotal, currency)}</span>
-            </div>
-            {deliveryMethod === "delivery" && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground flex items-center gap-1.5">
-                  <Truck className="h-3.5 w-3.5" />
-                  Delivery
-                  {shippingQuote?.zoneLabel && (
-                    <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5">
-                      {shippingQuote.zoneLabel}
-                    </Badge>
-                  )}
-                </span>
-                <span className="font-mono text-foreground">
-                  {quotingShipping
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" />
-                    : shippingQuote?.price != null
-                      ? formatPrice(deliveryFee, currency)
-                      : <span className="text-muted-foreground text-xs">enter address</span>}
-                </span>
+          {showVatBreakdown && (
+            <p className="text-[10px] text-muted-foreground -mt-1">Line prices shown {inclSuffix}.</p>
+          )}
+          <div className="border-t border-border pt-3">
+            <PriceTotals
+              currency={currency}
+              subtotalNet={subtotal}
+              deliveryNet={deliveryMethod === "delivery" && shippingQuote?.price != null ? deliveryFee : 0}
+              discountNet={discountAmount}
+              compact
+              extras={
+                deliveryMethod === "delivery" && shippingQuote && (
+                  <div className="text-[11px] text-muted-foreground">
+                    Billable weight: {shippingQuote.billableKg.toFixed(2)}kg
+                    {shippingQuote.volumetricKg > shippingQuote.physicalKg && " (volumetric)"}
+                    {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
+                  </div>
+                )
+              }
+            />
+            {appliedDiscount && (
+              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400">
+                <TicketPercent className="h-3 w-3" />
+                {appliedDiscount.name}
+                {appliedDiscount.code && (
+                  <code className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 px-1 rounded">
+                    {appliedDiscount.code}
+                  </code>
+                )}
               </div>
             )}
-            {deliveryMethod === "delivery" && shippingQuote && (
-              <div className="text-[11px] text-muted-foreground">
-                Billable weight: {shippingQuote.billableKg.toFixed(2)}kg
-                {shippingQuote.volumetricKg > shippingQuote.physicalKg && " (volumetric)"}
-                {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
-              </div>
+            {deliveryMethod === "delivery" && shippingQuote?.price == null && (
+              <div className="mt-1 text-xs text-muted-foreground">Enter address for delivery pricing.</div>
             )}
-            {discountAmount > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                  <TicketPercent className="h-3.5 w-3.5" />
-                  {appliedDiscount?.name ?? "Discount"}
-                  {appliedDiscount?.code && (
-                    <code className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 px-1 rounded">
-                      {appliedDiscount.code}
-                    </code>
-                  )}
-                </span>
-                <span className="font-mono text-emerald-700 dark:text-emerald-400">
-                  −{formatPrice(discountAmount, currency)}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between text-base font-bold pt-1">
-              <span className="text-foreground">Total</span>
-              <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
-            </div>
           </div>
 
           {/* Promo code */}

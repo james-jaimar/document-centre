@@ -42,6 +42,7 @@ export default function BranchPackPricingEditor({ tenantId, branchId }: Props) {
         <p className="text-sm text-muted-foreground">
           Override pack ladders for this branch. Leave a family alone to keep inheriting tenant / master prices.
         </p>
+        <p className="text-xs text-muted-foreground mt-1">Pack prices are entered <strong>ex VAT</strong>.</p>
       </div>
       <Accordion type="single" collapsible className="space-y-2">
         {blocksFamilies.map((family) => (

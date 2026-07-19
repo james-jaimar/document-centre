@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/popover";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
+import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 
 type ProductOption = Tables<"product_options">;
 type PricingRule = Tables<"pricing_rules">;
@@ -66,6 +67,7 @@ export default function PriceSummary({
 }: PriceSummaryProps) {
   const { region } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
+  const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
 
   // Filter the raw block ladder down to entries matching the current spec's
   // size / paper / sides. This makes pack pricing spec-aware — flyers priced
@@ -156,7 +158,7 @@ export default function PriceSummary({
             <SelectContent>
               {sortedBlocks.map((b) => (
                 <SelectItem key={b.qty} value={String(b.qty)} className="text-xs">
-                  {b.qty.toLocaleString()} — {formatPrice(b.price_minor / 100, currency)}
+                  {b.qty.toLocaleString()} — {formatPrice(toGross(b.price_minor / 100), currency)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -195,7 +197,7 @@ export default function PriceSummary({
 
       {blocksActive && activeBlock && (
         <p className="text-[11px] text-muted-foreground -mt-1">
-          {formatPrice(activeBlock.price_minor / activeBlock.qty / 100, currency)} each
+          {formatPrice(toGross(activeBlock.price_minor / activeBlock.qty / 100), currency)} each
         </p>
       )}
 
@@ -239,15 +241,25 @@ export default function PriceSummary({
               <div className="border-t border-border pt-1.5 mt-1.5 flex justify-between text-xs font-medium">
                 <span>Per unit</span>
                 <span className="font-mono">
-                  {formatPrice(breakdown.subtotal_per_unit, currency)}
+                  {formatPrice(toGross(breakdown.subtotal_per_unit), currency)}
                 </span>
               </div>
+              {showVatBreakdown && (
+                <p className="text-[10px] text-muted-foreground pt-1">
+                  Line prices above are ex VAT. Displayed price is {inclSuffix}.
+                </p>
+              )}
             </div>
           </PopoverContent>
         </Popover>
-        <span className="text-xl font-bold text-foreground">
-          {formatPrice(breakdown.total, currency)}
-        </span>
+        <div className="text-right leading-tight">
+          <span className="text-xl font-bold text-foreground">
+            {formatPrice(toGross(breakdown.total), currency)}
+          </span>
+          {showVatBreakdown && (
+            <div className="text-[10px] text-muted-foreground">{inclSuffix}</div>
+          )}
+        </div>
       </div>
 
       {/* Add to Cart */}

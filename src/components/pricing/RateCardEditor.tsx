@@ -156,6 +156,7 @@ export default function RateCardEditor({
         <div>
           <h2 className="text-xl font-semibold text-foreground">{title}</h2>
           <p className="text-sm text-muted-foreground">{description}</p>
+          <p className="text-xs text-muted-foreground mt-1">All amounts are <strong>ex VAT</strong>. Customers see VAT-inclusive prices at checkout.</p>
         </div>
         {scope === "tenant" && tenantId && (
           <Button

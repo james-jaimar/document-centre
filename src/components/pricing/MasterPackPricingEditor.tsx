@@ -76,6 +76,7 @@ export default function MasterPackPricingEditor() {
           Fixed-pack sell prices for products that ship in set quantities (Flyers, DL flyers, etc.).
           These are the master defaults — tenants and branches can override them from their own pricing pages.
         </p>
+        <p className="text-xs text-muted-foreground mt-1">All pack prices are entered <strong>ex VAT</strong>.</p>
       </div>
 
       <Accordion type="single" collapsible value={openItem} onValueChange={setOpenItem} className="space-y-2">
