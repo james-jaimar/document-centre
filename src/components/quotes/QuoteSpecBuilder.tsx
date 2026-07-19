@@ -264,15 +264,14 @@ export default function QuoteSpecBuilder({
     selectedOptions,
   ]);
 
-  const { breakdown, unitPrice, total, rulesCount, useNewEngine } =
-    useItemPricing({
-      tenantId,
-      branchId: branchId ?? null,
-      productFamilyId: familyId || null,
-      currency,
-      spec,
-      options,
-    });
+  const { breakdown, unitPrice, total } = useItemPricing({
+    tenantId,
+    branchId: branchId ?? null,
+    productFamilyId: familyId || null,
+    currency,
+    spec,
+    options,
+  });
 
   const canSave =
     !!user &&
