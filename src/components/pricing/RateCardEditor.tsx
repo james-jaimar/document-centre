@@ -481,7 +481,7 @@ function ClicksTab({
 
           {clicks.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+              <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-6">
                 No click charges configured.
               </TableCell>
             </TableRow>
