@@ -1,41 +1,25 @@
-## Problem
+## What's actually happening
 
-Uploading `pull up banner.pdf` (850 × 2200mm) triggers "Unrecognised Paper Size" and only offers A4/A3/A0 — even though "Pull Up Banners" has a size configured in the master catalogue.
+The customer uploaded `pull up banner2.pdf` at 850 × 2000mm — which now matches the "Pull Up Banner" catalogue custom size exactly. The chip shows "Review needed" but no dialog appears.
 
-Root cause (confirmed via `resolve_product_options` for family `pull-up-banners`):
-- The catalogue returns one size row: `item_code=pub-850x2000`, `metadata={width_mm:2000, height_mm:850, iso:"Pull Up Banner"}`.
-- `useResolvedAllowedSizeLabels` maps that to the label `"Pull Up Banner"`.
-- `PaperSizeAdvisory` and `OrderFiles` only recognise names/dimensions that exist in `ISO_SIZES` / `NON_ISO_SIZES` (`matchIsoSize`, `matchKnownSize`). Product‑family custom dimensions are never consulted, so 850 × 2000 (or 2200) can never be a "known" size.
+Two effects in `src/pages/dashboard/OrderFiles.tsx` fight each other:
 
-Note on the specific file: catalogue is **850 × 2000mm**, upload is **850 × 2200mm**. Even after this fix that upload is outside tolerance and would still show the advisory — but the advisory will then correctly recommend "Scale to Pull Up Banner (850 × 2000mm)" rather than A4. Please confirm whether the intended pull‑up size is 2000 or 2200; if it's 2200 the master catalogue item needs updating.
+1. **Non-ISO effect (line 923)** finds the doc because `preflight.detected_size` is set and `size_resolved` is false. The stale-classification guard (line 936) sees the dims now match an allowed custom size (850×2000mm), adds the doc id to the in-memory `resolvedDocIds` set, and returns — nothing else happens and nothing is persisted.
 
-## Changes
+2. **ISO / custom-size effect (line 978)** would otherwise handle it (line 991 matches `matchesAnySize` against `allowedCustomSizes`), but line 982 bails out for any doc with `preflight.detected_size && !preflight.size_resolved`. So the doc is skipped here too.
 
-### 1. `src/hooks/useResolvedCatalogOptions.ts`
-Add a second helper next to `useResolvedAllowedSizeLabels`:
+Net result: doc stays `awaiting_review = true` forever, no modal opens, no lock is set.
 
-```ts
-useResolvedAllowedCustomSizes(productFamilyId, branchId): { sizes: PaperSize[] }
-```
+## Fix
 
-Returns one `PaperSize` per enabled `catalog === "size"` row whose `metadata.width_mm` and `metadata.height_mm` are numeric AND whose dimensions do **not** already match a known ISO/non‑ISO size. `name` uses `metadata.iso || label`.
+Edit `src/pages/dashboard/OrderFiles.tsx` only.
 
-### 2. `src/lib/paperSizes.ts`
-- Add `matchesAnySize(widthMm, heightMm, sizes: PaperSize[]): PaperSize | null` (reuse existing `matchesSize`, tolerant, orientation‑agnostic).
+1. **Non-ISO effect**: when the stale-classification guard fires (dims now match ISO or an allowed custom size), persist the change to the DB instead of just marking it in memory — set `preflight_data.size_resolved = true`, `awaiting_review = false`, `detected_size` to the matched canonical name, then let the next render fall through to the ISO/custom-size effect. This clears the "Review needed" chip and unblocks downstream logic.
 
-### 3. `src/pages/dashboard/OrderFiles.tsx`
-- Consume `useResolvedAllowedCustomSizes` alongside the existing labels hook.
-- Merge custom sizes into `allowedSizeNames` so downstream "allowed set" checks include them.
-- Wherever the code decides "is this a recognised size?" before opening the advisory (lines ~877, 930, 985–991), also check `matchesAnySize(w, h, customSizes)`. A match should behave exactly like an ISO match: no advisory, treat as canonical size.
-- Pass `allowedCustomSizes` through as a new prop on `<PaperSizeAdvisory>`.
+2. **ISO / custom-size effect**: relax the guard on line 982 so a doc whose current dimensions match ISO or an allowed custom size is not blocked by a stale `detected_size && !size_resolved` flag. This is a belt-and-braces guard in case (1) hasn't landed yet on that render.
 
-### 4. `src/components/order/PaperSizeAdvisory.tsx`
-- New prop `allowedCustomSizes?: PaperSize[]`.
-- Prepend these to `orderedOptions` (before ISO suggestions) so they render as first‑class "Scale to Pull Up Banner (850 × 2000mm)" choices.
-- Include their names in the allowed set used by `canKeepOriginal` / `matchKnownSize` fallback so an upload that already matches a custom size never lands here in the first place.
+No changes needed to `paperSizes.ts` or `PaperSizeAdvisory.tsx` — the 850×2000mm catalogue entry is being resolved correctly; the bug is purely in the OrderFiles effect coordination.
 
-No changes to pricing, upload pipeline, or DB.
+## Follow-up note (not part of this fix)
 
-## Out of scope / follow‑up
-- Reconciling the actual pull-up banner size (2000 vs 2200) in the master catalogue — needs your confirmation.
-- Exposing a UI to add multiple custom sizes per product family (already possible via catalogue admin).
+The user's earlier test file was 850 × **2200**mm while the catalogue is 850 × **2000**mm — 100mm out per side, well beyond the 3mm tolerance. If real pull-up artwork ships at 2200mm, the catalogue entry needs updating (or a second size added). Confirm the intended banner height before we touch the catalogue.
