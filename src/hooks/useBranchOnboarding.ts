@@ -20,14 +20,10 @@ export function useBranchOnboarding(branchId?: string) {
   return useQuery({
     queryKey: ["branch_onboarding", branchId],
     enabled: !!branchId,
-    // Always recompute on mount / focus so the checklist reflects the latest
-    // state after the user saves company details, banking, email, team, etc.
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      // Trigger a recompute first so freshly-completed steps show up
-      await (supabase as any).rpc("recompute_branch_onboarding", { _branch_id: branchId! });
       const { data, error } = await (supabase as any)
         .from("branch_onboarding_progress")
         .select("*")
@@ -36,6 +32,21 @@ export function useBranchOnboarding(branchId?: string) {
       if (error) throw error;
       return (data ?? null) as BranchOnboardingProgress | null;
     },
+  });
+}
+
+export function useToggleBranchOnboardingStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ branchId, step, done }: { branchId: string; step: string; done: boolean }) => {
+      const { error } = await (supabase as any).rpc("set_branch_onboarding_step", {
+        _branch_id: branchId,
+        _step: step,
+        _done: done,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["branch_onboarding", vars.branchId] }),
   });
 }
 

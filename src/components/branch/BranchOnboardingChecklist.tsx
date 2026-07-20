@@ -3,10 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, X, Sparkles } from "lucide-react";
-import { useBranchOnboarding, useDismissBranchOnboarding } from "@/hooks/useBranchOnboarding";
+import { Checkbox } from "@/components/ui/checkbox";
+import { X, Sparkles } from "lucide-react";
+import {
+  useBranchOnboarding,
+  useDismissBranchOnboarding,
+  useToggleBranchOnboardingStep,
+} from "@/hooks/useBranchOnboarding";
 import { useBranchSubscription } from "@/hooks/useBranchSubscriptions";
 import { formatDistanceToNowStrict } from "date-fns";
+import { toast } from "@/hooks/use-toast";
 
 interface Step {
   key: string;
@@ -32,10 +38,9 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
   const { data, isLoading } = useBranchOnboarding(branchId);
   const { data: sub } = useBranchSubscription(branchId);
   const dismiss = useDismissBranchOnboarding();
+  const toggle = useToggleBranchOnboardingStep();
 
   if (isLoading || !data) return null;
-
-  // Hide if completed, or recently dismissed (re-show after 7 days)
   if (data.completed_at) return null;
   if (data.dismissed_at) {
     const ageDays = (Date.now() - new Date(data.dismissed_at).getTime()) / 86400000;
@@ -49,6 +54,16 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
   const trialLeft = trialActive
     ? formatDistanceToNowStrict(new Date(sub!.trial_ends_at!), { addSuffix: false })
     : null;
+
+  const handleToggle = (step: string, done: boolean) => {
+    toggle.mutate(
+      { branchId, step, done },
+      {
+        onError: (e: any) =>
+          toast({ title: "Couldn't update step", description: e?.message ?? "Please try again", variant: "destructive" }),
+      },
+    );
+  };
 
   return (
     <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
@@ -64,7 +79,7 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
             )}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            {completedRequired} of {REQUIRED_STEPS.length} required steps complete — finish these to start taking orders.
+            {completedRequired} of {REQUIRED_STEPS.length} required steps complete — tick each off as you finish it.
           </p>
         </div>
         <Button
@@ -84,18 +99,19 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
             const done = Boolean((data as any)[s.key]);
             return (
               <li key={s.key}>
-                <Link
-                  to={s.to}
+                <div
                   className={`flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/60 ${
-                    done ? "opacity-60" : ""
+                    done ? "opacity-70" : ""
                   }`}
                 >
-                  {done ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
-                  ) : (
-                    <Circle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                  )}
-                  <div className="min-w-0 flex-1">
+                  <Checkbox
+                    checked={done}
+                    disabled={toggle.isPending}
+                    onCheckedChange={(v) => handleToggle(s.key, Boolean(v))}
+                    className="mt-0.5"
+                    aria-label={`Mark "${s.label}" as ${done ? "not done" : "done"}`}
+                  />
+                  <Link to={s.to} className="min-w-0 flex-1">
                     <p className={`text-sm font-medium leading-tight flex items-center gap-2 ${done ? "line-through" : ""}`}>
                       {s.label}
                       {s.optional && (
@@ -105,8 +121,8 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground">{s.hint}</p>
-                  </div>
-                </Link>
+                  </Link>
+                </div>
               </li>
             );
           })}
