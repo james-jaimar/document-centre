@@ -299,7 +299,15 @@ export async function sendInvoiceEmail(invoiceId: string, orderId: string) {
     body: { order_id: orderId, event_key: "invoice_sent", invoice_id: invoiceId, force: true },
   });
   if (error) throw new Error(error.message || "Failed to send invoice email");
-  if (data?.error) throw new Error(data.error);
+  if ((data as any)?.error === "EMAIL_NOT_CONFIGURED") {
+    const { handleEmailSendError } = await import("@/lib/email/handleEmailSendError");
+    handleEmailSendError(data);
+    const err: any = new Error((data as any).message || "Email not configured");
+    err.handled = true;
+    err.code = "EMAIL_NOT_CONFIGURED";
+    throw err;
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
   return data;
 }
 
@@ -308,7 +316,15 @@ export async function requestPayment(orderId: string) {
     body: { order_id: orderId, event_key: "payment_request", force: true },
   });
   if (error) throw new Error(error.message || "Failed to send payment request");
-  if (data?.error) throw new Error(data.error);
+  if ((data as any)?.error === "EMAIL_NOT_CONFIGURED") {
+    const { handleEmailSendError } = await import("@/lib/email/handleEmailSendError");
+    handleEmailSendError(data);
+    const err: any = new Error((data as any).message || "Email not configured");
+    err.handled = true;
+    err.code = "EMAIL_NOT_CONFIGURED";
+    throw err;
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
   return data;
 }
 
