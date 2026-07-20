@@ -30,7 +30,7 @@ export default function AdminQuoteDetail() {
       await sendEmail.mutateAsync(quote.id);
       toast.success("Quote emailed to customer");
     } catch (e: any) {
-      toast.error("Failed to email quote", { description: e.message });
+      if (!e?.handled) toast.error("Failed to email quote", { description: e.message });
     }
   };
 
