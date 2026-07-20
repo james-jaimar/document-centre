@@ -107,7 +107,7 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
                 >
                   <Checkbox
                     checked={done}
-                    disabled={toggle.isPending}
+                    disabled={toggle.isPending && toggle.variables?.step === s.key}
                     onCheckedChange={(v) => handleToggle(s.key, Boolean(v))}
                     className="mt-0.5"
                     aria-label={`Mark "${s.label}" as ${done ? "not done" : "done"}`}
