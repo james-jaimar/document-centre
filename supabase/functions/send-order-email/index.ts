@@ -521,6 +521,16 @@ Deno.serve(async (req) => {
 
     return json({ success: true, queued: true });
   } catch (e) {
+    if (e instanceof EmailNotConfiguredError) {
+      console.warn("send-order-email skipped: sender not configured", { scope: e.scope, tenant_id: e.tenant_id, branch_id: e.branch_id });
+      return json({
+        error: "EMAIL_NOT_CONFIGURED",
+        scope: e.scope,
+        tenant_id: e.tenant_id,
+        branch_id: e.branch_id,
+        message: e.message,
+      }, 200);
+    }
     console.error("send-order-email error:", e);
     return json({ error: (e as Error).message }, 500);
   }
