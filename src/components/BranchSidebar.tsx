@@ -56,7 +56,10 @@ const BRANCH_NAV: BranchNavItem[] = [
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings", managerOnly: true },
 ];
 
-export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?: number } = {}) {
+export default function BranchSidebar({
+  unreadOrderCount = 0,
+  newOrderCount = 0,
+}: { unreadOrderCount?: number; newOrderCount?: number } = {}) {
   const location = useLocation();
   const { signOut, user } = useAuth();
   const { tenantName, tenantId, branchId, membershipRole } = useTenantContext();
