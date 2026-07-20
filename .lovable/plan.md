@@ -1,59 +1,44 @@
-## Goal
 
-Force-delete two things so you can reload `james_b_hawkins@icloud.com` on a fresh branch:
+## What's broken (verified in DB)
 
-1. Branch **Demo3new** (`f691ce51-5ad1-40ab-9713-49322ae5b68d`, tenant PostNet SA) — currently blocked by an `orders_branch_id_fkey` because 11 orders (2 with invoice numbers `INV-00118`, `INV-00119`, 9 draft/cart) still point at it.
-2. Auth user **james_b_hawkins@icloud.com** (`f74552c1-6ab8-4e45-84c1-2665f9f9c087`) — you already removed the profile role rows, but the `auth.users` row is still present so re-adding the email as a branch contact keeps hitting "already activated".
+Demo2's `branch_subscriptions` row is:
+- `trial_status = 'active'`, `trial_ends_at = 2026-08-03` (future)
+- `trial_started_via = 'no_card_14'`
+- `status = NULL`, `billing_status = 'pending_payment'`
 
-Both are one-off data mutations, no schema change.
+`resolve_branch_entitlement` returns `restricted` for this row because its "trialing" branch is guarded by `sub.status NOT IN ('active')`. With `status = NULL`, that expression is `NULL` (not `TRUE`) in Postgres, so the trialing block is skipped and the function falls through to the final `restricted` return. That produces the contradictory UI: banner "read-only — restricted", panel "Trial ends 03/08/2026 — 14 days left on trial".
 
-## Step 1 — Hard-delete the 11 Demo3new orders and their children
+The onboarding checklist genuinely being 0/6 is correct — those steps (company details, banking, email, users, etc.) are unrelated to the disclosure checkboxes on the subscription panel. The user's "documents not marked" observation is about the subscription-page acceptance checkboxes not persisting: `start-branch-trial` never receives or records the `acceptances` payload, so `subscription_acceptances` stays empty and `BranchAcceptanceHistory` shows nothing after activation.
 
-One `insert` migration that, inside a transaction, deletes from every child table that references those 11 order IDs, then the orders themselves. Tables cleared for `order_id IN (…11 ids…)`:
+## Fixes
 
-- `order_items`, `order_documents`, `order_addresses`, `order_adjustments`
-- `order_jobs`, `order_invoices`, `order_payment_attempts`, `order_pricing_snapshots`
-- `order_legal_acceptances`, `payments`, `timeline_events`, `status_history`, `messages`, `job_proofs`
-- `quotes` / `quote_items` / `quote_documents` / `quote_revisions` where they reference these orders
-- finally `DELETE FROM orders WHERE branch_id = 'f691ce51-…'`
+### 1. Entitlement RPC — handle NULL status
+Migration updating `public.resolve_branch_entitlement`:
+- Replace `sub.status NOT IN ('active')` with `COALESCE(sub.status,'') <> 'active'` in the trialing block, and the same in the "expired no-card trial" block.
+- Same-migration backfill: for every row where `trial_status = 'active'` and `trial_ends_at > now()` and `status IS NULL`, set `status = 'trialing'` so historic rows resolve cleanly regardless of the RPC path.
 
-Any table above that turns out not to have an `order_id` FK is simply skipped (guarded with `to_regclass` + `information_schema` check in a small DO block so the migration can't fail on a table that doesn't exist).
+### 2. `start-branch-trial` sets `status = 'trialing'`
+In `start_branch_trial(_branch_id)` (and the edge function's post-RPC update), stamp `status = 'trialing'` alongside `trial_started_via = 'no_card_14'`. Prevents future rows from ever hitting the NULL-status trap even before the RPC change lands.
 
-## Step 2 — Delete the Demo3new branch
+### 3. Persist acceptances on the 14-day path
+- `BranchSubscriptionPanel.handleStartTrial14` already collects `accepted`; pass it through as `acceptances` to `start-branch-trial`.
+- `supabase/functions/start-branch-trial/index.ts`: after the trial is stamped, insert one row per accepted document into `subscription_acceptances` (branch_id, tenant_id, document slug/version, accepted_at, user_id, ip/user-agent from request headers) — same shape already used by `create-branch-checkout` for the card paths.
 
-After step 1 the FK is clear, so:
+### 4. 30-day-with-card and paid flows — audit + confirm parity
+Read `create-branch-checkout` end-to-end and confirm:
+- 30-day trial: session created with `subscription_data.trial_period_days = 30`; on `checkout.session.completed` webhook the branch row is stamped `status='trialing'`, `trial_started_via='stripe_30'`, `trial_ends_at`, `stripe_subscription_id`, and `subscription_acceptances` rows are written.
+- Subscribe-now: webhook stamps `status='active'`, `billing_status='paid'`, `current_period_end`, `stripe_subscription_id`, and writes acceptances.
+- Both paths must land the user on `/branch` with the entitlement guard resolving to `active`/`trialing` (no post-checkout "restricted" flash). If gaps are found, patch the webhook handler in the same change.
 
-```sql
-DELETE FROM branches WHERE id = 'f691ce51-5ad1-40ab-9713-49322ae5b68d';
-```
+### 5. Sanity: banner + modal
+`BranchLayout` banner and `BranchSubscriptionRequiredModal` both read `useBranchEntitlement`. Once #1 lands they'll clear automatically for Demo2 on the next fetch — no UI code change expected, but verify after deploying the migration by re-querying the RPC for Demo2's branch id.
 
-Cascade takes care of `branch_capabilities`, `branch_private`, `branch_settings`, `branch_subscriptions`, `branch_onboarding_progress`, `branch_payment_gateways`, `platform_branch_activation_pages`, etc. If any of those don't cascade, they're deleted explicitly in the same statement.
+## Out of scope
+- The onboarding checklist counter (0/6) is behaving correctly; those steps still need to be completed by the branch admin.
+- No changes to nudges, plan assignment, or storefront gate.
 
-## Step 3 — Fully purge james_b_hawkins@icloud.com
-
-Delete rows for `user_id = 'f74552c1-6ab8-4e45-84c1-2665f9f9c087'` / matching email from:
-
-- `tenant_memberships`, `user_roles`, `profiles`
-- `platform_onboarding_tokens` (email or profile_id match)
-- `platform_email_campaign_recipients` (email match)
-- `platform_activation_requests` (nothing to match by email — skipped)
-- `impersonation_sessions` (as actor or target)
-
-Then finally:
-
-```sql
-DELETE FROM auth.users WHERE id = 'f74552c1-6ab8-4e45-84c1-2665f9f9c087';
-```
-
-After this, the email is completely unknown to the platform and you can add it as the contact on a brand-new branch and activate cleanly.
-
-## Not in scope
-
-- No changes to the activation flow itself, no multi-branch-owner design work. That's the separate conversation we started earlier — I'll come back to it once you've finished this round of testing.
-- No touching any other branch, tenant, or user.
-
-## Verification after run
-
-- `SELECT count(*) FROM orders WHERE branch_id='f691ce51-…'` → 0
-- `SELECT id FROM branches WHERE id='f691ce51-…'` → no rows
-- `SELECT id FROM auth.users WHERE lower(email)='james_b_hawkins@icloud.com'` → no rows
+## Verification
+- Re-run `resolve_branch_entitlement` for Demo2's branch id — expect `state = 'trialing'`.
+- Fresh activation on a new branch → pick 14-day → confirm banner is gone, `subscription_acceptances` has rows, `status = 'trialing'`.
+- Fresh activation → pick 30-day (card) → complete Stripe test checkout → confirm same.
+- Fresh activation → Subscribe now → confirm `active`.
