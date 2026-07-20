@@ -48,12 +48,14 @@ Deno.serve(async (req) => {
     .maybeSingle();
   let allowed = !!platformRole;
   if (!allowed) {
+    // Any active tenant membership (owner/admin/sales/production/accounts/branch-owner/branch-manager)
+    // may perform this read-only Stripe coupon/price lookup — the coupon is
+    // already scoped to that tenant's plan, so surfacing name/amount is safe.
     let membershipQuery = admin
       .from("tenant_memberships")
       .select("role")
       .eq("profile_id", user.id)
       .eq("is_active", true)
-      .in("role", ["owner", "admin", "Owner", "Admin"])
       .limit(1);
 
     if (body.tenant_id) {
