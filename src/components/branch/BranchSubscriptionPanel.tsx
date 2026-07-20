@@ -177,11 +177,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
                 <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-900 dark:text-amber-200">
-                    {trialExpired ? "Your free trial has ended" : trialConsumed ? "Your trial has been used" : "Activate your subscription"}
+                    {trialExpired ? "Your free trial has ended — your branch is paused" : trialConsumed ? "Your trial has been used" : "Activate your subscription"}
                   </p>
                   <p className="text-sm text-amber-800 dark:text-amber-300">
-                    Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready.{" "}
-                    {trialExpired || trialConsumed ? "Subscribe now to keep your branch active." : "Choose how you'd like to start below."}
+                    {trialExpired
+                      ? <>Your trial ended{trialEndsAtDate ? <> on <strong>{trialEndsAtDate.toLocaleDateString()}</strong></> : null}. Subscribe to the <strong className="capitalize">{subscription.assigned_plan_slug}</strong> plan below to reopen your storefront — everything is preserved.</>
+                      : <>Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready. {trialConsumed ? "Subscribe now to keep your branch active." : "Choose how you'd like to start below."}</>}
                   </p>
                 </div>
               </div>
