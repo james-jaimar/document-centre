@@ -69,6 +69,7 @@ export async function resolveEmailAccount(
   const accountMatchesScope = (account: { tenant_id: string | null; branch_id: string | null }) => {
     if (!isScopedMail) return account.tenant_id == null && account.branch_id == null;
     if (tenant_id && account.tenant_id !== tenant_id) return false;
+    if (branch_id && !tenant_id) return account.branch_id === branch_id;
     if (branch_id) return account.branch_id == null || account.branch_id === branch_id;
     return account.branch_id == null;
   };
