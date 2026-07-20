@@ -7298,6 +7298,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_branch_onboarding_step: {
+        Args: { _branch_id: string; _done: boolean; _step: string }
+        Returns: undefined
+      }
       start_branch_trial: {
         Args: { _branch_id: string }
         Returns: {
