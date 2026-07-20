@@ -85,6 +85,7 @@ export default function BranchLayout() {
           <StaffMessagesBell ordersBasePath="/branch/orders" />
         </header>
         <SubscriptionGateBanner />
+        <EmailNotConfiguredBanner />
         <main className="flex-1 overflow-auto p-6">
           <BranchAdminBillingOnlyGuard />
         </main>
