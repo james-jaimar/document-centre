@@ -255,8 +255,10 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             trialEndsAt={trialEndsAt!}
             loading={loading === "pay"}
             disabled={anyLoading}
+            discount={activeDiscount ?? null}
             onSubscribe={(acc) => handleCheckout("pay", acc)}
           />
+
         ) : (
           <ActiveSubscriptionBlock subscription={subscription} status={status} branchId={branchId} />
         )}
