@@ -11,6 +11,7 @@ import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
 import BranchAdminBillingOnlyGuard from "@/components/branch/BranchAdminBillingOnlyGuard";
+import { useNewOrdersCount } from "@/hooks/useNewOrdersCount";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
@@ -52,10 +53,11 @@ export default function BranchLayout() {
     [unreadMap],
   );
   useDocumentTitleUnread(totalUnread);
+  const newOrderCount = useNewOrdersCount(tenantId, branchId);
 
   return (
     <div className="flex h-screen w-full bg-background">
-      <BranchSidebar unreadOrderCount={totalUnread} />
+      <BranchSidebar unreadOrderCount={totalUnread} newOrderCount={newOrderCount} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-12 items-center justify-between gap-2 border-b bg-background px-4">
           <BranchSwitcher />

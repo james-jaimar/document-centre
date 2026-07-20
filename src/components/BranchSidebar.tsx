@@ -56,7 +56,10 @@ const BRANCH_NAV: BranchNavItem[] = [
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings", managerOnly: true },
 ];
 
-export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?: number } = {}) {
+export default function BranchSidebar({
+  unreadOrderCount = 0,
+  newOrderCount = 0,
+}: { unreadOrderCount?: number; newOrderCount?: number } = {}) {
   const location = useLocation();
   const { signOut, user } = useAuth();
   const { tenantName, tenantId, branchId, membershipRole } = useTenantContext();
@@ -138,7 +141,12 @@ export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCou
         <div className="flex flex-col gap-0.5">
           {navItems.map((item) => {
             const active = isActive(item.to);
-            const showBadge = item.to === "/branch/orders" && unreadOrderCount > 0;
+            const isOrders = item.to === "/branch/orders";
+            const badgeCount = isOrders ? newOrderCount : 0;
+            const showBadge = badgeCount > 0;
+            const badgeTitle = isOrders && showBadge
+              ? `${badgeCount} new order${badgeCount === 1 ? "" : "s"}`
+              : undefined;
             return (
               <Link
                 key={item.to}
@@ -160,7 +168,7 @@ export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCou
                     ? undefined
                     : undefined
                 }
-                title={collapsed ? item.label : undefined}
+                title={collapsed ? (badgeTitle ?? item.label) : badgeTitle}
               >
                 <span className="relative shrink-0">
                   {item.icon}
@@ -171,7 +179,7 @@ export default function BranchSidebar({ unreadOrderCount = 0 }: { unreadOrderCou
                 {!collapsed && <span className="truncate flex-1">{item.label}</span>}
                 {!collapsed && showBadge && (
                   <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                    {unreadOrderCount > 99 ? "99+" : unreadOrderCount}
+                    {badgeCount > 99 ? "99+" : badgeCount}
                   </span>
                 )}
               </Link>
