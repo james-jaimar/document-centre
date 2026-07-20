@@ -221,7 +221,15 @@ ${logoBlock}
   const sendResp = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-    body: JSON.stringify({ to: email, subject, html: finalHtml, text: finalText || undefined }),
+    body: JSON.stringify({
+      to: email,
+      subject,
+      html: finalHtml,
+      text: finalText || undefined,
+      tenant_id: tenantId,
+      branch_id: branchId,
+      app_id: tenant.app_id ?? null,
+    }),
   });
   if (!sendResp.ok) {
     const t = await sendResp.text();

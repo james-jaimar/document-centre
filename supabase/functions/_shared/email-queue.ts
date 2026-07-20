@@ -47,27 +47,39 @@ export interface EnqueuedEmail {
 }
 
 /**
- * Resolves the SMTP/Graph account to use for an outgoing email:
- *   1. explicit email_account_id (validated)
- *   2. branch default (if branch_id given and a branch-level account exists)
- *   3. tenant default → any active tenant account
- *   4. platform default (tenant_id IS NULL AND branch_id IS NULL AND is_default)
- *   5. any active platform account (tenant_id IS NULL)
- *   6. legacy fallback: first active Graph/Graph-OAuth account anywhere
+ * Resolves the SMTP/Graph account to use for an outgoing email.
+ *
+ * Tenant/branch mail must never fall back to the platform sender. If no
+ * branch/tenant account exists, return null and let the worker mark the row as
+ * configuration-missing instead of silently sending as hello@document-centre.
+ *
+ * Resolution order:
+ *   1. explicit email_account_id, only if it belongs to the same scope
+ *   2. branch default → any active branch account
+ *   3. tenant default → any active tenant-wide account
+ *   4. platform default → any active platform account, platform-scope only
  */
 export async function resolveEmailAccount(
   admin: SupabaseClient,
   opts: { tenant_id?: string | null; branch_id?: string | null; explicit_id?: string | null }
 ): Promise<string | null> {
   const { tenant_id, branch_id, explicit_id } = opts;
+  const isScopedMail = !!tenant_id || !!branch_id;
+
+  const accountMatchesScope = (account: { tenant_id: string | null; branch_id: string | null }) => {
+    if (!isScopedMail) return account.tenant_id == null && account.branch_id == null;
+    if (tenant_id && account.tenant_id !== tenant_id) return false;
+    if (branch_id) return account.branch_id == null || account.branch_id === branch_id;
+    return account.branch_id == null;
+  };
 
   if (explicit_id) {
     const { data } = await admin
       .from("email_accounts")
-      .select("id, is_active")
+      .select("id, tenant_id, branch_id, is_active")
       .eq("id", explicit_id)
       .maybeSingle();
-    if (data?.is_active) return data.id;
+    if (data?.is_active && accountMatchesScope(data)) return data.id;
   }
 
   if (branch_id) {
@@ -79,6 +91,16 @@ export async function resolveEmailAccount(
       .eq("is_default", true)
       .maybeSingle();
     if (data?.id) return data.id;
+
+    const { data: anyBranch } = await admin
+      .from("email_accounts")
+      .select("id")
+      .eq("branch_id", branch_id)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (anyBranch?.id) return anyBranch.id;
   }
 
   if (tenant_id) {
@@ -104,6 +126,8 @@ export async function resolveEmailAccount(
     if (any?.id) return any.id;
   }
 
+  if (isScopedMail) return null;
+
   // Platform-level account (tenant_id IS NULL AND branch_id IS NULL)
   const { data: platformDefault } = await admin
     .from("email_accounts")
@@ -125,18 +149,6 @@ export async function resolveEmailAccount(
     .limit(1)
     .maybeSingle();
   if (anyPlatform?.id) return anyPlatform.id;
-
-  // Final legacy fallback: any active Graph/Graph-OAuth account.
-  const { data: graphFallback } = await admin
-    .from("email_accounts")
-    .select("id")
-    .eq("is_active", true)
-    .in("transport", ["graph", "graph_oauth"])
-    .order("is_default", { ascending: false })
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (graphFallback?.id) return graphFallback.id;
 
   return null;
 }
