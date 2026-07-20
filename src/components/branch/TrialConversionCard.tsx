@@ -21,6 +21,7 @@ interface Props {
   onSubscribe: (accepted: AcceptedDocument[]) => void;
   loading?: boolean;
   disabled?: boolean;
+  discount?: ResolvedDiscount | null;
 }
 
 export function TrialConversionCard({
@@ -35,6 +36,7 @@ export function TrialConversionCard({
   onSubscribe,
   loading,
   disabled,
+  discount,
 }: Props) {
   const endDate = new Date(trialEndsAt);
   const daysLeft = Math.max(0, Math.ceil((endDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
