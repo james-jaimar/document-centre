@@ -188,6 +188,18 @@ export async function enqueueEmail(
     explicit_id: input.email_account_id ?? null,
   });
 
+  // Scoped mail (tenant or branch) must have its own active account —
+  // never fall back to the platform sender. Refuse to enqueue and let the
+  // caller surface a friendly "email not configured" notification.
+  const isScoped = !!input.tenant_id || !!input.branch_id;
+  if (isScoped && !account_id) {
+    throw new EmailNotConfiguredError(
+      input.branch_id ? "branch" : "tenant",
+      input.tenant_id ?? null,
+      input.branch_id ?? null,
+    );
+  }
+
   const row = {
     tenant_id: input.tenant_id ?? null,
     branch_id: input.branch_id ?? null,
