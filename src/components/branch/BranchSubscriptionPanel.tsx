@@ -48,12 +48,22 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("platform_pricing_plans")
-        .select("*")
+        .select("*, region:platform_pricing_regions(currency_code,currency_symbol)")
         .eq("region_id", subscription!.region_id!)
         .eq("plan_slug", subscription!.assigned_plan_slug!)
         .maybeSingle();
       if (error) throw error;
       return data as any;
+    },
+  });
+
+  const { data: branchInfo } = useQuery({
+    queryKey: ["branch_name", branchId],
+    enabled: !!branchId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("branches").select("name").eq("id", branchId).maybeSingle();
+      if (error) throw error;
+      return data as { name: string | null } | null;
     },
   });
 
