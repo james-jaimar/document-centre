@@ -80,7 +80,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     setLoading("trial14");
     try {
       const { error } = await supabase.functions.invoke("start-branch-trial", {
-        body: { branch_id: branchId },
+        body: { branch_id: branchId, acceptances: accepted },
       });
       if (error) throw error;
       toast.success("Your 14-day free trial has started!");
