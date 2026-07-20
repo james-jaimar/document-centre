@@ -1,28 +1,64 @@
 ## Problem
-`SubscriptionDisclosureCard` renders with fresh local state on every mount, so a branch that has already ticked and persisted the four legal docs (during trial start or a previous checkout) still sees empty checkboxes. It has no awareness of the `subscription_acceptances` ledger.
 
-## Fix
-Make the card ledger-aware by reading existing acceptances for the branch and reflecting them in the UI.
+When a branch is inside its 14-day trial, the Subscription tab (`BranchSubscriptionPanel.tsx`, `inTrial` branch) shows almost nothing useful:
 
-### Changes
-1. **`SubscriptionDisclosureCard.tsx`**
-   - Accept a new `branchId` prop.
-   - Use `useBranchAcceptanceHistory(branchId)` to find the latest accepted version per required slug.
-   - For each doc:
-     - If latest accepted version ≥ current canonical version → render the checkbox as **checked + disabled**, with a small "Accepted <date> (v<n>)" note next to the label.
-     - Otherwise render the normal interactive checkbox (unchecked, or checked if previously ticked in this session).
-   - Seed local `checked` state from the ledger on load so `onChange` fires immediately with the already-accepted docs. Parent's `accepted` state becomes non-null as soon as (ledger ∪ user ticks) covers all required docs — which unlocks "Add payment method" without forcing re-ticking.
-   - When every required doc is already accepted at the current version, collapse the checkbox list into a single "Terms accepted — view history" summary line (keeping links to each doc).
+- A one-line "Trial ends 8/3/2026 — add payment any time…"
+- The full "Before you continue" disclosure card again (already accepted, so it's just noise)
+- A small outline "Add payment method" button
 
-2. **`BranchSubscriptionPanel.tsx`**
-   - Pass `branchId` into both `<SubscriptionDisclosureCard>` instances.
-   - No change to submit logic: the edge functions already de-duplicate by (branch, slug, version) so re-posting existing acceptances is safe, and the ledger-seeded state makes the disabled buttons enable correctly.
+There is no countdown, no explanation of what happens when the trial ends, no plan price, no benefits reminder, and no clear call to action. The branch owner isn't guided toward becoming a paying customer.
 
-### Out of scope
-- No changes to `record-branch-reacceptance`, `start-branch-trial`, or the ledger schema.
-- Re-acceptance banner for stale versions is unchanged (it already handles the "newer version published" case).
+## Goal
 
-## Verification
-- Reload Postnet trial branch → all four docs show as checked + "Accepted <date>", "Add payment method" button is enabled without any user interaction.
-- New branch with no ledger rows → card behaves exactly as today (empty checkboxes, button disabled until all ticked).
-- Publish a new version of one doc → that row becomes an active unchecked checkbox again; others stay pre-accepted.
+Turn the in-trial view into a proper conversion surface that:
+1. Makes the trial deadline and consequences unmistakable.
+2. Explains the two outcomes: subscribe (keep everything) vs. do nothing (branch is restricted).
+3. Shows the plan they'll roll onto with its price.
+4. Provides one prominent, obvious "Subscribe now" action.
+5. Doesn't re-prompt for legal acceptance when it's already on file — just links to the history.
+
+Scope is UI/UX inside the branch subscription panel only. No changes to entitlement logic, edge functions, or DB.
+
+## Changes
+
+### 1. New `TrialConversionCard` component (`src/components/branch/TrialConversionCard.tsx`)
+
+Replaces the current `inTrial` block. Contents:
+
+- **Header row**: plan name + `Trial` badge + days-remaining pill (colour ramps green → amber → red as it approaches 0; uses `trial_ends_at`).
+- **Countdown line**: "X days left — trial ends {formatted date}".
+- **Two-column "what happens next" panel**:
+  - ✅ *Subscribe before {date}* → seamless continuation, no downtime, everything you've set up stays live.
+  - ⚠️ *Do nothing* → on {date} your storefront is paused, admin becomes billing-only until you subscribe. (Mirrors real behaviour of `useBranchStorefrontGate` / `BranchAdminBillingOnlyGuard`.)
+- **Plan summary strip**: assigned plan name, price from `assignedPlan` (reuse the same query already in the panel), "billed monthly, cancel anytime, VAT not applicable" — same facts as the disclosure card's info box, but framed as the offer, not a legal disclaimer.
+- **Primary CTA**: large full-width "Subscribe now — keep {branch} live" button that calls the existing `handleCheckout("pay")`.
+- **Secondary link**: "View terms you accepted" → expands `BranchAcceptanceHistory` inline (component already exists).
+
+### 2. Suppress the disclosure card when acceptances are already on file
+
+- Lift the "already accepted everything at current version" check out of `SubscriptionDisclosureCard` (or expose a small `useBranchAllRequiredAccepted(branchId)` helper next to `useBranchAcceptanceHistory`).
+- In `TrialConversionCard`, when all required docs are already accepted (the normal case for a branch that has been trialing), do **not** render the disclosure card. The CTA is enabled immediately and the checkout call passes the ledgered acceptances.
+- If (edge case) required docs have version-bumped mid-trial, keep rendering `SubscriptionDisclosureCard` above the CTA — the existing re-acceptance banner already covers this, but the CTA should stay gated until the new versions are ticked.
+
+### 3. Nudge banner when trial is close to ending
+
+- Inside `TrialConversionCard`, if `daysLeft <= 3`, prepend a red banner: "Only {n} days left — subscribe now to avoid losing access on {date}."
+- If `daysLeft <= 0` we fall through to the existing `isPending` / `trialExpired` branch (already handled — no change).
+
+### 4. Small polish on the `isPending` / expired branch
+
+- When `trialExpired` is true, prepend a clear "Your trial ended on {date}. Your branch is currently paused." explainer above the existing amber notice, so the state matches the language used during trial.
+- No functional change; copy only.
+
+## Technical notes
+
+- No new hooks required beyond an optional `useBranchAllRequiredAccepted` helper that reuses `useBranchAcceptanceHistory` + `CHECKOUT_REQUIRED_DOCS` from `src/lib/legal/versions.ts`.
+- Reuse existing queries (`useBranchSubscription`, `assignedPlan` query already in the panel) — pass `assignedPlan` down as a prop so we don't duplicate the fetch.
+- Price formatting: use `assignedPlan.price_cents` / currency fields exactly as `SubscriptionDisclosureCard`'s parent already resolves them; no new currency logic.
+- No DB, RLS, or edge-function changes. No changes to `BranchSubscriptionRequiredModal` (post-expiry blocking modal already works).
+
+## Out of scope
+
+- Email nudges before expiry (already implemented via `nudge-dispatcher`).
+- Changes to the pre-trial "choose your path" cards (`isPending` first-visit view is already good).
+- Any pricing/plan editing.

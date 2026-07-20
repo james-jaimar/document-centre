@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
 import { BranchReAcceptanceBanner } from "./BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "./BranchAcceptanceHistory";
+import { TrialConversionCard } from "./TrialConversionCard";
 import { ExternalLink } from "lucide-react";
 
 const statusColors: Record<string, string> = {
@@ -47,12 +48,22 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("platform_pricing_plans")
-        .select("*")
+        .select("*, region:platform_pricing_regions(currency_code,currency_symbol)")
         .eq("region_id", subscription!.region_id!)
         .eq("plan_slug", subscription!.assigned_plan_slug!)
         .maybeSingle();
       if (error) throw error;
       return data as any;
+    },
+  });
+
+  const { data: branchInfo } = useQuery({
+    queryKey: ["branch_name", branchId],
+    enabled: !!branchId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("branches").select("name").eq("id", branchId).maybeSingle();
+      if (error) throw error;
+      return data as { name: string | null } | null;
     },
   });
 
@@ -92,12 +103,16 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     }
   };
 
-  const handleCheckout = async (mode: "trial30" | "pay") => {
+  const handleCheckout = async (mode: "trial30" | "pay", overrideAccepted?: AcceptedDocument[]) => {
     if (!assignedPlan?.stripe_price_id) {
       toast.error("Plan is not Stripe-ready. Contact your tenant admin.");
       return;
     }
-    if (!requireAccepted()) return;
+    const acc = overrideAccepted ?? accepted;
+    if (!acc || acc.length === 0) {
+      toast.error("Please accept all of the required documents before continuing.");
+      return;
+    }
     setLoading(mode);
     try {
       const origin = window.location.origin;
@@ -110,7 +125,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
           discount_type: subscription?.discount_type || null,
           discount_value: subscription?.discount_value || 0,
           trial_days: mode === "trial30" ? 30 : 0,
-          acceptances: accepted,
+          acceptances: acc,
         },
       });
       if (error) throw error;
@@ -162,11 +177,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
                 <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-900 dark:text-amber-200">
-                    {trialExpired ? "Your free trial has ended" : trialConsumed ? "Your trial has been used" : "Activate your subscription"}
+                    {trialExpired ? "Your free trial has ended — your branch is paused" : trialConsumed ? "Your trial has been used" : "Activate your subscription"}
                   </p>
                   <p className="text-sm text-amber-800 dark:text-amber-300">
-                    Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready.{" "}
-                    {trialExpired || trialConsumed ? "Subscribe now to keep your branch active." : "Choose how you'd like to start below."}
+                    {trialExpired
+                      ? <>Your trial ended{trialEndsAtDate ? <> on <strong>{trialEndsAtDate.toLocaleDateString()}</strong></> : null}. Subscribe to the <strong className="capitalize">{subscription.assigned_plan_slug}</strong> plan below to reopen your storefront — everything is preserved.</>
+                      : <>Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready. {trialConsumed ? "Subscribe now to keep your branch active." : "Choose how you'd like to start below."}</>}
                   </p>
                 </div>
               </div>
@@ -225,29 +241,19 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             )}
           </div>
         ) : inTrial ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold capitalize">{subscription?.assigned_plan_slug}</p>
-                <Badge variant="outline" className={statusColors.trialing}>Trial</Badge>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Trial ends {new Date(trialEndsAt!).toLocaleDateString()} — add payment any time to continue without interruption.
-            </p>
-            <SubscriptionDisclosureCard
-              branchId={branchId}
-              planSlug={subscription?.assigned_plan_slug}
-              trialDays={0}
-              onChange={setAccepted}
-            />
-            <Button onClick={() => handleCheckout("pay")} disabled={anyLoading || !accepted} size="sm" variant="outline" className="w-full">
-              {loading === "pay" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
-            </Button>
-          </div>
+          <TrialConversionCard
+            branchId={branchId}
+            branchName={branchInfo?.name}
+            planSlug={subscription?.assigned_plan_slug}
+            planName={assignedPlan?.plan_name}
+            planPrice={assignedPlan?.price != null ? Number(assignedPlan.price) : null}
+            currencySymbol={assignedPlan?.region?.currency_symbol}
+            currencyCode={assignedPlan?.region?.currency_code}
+            trialEndsAt={trialEndsAt!}
+            loading={loading === "pay"}
+            disabled={anyLoading}
+            onSubscribe={(acc) => handleCheckout("pay", acc)}
+          />
         ) : (
           <ActiveSubscriptionBlock subscription={subscription} status={status} branchId={branchId} />
         )}
