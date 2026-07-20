@@ -31,7 +31,7 @@ export default function BranchQuoteDetail() {
       await fn();
       toast.success(ok);
     } catch (e: any) {
-      toast.error(fail, { description: e?.message });
+      if (!e?.handled) toast.error(fail, { description: e?.message });
     }
   };
 
