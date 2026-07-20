@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { enqueueEmail } from "../_shared/email-queue.ts";
+import { enqueueEmail, EmailNotConfiguredError } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
 
 const corsHeaders = {
