@@ -11,6 +11,7 @@ import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
 import BranchAdminBillingOnlyGuard from "@/components/branch/BranchAdminBillingOnlyGuard";
+import { useNewOrdersCount } from "@/hooks/useNewOrdersCount";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
