@@ -239,6 +239,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
               Trial ends {new Date(trialEndsAt!).toLocaleDateString()} — add payment any time to continue without interruption.
             </p>
             <SubscriptionDisclosureCard
+              branchId={branchId}
               planSlug={subscription?.assigned_plan_slug}
               trialDays={0}
               onChange={setAccepted}
