@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Check, AlertTriangle, ShieldCheck, Store, History, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Check, AlertTriangle, ShieldCheck, Store, History, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { CHECKOUT_REQUIRED_DOCS, LEGAL_DOCS } from "@/lib/legal/versions";
 import { LEGAL_ENTITY } from "@/lib/legal/entity";
 import { useBranchAcceptanceHistory } from "@/hooks/useBranchBillingSelfService";
 import { BranchAcceptanceHistory } from "./BranchAcceptanceHistory";
 import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
+import type { ResolvedDiscount } from "@/hooks/useBranchActiveDiscount";
 
 interface Props {
   branchId: string;
