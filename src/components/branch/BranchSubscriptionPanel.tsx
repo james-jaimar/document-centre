@@ -103,12 +103,16 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
     }
   };
 
-  const handleCheckout = async (mode: "trial30" | "pay") => {
+  const handleCheckout = async (mode: "trial30" | "pay", overrideAccepted?: AcceptedDocument[]) => {
     if (!assignedPlan?.stripe_price_id) {
       toast.error("Plan is not Stripe-ready. Contact your tenant admin.");
       return;
     }
-    if (!requireAccepted()) return;
+    const acc = overrideAccepted ?? accepted;
+    if (!acc || acc.length === 0) {
+      toast.error("Please accept all of the required documents before continuing.");
+      return;
+    }
     setLoading(mode);
     try {
       const origin = window.location.origin;
@@ -121,7 +125,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
           discount_type: subscription?.discount_type || null,
           discount_value: subscription?.discount_value || 0,
           trial_days: mode === "trial30" ? 30 : 0,
-          acceptances: accepted,
+          acceptances: acc,
         },
       });
       if (error) throw error;
