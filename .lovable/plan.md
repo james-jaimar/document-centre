@@ -1,64 +1,60 @@
-## Problem
-
-When a branch is inside its 14-day trial, the Subscription tab (`BranchSubscriptionPanel.tsx`, `inTrial` branch) shows almost nothing useful:
-
-- A one-line "Trial ends 8/3/2026 — add payment any time…"
-- The full "Before you continue" disclosure card again (already accepted, so it's just noise)
-- A small outline "Add payment method" button
-
-There is no countdown, no explanation of what happens when the trial ends, no plan price, no benefits reminder, and no clear call to action. The branch owner isn't guided toward becoming a paying customer.
-
 ## Goal
+On the branch's trial conversion view, clearly show any active discount that will apply when they subscribe (e.g. "R250 off/month for the first 3 months") so the offer is visible up-front, not a surprise at Stripe checkout.
 
-Turn the in-trial view into a proper conversion surface that:
-1. Makes the trial deadline and consequences unmistakable.
-2. Explains the two outcomes: subscribe (keep everything) vs. do nothing (branch is restricted).
-3. Shows the plan they'll roll onto with its price.
-4. Provides one prominent, obvious "Subscribe now" action.
-5. Doesn't re-prompt for legal acceptance when it's already on file — just links to the history.
+## Where the discount data already lives
+- `branch_subscriptions.promo_code_id`, `discount_type`, `discount_value` — set by tenant admin when assigning the plan.
+- `platform_promo_codes` — human-readable code/name + discount definition (percentage / fixed_amount / free_months).
+- `platform_pricing_plans.stripe_coupon_id` / `stripe_promotion_code_id` — the Stripe-side coupon attached to the plan itself.
+- `stripe-verify-price` edge function already resolves live coupon details (name, amount_off, percent_off, duration, duration_in_months) for a given price / coupon / promo code and is callable by tenant admins.
 
-Scope is UI/UX inside the branch subscription panel only. No changes to entitlement logic, edge functions, or DB.
+Precedence for what to display:
+1. Subscription-level promo (`branch_subscriptions.promo_code_id` → `platform_promo_codes` row).
+2. Otherwise, plan-level Stripe coupon (`platform_pricing_plans.stripe_coupon_id` or `stripe_promotion_code_id`), resolved live via `stripe-verify-price`.
+3. If neither, render nothing (current behaviour).
 
 ## Changes
 
-### 1. New `TrialConversionCard` component (`src/components/branch/TrialConversionCard.tsx`)
+### 1. `src/hooks/useBranchSubscriptions.ts` (or new small hook file)
+Add `useBranchActiveDiscount(subscription, assignedPlan)`:
+- If `subscription.promo_code_id`: fetch the matching `platform_promo_codes` row (code, name, discount_type, discount_value, duration_in_months if present) and normalise to a common `ResolvedDiscount` shape.
+- Else if `assignedPlan?.stripe_coupon_id` or `stripe_promotion_code_id`: call `supabase.functions.invoke("stripe-verify-price", { body: { coupon_id, promotion_code_id, tenant_id } })` and map the returned coupon into the same shape.
+- Return `{ label, amountOffMinor, percentOff, currency, durationMonths, source: "promo" | "stripe", code? }`.
 
-Replaces the current `inTrial` block. Contents:
+Common shape:
+```ts
+type ResolvedDiscount = {
+  label: string;               // "R250 off/month for 3 months"
+  firstPeriodPrice: number|null; // discounted monthly price, in plan currency
+  standardPrice: number;         // full monthly price
+  currency: string;
+  durationMonths: number | null; // null = forever
+  code?: string | null;
+};
+```
 
-- **Header row**: plan name + `Trial` badge + days-remaining pill (colour ramps green → amber → red as it approaches 0; uses `trial_ends_at`).
-- **Countdown line**: "X days left — trial ends {formatted date}".
-- **Two-column "what happens next" panel**:
-  - ✅ *Subscribe before {date}* → seamless continuation, no downtime, everything you've set up stays live.
-  - ⚠️ *Do nothing* → on {date} your storefront is paused, admin becomes billing-only until you subscribe. (Mirrors real behaviour of `useBranchStorefrontGate` / `BranchAdminBillingOnlyGuard`.)
-- **Plan summary strip**: assigned plan name, price from `assignedPlan` (reuse the same query already in the panel), "billed monthly, cancel anytime, VAT not applicable" — same facts as the disclosure card's info box, but framed as the offer, not a legal disclaimer.
-- **Primary CTA**: large full-width "Subscribe now — keep {branch} live" button that calls the existing `handleCheckout("pay")`.
-- **Secondary link**: "View terms you accepted" → expands `BranchAcceptanceHistory` inline (component already exists).
+### 2. `src/components/branch/TrialConversionCard.tsx`
+Accept a new optional `discount?: ResolvedDiscount` prop. When present:
+- Insert a highlighted "Launch offer" strip directly above "Your plan after trial":
+  - Line 1 (bold): the discount label, e.g. `Save R250/month for your first 3 months`.
+  - Line 2 (muted): `Pay R499.00/month for 3 months, then R749.00/month.` (or `Save 20% forever` etc.).
+  - If `code`, add a small pill showing the code.
+- Update the "Subscribe before …" bullet list to include: `Launch discount already applied — you'll pay Rxxx for the first N months.`
+- Update the "Your plan after trial" summary line to append `· first 3 months Rxxx` when a limited-duration discount applies.
 
-### 2. Suppress the disclosure card when acceptances are already on file
+Keep all wording plan-agnostic and driven by the resolved discount object — no hard-coded R250/Postnet copy.
 
-- Lift the "already accepted everything at current version" check out of `SubscriptionDisclosureCard` (or expose a small `useBranchAllRequiredAccepted(branchId)` helper next to `useBranchAcceptanceHistory`).
-- In `TrialConversionCard`, when all required docs are already accepted (the normal case for a branch that has been trialing), do **not** render the disclosure card. The CTA is enabled immediately and the checkout call passes the ledgered acceptances.
-- If (edge case) required docs have version-bumped mid-trial, keep rendering `SubscriptionDisclosureCard` above the CTA — the existing re-acceptance banner already covers this, but the CTA should stay gated until the new versions are ticked.
+### 3. `src/components/branch/BranchSubscriptionPanel.tsx`
+- Call `useBranchActiveDiscount(subscription, assignedPlan)`.
+- Pass the result into `<TrialConversionCard discount={…} />`.
 
-### 3. Nudge banner when trial is close to ending
+### 4. `stripe-verify-price` — no changes required
+It already accepts `{ coupon_id, promotion_code_id, tenant_id }` and permits active tenant admins. Branch owners are typically not tenant admins, so we invoke via the tenant-admin-created assignment context is not available client-side for a branch user. To keep it callable from a branch owner's session, extend the auth check in `stripe-verify-price` to also allow **any active `tenant_memberships` role on `body.tenant_id`** (owner/admin/sales/production/accounts). Read-only Stripe lookup on a coupon already scoped to that tenant's plan is safe. Pass `tenant_id = subscription.tenant_id` from the client.
 
-- Inside `TrialConversionCard`, if `daysLeft <= 3`, prepend a red banner: "Only {n} days left — subscribe now to avoid losing access on {date}."
-- If `daysLeft <= 0` we fall through to the existing `isPending` / `trialExpired` branch (already handled — no change).
-
-### 4. Small polish on the `isPending` / expired branch
-
-- When `trialExpired` is true, prepend a clear "Your trial ended on {date}. Your branch is currently paused." explainer above the existing amber notice, so the state matches the language used during trial.
-- No functional change; copy only.
+### 5. Fallback
+If `stripe-verify-price` fails (network / coupon deleted), render nothing and log — never block the Subscribe flow.
 
 ## Technical notes
-
-- No new hooks required beyond an optional `useBranchAllRequiredAccepted` helper that reuses `useBranchAcceptanceHistory` + `CHECKOUT_REQUIRED_DOCS` from `src/lib/legal/versions.ts`.
-- Reuse existing queries (`useBranchSubscription`, `assignedPlan` query already in the panel) — pass `assignedPlan` down as a prop so we don't duplicate the fetch.
-- Price formatting: use `assignedPlan.price_cents` / currency fields exactly as `SubscriptionDisclosureCard`'s parent already resolves them; no new currency logic.
-- No DB, RLS, or edge-function changes. No changes to `BranchSubscriptionRequiredModal` (post-expiry blocking modal already works).
-
-## Out of scope
-
-- Email nudges before expiry (already implemented via `nudge-dispatcher`).
-- Changes to the pre-trial "choose your path" cards (`isPending` first-visit view is already good).
-- Any pricing/plan editing.
+- No schema changes.
+- No pricing-math changes; Stripe still applies the coupon at checkout — we only mirror it in the UI.
+- Currency formatting reuses the existing helpers already used in `TrialConversionCard` for `planPrice`.
+- Duration mapping: Stripe `duration: "once" | "repeating" | "forever"` → `durationMonths = 1 | duration_in_months | null`.
