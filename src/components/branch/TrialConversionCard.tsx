@@ -123,7 +123,16 @@ export function TrialConversionCard({
           <ul className="text-xs text-emerald-900/80 dark:text-emerald-200/80 space-y-1 list-disc pl-5">
             <li>Zero downtime — your storefront stays live.</li>
             <li>All your branding, products, and pricing stay put.</li>
-            <li>Billed monthly. Cancel anytime from the Stripe portal.</li>
+            {discount ? (
+              <li>
+                <strong>Launch discount already applied</strong>
+                {discount.firstPeriodPrice != null && discount.durationMonths
+                  ? <> — pay {discount.currencySymbol}{discount.firstPeriodPrice.toFixed(2)} {discount.currency}/month for the first {discount.durationMonths} {discount.durationMonths === 1 ? "month" : "months"}.</>
+                  : <>.</>}
+              </li>
+            ) : (
+              <li>Billed monthly. Cancel anytime from the Stripe portal.</li>
+            )}
           </ul>
         </div>
         <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50/40 dark:bg-red-950/20 p-4 space-y-2">
@@ -138,6 +147,35 @@ export function TrialConversionCard({
         </div>
       </div>
 
+      {/* Launch offer strip */}
+      {discount && (
+        <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/20 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-200/70 dark:bg-amber-900/50 shrink-0">
+                <Sparkles className="h-4 w-4 text-amber-800 dark:text-amber-300" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-300 font-semibold">Launch offer applied</p>
+                <p className="text-base font-semibold text-amber-950 dark:text-amber-100">{discount.label}</p>
+                {discount.firstPeriodPrice != null && (
+                  <p className="text-sm text-amber-900/80 dark:text-amber-200/80">
+                    Pay <strong>{discount.currencySymbol}{discount.firstPeriodPrice.toFixed(2)} {discount.currency}/month</strong>
+                    {discount.durationMonths ? <> for {discount.durationMonths === 1 ? "your first month" : `${discount.durationMonths} months`}</> : null}
+                    , then {discount.currencySymbol}{discount.standardPrice.toFixed(2)} {discount.currency}/month.
+                  </p>
+                )}
+              </div>
+            </div>
+            {discount.code && (
+              <span className="inline-flex items-center rounded-md border border-amber-400 dark:border-amber-700 bg-amber-100 dark:bg-amber-900/40 px-2 py-1 text-xs font-mono font-medium text-amber-900 dark:text-amber-200">
+                {discount.code}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Plan offer strip */}
       <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -145,13 +183,19 @@ export function TrialConversionCard({
           <p className="text-base font-semibold capitalize">{planName ?? planSlug}</p>
           {priceLabel ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{priceLabel}</span> · billed by {LEGAL_ENTITY.tradingName} · VAT not applicable
+              <span className="font-semibold text-foreground">{priceLabel}</span>
+              {discount && discount.firstPeriodPrice != null && discount.durationMonths ? (
+                <> · first {discount.durationMonths === 1 ? "month" : `${discount.durationMonths} months`} {discount.currencySymbol}{discount.firstPeriodPrice.toFixed(2)}</>
+              ) : null}
+              {" "}· billed by {LEGAL_ENTITY.tradingName} · VAT not applicable
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">Billed monthly by {LEGAL_ENTITY.tradingName} · VAT not applicable</p>
           )}
         </div>
       </div>
+
+
 
       {/* Re-acceptance if version bumped mid-trial */}
       {!allAccepted && (
