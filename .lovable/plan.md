@@ -1,47 +1,54 @@
-# New-orders badge in Branch sidebar + Onboarding link bug
+## Goal
+Prevent branch/tenant emails from ever defaulting to `hello@document-centre.com` or any platform mailbox. If a branch has no branch or tenant sender configured, order confirmations, quotes, invoices, and tests should fail visibly as “no sender configured” rather than silently using the platform account.
 
-Two small, independent fixes.
+## Confirmed current state
+- The live database has an active platform sender: `hello@document-centre.com`, scoped with `tenant_id = null` and `branch_id = null`.
+- The new `Demo2` branch has no branch-level email account.
+- The email queue helper currently falls through from branch/tenant lookup to platform default, then any platform account, then any active Graph account.
+- The Python email worker also falls back to the platform account when a row has no `tenant_id` or when no tenant account exists.
+- The legacy Edge dispatcher still has a final fallback to active Graph accounts.
 
-## 1. Show "new orders" count in the Branch sidebar
+## Implementation plan
+1. **Split email sender resolution by scope**
+   - Update the shared Edge helper so platform fallback is used only for platform-level emails where both `tenant_id` and `branch_id` are absent.
+   - For any email with a `tenant_id` or `branch_id`, resolve only in this order:
+     1. explicit account on the email row
+     2. branch default
+     3. any branch account
+     4. tenant-wide default
+     5. any tenant-wide account
+     6. stop with no account
 
-Currently the red badge next to **Orders** in `BranchSidebar` is wired to `totalUnread` **messages** (from `useUnreadMessagesStaff`), not new orders. When a customer places an order, nothing in the sidebar changes until they also send a message.
+2. **Fix the Python worker fallback**
+   - Update `resolve_account_id_for_row()` so tenant/branch rows never call `_platform_fallback()`.
+   - Keep `_platform_fallback()` only for genuine platform/system emails with no tenant/branch context.
+   - This keeps Cloud Run email sending aligned with the Edge queue helper.
 
-### What to build
+3. **Remove legacy cross-tenant Graph fallback**
+   - Update `email-dispatcher` so it does not use “any active Graph account anywhere” for tenant/branch email.
+   - Allow platform fallback only for platform-scoped rows.
 
-- Add a new hook `useNewOrdersCount(tenantId, branchId)` in `src/hooks/useOrders.ts` (or a small dedicated file) that queries `orders` with `admin_status = 'new_order'` scoped to the current branch (or all linked branches when the operator is multi-branch, matching the `BranchOrders` scope), returning the count only.
-  - Uses the same `fetchAdminOrders`-style filter to stay consistent with existing RLS/tenant scoping.
-  - Real-time: subscribe to Postgres changes on `orders` filtered by `branch_id` and invalidate the query on INSERT / status update so the badge updates the moment an order lands (no refresh needed).
-- In `BranchLayout.tsx`:
-  - Call the new hook and pass `newOrderCount` into `BranchSidebar` alongside the existing `unreadOrderCount` (messages).
-- In `BranchSidebar.tsx`:
-  - Accept a new prop `newOrderCount`.
-  - Render the "new orders" badge on the **Orders** nav item (this is what the user asked for). Keep the existing messages badge behaviour on the header bell (`StaffMessagesBell`) — messages already have their own indicator there, so removing the messages count from the sidebar avoids double-counting.
-  - Badge style: keep the current red pill, cap at `99+`, show a small red dot in collapsed mode.
-- Optional nicety: also add a browser-title prefix like `(3) Branch Portal` when there are new orders (reuse the existing `useDocumentTitleUnread` pattern with a new small hook, or extend it). Flag this as optional in build — only add if it's a one-liner.
+4. **Make missing sender visible in the UI/audit trail**
+   - If the helper cannot resolve a sender for a branch/tenant email, enqueue it with `email_account_id = null` so the worker marks it as `config_missing`, or return a clear setup error where the caller expects immediate feedback.
+   - Keep the existing branch settings warning (“No sender email configured”) as the route to fix it.
 
-### Technical notes
+5. **Add a database guardrail**
+   - Add or tighten a database function/constraint/trigger so a branch-scoped email account cannot accidentally point at a platform-scoped sender identity.
+   - Preserve the allowed platform account for platform-only messages.
 
-- Use `admin_status = 'new_order'` — that's the canonical "just landed, not yet reviewed" state per `ALL_ADMIN_STATUSES` in `BranchOrders.tsx`.
-- The count should respect the current branch (`branchId` from `useTenantContext`) so a manager only sees their branch. Multi-branch operators viewing "all" scope is not something the sidebar currently exposes, so keep the badge branch-scoped.
-- Reuse existing query invalidation helpers (`invalidateUserOrderCaches` isn't the right one here — this is admin-side; just invalidate `["new-orders-count", branchId]` from the realtime channel handler).
+6. **Clean existing bad data**
+   - Remove the branch-scoped `hello@document-centre.com` account currently attached to an old PostNet branch, or mark it inactive if we need to preserve audit history.
+   - Leave the platform `hello@document-centre.com` row intact for platform emails only.
 
-## 2. Onboarding checklist: link stops working until refresh after ticking
+7. **Verify**
+   - Query `email_accounts` and recent `email_outbox` rows to confirm branch emails without a sender no longer resolve to the platform account.
+   - Run the relevant Supabase linter/checks after the migration.
 
-**Repro (from user):** Tick a step in `BranchOnboardingChecklist` → try to click a different step's link → nothing happens until the page is refreshed.
-
-### Likely cause (to confirm during build)
-
-In `BranchOnboardingChecklist.tsx` each row is a `<div>` containing both a shadcn `<Checkbox>` and a React Router `<Link>` as siblings. When the mutation resolves, `useBranchOnboarding` is invalidated with `staleTime: 0` and `refetchOnMount: "always"`. During the refetch React Query briefly triggers a re-render; combined with the guard `if (isLoading || !data) return null;` the whole card can unmount and remount, which can swallow the very next click if the pointer lands on the freshly-mounted Link before hydration of its event handler.
-
-A related suspect: the checkbox is disabled via `toggle.isPending`, but if the mutation stays "pending" until the invalidated query resettles, the row's Radix Checkbox may keep focus/pointer capture, blocking the sibling Link's click.
-
-### Fix
-
-- Remove the "return null while loading" flicker: keep the previous `data` while refetching (React Query does this by default — the culprit is the `if (isLoading || !data) return null;` guard treating a refetch as "loading"). Change the guard to only bail when `data` is genuinely absent (`if (!data) return null;`), so the card no longer unmounts on every tick.
-- Don't gate the whole row on `toggle.isPending`. Instead, track pending per-step (e.g., a local `pendingStep` state or check `toggle.variables?.step === s.key`) so only the clicked checkbox is disabled; other rows and their Links stay fully interactive.
-- Confirm in build via Playwright: tick step A, then immediately click step B's link — should navigate without a refresh.
-
-## Out of scope
-
-- No changes to the pricing engine, order engine, or messages bell behaviour.
-- No schema changes.
+## Technical notes
+- Main files to change:
+  - `supabase/functions/_shared/email-queue.ts`
+  - `supabase/functions/email-dispatcher/index.ts`
+  - `pdf-server/app/email/credentials.py`
+- Database change:
+  - migration for guardrail and cleanup of existing branch-scoped `hello@document-centre.com` misuse.
+- No UI redesign needed; this is primarily sender-resolution and data-integrity work.
