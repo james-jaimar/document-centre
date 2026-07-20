@@ -73,7 +73,7 @@ export function OrderPricingTab({ order, jobs, payments, addresses = [], adjustm
       await requestPayment(order.id);
       toast.success("Payment request sent to customer");
     } catch (e: any) {
-      toast.error(e.message);
+      if (!e?.handled) toast.error(e.message);
     } finally {
       setRequesting(false);
     }

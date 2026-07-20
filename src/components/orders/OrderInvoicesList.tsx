@@ -77,7 +77,7 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
       toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} sent to customer`);
       await load();
     } catch (e: any) {
-      toast.error(e.message);
+      if (!e?.handled) toast.error(e.message);
     } finally {
       setSendingId(null);
     }

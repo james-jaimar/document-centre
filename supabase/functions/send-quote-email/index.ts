@@ -94,9 +94,20 @@ Deno.serve(async (req) => {
         related_id: q.id,
       }),
     });
+    const respText = await sendResp.text();
+    let respJson: any = null;
+    try { respJson = JSON.parse(respText); } catch { /* not JSON */ }
+    if (respJson?.error === "EMAIL_NOT_CONFIGURED") {
+      return json({
+        error: "EMAIL_NOT_CONFIGURED",
+        scope: respJson.scope,
+        tenant_id: respJson.tenant_id,
+        branch_id: respJson.branch_id,
+        message: respJson.message,
+      }, 200);
+    }
     if (!sendResp.ok) {
-      const t = await sendResp.text();
-      return json({ error: `send-email failed: ${t}` }, 500);
+      return json({ error: `send-email failed: ${respText}` }, 500);
     }
 
     return json({ success: true, download_url: downloadUrl });

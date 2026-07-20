@@ -4,7 +4,7 @@ import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Mail } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
@@ -12,6 +12,27 @@ import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
 import BranchAdminBillingOnlyGuard from "@/components/branch/BranchAdminBillingOnlyGuard";
 import { useNewOrdersCount } from "@/hooks/useNewOrdersCount";
+import { useBranchEmailConfigured } from "@/hooks/useBranchEmailConfigured";
+
+function EmailNotConfiguredBanner() {
+  const { tenantId, branchId, membershipRole } = useTenantContext();
+  const { data: configured, isLoading } = useBranchEmailConfigured(tenantId, branchId);
+  if (!branchId || isLoading || configured !== false) return null;
+  const isAdmin = membershipRole === "owner" || membershipRole === "admin";
+  if (!isAdmin) return null;
+  return (
+    <div className="border-b px-4 py-2 text-sm flex items-center gap-2 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
+      <Mail className="h-4 w-4 shrink-0" />
+      <span className="flex-1">
+        No outgoing email is configured for this branch — invoices, quotes and order notifications
+        will not be sent until you add a sender.
+      </span>
+      <Link to="/branch/settings?tab=email" className="underline font-medium">
+        Configure email
+      </Link>
+    </div>
+  );
+}
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
@@ -64,6 +85,7 @@ export default function BranchLayout() {
           <StaffMessagesBell ordersBasePath="/branch/orders" />
         </header>
         <SubscriptionGateBanner />
+        <EmailNotConfiguredBanner />
         <main className="flex-1 overflow-auto p-6">
           <BranchAdminBillingOnlyGuard />
         </main>

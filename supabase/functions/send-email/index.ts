@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { enqueueEmail } from "../_shared/email-queue.ts";
+import { enqueueEmail, EmailNotConfiguredError } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
 
 const corsHeaders = {
@@ -78,6 +78,19 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    if (error instanceof EmailNotConfiguredError) {
+      console.warn("send-email skipped: sender not configured", { scope: error.scope, tenant_id: error.tenant_id, branch_id: error.branch_id });
+      return new Response(
+        JSON.stringify({
+          error: "EMAIL_NOT_CONFIGURED",
+          scope: error.scope,
+          tenant_id: error.tenant_id,
+          branch_id: error.branch_id,
+          message: error.message,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     console.error("Send email error:", error);
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,

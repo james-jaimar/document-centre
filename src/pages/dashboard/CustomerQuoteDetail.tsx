@@ -87,7 +87,7 @@ export default function CustomerQuoteDetail() {
             variant="outline"
             onClick={() => sendEmail.mutate(quote.id, {
               onSuccess: () => toast.success(quote.customer_email ? `Quote emailed to ${quote.customer_email}` : "Quote emailed"),
-              onError: (e: any) => toast.error("Couldn't email quote", { description: e.message }),
+              onError: (e: any) => { if (!e?.handled) toast.error("Couldn't email quote", { description: e.message }); },
             })}
             disabled={sendEmail.isPending}
           >
