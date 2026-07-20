@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisclosureCard";
 import { BranchReAcceptanceBanner } from "./BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "./BranchAcceptanceHistory";
+import { TrialConversionCard } from "./TrialConversionCard";
 import { ExternalLink } from "lucide-react";
 
 const statusColors: Record<string, string> = {
