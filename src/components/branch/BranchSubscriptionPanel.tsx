@@ -240,29 +240,19 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             )}
           </div>
         ) : inTrial ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold capitalize">{subscription?.assigned_plan_slug}</p>
-                <Badge variant="outline" className={statusColors.trialing}>Trial</Badge>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Trial ends {new Date(trialEndsAt!).toLocaleDateString()} — add payment any time to continue without interruption.
-            </p>
-            <SubscriptionDisclosureCard
-              branchId={branchId}
-              planSlug={subscription?.assigned_plan_slug}
-              trialDays={0}
-              onChange={setAccepted}
-            />
-            <Button onClick={() => handleCheckout("pay")} disabled={anyLoading || !accepted} size="sm" variant="outline" className="w-full">
-              {loading === "pay" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
-            </Button>
-          </div>
+          <TrialConversionCard
+            branchId={branchId}
+            branchName={branchInfo?.name}
+            planSlug={subscription?.assigned_plan_slug}
+            planName={assignedPlan?.plan_name}
+            planPrice={assignedPlan?.price != null ? Number(assignedPlan.price) : null}
+            currencySymbol={assignedPlan?.region?.currency_symbol}
+            currencyCode={assignedPlan?.region?.currency_code}
+            trialEndsAt={trialEndsAt!}
+            loading={loading === "pay"}
+            disabled={anyLoading}
+            onSubscribe={(acc) => handleCheckout("pay", acc)}
+          />
         ) : (
           <ActiveSubscriptionBlock subscription={subscription} status={status} branchId={branchId} />
         )}
