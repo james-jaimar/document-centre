@@ -13,6 +13,7 @@ import { SubscriptionDisclosureCard, AcceptedDocument } from "./SubscriptionDisc
 import { BranchReAcceptanceBanner } from "./BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "./BranchAcceptanceHistory";
 import { TrialConversionCard } from "./TrialConversionCard";
+import { useBranchActiveDiscount } from "@/hooks/useBranchActiveDiscount";
 import { ExternalLink } from "lucide-react";
 
 const statusColors: Record<string, string> = {
@@ -56,6 +57,8 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
       return data as any;
     },
   });
+
+  const { data: activeDiscount } = useBranchActiveDiscount(subscription, assignedPlan);
 
   const { data: branchInfo } = useQuery({
     queryKey: ["branch_name", branchId],
@@ -252,8 +255,10 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             trialEndsAt={trialEndsAt!}
             loading={loading === "pay"}
             disabled={anyLoading}
+            discount={activeDiscount ?? null}
             onSubscribe={(acc) => handleCheckout("pay", acc)}
           />
+
         ) : (
           <ActiveSubscriptionBlock subscription={subscription} status={status} branchId={branchId} />
         )}
