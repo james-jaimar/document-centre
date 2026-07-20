@@ -2,7 +2,7 @@
 // email_outbox (which the email-dispatcher then sends via the tenant's SMTP).
 // Idempotent on (order_id, event_key) — won't double-send.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { enqueueEmail } from "../_shared/email-queue.ts";
+import { enqueueEmail, EmailNotConfiguredError } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
 
 const corsHeaders = {
