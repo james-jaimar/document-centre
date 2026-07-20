@@ -221,13 +221,16 @@ def resolve_account_id_for_row(
 ) -> Optional[str]:
     """Mirror of the edge dispatcher's account fallback chain.
 
-    Returns the id of the first usable active account (any transport),
-    in order:
+    Returns the id of the first usable active account (any transport).
+
+    Tenant/branch mail never falls back to the platform sender. Platform
+    fallback is used only when the row has no tenant_id and no branch_id.
+
+    Tenant/branch order:
       1. branch default
       2. any branch
       3. tenant-wide default (no branch)
       4. any tenant-wide (no branch)
-      5. any active account for this tenant
     """
     def _first_id(query) -> Optional[str]:
         rows = query.execute().data or []
@@ -259,14 +262,43 @@ def resolve_account_id_for_row(
             .limit(1)
         )
 
-    if not tenant_id:
+    if not tenant_id and not branch_id:
         return _platform_fallback()
+
+    if branch_id:
+        picked = _first_id(
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .eq("branch_id", branch_id)
+            .eq("is_active", True)
+            .eq("is_default", True)
+            .order("created_at", desc=False)
+            .limit(1)
+        )
+        if picked:
+            return picked
+
+        picked = _first_id(
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .eq("branch_id", branch_id)
+            .eq("is_active", True)
+            .order("created_at", desc=False)
+            .limit(1)
+        )
+        if picked:
+            return picked
+
+    if not tenant_id:
+        return None
 
     res = (
         sb.table("email_accounts")
-        .select("id,branch_id,is_default,transport,is_active")
+        .select("id,branch_id,is_default,transport,is_active,created_at")
         .eq("tenant_id", tenant_id)
+        .is_("branch_id", None)
         .eq("is_active", True)
+        .order("created_at", desc=False)
         .execute()
     )
     accounts = res.data or []
@@ -278,14 +310,6 @@ def resolve_account_id_for_row(
         return None
 
     if accounts:
-        if branch_id:
-            picked = _pick(lambda a: a.get("branch_id") == branch_id and a.get("is_default"))
-            if picked:
-                return picked
-            picked = _pick(lambda a: a.get("branch_id") == branch_id)
-            if picked:
-                return picked
-
         picked = _pick(lambda a: not a.get("branch_id") and a.get("is_default"))
         if picked:
             return picked
@@ -293,8 +317,5 @@ def resolve_account_id_for_row(
         if picked:
             return picked
 
-        # Any active account for this tenant (last resort within tenant).
-        return accounts[0]["id"]
-
-    return _platform_fallback()
+    return None
 

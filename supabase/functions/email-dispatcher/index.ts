@@ -1,8 +1,8 @@
 // Outbound email dispatcher.
 // - Cron-invoked every 30s via pg_cron.
 // - Claims due rows from public.email_outbox (per-account concurrency cap).
-// - Resolves SMTP creds from public.email_accounts (vault-stored password)
-//   with platform-secret fallback for tenants that opted in.
+// - Resolves SMTP creds from public.email_accounts (vault-stored password).
+//   Tenant/branch mail never falls back to the platform sender.
 // - Sends via denomailer SMTP and writes back status/attempts/Message-ID.
 //
 // Backoff: 1m, 5m, 15m, 1h, 6h → dlq.
@@ -43,6 +43,7 @@ interface OutboxRow {
   id: string;
   email_account_id: string | null;
   tenant_id: string | null;
+  branch_id: string | null;
   to_email: string;
   cc: string[] | null;
   bcc: string[] | null;
@@ -235,6 +236,16 @@ async function resolveCreds(
   admin: ReturnType<typeof createClient>,
   row: OutboxRow
 ): Promise<AccountCreds | null> {
+  const isScopedMail = !!row.tenant_id || !!row.branch_id;
+
+  const accountMatchesScope = (account: any) => {
+    if (!account) return false;
+    if (!isScopedMail) return account.tenant_id == null && account.branch_id == null;
+    if (row.tenant_id && account.tenant_id !== row.tenant_id) return false;
+    if (row.branch_id) return account.branch_id == null || account.branch_id === row.branch_id;
+    return account.branch_id == null;
+  };
+
   // 1. Specific account on the row
   if (row.email_account_id) {
     const { data: acct } = await admin
@@ -242,29 +253,46 @@ async function resolveCreds(
       .select("*")
       .eq("id", row.email_account_id)
       .maybeSingle();
-    const built = await buildCredsFromAccount(admin, acct);
-    if (built) return built;
+    if (accountMatchesScope(acct)) {
+      const built = await buildCredsFromAccount(admin, acct);
+      if (built) return built;
+    }
   }
 
-  // 2. Tenant-scoped lookup with branch preference (any transport).
+  // 2. Branch-scoped lookup.
+  if (row.branch_id) {
+    const { data: branchAccounts } = await admin
+      .from("email_accounts")
+      .select("*")
+      .eq("is_active", true)
+      .eq("branch_id", row.branch_id)
+      .order("created_at", { ascending: true });
+    const accounts = (branchAccounts as any[]) ?? [];
+    const candidates = [
+      accounts.find((a) => a.is_default),
+      accounts[0],
+    ].filter(Boolean);
+    for (const cand of candidates) {
+      const built = await buildCredsFromAccount(admin, cand);
+      if (built) return built;
+    }
+  }
+
+  // 3. Tenant-wide lookup.
   if (row.tenant_id) {
     const { data: tenantAccounts } = await admin
       .from("email_accounts")
       .select("*")
       .eq("is_active", true)
-      .eq("tenant_id", row.tenant_id);
+      .eq("tenant_id", row.tenant_id)
+      .is("branch_id", null)
+      .order("created_at", { ascending: true });
     const accounts = (tenantAccounts as any[]) ?? [];
 
     const candidates = [
-      // Branch-scoped default
-      row.branch_id ? accounts.find((a) => a.branch_id === row.branch_id && a.is_default) : null,
-      // Any branch-scoped
-      row.branch_id ? accounts.find((a) => a.branch_id === row.branch_id) : null,
       // Tenant-wide default (no branch)
-      accounts.find((a) => !a.branch_id && a.is_default),
+      accounts.find((a) => a.is_default),
       // Any tenant-wide
-      accounts.find((a) => !a.branch_id),
-      // Any account for this tenant
       accounts[0],
     ].filter(Boolean);
 
@@ -274,15 +302,18 @@ async function resolveCreds(
     }
   }
 
-  // 3. Last-resort: any active Graph account anywhere (legacy platform fallback)
-  const { data: graphAccounts } = await admin
+  if (isScopedMail) return null;
+
+  // 4. Platform-scope lookup only.
+  const { data: platformAccounts } = await admin
     .from("email_accounts")
     .select("*")
     .eq("is_active", true)
-    .eq("transport", "graph")
+    .is("tenant_id", null)
+    .is("branch_id", null)
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true });
-  for (const a of (graphAccounts as any[]) ?? []) {
+  for (const a of (platformAccounts as any[]) ?? []) {
     const built = await buildCredsFromAccount(admin, a);
     if (built) return built;
   }
@@ -677,7 +708,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       .update({
         status: "failed",
         attempts: row.attempts + 1,
-        error_message: "No email account available (and platform fallback disabled)",
+        error_message: "No sender email configured for this branch or tenant",
         locked_at: null,
         locked_by: null,
       })
