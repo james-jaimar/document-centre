@@ -40,8 +40,8 @@ export function BranchOnboardingChecklist({ branchId }: { branchId: string }) {
   const dismiss = useDismissBranchOnboarding();
   const toggle = useToggleBranchOnboardingStep();
 
-  if (isLoading || !data) return null;
-  if (data.completed_at) return null;
+  if (isLoading && !data) return null;
+  if (!data) return null;
   if (data.dismissed_at) {
     const ageDays = (Date.now() - new Date(data.dismissed_at).getTime()) / 86400000;
     if (ageDays < 7) return null;
