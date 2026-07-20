@@ -27,10 +27,18 @@ Deno.serve(async (req) => {
     });
   }
 
-  let body: { branch_id?: string };
+  let body: { branch_id?: string; acceptances?: { slug: string; version: number }[] };
   try { body = await req.json(); } catch { body = {}; }
   if (!body.branch_id) {
     return new Response(JSON.stringify({ error: "branch_id required" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const REQUIRED_DOCS = ["terms", "privacy", "dpa", "billing"];
+  const acceptedSlugs = new Set((body.acceptances ?? []).map((a) => a.slug));
+  const missing = REQUIRED_DOCS.filter((s) => !acceptedSlugs.has(s));
+  if (missing.length > 0) {
+    return new Response(JSON.stringify({ error: `Missing acceptance for: ${missing.join(", ")}` }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -109,10 +117,32 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Stamp which trial path was used (best-effort)
+  // Stamp which trial path was used + ensure status='trialing' (best-effort).
   await sb.from("branch_subscriptions" as any)
-    .update({ trial_started_via: "no_card_14" })
+    .update({ trial_started_via: "no_card_14", status: "trialing" })
     .eq("branch_id", branch.id);
+
+  // Persist acceptances in the immutable ledger — same shape as create-branch-checkout.
+  try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+    const ua = req.headers.get("user-agent") || null;
+    const rows = (body.acceptances ?? []).map((a) => ({
+      branch_id: branch.id,
+      tenant_id: branch.tenant_id,
+      accepted_by: user.id,
+      document_slug: a.slug,
+      document_version: a.version,
+      ip_address: ip,
+      user_agent: ua,
+      context: "branch_trial_14_no_card",
+    }));
+    if (rows.length > 0) {
+      const { error: accErr } = await sb.from("subscription_acceptances" as any).insert(rows);
+      if (accErr) console.error("subscription_acceptances insert failed:", accErr);
+    }
+  } catch (e) {
+    console.error("Failed to log acceptances:", e);
+  }
 
   // Fire welcome email exactly once (when trial flipped from not_started → active)
   if (wasNotStarted) {
