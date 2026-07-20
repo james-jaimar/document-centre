@@ -47,6 +47,29 @@ export interface EnqueuedEmail {
 }
 
 /**
+ * Thrown by enqueueEmail when a tenant/branch-scoped send has no active
+ * sender account. Callers should surface this as a friendly "email not
+ * configured" notification with a link to the email settings page.
+ */
+export class EmailNotConfiguredError extends Error {
+  code = "EMAIL_NOT_CONFIGURED" as const;
+  scope: "branch" | "tenant";
+  tenant_id: string | null;
+  branch_id: string | null;
+  constructor(scope: "branch" | "tenant", tenant_id: string | null, branch_id: string | null) {
+    super(
+      scope === "branch"
+        ? "No sender email is configured for this branch."
+        : "No sender email is configured for this tenant.",
+    );
+    this.name = "EmailNotConfiguredError";
+    this.scope = scope;
+    this.tenant_id = tenant_id;
+    this.branch_id = branch_id;
+  }
+}
+
+/**
  * Resolves the SMTP/Graph account to use for an outgoing email.
  *
  * Tenant/branch mail must never fall back to the platform sender. If no
