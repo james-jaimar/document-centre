@@ -1,54 +1,39 @@
+# Nice "Email not configured" notification
+
 ## Goal
-Prevent branch/tenant emails from ever defaulting to `hello@document-centre.com` or any platform mailbox. If a branch has no branch or tenant sender configured, order confirmations, quotes, invoices, and tests should fail visibly as “no sender configured” rather than silently using the platform account.
+When any action tries to send email from a branch (or tenant) that has no active email account, show a clear toast/dialog instead of a silent failure or generic error — with a shortcut to the Email settings page.
 
-## Confirmed current state
-- The live database has an active platform sender: `hello@document-centre.com`, scoped with `tenant_id = null` and `branch_id = null`.
-- The new `Demo2` branch has no branch-level email account.
-- The email queue helper currently falls through from branch/tenant lookup to platform default, then any platform account, then any active Graph account.
-- The Python email worker also falls back to the platform account when a row has no `tenant_id` or when no tenant account exists.
-- The legacy Edge dispatcher still has a final fallback to active Graph accounts.
+## Current state (verified)
+- `enqueueEmail` (`supabase/functions/_shared/email-queue.ts`) calls `resolveEmailAccount`, which now correctly returns `null` for scoped rows with no local account.
+- Today the row is still inserted with `email_account_id = null`, then fails later in the dispatcher as `config_missing`. The user sees a generic "failed" row in Sent Mail with no guidance.
+- Frontend call sites that trigger sends: `sendInvoiceEmail`, `requestPayment` (`src/lib/orders/mutations.ts`), `useSendQuoteEmail` (`src/hooks/useQuotes.ts`), plus `send-order-email` auto-triggers from status changes.
 
-## Implementation plan
-1. **Split email sender resolution by scope**
-   - Update the shared Edge helper so platform fallback is used only for platform-level emails where both `tenant_id` and `branch_id` are absent.
-   - For any email with a `tenant_id` or `branch_id`, resolve only in this order:
-     1. explicit account on the email row
-     2. branch default
-     3. any branch account
-     4. tenant-wide default
-     5. any tenant-wide account
-     6. stop with no account
+## Changes
 
-2. **Fix the Python worker fallback**
-   - Update `resolve_account_id_for_row()` so tenant/branch rows never call `_platform_fallback()`.
-   - Keep `_platform_fallback()` only for genuine platform/system emails with no tenant/branch context.
-   - This keeps Cloud Run email sending aligned with the Edge queue helper.
+### 1. Structured error from the queue
+`supabase/functions/_shared/email-queue.ts` — in `enqueueEmail`, if `tenant_id` or `branch_id` is set and `account_id` resolves to `null`, throw:
+```
+{ code: "EMAIL_NOT_CONFIGURED", scope: "branch"|"tenant", tenant_id, branch_id, message: "No active sender email is configured for this branch." }
+```
+Do not insert the row. (Platform-scope sends keep existing fallback behaviour.)
 
-3. **Remove legacy cross-tenant Graph fallback**
-   - Update `email-dispatcher` so it does not use “any active Graph account anywhere” for tenant/branch email.
-   - Allow platform fallback only for platform-scoped rows.
+### 2. Edge functions surface the code
+`send-order-email/index.ts` and `send-quote-email/index.ts`: catch that error and return HTTP 200 with `{ error: "EMAIL_NOT_CONFIGURED", scope, message }` so the browser client sees a clean payload (avoids the opaque "non-2xx" wrapping).
 
-4. **Make missing sender visible in the UI/audit trail**
-   - If the helper cannot resolve a sender for a branch/tenant email, enqueue it with `email_account_id = null` so the worker marks it as `config_missing`, or return a clear setup error where the caller expects immediate feedback.
-   - Keep the existing branch settings warning (“No sender email configured”) as the route to fix it.
+Auto-triggered sends (order status transitions) log a `timeline_event` note ("Email skipped — sender not configured") instead of throwing, so status changes still succeed.
 
-5. **Add a database guardrail**
-   - Add or tighten a database function/constraint/trigger so a branch-scoped email account cannot accidentally point at a platform-scoped sender identity.
-   - Preserve the allowed platform account for platform-only messages.
+### 3. Shared frontend helper
+New `src/lib/email/handleEmailSendError.ts`:
+- Detects `EMAIL_NOT_CONFIGURED` from thrown error or `data.error`.
+- Shows a sonner toast: title "Email not sent", description "This branch hasn't set up a sender email yet.", action button "Configure email" → navigates to `/branch/settings` (email tab) for branch scope, or `/admin/settings` for tenant scope.
+- Returns `true` if it handled the error so callers can skip generic error toasts.
 
-6. **Clean existing bad data**
-   - Remove the branch-scoped `hello@document-centre.com` account currently attached to an old PostNet branch, or mark it inactive if we need to preserve audit history.
-   - Leave the platform `hello@document-centre.com` row intact for platform emails only.
+Wire it into `sendInvoiceEmail`, `requestPayment`, `useSendQuoteEmail`, and any component-level `catch` for send actions.
 
-7. **Verify**
-   - Query `email_accounts` and recent `email_outbox` rows to confirm branch emails without a sender no longer resolve to the platform account.
-   - Run the relevant Supabase linter/checks after the migration.
+### 4. Proactive banner (small, additive)
+New hook `useBranchEmailConfigured()` — checks for an active `email_accounts` row scoped to the current branch. In `BranchLayout` (or the Sent Mail / Orders page header), when unconfigured, show a subtle amber alert: "No sender email configured — outgoing emails will not be sent." with the same "Configure email" CTA. Dismissable per session.
 
-## Technical notes
-- Main files to change:
-  - `supabase/functions/_shared/email-queue.ts`
-  - `supabase/functions/email-dispatcher/index.ts`
-  - `pdf-server/app/email/credentials.py`
-- Database change:
-  - migration for guardrail and cleanup of existing branch-scoped `hello@document-centre.com` misuse.
-- No UI redesign needed; this is primarily sender-resolution and data-integrity work.
+## Out of scope
+- Changing dispatcher fallback logic (already tightened last turn).
+- Platform-level auth emails (they use the platform account intentionally).
+- Bulk retry of previously-failed rows.
