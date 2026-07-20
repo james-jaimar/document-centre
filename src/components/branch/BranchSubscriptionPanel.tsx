@@ -173,6 +173,7 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
             </div>
 
             <SubscriptionDisclosureCard
+              branchId={branchId}
               planSlug={subscription.assigned_plan_slug}
               trialDays={subscription?.trial_days || 0}
               onChange={setAccepted}
