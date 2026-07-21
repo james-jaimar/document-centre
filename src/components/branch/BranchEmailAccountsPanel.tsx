@@ -369,15 +369,30 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Label className="text-xs whitespace-nowrap">Test recipient:</Label>
-            <Input
-              type="email"
-              placeholder="you@example.com"
-              value={testRecipient}
-              onChange={(e) => setTestRecipient(e.target.value)}
-              className="max-w-xs"
-            />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs whitespace-nowrap">Test recipient:</Label>
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={testRecipient}
+                onChange={(e) => setTestRecipient(e.target.value)}
+                className="max-w-xs"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="text-xs h-8"
+                onClick={() => setTestRecipient("check-auth@verifier.port25.com")}
+                title="Sends the test to Port25's public authentication verifier. It replies with a full SPF, DKIM and DMARC report so you can see whether Gmail / Outlook will trust mail from this mailbox."
+              >
+                Use deliverability verifier
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              A successful "Test" only means the mail server accepted the message. Whether it lands in the recipient's inbox depends on SPF, DKIM and DMARC on your sending domain. Use the verifier above (or send to <code>test-xxxxx@mail-tester.com</code>) to get a real deliverability report.
+            </p>
           </div>
 
           {loading ? (
