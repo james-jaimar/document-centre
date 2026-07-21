@@ -203,7 +203,16 @@ export default function BranchSentMail() {
                       <td className="py-2 px-2 truncate max-w-[280px]">{r.subject}</td>
                       <td className="py-2 px-2"><Badge variant="outline">{r.category}</Badge></td>
                       <td className="py-2 px-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${STATUS_TONE[r.status] ?? ""}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${STATUS_TONE[r.status] ?? ""}`}
+                          title={
+                            r.status === "sent"
+                              ? "The sending mail server accepted the message. Actual inbox delivery depends on SPF, DKIM and DMARC on your sending domain — if recipients say it never arrived, run the deliverability verifier from Branch → Settings → Email."
+                              : r.status === "failed" || r.status === "dlq"
+                                ? "The mail server rejected the message or all retries were exhausted."
+                                : undefined
+                          }
+                        >
                           {r.status}
                         </span>
                       </td>
