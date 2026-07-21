@@ -1,39 +1,48 @@
-# Nice "Email not configured" notification
-
 ## Goal
-When any action tries to send email from a branch (or tenant) that has no active email account, show a clear toast/dialog instead of a silent failure or generic error — with a shortcut to the Email settings page.
+
+Let branch staff quote for **any customer that belongs to the tenant** (not just customers who happened to order at that branch), and give them a quick "Add customer" action that creates a proper tenant-level customer (with auto-invite) — while making sure the branch still only sees that customer's orders/quotes/messages **from their own branch**.
 
 ## Current state (verified)
-- `enqueueEmail` (`supabase/functions/_shared/email-queue.ts`) calls `resolveEmailAccount`, which now correctly returns `null` for scoped rows with no local account.
-- Today the row is still inserted with `email_account_id = null`, then fails later in the dispatcher as `config_missing`. The user sees a generic "failed" row in Sent Mail with no guidance.
-- Frontend call sites that trigger sends: `sendInvoiceEmail`, `requestPayment` (`src/lib/orders/mutations.ts`), `useSendQuoteEmail` (`src/hooks/useQuotes.ts`), plus `send-order-email` auto-triggers from status changes.
+
+- `useTenantCustomers` lists all `tenant_memberships` where `role = 'customer'` — tenant-wide.
+- `useBranchCustomers` calls RPC `get_branch_customers(_branch_id)` which unions distinct customers from `orders`, `quotes`, and branch-scoped memberships for that branch **only**.
+- `QuoteCustomerPicker` in the branch spec-quote builder is wired with `context="branch"` → only branch-linked customers show up.
+- `AddCustomerDialog` (admin) already invokes the `invite-member` Edge Function to create a `role='customer'` tenant membership and email an invite. No branch equivalent exists.
+- RLS on `orders`, `quotes`, `messages`, `timeline_events` already scopes branch staff to `branch_id = <their branch>`, so cross-branch history is naturally hidden.
 
 ## Changes
 
-### 1. Structured error from the queue
-`supabase/functions/_shared/email-queue.ts` — in `enqueueEmail`, if `tenant_id` or `branch_id` is set and `account_id` resolves to `null`, throw:
-```
-{ code: "EMAIL_NOT_CONFIGURED", scope: "branch"|"tenant", tenant_id, branch_id, message: "No active sender email is configured for this branch." }
-```
-Do not insert the row. (Platform-scope sends keep existing fallback behaviour.)
+### 1. Quote picker shows all tenant customers (branch context)
+- Add a new hook `useTenantCustomersForBranch()` that returns the tenant-wide customer list **as seen from a branch** — same shape as `BranchCustomerRow`, but the `order_count` / `total_spent` / `last_order_at` stats are computed **only from orders at the current branch** (so a customer who has never ordered here shows 0/0/null, which is correct).
+- Implement via a new RPC `get_tenant_customers_for_branch(_branch_id uuid)` (SECURITY DEFINER, `search_path=public`):
+  - Auth check: `caller_has_branch_access(_branch_id)` (same helper `get_branch_customers` uses).
+  - Resolve `_tenant_id` from `branches`.
+  - Return every profile with an active `tenant_memberships` row for that tenant+app where `role='customer'`, LEFT JOIN'd to per-branch stats from `orders` (branch_id = _branch_id).
+- Point `QuoteCustomerPicker` (only when `context="branch"`) at this new hook. The tenant-context picker stays on `useTenantCustomers` unchanged.
 
-### 2. Edge functions surface the code
-`send-order-email/index.ts` and `send-quote-email/index.ts`: catch that error and return HTTP 200 with `{ error: "EMAIL_NOT_CONFIGURED", scope, message }` so the browser client sees a clean payload (avoids the opaque "non-2xx" wrapping).
+### 2. Quick-add customer from the branch
+- Add a small "Add customer" button next to the picker in `QuoteCustomerPicker` (branch context only), opening a new `BranchAddCustomerDialog` component modelled on `AddCustomerDialog`:
+  - Same search-by-email → offer add-or-invite flow.
+  - Calls the existing `invite-member` Edge Function with `role='customer'`, `tenant_id=<current tenant>`, `app_id=<current app>`, `branch_id=null` (customer is tenant-level, not branch-locked).
+  - On success, invalidates `["tenant-customers-for-branch", branchId]` and auto-selects the new customer in the picker.
+- Also expose the same dialog from the branch **Customers** page (`BranchCustomers.tsx`) so branch staff can add customers outside the quoting flow.
 
-Auto-triggered sends (order status transitions) log a `timeline_event` note ("Email skipped — sender not configured") instead of throwing, so status changes still succeed.
+### 3. Cross-branch visibility stays locked down
+- No RLS change needed: existing branch policies on `orders`, `quotes`, `order_items`, `messages`, `timeline_events` already filter by `branch_id`. Verify the new RPC returns **only per-branch aggregates** — no tenant-wide totals leak.
+- The branch **Customers** page keeps using `useBranchCustomers` (customers with actual local activity), so the branch dashboard still reflects "my branch's customers". Only the quote picker uses the wider tenant list.
 
-### 3. Shared frontend helper
-New `src/lib/email/handleEmailSendError.ts`:
-- Detects `EMAIL_NOT_CONFIGURED` from thrown error or `data.error`.
-- Shows a sonner toast: title "Email not sent", description "This branch hasn't set up a sender email yet.", action button "Configure email" → navigates to `/branch/settings` (email tab) for branch scope, or `/admin/settings` for tenant scope.
-- Returns `true` if it handled the error so callers can skip generic error toasts.
+### 4. Security posture
+- New RPC is `SECURITY DEFINER` but guarded by `caller_has_branch_access` — same pattern as `get_branch_customers`, so branch staff can only ever read tenant customers **through the lens of a branch they belong to**.
+- `invite-member` Edge Function is unchanged; it already validates the caller's membership before creating the tenant customer + invite.
+- No new columns, no schema loosening on `profiles`, no exposure of PII beyond what admins already see (name, email, phone).
 
-Wire it into `sendInvoiceEmail`, `requestPayment`, `useSendQuoteEmail`, and any component-level `catch` for send actions.
+### Technical notes
 
-### 4. Proactive banner (small, additive)
-New hook `useBranchEmailConfigured()` — checks for an active `email_accounts` row scoped to the current branch. In `BranchLayout` (or the Sent Mail / Orders page header), when unconfigured, show a subtle amber alert: "No sender email configured — outgoing emails will not be sent." with the same "Configure email" CTA. Dismissable per session.
+Files touched:
+- `supabase/migrations/<new>.sql` — `CREATE FUNCTION public.get_tenant_customers_for_branch(uuid)` + `GRANT EXECUTE ... TO authenticated`.
+- `src/hooks/useTenantCustomersForBranch.ts` (new).
+- `src/components/quotes/QuoteCustomerPicker.tsx` — swap data source for branch context, add "+ Add customer" trigger.
+- `src/components/branch/BranchAddCustomerDialog.tsx` (new) — thin wrapper around the existing invite-member flow.
+- `src/pages/branch/BranchCustomers.tsx` — add the same "Add customer" button.
 
-## Out of scope
-- Changing dispatcher fallback logic (already tightened last turn).
-- Platform-level auth emails (they use the platform account intentionally).
-- Bulk retry of previously-failed rows.
+Out of scope: changing how the admin portal picker works, changing branch RLS on orders/quotes/messages, or promoting customer records to be branch-scoped.
