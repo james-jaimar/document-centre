@@ -7107,6 +7107,20 @@ export type Database = {
           total_spent: number
         }[]
       }
+      get_tenant_customers_for_branch: {
+        Args: { _branch_id: string }
+        Returns: {
+          display_name: string
+          email: string
+          first_name: string
+          last_name: string
+          last_order_at: string
+          order_count: number
+          phone: string
+          profile_id: string
+          total_spent: number
+        }[]
+      }
       get_unread_message_counts_for_customer: {
         Args: never
         Returns: {
