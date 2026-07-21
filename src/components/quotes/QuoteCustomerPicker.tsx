@@ -188,6 +188,19 @@ export default function QuoteCustomerPicker({ context, value, onChange }: Props)
           />
         </div>
       </div>
+
+      {context === "branch" && (
+        <BranchAddCustomerDialog
+          open={addOpen}
+          onOpenChange={(v) => {
+            setAddOpen(v);
+            if (!v) {
+              queryClient.invalidateQueries({ queryKey: ["tenant-customers-for-branch"] });
+              queryClient.invalidateQueries({ queryKey: ["branch-customers"] });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
