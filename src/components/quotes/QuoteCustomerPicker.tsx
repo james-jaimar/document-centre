@@ -8,7 +8,7 @@
  * context) so scope isolation matches the rest of the portal.
  */
 import { useMemo, useState } from "react";
-import { Check, ChevronsUpDown, User } from "lucide-react";
+import { Check, ChevronsUpDown, User, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +26,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useBranchCustomers } from "@/hooks/useBranchCustomers";
+import { useTenantCustomersForBranch } from "@/hooks/useTenantCustomersForBranch";
 import { useTenantCustomers } from "@/hooks/useTenantCustomers";
+import { AddCustomerDialog as BranchAddCustomerDialog } from "@/components/branch/AddCustomerDialog";
+import { useQueryClient } from "@tanstack/react-query";
 
 export interface QuoteCustomerValue {
   email: string;
@@ -60,7 +62,10 @@ function fullName(r: Row): string {
 export default function QuoteCustomerPicker({ context, value, onChange }: Props) {
   const [open, setOpen] = useState(false);
 
-  const branchQ = useBranchCustomers();
+  const [addOpen, setAddOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  const branchQ = useTenantCustomersForBranch();
   const tenantQ = useTenantCustomers();
   const source = context === "branch" ? branchQ : tenantQ;
   const rows = useMemo<Row[]>(() => (source.data as any[] | undefined) ?? [], [source.data]);
@@ -68,7 +73,21 @@ export default function QuoteCustomerPicker({ context, value, onChange }: Props)
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <Label>Customer *</Label>
+        <div className="flex items-center justify-between">
+          <Label>Customer *</Label>
+          {context === "branch" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setAddOpen(true)}
+            >
+              <UserPlus className="h-3.5 w-3.5 mr-1" />
+              Add customer
+            </Button>
+          )}
+        </div>
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -169,6 +188,19 @@ export default function QuoteCustomerPicker({ context, value, onChange }: Props)
           />
         </div>
       </div>
+
+      {context === "branch" && (
+        <BranchAddCustomerDialog
+          open={addOpen}
+          onOpenChange={(v) => {
+            setAddOpen(v);
+            if (!v) {
+              queryClient.invalidateQueries({ queryKey: ["tenant-customers-for-branch"] });
+              queryClient.invalidateQueries({ queryKey: ["branch-customers"] });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
