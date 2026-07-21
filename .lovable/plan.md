@@ -1,44 +1,24 @@
-## Root cause (confirmed)
+## Diagnosis (verified)
 
-`get_tenant_customers_for_branch(uuid)` (migration `20260721172500`) selects `b.app_id` from `public.branches`, but that column lives on `tenants`, not `branches`. The RPC therefore errors out with `column b.app_id does not exist`, so `useTenantCustomersForBranch` returns an empty list and the quote customer picker shows nothing — even the customer who already ordered at Demo2.
+The list **is correctly scoped to the PostNet tenant only** — no cross-tenant leakage. The RPC `get_tenant_customers_for_branch` joins `tenant_memberships` filtered by `tenant_id = <postnet>` and `app_id = <postnet.app_id>`.
 
-Verified via `\d branches` (no `app_id`) and a direct `SELECT get_tenant_customers_for_branch(...)` call, which fails once the auth check is passed.
+The noise is real data, not a bug in scoping:
+
+- PostNet has **311 active `customer` memberships**
+- **307 have no name, 306 have no email**
+- All the "(no name)" rows are `auth.users.is_anonymous = true` — anonymous storefront sessions that were auto-enrolled as customers by the anonymous-session bootstrap (per the `mem://auth/anonymous-session-bootstrap` rule). They never converted to a real account.
+
+So the picker is honest — those rows exist — but they're useless for quoting.
 
 ## Fix
 
-New migration replacing the function so it resolves `app_id` from `tenants` instead of `branches`:
+Exclude anonymous / unconverted profiles from the branch quote picker's customer list.
 
-```sql
-CREATE OR REPLACE FUNCTION public.get_tenant_customers_for_branch(_branch_id uuid)
-RETURNS TABLE (...)  -- same signature
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE
-  _tenant_id uuid;
-  _app_id uuid;
-BEGIN
-  IF NOT public.caller_has_branch_access(_branch_id) THEN
-    RAISE EXCEPTION 'Not authorised for branch %', _branch_id USING ERRCODE = '42501';
-  END IF;
+1. Migration: replace `public.get_tenant_customers_for_branch(uuid)` so it also `JOIN auth.users u ON u.id = p.id` and filters `WHERE u.is_anonymous = false AND p.email IS NOT NULL`. Signature and return columns unchanged, so `useTenantCustomersForBranch` and `QuoteCustomerPicker` need no code changes.
 
-  SELECT b.tenant_id, t.app_id
-    INTO _tenant_id, _app_id
-  FROM public.branches b
-  JOIN public.tenants  t ON t.id = b.tenant_id
-  WHERE b.id = _branch_id;
-  ...
-END;
-$$;
-GRANT EXECUTE ON FUNCTION public.get_tenant_customers_for_branch(uuid) TO authenticated;
-```
+That's it — one migration, no frontend edits, no data deletion. The 307 anonymous rows remain in `tenant_memberships` (they're still tied to real anonymous carts/orders and to the storefront bootstrap contract); they just stop appearing in the quote picker.
 
-Everything else in the function (order stats scoped to `_branch_id`, membership filter on tenant + role = 'customer') stays the same. The 357 active `customer` memberships already in the DB mean the picker will populate as soon as the column reference is corrected.
+## Not in scope
 
-## Validation
-
-- Re-run `SELECT get_tenant_customers_for_branch('<demo2 branch id>')` as a caller with access; expect rows including the existing Demo2 customer plus any other Postnet-tenant customers.
-- In the UI: Demo2 → Quotes → New quote → customer picker now lists tenant customers; Customers page continues to show only branch-scoped customers (unchanged).
-
-## Summary
-
-One-line bug: wrong column reference in a SECURITY DEFINER RPC. One migration fixes it; no frontend changes required.
+- Not touching `useTenantCustomers` (admin tenant customers page). You said the Customers page already looks right (1 real customer), so we'll leave its query alone unless you want the same filter applied there too — let me know.
+- Not purging the anonymous memberships. That's a separate housekeeping task with more blast radius (orders, sessions, RLS).
