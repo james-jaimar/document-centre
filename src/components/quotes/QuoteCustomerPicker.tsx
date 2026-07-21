@@ -8,7 +8,7 @@
  * context) so scope isolation matches the rest of the portal.
  */
 import { useMemo, useState } from "react";
-import { Check, ChevronsUpDown, User } from "lucide-react";
+import { Check, ChevronsUpDown, User, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +26,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useBranchCustomers } from "@/hooks/useBranchCustomers";
+import { useTenantCustomersForBranch } from "@/hooks/useTenantCustomersForBranch";
 import { useTenantCustomers } from "@/hooks/useTenantCustomers";
+import { AddCustomerDialog as BranchAddCustomerDialog } from "@/components/branch/AddCustomerDialog";
+import { useQueryClient } from "@tanstack/react-query";
 
 export interface QuoteCustomerValue {
   email: string;
