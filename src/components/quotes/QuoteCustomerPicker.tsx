@@ -62,7 +62,10 @@ function fullName(r: Row): string {
 export default function QuoteCustomerPicker({ context, value, onChange }: Props) {
   const [open, setOpen] = useState(false);
 
-  const branchQ = useBranchCustomers();
+  const [addOpen, setAddOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  const branchQ = useTenantCustomersForBranch();
   const tenantQ = useTenantCustomers();
   const source = context === "branch" ? branchQ : tenantQ;
   const rows = useMemo<Row[]>(() => (source.data as any[] | undefined) ?? [], [source.data]);
