@@ -73,7 +73,21 @@ export default function QuoteCustomerPicker({ context, value, onChange }: Props)
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <Label>Customer *</Label>
+        <div className="flex items-center justify-between">
+          <Label>Customer *</Label>
+          {context === "branch" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setAddOpen(true)}
+            >
+              <UserPlus className="h-3.5 w-3.5 mr-1" />
+              Add customer
+            </Button>
+          )}
+        </div>
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button
