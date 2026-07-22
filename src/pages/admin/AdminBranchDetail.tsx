@@ -305,7 +305,7 @@ const AdminBranchDetail = () => {
 
         {/* ─── CAPABILITIES TAB ─── */}
         <TabsContent value="capabilities">
-          {id && <BranchProductToggles branchId={id} />}
+          {id && <BranchProductToggles branchId={id} adminMode />}
         </TabsContent>
 
         {/* ─── PAYMENTS TAB ─── */}
