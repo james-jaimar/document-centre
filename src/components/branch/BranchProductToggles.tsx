@@ -112,10 +112,12 @@ export default function BranchProductToggles({ branchId, readOnly = false, admin
     <div className="space-y-4">
       {!readOnly && (
         <div className="flex gap-2 justify-end">
-          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seed.isPending}>
-            <RefreshCw size={14} className={cn("mr-1.5", seed.isPending && "animate-spin")} />
-            Sync Products
-          </Button>
+          {adminMode && (
+            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seed.isPending}>
+              <RefreshCw size={14} className={cn("mr-1.5", seed.isPending && "animate-spin")} />
+              Sync Products
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => handleBulkToggle(true)}>
             <ToggleRight size={14} className="mr-1.5" /> Enable All
           </Button>
@@ -123,6 +125,7 @@ export default function BranchProductToggles({ branchId, readOnly = false, admin
             <ToggleLeft size={14} className="mr-1.5" /> Disable All
           </Button>
         </div>
+
       )}
 
       <div className="space-y-2">
