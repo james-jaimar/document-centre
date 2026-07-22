@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBranchCapabilities, useUpdateBranchCapability, useSeedBranchCapabilities } from "@/hooks/useBranchCapabilities";
+import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -19,9 +20,19 @@ import type { BranchCapability } from "@/hooks/useBranchCapabilities";
 interface Props {
   branchId: string;
   readOnly?: boolean;
+  /**
+   * When true, expose admin-only maintenance controls like "Sync Products"
+   * and "Seed All Products". Branch owners should never see these — the
+   * capability list self-heals via `ensure_branch_pricing_seeded`.
+   */
+  adminMode?: boolean;
 }
 
-export default function BranchProductToggles({ branchId, readOnly = false }: Props) {
+export default function BranchProductToggles({ branchId, readOnly = false, adminMode = false }: Props) {
+  // Belt-and-braces: on first render, ask the DB to seed pricing + capabilities
+  // if they're missing. Idempotent — no-op once seeded.
+  useEnsureBranchPricingSeeded(branchId);
+
   const { data: capabilities, isLoading } = useBranchCapabilities(branchId);
   const update = useUpdateBranchCapability();
   const seed = useSeedBranchCapabilities();
@@ -61,25 +72,41 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
     }
   };
 
+  // Silent auto-seed for branch owners if the list is still empty after the
+  // initial ensure_branch_pricing_seeded call. Runs at most once per mount.
+  const silentSeedTried = useRef(false);
+  useEffect(() => {
+    if (adminMode || readOnly) return;
+    if (isLoading) return;
+    if (capabilities && capabilities.length > 0) return;
+    if (silentSeedTried.current) return;
+    silentSeedTried.current = true;
+    seed.mutateAsync(branchId).catch(() => { /* swallow — no UI noise for owners */ });
+  }, [adminMode, readOnly, isLoading, capabilities, branchId, seed]);
+
   if (isLoading) {
-    return <div className="py-8 text-center text-sm text-muted-foreground">Loading capabilities…</div>;
+    return <div className="py-8 text-center text-sm text-muted-foreground">Loading products…</div>;
   }
 
   if (!capabilities?.length) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center space-y-4">
-          <p className="text-muted-foreground">No product capabilities configured yet.</p>
-          {!readOnly && (
-            <Button onClick={handleSeed} disabled={seed.isPending}>
-              <RefreshCw size={14} className={cn("mr-1.5", seed.isPending && "animate-spin")} />
-              {seed.isPending ? "Seeding…" : "Seed All Products"}
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-    );
+    if (adminMode) {
+      return (
+        <Card>
+          <CardContent className="py-8 text-center space-y-4">
+            <p className="text-muted-foreground">No product capabilities configured yet.</p>
+            {!readOnly && (
+              <Button onClick={handleSeed} disabled={seed.isPending}>
+                <RefreshCw size={14} className={cn("mr-1.5", seed.isPending && "animate-spin")} />
+                {seed.isPending ? "Seeding…" : "Seed All Products"}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      );
+    }
+    return <div className="py-8 text-center text-sm text-muted-foreground">Setting up your products…</div>;
   }
+
 
   return (
     <div className="space-y-4">
