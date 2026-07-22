@@ -1,24 +1,28 @@
-## Diagnosis (verified)
+## 1. Auto-seed products (capabilities) on new branches
 
-The list **is correctly scoped to the PostNet tenant only** — no cross-tenant leakage. The RPC `get_tenant_customers_for_branch` joins `tenant_memberships` filtered by `tenant_id = <postnet>` and `app_id = <postnet.app_id>`.
+**Current state:** `trg_clone_pricing_for_new_branch` already clones catalog + pricing on branch INSERT, and `ensure_branch_pricing_seeded` is the safety-net RPC on first render. But `branch_capabilities` (the rows that back "My Products") are **not** seeded automatically — they're only created when someone clicks the "Seed All Products" button, which calls `seed_branch_capabilities(branch_id)`. That's why Demo2 shows an empty "My Products" screen.
 
-The noise is real data, not a bug in scoping:
+**Fix:**
+- New migration that:
+  1. Extends `trg_clone_pricing_for_new_branch` to also `PERFORM public.seed_branch_capabilities(NEW.id)` (wrapped in its own exception block, same style as the existing catalogue/pricing clones).
+  2. Extends `ensure_branch_pricing_seeded(_branch_id)` to also call `seed_branch_capabilities` — so any branch that was created before this migration self-heals on first portal load (belt-and-braces, matches the existing pattern).
+  3. Backfills every existing branch: `PERFORM public.seed_branch_capabilities(id) FROM branches` — Demo2 and any other empty branch get their capability rows immediately.
+- Frontend (`src/components/branch/BranchProductToggles.tsx`, `src/pages/branch/BranchProducts.tsx`):
+  - Remove the "Seed All Products" button from the **branch-owner** view — they should never see it. Keep it available in the **admin** view (`AdminBranchDetail.tsx`) as a maintenance tool.
+  - Replace the empty-state ("No product capabilities configured yet") with a subtle loader that also fires `ensure_branch_pricing_seeded` and refetches, so if a branch ever lands on the page with zero rows, it self-heals silently.
 
-- PostNet has **311 active `customer` memberships**
-- **307 have no name, 306 have no email**
-- All the "(no name)" rows are `auth.users.is_anonymous = true` — anonymous storefront sessions that were auto-enrolled as customers by the anonymous-session bootstrap (per the `mem://auth/anonymous-session-bootstrap` rule). They never converted to a real account.
+## 2. Orders badge showing 1 instead of 2
 
-So the picker is honest — those rows exist — but they're useless for quoting.
+**Verified current state:** Demo2 has two orders with `admin_status = 'new_order'`, both `submitted_at` set, both `app_id` set, both on the same branch. The `useNewOrdersCount` query filter (`admin_status = 'new_order'` + `submitted_at NOT NULL` + `app_id NOT NULL` + `branch_id = <demo2>`) should return 2, but the sidebar shows 1. **Root cause is unconfirmed** — I want to verify before "fixing".
 
-## Fix
+Investigation steps (build phase):
+1. From the branch-owner Playwright session, hit the same `count(head:true)` query the hook uses and read the number PostgREST returns — this tells us whether the under-count is RLS-side or client-side.
+2. If PostgREST returns 2 → the badge component is rendering stale/cached data → check `useNewOrdersCount` and the realtime channel subscription lifecycle (channel key, `queryKey` stability).
+3. If PostgREST returns 1 → RLS on `orders` is filtering one row. Check the branch-member SELECT policy against the two order rows and compare (customer_id, created_by, tenant/branch scoping) for any asymmetry.
 
-Exclude anonymous / unconverted profiles from the branch quote picker's customer list.
+Fix will follow the diagnosis:
+- Client-side: correct the query-key / realtime channel so the count invalidates properly.
+- RLS-side: tighten the policy so branch staff see every submitted order for their branch regardless of who created it.
 
-1. Migration: replace `public.get_tenant_customers_for_branch(uuid)` so it also `JOIN auth.users u ON u.id = p.id` and filters `WHERE u.is_anonymous = false AND p.email IS NOT NULL`. Signature and return columns unchanged, so `useTenantCustomersForBranch` and `QuoteCustomerPicker` need no code changes.
-
-That's it — one migration, no frontend edits, no data deletion. The 307 anonymous rows remain in `tenant_memberships` (they're still tied to real anonymous carts/orders and to the storefront bootstrap contract); they just stop appearing in the quote picker.
-
-## Not in scope
-
-- Not touching `useTenantCustomers` (admin tenant customers page). You said the Customers page already looks right (1 real customer), so we'll leave its query alone unless you want the same filter applied there too — let me know.
-- Not purging the anonymous memberships. That's a separate housekeeping task with more blast radius (orders, sessions, RLS).
+## Out of scope
+No changes to pricing, quoting, or the admin "Seed All Products" tool — this task is only about the new-branch empty state and the sidebar counter.
