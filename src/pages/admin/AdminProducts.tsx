@@ -42,6 +42,7 @@ const AdminProducts = () => {
   const deleteFamily = useDeleteProductFamily();
 
   const [formOpen, setFormOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [editingFamily, setEditingFamily] = useState<ProductFamily | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -49,8 +50,7 @@ const AdminProducts = () => {
   const [seedingAll, setSeedingAll] = useState(false);
 
   function handleCreate() {
-    setEditingFamily(null);
-    setFormOpen(true);
+    setWizardOpen(true);
   }
 
   function handleEdit(family: ProductFamily) {
