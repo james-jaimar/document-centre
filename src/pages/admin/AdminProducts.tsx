@@ -256,6 +256,12 @@ const AdminProducts = () => {
         isPending={createFamily.isPending || updateFamily.isPending}
       />
 
+      <NewProductWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        onCreated={(id) => setExpandedId(id)}
+      />
+
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
