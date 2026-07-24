@@ -203,6 +203,52 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="kind"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Product Template</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {FAMILY_KIND_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {FAMILY_KIND_OPTIONS.find((o) => o.value === field.value)?.description}
+                  </p>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="image_url"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Hero Image</FormLabel>
+                  <FormControl>
+                    <HeroImageUpload
+                      value={field.value ?? ""}
+                      onChange={(v) => field.onChange(v || null)}
+                      slug={form.watch("slug") || "product"}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Shown on the storefront product card and configurator header.
+                  </p>
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="icon"
