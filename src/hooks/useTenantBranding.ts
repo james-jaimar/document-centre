@@ -95,6 +95,11 @@ export function useTenantBranding(tenantId: string | null) {
     enabled: !!tenantId,
     staleTime: 5 * 60 * 1000,
     initialData: tenantId ? readBrandingCache(tenantId) ?? undefined : undefined,
+    // Treat the localStorage-hydrated snapshot as stale so react-query
+    // still issues a background refetch on mount — otherwise a fresh
+    // initialData timestamp + staleTime would suppress updates and users
+    // would keep seeing outdated branding (e.g. missing brand strip).
+    initialDataUpdatedAt: 0,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenant_settings")
