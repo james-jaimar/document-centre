@@ -10,6 +10,7 @@ import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 import ProductCatalogueLinksTab from "@/components/admin/ProductCatalogueLinksTab";
 import ProductFamilyVariantsEditor from "@/components/admin/ProductFamilyVariantsEditor";
+import NewProductWizard from "@/components/admin/NewProductWizard";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, ChevronDown, Sparkles, ImageIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Plus, Pencil, Trash2, ChevronDown, Sparkles, ImageIcon, MoreVertical } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { seedBoundDocument } from "@/lib/seedBoundDocument";
@@ -40,6 +42,7 @@ const AdminProducts = () => {
   const deleteFamily = useDeleteProductFamily();
 
   const [formOpen, setFormOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [editingFamily, setEditingFamily] = useState<ProductFamily | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -47,8 +50,7 @@ const AdminProducts = () => {
   const [seedingAll, setSeedingAll] = useState(false);
 
   function handleCreate() {
-    setEditingFamily(null);
-    setFormOpen(true);
+    setWizardOpen(true);
   }
 
   function handleEdit(family: ProductFamily) {
@@ -133,16 +135,27 @@ const AdminProducts = () => {
               Binding Artwork Audit
             </Link>
           </Button>
-          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            {seedingAll ? "Seeding All…" : "Seed All Products"}
-          </Button>
-          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            {seeding ? "Seeding…" : "Seed Bound Document"}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreVertical className="h-4 w-4 mr-1" /> Advanced
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Seed templates</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                {seedingAll ? "Seeding All…" : "Seed All Products (legacy)"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                {seeding ? "Seeding…" : "Seed Bound Document (legacy)"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-2" /> New Product Family
+            <Plus className="h-4 w-4 mr-2" /> New Product
           </Button>
         </div>
       </div>
@@ -241,6 +254,12 @@ const AdminProducts = () => {
         family={editingFamily}
         onSubmit={handleFormSubmit}
         isPending={createFamily.isPending || updateFamily.isPending}
+      />
+
+      <NewProductWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        onCreated={(id) => setExpandedId(id)}
       />
 
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>

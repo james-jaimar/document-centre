@@ -605,10 +605,24 @@ export default function OrderBuild() {
       }
     }
 
-    const slugResult = (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
-    if (import.meta.env.DEV) console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
+    // Kind-first fallback (admin-configurable), then slug for legacy rows.
+    const kind = getFamilyKind(productFamily as { kind?: string | null; slug?: string | null } | null);
+    const KIND_TO_PREVIEW: Record<string, ProductPreviewType> = {
+      flat_sheet: "loose_sheets",
+      folded_leaflet: "bi_fold",
+      saddle_stitched: "saddle_stitched",
+      bound_document: "wire_bound",
+      business_card: "business_cards",
+      large_format: "poster",
+      photo_print: "loose_sheets",
+      custom: "loose_sheets",
+    };
+    const slugResult = (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug])
+      || KIND_TO_PREVIEW[kind]
+      || "loose_sheets";
+    if (import.meta.env.DEV) console.log("[PreviewType] fallback slug:", productFamily?.slug, "kind:", kind, "→", slugResult);
     return slugResult;
-  }, [options, spec.selected_options, productFamily?.slug]);
+  }, [options, spec.selected_options, productFamily?.slug, productFamily?.kind]);
 
   // Derive visual finishing effects from selected options metadata
   const previewEffects: PreviewEffects = useMemo(() => {
