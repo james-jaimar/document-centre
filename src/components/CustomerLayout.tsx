@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
+import BrandStrip from "@/components/BrandStrip";
 import CustomerFooter from "@/components/CustomerFooter";
 import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
