@@ -22,6 +22,12 @@ export interface TenantBranding {
   footer_css: string;
   origin_url: string;
   favicon_url: string;
+  // Optional branded strip rendered above the standard portal header
+  brand_strip_enabled: boolean;
+  brand_strip_image_url: string;
+  brand_strip_bg_color: string;
+  brand_strip_height: string;
+  brand_strip_link_url: string;
 }
 
 const DEFAULTS: TenantBranding = {
@@ -44,6 +50,11 @@ const DEFAULTS: TenantBranding = {
   footer_css: "",
   origin_url: "",
   favicon_url: "",
+  brand_strip_enabled: false,
+  brand_strip_image_url: "",
+  brand_strip_bg_color: "",
+  brand_strip_height: "",
+  brand_strip_link_url: "",
 };
 
 const CACHE_PREFIX = "tenant_branding:";
@@ -101,6 +112,10 @@ export function useTenantBranding(tenantId: string | null) {
       if (map.facsimile_enabled !== undefined) {
         const v = map.facsimile_enabled;
         map.facsimile_enabled = v === true || v === "true";
+      }
+      if (map.brand_strip_enabled !== undefined) {
+        const v = map.brand_strip_enabled;
+        map.brand_strip_enabled = v === true || v === "true";
       }
 
       const resolved = {

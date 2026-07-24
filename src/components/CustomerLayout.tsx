@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
+import BrandStrip from "@/components/BrandStrip";
 import CustomerFooter from "@/components/CustomerFooter";
 import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -189,8 +190,11 @@ function CustomerLayoutInner() {
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
       <ImpersonationBanner />
       <BranchPicker />
+      {/* Optional tenant-configured brand strip above the standard header */}
+      <BrandStrip tenantId={tenant?.id ?? null} />
       {/* Header — full width across the top */}
       <CustomerHeader />
+
 
       {/* Sidebar + main content row */}
       <div className="flex flex-1 w-full min-h-0">

@@ -100,6 +100,14 @@ export function BrandingTab() {
   const [originUrl, setOriginUrl] = useState("");
   const [faviconUrl, setFaviconUrl] = useState("");
 
+  // Brand strip (optional band above the standard portal header)
+  const [brandStripEnabled, setBrandStripEnabled] = useState(false);
+  const [brandStripImageUrl, setBrandStripImageUrl] = useState("");
+  const [brandStripBgColor, setBrandStripBgColor] = useState("");
+  const [brandStripHeight, setBrandStripHeight] = useState("");
+  const [brandStripLinkUrl, setBrandStripLinkUrl] = useState("");
+
+
   // Import state
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -135,6 +143,12 @@ export function BrandingTab() {
       setFaviconUrl((settingsMap.favicon_url as string) ?? "");
       setHeaderHtml((settingsMap.header_html as string) ?? "");
       setFooterHtml((settingsMap.footer_html as string) ?? "");
+      const bse = settingsMap.brand_strip_enabled;
+      setBrandStripEnabled(bse === true || bse === "true");
+      setBrandStripImageUrl((settingsMap.brand_strip_image_url as string) ?? "");
+      setBrandStripBgColor((settingsMap.brand_strip_bg_color as string) ?? "");
+      setBrandStripHeight((settingsMap.brand_strip_height as string) ?? "");
+      setBrandStripLinkUrl((settingsMap.brand_strip_link_url as string) ?? "");
     }
   }, [isLoading, settingsMap]);
 
@@ -228,6 +242,12 @@ export function BrandingTab() {
         { category: "branding", setting_key: "footer_html", setting_value: footerHtml, value_type: "string" },
         // Disable facsimile rendering — branding is now applied via controlled components
         { category: "branding", setting_key: "facsimile_enabled", setting_value: false, value_type: "boolean" },
+        // Brand strip (optional band above the standard portal header)
+        { category: "branding", setting_key: "brand_strip_enabled", setting_value: brandStripEnabled, value_type: "boolean" },
+        { category: "branding", setting_key: "brand_strip_image_url", setting_value: brandStripImageUrl, value_type: "string" },
+        { category: "branding", setting_key: "brand_strip_bg_color", setting_value: brandStripBgColor, value_type: "string" },
+        { category: "branding", setting_key: "brand_strip_height", setting_value: brandStripHeight, value_type: "string" },
+        { category: "branding", setting_key: "brand_strip_link_url", setting_value: brandStripLinkUrl, value_type: "string" },
       ]);
       toast.success("Branding settings saved");
     } catch (e: any) {
@@ -393,6 +413,100 @@ export function BrandingTab() {
           />
         </CardContent>
       </Card>
+
+      {/* Brand Strip */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Layout className="h-5 w-5" /> Brand Strip (above header)</CardTitle>
+          <CardDescription>
+            Optional full-width branded band shown above the standard portal header — useful when the tenant has a
+            distinctive retail header (e.g. a coloured band with a centred logo lockup) that customers expect to see.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={brandStripEnabled}
+              onChange={(e) => setBrandStripEnabled(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <span className="text-sm font-medium">Enable brand strip above header</span>
+          </label>
+
+          <ImageUploadField
+            label="Brand Strip Image"
+            value={brandStripImageUrl}
+            onChange={setBrandStripImageUrl}
+            tenantId={tenantId}
+            fileKey="brand-strip"
+            previewClass="h-16 w-full object-cover"
+          />
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Recommended: a wide image (e.g. 1920×88) with the logo lockup centred. The image is rendered full-width
+            with <code>background-size: cover</code>.
+          </p>
+
+          <div className="grid gap-6 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Fallback Background Colour</Label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={brandStripBgColor || "#1e40af"}
+                  onChange={(e) => setBrandStripBgColor(e.target.value)}
+                  className="h-10 w-10 cursor-pointer rounded border border-input"
+                />
+                <Input
+                  value={brandStripBgColor}
+                  onChange={(e) => setBrandStripBgColor(e.target.value)}
+                  className="font-mono"
+                  placeholder="#1e40af"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Shown behind the image on ultra-wide screens.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Strip Height</Label>
+              <Input
+                value={brandStripHeight}
+                onChange={(e) => setBrandStripHeight(e.target.value)}
+                placeholder="88px"
+              />
+              <p className="text-xs text-muted-foreground">CSS length. Defaults to 88px.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Link URL (optional)</Label>
+              <Input
+                value={brandStripLinkUrl}
+                onChange={(e) => setBrandStripLinkUrl(e.target.value)}
+                placeholder="https://www.tenant.co.za"
+                type="url"
+              />
+              <p className="text-xs text-muted-foreground">If set, the strip opens this URL in a new tab.</p>
+            </div>
+          </div>
+
+          {(brandStripImageUrl || brandStripBgColor) && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Live preview</Label>
+              <div
+                className="w-full rounded border"
+                style={{
+                  height: brandStripHeight?.trim() || "88px",
+                  backgroundColor: brandStripBgColor || undefined,
+                  backgroundImage: brandStripImageUrl ? `url("${brandStripImageUrl}")` : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  backgroundRepeat: "no-repeat",
+                }}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
 
       {/* Typography */}
       <Card>
