@@ -50,6 +50,7 @@ import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
+import { getFamilyKind, isSaddleStitchedKind, isSingleSheetKind } from "@/lib/products/familyKind";
 
 
 export default function OrderBuild() {
