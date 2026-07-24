@@ -57,7 +57,9 @@ const DEFAULTS: TenantBranding = {
   brand_strip_link_url: "",
 };
 
-const CACHE_PREFIX = "tenant_branding:";
+// v2: bumped when brand_strip_* fields were added so pre-existing cached
+// snapshots (which lack those keys) are ignored on next load.
+const CACHE_PREFIX = "tenant_branding:v2:";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function readBrandingCache(tenantId: string): TenantBranding | null {
@@ -93,6 +95,11 @@ export function useTenantBranding(tenantId: string | null) {
     enabled: !!tenantId,
     staleTime: 5 * 60 * 1000,
     initialData: tenantId ? readBrandingCache(tenantId) ?? undefined : undefined,
+    // Treat the localStorage-hydrated snapshot as stale so react-query
+    // still issues a background refetch on mount — otherwise a fresh
+    // initialData timestamp + staleTime would suppress updates and users
+    // would keep seeing outdated branding (e.g. missing brand strip).
+    initialDataUpdatedAt: 0,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenant_settings")
