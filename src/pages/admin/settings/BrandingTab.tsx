@@ -100,6 +100,14 @@ export function BrandingTab() {
   const [originUrl, setOriginUrl] = useState("");
   const [faviconUrl, setFaviconUrl] = useState("");
 
+  // Brand strip (optional band above the standard portal header)
+  const [brandStripEnabled, setBrandStripEnabled] = useState(false);
+  const [brandStripImageUrl, setBrandStripImageUrl] = useState("");
+  const [brandStripBgColor, setBrandStripBgColor] = useState("");
+  const [brandStripHeight, setBrandStripHeight] = useState("");
+  const [brandStripLinkUrl, setBrandStripLinkUrl] = useState("");
+
+
   // Import state
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
