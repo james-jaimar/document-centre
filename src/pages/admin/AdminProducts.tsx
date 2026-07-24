@@ -135,16 +135,27 @@ const AdminProducts = () => {
               Binding Artwork Audit
             </Link>
           </Button>
-          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            {seedingAll ? "Seeding All…" : "Seed All Products"}
-          </Button>
-          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            {seeding ? "Seeding…" : "Seed Bound Document"}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreVertical className="h-4 w-4 mr-1" /> Advanced
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Seed templates</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                {seedingAll ? "Seeding All…" : "Seed All Products (legacy)"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                {seeding ? "Seeding…" : "Seed Bound Document (legacy)"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-2" /> New Product Family
+            <Plus className="h-4 w-4 mr-2" /> New Product
           </Button>
         </div>
       </div>
