@@ -580,5 +580,78 @@ function QuantityModeSection({ form }: { form: UseFormReturn<FormValues> }) {
   );
 }
 
+// ─── Hero image upload — reuses the public `tenant-assets` bucket under a
+// `_master/products/` prefix so no new bucket is needed. ────────────────────
+
+function HeroImageUpload({
+  value, onChange, slug,
+}: { value: string; onChange: (v: string) => void; slug: string }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+      const safeSlug = (slug || "product").toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      const path = `_master/products/${safeSlug}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from("tenant-assets")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("tenant-assets").getPublicUrl(path);
+      onChange(urlData.publicUrl);
+      toast.success("Hero image uploaded");
+    } catch (e: any) {
+      toast.error(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://…  or upload →"
+          className="flex-1"
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleUpload(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          <span className="ml-1">Upload</span>
+        </Button>
+      </div>
+      {value && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={value}
+          alt="Hero preview"
+          className="h-24 w-40 rounded border object-cover"
+        />
+      )}
+    </div>
+  );
+}
+
+
 
 
