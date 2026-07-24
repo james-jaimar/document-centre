@@ -242,6 +242,12 @@ export function BrandingTab() {
         { category: "branding", setting_key: "footer_html", setting_value: footerHtml, value_type: "string" },
         // Disable facsimile rendering — branding is now applied via controlled components
         { category: "branding", setting_key: "facsimile_enabled", setting_value: false, value_type: "boolean" },
+        // Brand strip (optional band above the standard portal header)
+        { category: "branding", setting_key: "brand_strip_enabled", setting_value: brandStripEnabled, value_type: "boolean" },
+        { category: "branding", setting_key: "brand_strip_image_url", setting_value: brandStripImageUrl, value_type: "string" },
+        { category: "branding", setting_key: "brand_strip_bg_color", setting_value: brandStripBgColor, value_type: "string" },
+        { category: "branding", setting_key: "brand_strip_height", setting_value: brandStripHeight, value_type: "string" },
+        { category: "branding", setting_key: "brand_strip_link_url", setting_value: brandStripLinkUrl, value_type: "string" },
       ]);
       toast.success("Branding settings saved");
     } catch (e: any) {
