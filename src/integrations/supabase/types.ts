@@ -5033,6 +5033,7 @@ export type Database = {
           id: string
           image_url: string | null
           is_active: boolean
+          kind: string | null
           name: string
           pricing_engine: string
           printing_rules: Json
@@ -5052,6 +5053,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          kind?: string | null
           name: string
           pricing_engine?: string
           printing_rules?: Json
@@ -5071,6 +5073,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          kind?: string | null
           name?: string
           pricing_engine?: string
           printing_rules?: Json
