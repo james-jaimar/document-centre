@@ -93,6 +93,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       slug: "",
       description: "",
       icon: "FileText",
+      image_url: null,
+      kind: "custom",
       is_active: true,
       sort_order: 0,
       color_output: "cmyk",
@@ -106,13 +108,15 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
   });
 
   useEffect(() => {
-    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"] }) | null;
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"]; kind?: FamilyKind; image_url?: string | null }) | null;
     if (fam) {
       form.reset({
         name: fam.name,
         slug: fam.slug,
         description: fam.description || "",
         icon: fam.icon || "FileText",
+        image_url: fam.image_url ?? null,
+        kind: (fam.kind as FamilyKind) ?? "custom",
         is_active: fam.is_active,
         sort_order: fam.sort_order,
         color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
@@ -129,6 +133,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         slug: "",
         description: "",
         icon: "FileText",
+        image_url: null,
+        kind: "custom",
         is_active: true,
         sort_order: 0,
         color_output: "cmyk",
