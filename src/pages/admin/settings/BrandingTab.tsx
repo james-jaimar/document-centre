@@ -143,6 +143,12 @@ export function BrandingTab() {
       setFaviconUrl((settingsMap.favicon_url as string) ?? "");
       setHeaderHtml((settingsMap.header_html as string) ?? "");
       setFooterHtml((settingsMap.footer_html as string) ?? "");
+      const bse = settingsMap.brand_strip_enabled;
+      setBrandStripEnabled(bse === true || bse === "true");
+      setBrandStripImageUrl((settingsMap.brand_strip_image_url as string) ?? "");
+      setBrandStripBgColor((settingsMap.brand_strip_bg_color as string) ?? "");
+      setBrandStripHeight((settingsMap.brand_strip_height as string) ?? "");
+      setBrandStripLinkUrl((settingsMap.brand_strip_link_url as string) ?? "");
     }
   }, [isLoading, settingsMap]);
 
