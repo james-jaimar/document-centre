@@ -50,6 +50,7 @@ import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
+import { getFamilyKind, isSaddleStitchedKind, isSingleSheetKind } from "@/lib/products/familyKind";
 
 
 export default function OrderBuild() {
@@ -262,35 +263,14 @@ export default function OrderBuild() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
-  // Saddle-stitched booklets are duplex by definition. Force is_duplex=true
-  // for these families so click-charge billing and the preview stay correct
-  // even if the seeded option default or stored spec says otherwise.
-  const isSaddleStitchedFamily = useMemo(() => {
-    const slug = (productFamily?.slug || "").toLowerCase();
-    return slug === "booklets" || slug === "saddle-stitched" || slug === "saddle_stitched";
-  }, [productFamily?.slug]);
-
-  // Single-sheet families: Front + Back are two FACES of one physical sheet,
-  // not two independent sheets. Pricing must collapse the two sections into
-  // one duplex section so clicks, paper, and per-sheet finishing aren't
-  // double-billed. (Bound docs keep their per-section model.)
-  const isSingleSheetFamily = useMemo(() => {
-    const slug = (productFamily?.slug || "").toLowerCase();
-    return (
-      slug === "flyers" ||
-      slug === "flyer" ||
-      slug === "posters" ||
-      slug === "poster" ||
-      slug === "handouts" ||
-      slug === "handout" ||
-      slug === "brochures" ||
-      slug === "brochure" ||
-      slug === "folded-leaflets" ||
-      slug === "folded_leaflets" ||
-      slug === "folded-leaflet" ||
-      slug === "folded_leaflet"
-    );
-  }, [productFamily?.slug]);
+  // Behaviour driven by product_families.kind (admin-configurable template),
+  // with a slug fallback for legacy rows. See src/lib/products/familyKind.ts.
+  const familyKind = useMemo(
+    () => getFamilyKind(productFamily as { kind?: string | null; slug?: string | null } | null | undefined),
+    [productFamily?.kind, productFamily?.slug]
+  );
+  const isSaddleStitchedFamily = isSaddleStitchedKind(familyKind);
+  const isSingleSheetFamily = isSingleSheetKind(familyKind);
 
 
   // Sync spec from DB on load

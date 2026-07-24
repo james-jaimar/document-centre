@@ -1,5 +1,5 @@
 import { useForm } from "react-hook-form";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProductFamily } from "@/hooks/useProductFamilies";
+import { FAMILY_KIND_OPTIONS, type FamilyKind } from "@/lib/products/familyKind";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Upload, Loader2 } from "lucide-react";
 
 
 const ICON_OPTIONS = [
@@ -55,6 +59,8 @@ interface FormValues {
   slug: string;
   description: string;
   icon: string;
+  image_url: string | null;
+  kind: FamilyKind;
   is_active: boolean;
   sort_order: number;
   color_output: "cmyk" | "rgb";
@@ -87,6 +93,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       slug: "",
       description: "",
       icon: "FileText",
+      image_url: null,
+      kind: "custom",
       is_active: true,
       sort_order: 0,
       color_output: "cmyk",
@@ -100,13 +108,15 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
   });
 
   useEffect(() => {
-    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"] }) | null;
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"]; kind?: FamilyKind; image_url?: string | null }) | null;
     if (fam) {
       form.reset({
         name: fam.name,
         slug: fam.slug,
         description: fam.description || "",
         icon: fam.icon || "FileText",
+        image_url: fam.image_url ?? null,
+        kind: (fam.kind as FamilyKind) ?? "custom",
         is_active: fam.is_active,
         sort_order: fam.sort_order,
         color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
@@ -123,6 +133,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         slug: "",
         description: "",
         icon: "FileText",
+        image_url: null,
+        kind: "custom",
         is_active: true,
         sort_order: 0,
         color_output: "cmyk",
@@ -191,6 +203,52 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="kind"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Product Template</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {FAMILY_KIND_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {FAMILY_KIND_OPTIONS.find((o) => o.value === field.value)?.description}
+                  </p>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="image_url"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Hero Image</FormLabel>
+                  <FormControl>
+                    <HeroImageUpload
+                      value={field.value ?? ""}
+                      onChange={(v) => field.onChange(v || null)}
+                      slug={form.watch("slug") || "product"}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Shown on the storefront product card and configurator header.
+                  </p>
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="icon"
@@ -521,6 +579,79 @@ function QuantityModeSection({ form }: { form: UseFormReturn<FormValues> }) {
     </div>
   );
 }
+
+// ─── Hero image upload — reuses the public `tenant-assets` bucket under a
+// `_master/products/` prefix so no new bucket is needed. ────────────────────
+
+function HeroImageUpload({
+  value, onChange, slug,
+}: { value: string; onChange: (v: string) => void; slug: string }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+      const safeSlug = (slug || "product").toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      const path = `_master/products/${safeSlug}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from("tenant-assets")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("tenant-assets").getPublicUrl(path);
+      onChange(urlData.publicUrl);
+      toast.success("Hero image uploaded");
+    } catch (e: any) {
+      toast.error(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://…  or upload →"
+          className="flex-1"
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleUpload(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          <span className="ml-1">Upload</span>
+        </Button>
+      </div>
+      {value && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={value}
+          alt="Hero preview"
+          className="h-24 w-40 rounded border object-cover"
+        />
+      )}
+    </div>
+  );
+}
+
 
 
 
