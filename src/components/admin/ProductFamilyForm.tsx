@@ -583,7 +583,7 @@ function QuantityModeSection({ form }: { form: UseFormReturn<FormValues> }) {
 // ─── Hero image upload — reuses the public `tenant-assets` bucket under a
 // `_master/products/` prefix so no new bucket is needed. ────────────────────
 
-function HeroImageUpload({
+export function HeroImageUpload({
   value, onChange, slug,
 }: { value: string; onChange: (v: string) => void; slug: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
