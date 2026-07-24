@@ -113,6 +113,10 @@ export function useTenantBranding(tenantId: string | null) {
         const v = map.facsimile_enabled;
         map.facsimile_enabled = v === true || v === "true";
       }
+      if (map.brand_strip_enabled !== undefined) {
+        const v = map.brand_strip_enabled;
+        map.brand_strip_enabled = v === true || v === "true";
+      }
 
       const resolved = {
         ...DEFAULTS,
