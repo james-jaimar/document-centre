@@ -110,12 +110,12 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
       const linkPromises: Promise<any>[] = [];
       for (const code of selectedSizes) {
         linkPromises.push(setLink.mutateAsync({
-          product_family_id: created.id, catalog: "size", sub_attribute: null, item_code: code, is_default: false, sort_order: 0,
+          product_family_id: created.id, catalog: "size", sub_attribute: null, item_code: code, is_default: false, sort_order: 0, enabled: true,
         }));
       }
       for (const code of selectedPapers) {
         linkPromises.push(setLink.mutateAsync({
-          product_family_id: created.id, catalog: "paper", sub_attribute: null, item_code: code, is_default: false, sort_order: 0,
+          product_family_id: created.id, catalog: "paper", sub_attribute: null, item_code: code, is_default: false, sort_order: 0, enabled: true,
         }));
       }
       await Promise.all(linkPromises);
