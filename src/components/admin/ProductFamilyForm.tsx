@@ -1,5 +1,5 @@
 import { useForm } from "react-hook-form";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProductFamily } from "@/hooks/useProductFamilies";
+import { FAMILY_KIND_OPTIONS, type FamilyKind } from "@/lib/products/familyKind";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Upload, Loader2 } from "lucide-react";
 
 
 const ICON_OPTIONS = [
@@ -55,6 +59,8 @@ interface FormValues {
   slug: string;
   description: string;
   icon: string;
+  image_url: string | null;
+  kind: FamilyKind;
   is_active: boolean;
   sort_order: number;
   color_output: "cmyk" | "rgb";
