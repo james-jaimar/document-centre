@@ -57,7 +57,9 @@ const DEFAULTS: TenantBranding = {
   brand_strip_link_url: "",
 };
 
-const CACHE_PREFIX = "tenant_branding:";
+// v2: bumped when brand_strip_* fields were added so pre-existing cached
+// snapshots (which lack those keys) are ignored on next load.
+const CACHE_PREFIX = "tenant_branding:v2:";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function readBrandingCache(tenantId: string): TenantBranding | null {
