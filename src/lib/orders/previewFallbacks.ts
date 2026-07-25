@@ -97,12 +97,17 @@ export function sourceDocumentsForJob(job: any, sourceDocuments: PreviewSourceDo
 
   const sourceAssets = job?.configuration?.source_assets;
   if (!Array.isArray(sourceAssets)) return [];
+  const snapshotDocs = Array.isArray(job?.product_snapshot?.documents)
+    ? job.product_snapshot.documents
+    : [];
   return sourceAssets
     .filter((asset: any) => typeof asset?.storage_path === "string" && asset.storage_path.length > 0)
     .map((asset: any, index: number) => ({
       file_path: asset.storage_path,
       storage_path: asset.storage_path,
       page_count: Number(asset.page_count ?? 0),
+      page_width_mm: Number(snapshotDocs[index]?.page_width_mm ?? 0) || null,
+      page_height_mm: Number(snapshotDocs[index]?.page_height_mm ?? 0) || null,
       sort_order: index,
     }))
     .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
