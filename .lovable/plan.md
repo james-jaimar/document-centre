@@ -1,30 +1,53 @@
-## Verified findings
+## Context
 
-- Pull Up Banners has two active linked variants: `economy` and `executive`; `executive` is currently the default.
-- Demo2 branch has active branch prices for both variants on `pub-850x2000`: Economy `R 952.1739` ex VAT and Executive `R 1213.0435` ex VAT.
-- The customer configurator writes the selected variant into `selected_options["Variant"]`, and the calculator reads that as `variant_code`.
-- The confirmed bug is in the resolved rate-card merge: `useResolvedRateCard.ts` builds click-card natural keys from only `size | colour | sides`, so Economy and Executive rows with the same size/colour/sides collapse into one row before pricing. Because Executive is the later row, Economy disappears from the effective storefront rate card.
-- I also found clone/sync database functions that still don’t consistently preserve `catalog_size_code`, which can reintroduce wrong fallback pricing for custom-size products like pull-up banners.
+The previous fix (May 2026) made business card previews sharp by:
+- Oversampling PDF renders in `src/components/preview/PdfPageView.tsx` (2.5× render, CSS-scaled down, `MAX_RENDER_PX = 3600`).
+- Feeding the actual processed PDF (not the thumbnail) into the files-page lightbox in `src/pages/dashboard/OrderFiles.tsx`.
+
+Business card previews are now soft again in every surface (configurator, files lightbox, cart, admin order/quote detail). Before changing anything I need to confirm which specific link in that chain regressed rather than guess.
 
 ## Plan
 
-1. **Fix the storefront resolved rate-card key**
-   - Update click-rate merging to key by canonical size plus colour, sides, and `variant_code`.
-   - Use `catalog_size_code` when present, falling back to `size`, so custom catalogue sizes and standard ISO sizes behave consistently.
+### 1. Reproduce and diagnose (read-only)
 
-2. **Tighten variant matching in the price calculator**
-   - Keep exact variant matching first.
-   - Only allow fallback to non-variant rows when there are genuinely no variant rows for that size/colour/sides, so selecting Economy cannot silently price from Executive or a generic row.
-   - Make the breakdown label include the selected variant where applicable, so it is obvious which row priced the item.
+- Load a business card order in the running preview, then inspect the DOM for the preview slot:
+  - Is a `<canvas>` from `react-pdf` present (the crisp path)?
+  - Or is only an `<img>` from a thumbnail visible (placeholder path — indicates `pdfSources`/signed URL missing)?
+- If the canvas is present, read its `width`/`height` attributes and the on-screen CSS size to compute the effective device-px per mm and confirm whether oversampling is still active or has been clamped to 1×.
+- Check the console/network for failed signed-URL fetches or `getPdfBlob` errors for the business-card PDF.
+- Confirm which of these code paths is actually driving each surface:
+  - Configurator → `src/components/order/PreviewPanel.tsx` → `DocumentPreview` → `LooseSheetsPreview`.
+  - Files lightbox → `src/pages/dashboard/OrderFiles.tsx` → `PreviewLightbox`.
+  - Cart / Order Confirmation → whichever preview component `Cart.tsx` / `OrderConfirmation.tsx` uses today.
+  - Admin (branch/tenant) order & quote detail → same shared preview components.
 
-3. **Repair database sync/clone paths**
-   - Update `sync_master_rate_card_to_tenant` and `clone_tenant_pricing_to_branch` so they copy and match `catalog_size_code` as well as `variant_code`.
-   - Rebuild the click-rate unique indexes around the same natural key the app uses: scope + canonical size + colour + sides + variant.
-   - This prevents future “same displayed size, different catalogue code” collisions and avoids losing custom size codes during sync.
+### 2. Fix the confirmed regression(s)
 
-4. **Add a small regression check**
-   - Add or update a targeted pricing test for two variant rows with identical size/colour/sides but different `variant_code`.
-   - Assert Economy and Executive both remain in the resolved/effective rate card and price to different totals.
+Depending on what the diagnostic step shows, apply the narrowest fix that restores sharpness in all four surfaces:
 
-5. **Validate with real Demo2 data**
-   - After implementation, verify the Demo2 pull-up banner customer flow shows Economy around `R 1,095` incl VAT and Executive around `R 1,395` incl VAT, matching the branch prices.
+- **If the placeholder image is being shown instead of the PDF** (no `<canvas>`): repair the `pdfSources` pipeline for business cards in the affected surface — make sure the processed PDF path is resolved, signed via `getDownloadUrls`, and passed into `DocumentPreview` / `PreviewLightbox`. Cart and admin previews should reuse the same helper the files lightbox already uses.
+- **If the canvas is present but effectively low DPI** (oversample clamped): tighten `PdfPageView.tsx` so business-card-sized renders always oversample to a print-proof density. Options include raising `MAX_RENDER_PX` further, or computing render width from the underlying trim size in mm at a target DPI (e.g. ≥300 DPI for pieces smaller than A5) instead of from CSS pixels alone. Cap memory with an absolute pixel ceiling.
+- **If `useTrimClip` in `LooseSheetsPreview.tsx` is inflating the render past the oversample cap**, apply the oversample using the *visible* trim size, not the inflated MediaBox render, so business cards don’t lose effective resolution when TrimBox clipping is active.
+
+Do not touch pricing, product config, layout, or backend PDF services — this is a preview-rendering fix only.
+
+### 3. Verify in every surface
+
+- Configurator preview (`/dashboard/order/build`).
+- Files-step lightbox (`/dashboard/order/files`).
+- Cart and Order Confirmation previews.
+- Admin order/quote detail previews at branch and tenant levels.
+
+For each surface: open a business card order, confirm the DOM shows a `<canvas>` at oversampled resolution and the visual result is crisp when zoomed. Note the effective device-px per mm to prove the oversample is active.
+
+### 4. Deliverables
+
+- Minimal edits to `src/components/preview/PdfPageView.tsx` and/or the specific surface(s) whose `pdfSources` pipeline is broken.
+- A short written note in the reply summarising which link had regressed and what changed, with the measured effective preview DPI before vs after.
+
+## Out of scope
+
+- Pricing, variant, VAT, or catalogue logic.
+- Backend PDF service (Cloud Run / pdf-server) changes.
+- Any layout, styling, or product-behaviour changes outside the preview render pipeline.
+- Fixing the unrelated Vite import overlay error (`@ /components/ui/sonner`) that appeared in the session replay — I can address it in a separate task if you want.
