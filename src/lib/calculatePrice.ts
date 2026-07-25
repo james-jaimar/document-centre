@@ -622,13 +622,18 @@ export function calculatePriceFromRateCard(
     for (const cand of candidates) {
       // Prefer a row that matches the variant exactly; otherwise fall back
       // to a variant-less row (legacy / non-variant products).
-      const matches = rc.clicks.filter(
-        (c) =>
-          c.is_active &&
-          String(c.size).toUpperCase() === cand.parent &&
-          c.colour === cellColour &&
-          c.sides === cellSides,
-      );
+      // Match by catalog_size_code first (for non-ISO products like
+      // pull-up banners where `size` stores the human label), then fall
+      // back to matching the legacy `size` column.
+      const parentLower = String(cand.parent).toLowerCase();
+      const matches = rc.clicks.filter((c) => {
+        if (!c.is_active) return false;
+        if (c.colour !== cellColour || c.sides !== cellSides) return false;
+        const codeLower = String((c as any).catalog_size_code ?? "").toLowerCase();
+        const labelUpper = String(c.size ?? "").toUpperCase();
+        return codeLower === parentLower || labelUpper === cand.parent;
+      });
+
       const row =
         matches.find((c) => (c as any).variant_code === variantCode) ??
         (variantCode

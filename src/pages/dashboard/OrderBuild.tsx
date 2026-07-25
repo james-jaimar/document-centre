@@ -86,6 +86,25 @@ export default function OrderBuild() {
   // catalog_sizes) so what the customer sees matches what admins curate.
   const { data: options = [] } = useCatalogBackedOptions(productFamilyId, effectiveBranchId);
   const { data: variantLinks = [] } = useProductVariantLinks(productFamilyId);
+
+  // Catalog-linked sizes for this family (drives auto-seed of Document Size
+  // for products that have no explicit product_options row — e.g. large-format
+  // pull-up banners which only expose a Variant selector to customers).
+  const { data: familyCatalogLinks = [] } = useQuery({
+    queryKey: ["product_catalog_links_size", productFamilyId],
+    queryFn: async () => {
+      if (!productFamilyId) return [] as { item_code: string }[];
+      const { data, error } = await supabase
+        .from("product_catalog_links")
+        .select("item_code")
+        .eq("product_family_id", productFamilyId)
+        .eq("catalog", "size");
+      if (error) throw error;
+      return (data ?? []) as { item_code: string }[];
+    },
+    enabled: !!productFamilyId,
+  });
+
   const variantOptions = useMemo(
     () =>
       (variantLinks ?? [])
@@ -432,6 +451,33 @@ export default function OrderBuild() {
       };
     });
   }, [variantOptions, defaultVariantCode]);
+
+  // Seed Document Size from catalog links when the family has NO Document Size
+  // product_option row (large-format / custom products). Without this seed the
+  // pricing engine falls back to "A4" and picks the wrong click-charge row.
+  useEffect(() => {
+    if (familyCatalogLinks.length === 0) return;
+    const hasSizeOption = options.some(
+      (o) => o.name.toLowerCase() === "document size",
+    );
+    if (hasSizeOption) return;
+    const firstCode = familyCatalogLinks[0]?.item_code;
+    if (!firstCode) return;
+    setSpec((prev) => {
+      const existing =
+        prev.selected_options["Document Size"] ??
+        prev.selected_options["size"];
+      if (existing) return prev;
+      return {
+        ...prev,
+        selected_options: {
+          ...prev.selected_options,
+          "Document Size": firstCode,
+        },
+      };
+    });
+  }, [familyCatalogLinks, options]);
+
 
   // ── Mirror Print Colour / Print Sides → body section is_color / is_duplex.
   // Only applies to single-section families. The pricing engine reads
