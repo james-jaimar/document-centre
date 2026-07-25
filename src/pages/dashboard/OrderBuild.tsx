@@ -452,6 +452,33 @@ export default function OrderBuild() {
     });
   }, [variantOptions, defaultVariantCode]);
 
+  // Seed Document Size from catalog links when the family has NO Document Size
+  // product_option row (large-format / custom products). Without this seed the
+  // pricing engine falls back to "A4" and picks the wrong click-charge row.
+  useEffect(() => {
+    if (familyCatalogLinks.length === 0) return;
+    const hasSizeOption = options.some(
+      (o) => o.name.toLowerCase() === "document size",
+    );
+    if (hasSizeOption) return;
+    const firstCode = familyCatalogLinks[0]?.item_code;
+    if (!firstCode) return;
+    setSpec((prev) => {
+      const existing =
+        prev.selected_options["Document Size"] ??
+        prev.selected_options["size"];
+      if (existing) return prev;
+      return {
+        ...prev,
+        selected_options: {
+          ...prev.selected_options,
+          "Document Size": firstCode,
+        },
+      };
+    });
+  }, [familyCatalogLinks, options]);
+
+
   // ── Mirror Print Colour / Print Sides → body section is_color / is_duplex.
   // Only applies to single-section families. The pricing engine reads
   // section-level flags (so per-section mixed-colour bound documents work);
