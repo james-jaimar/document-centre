@@ -1,30 +1,54 @@
-## Goal
-Verify the New Product Wizard + `kind`-driven refactor didn't regress existing products (Flyers, Brochures, Booklets, Bound Documents, Business Cards, Pull-up Banners, Photo Prints, Posters).
+## Problem
 
-## Audit steps
+Finishing groups like **Stapling**, **Hole Punching**, **Folding**, and **Binding** currently only offer chargeable choices — the customer has no way to pick "none". Lamination already works correctly because the master catalog has a `lam-none` row that the option adapter promotes to the default.
 
-1. **DB backfill check** — Query `product_families` for any rows where `kind` is NULL or empty. For each, confirm `getFamilyKind()` slug fallback resolves to the correct template. Backfill via migration if any legacy row would misclassify.
+## Fix (two layers, so it works everywhere)
 
-2. **Configurator parity (`OrderBuild.tsx` + `OptionsPanel.tsx`)** — For each existing family, load its customer configurator and confirm:
-   - Correct template branch fires (flat_sheet vs bound vs folded vs saddle vs business_card vs large_format vs photo_print).
-   - Pack pricing still drives Flyers size/paper/qty dropdowns.
-   - Bound documents still show binding + section editor.
-   - Brochures still show fold options.
-   - Business Cards still hit BC rate card.
-   - Pull-up Banners still show variants (economy/exec).
+### 1. Seed "None" rows into `catalog_finishing` (source of truth)
 
-3. **Preview parity (`PreviewPanel.tsx` via `KIND_TO_PREVIEW`)** — Confirm each family renders the same preview type it did before the swap. Compare against `inferPreviewTypeFromJob` output for a sample job of each kind. Fix any mapping gap in `KIND_TO_PREVIEW`.
+Add one row per optional finishing category, following the existing `lam-none` convention that `optionAdapter.finishingRowsToValues` already recognises:
 
-4. **Pricing parity (`useItemPricing`)** — Spot-check one order per family (existing cart or quote) to confirm unit price and total match pre-change values. Focus on Flyers (pack pricing), Bound (imposition/parent sheet), Business Cards (BC rate card), Pull-up (variant pricing).
+| category      | code            | label         | metadata          |
+| ------------- | --------------- | ------------- | ----------------- |
+| stapling      | staple-none     | None          | `{ none: true }`  |
+| hole_punching | hole-punch-none | None          | `{ none: true }`  |
+| folding       | fold-none       | None (flat)   | `{ none: true }`  |
+| binding       | bind-none       | None (loose)  | `{ none: true }`  |
+| collating     | collate-none    | None          | `{ none: true }`  |
+| packaging     | pack-none       | None          | `{ none: true }`  |
+| trimming      | trim-none       | None          | `{ none: true }`  |
 
-5. **Admin edit flow** — Open each existing family in the legacy `ProductFamilyForm` edit dialog and confirm fields still load/save (wizard didn't remove fields the editor still writes). Check `pack_pricing`, `variants`, `hero_image_url`, `kind` all round-trip.
+- `is_active = true`, `pricing_basis = 'per_document'`, `sort_order = 0`.
+- No price rows created — headline price falls to 0.
+- Migration is idempotent (`ON CONFLICT DO NOTHING` on `(category, code)` — after ensuring the partial unique index exists per current schema).
+- Backfill the corresponding branch/tenant inherited rows via the existing `ensure_branch_pricing_seeded` / seeding trigger so every branch immediately sees "None" in its rate card.
 
-6. **Advanced menu regression** — Confirm "Seed all products" and "Seed bound document" still function from the Advanced dropdown for tenants that need them.
+The adapter's existing `noneIndex` detection then makes "None" the seeded default for each of these groups automatically — no adapter changes needed.
 
-## Deliverable
-Short report per family: kind resolved, configurator OK, preview OK, price OK, admin edit OK. Any mismatch → targeted fix (backfill migration, mapping addition, or field restore) in the same turn.
+### 2. Render-time safety net in `OptionsPanel.tsx`
 
-## Technical notes
-- Read-only checks via `supabase--read_query` for the kind backfill and sample pricing snapshots.
-- Playwright a customer configurator page per family kind for visual verification.
-- No schema changes expected unless step 1 finds NULL `kind` rows in production data.
+For groups whose values array comes from **manual** `product_options.values` (not the catalog) — e.g. the legacy Stapling / Hole Punching / Fold Type / Binding rows shown in the DB check — synthesise a leading "None" entry (slug `<category>-none`, price 0, `is_default` when no other default exists) whenever:
+
+- the option is not marked `is_required`, AND
+- the values array does not already contain a none-like slug/label.
+
+This means the fix works even for products still on manual values, without a data migration touching every product family's JSON.
+
+Pricing engine impact: selecting the synthetic "None" slug already resolves to `price_impact = 0` in both `calculateItemPrice` and `calculatePriceFromRateCard`, so no pricing code changes are required. Preview/render code that keys off slugs like `staple-corner` continues to work — "None" simply doesn't match any effect and renders as a plain document.
+
+### 3. Admin visibility
+
+In the master pricing / rate-card editors, the seeded "None" rows appear as read-only 0-price entries alongside the chargeable ones, so admins can confirm the option is on offer. No new UI needed — the existing catalog list will show them.
+
+## Out of scope
+
+- No changes to Lamination / Cover Lamination (already correct).
+- No changes to catalog categories that are inherently required (e.g. **Paper**, **Size**, **Print colour**, **Sides**).
+- No pricing/preview refactors.
+
+## Verification
+
+1. Run the migration; confirm the 7 new `catalog_finishing` rows exist and are inherited into a test branch.
+2. Open the Stapled & Loose Pages configurator (screenshot in the report): Stapling dropdown should now list **None** (default), Corner Staple (+R 1,50/doc), Double Staple Edge (+R 2,50/doc).
+3. Same check for Hole Punching, Folding, Binding on their respective product families.
+4. Confirm price for a plain single-sided A4 with all finishing set to "None" matches the base click+paper cost with no finishing surcharge.
