@@ -68,7 +68,7 @@ export default function AdminOrderDetail() {
     );
   }
 
-  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile, adjustments } = data as any;
+  const { order, jobs, addresses, timeline, messages, payments, documents, sourceDocuments, orderedByProfile, adjustments } = data as any;
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
     : jobs[0] || null;
@@ -208,7 +208,7 @@ export default function AdminOrderDetail() {
         <div>
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
-            <JobDetailPanel job={selectedJob} documents={documents} currency={order.currency} orderNumber={order.order_number} />
+            <JobDetailPanel job={selectedJob} documents={documents} sourceDocuments={sourceDocuments} currency={order.currency} orderNumber={order.order_number} />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
               No jobs in this order

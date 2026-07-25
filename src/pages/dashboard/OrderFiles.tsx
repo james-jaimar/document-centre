@@ -1585,6 +1585,8 @@ export default function OrderFiles() {
     }));
   }, [lightboxSignedPdfUrl, lightboxPdfPath, lightboxThumbnails.length, previewDoc?.page_count]);
 
+  const lightboxPageCount = Math.max(lightboxThumbnails.length, lightboxPdfSources?.length ?? 0);
+
   const ensuredItemIdRef = useRef<string | null>(null);
 
   const handleFiles = useCallback(
@@ -2829,9 +2831,10 @@ export default function OrderFiles() {
       </div>
 
       {/* Lightbox */}
-      {lightboxOpen && lightboxThumbnails.length > 0 && (
+      {lightboxOpen && lightboxPageCount > 0 && (
         <PreviewLightbox
           thumbnailPaths={lightboxThumbnails}
+          productType={familySlug === "business-cards" || familySlug === "business_cards" ? "business_cards" : "loose_sheets"}
           pageAspectRatio={lightboxAspect}
           pdfSizeMm={lightboxPdfSizeMm}
           canvasSizeMm={lightboxPdfSizeMm}

@@ -94,6 +94,7 @@ const JOB_STATUS_LABEL: Record<string, string> = {
 
 import { formatPrice } from "@/lib/formatCurrency";
 import { ManageOrderPanel } from "@/components/customer/ManageOrderPanel";
+import { buildPreviewFallback, sourceDocumentsForJob } from "@/lib/orders/previewFallbacks";
 
 
 const fmt = (amount: number, currency = "ZAR") => formatPrice(Number(amount ?? 0), currency);
@@ -124,6 +125,7 @@ const CustomerOrderDetail = () => {
   const messages = data?.messages ?? [];
   const payments = data?.payments ?? [];
   const documents = data?.documents ?? [];
+  const sourceDocuments = (data as any)?.sourceDocuments ?? [];
 
   // Mark staff→customer messages as read whenever this order is opened.
   useMarkOrderReadCustomer(id);
@@ -755,9 +757,14 @@ const CustomerOrderDetail = () => {
 
       {previewJob && (() => {
         const snap = (previewJob.configuration?.preview ?? {}) as any;
+        const fallbackPreview = buildPreviewFallback(sourceDocumentsForJob(previewJob, sourceDocuments));
+        const savedThumbs = (snap.thumbnails ?? []) as string[];
+        const previewPdfSources = Array.isArray(snap.pdfSources) && snap.pdfSources.length > 0
+          ? snap.pdfSources
+          : fallbackPreview.pdfSources;
         return (
           <PreviewLightbox
-            thumbnailPaths={(snap.thumbnails ?? []) as string[]}
+            thumbnailPaths={savedThumbs.length > 0 ? savedThumbs : fallbackPreview.thumbnails}
             productType={resolvePreviewType(previewJob)}
             effects={snap.effects}
             colorFlags={snap.colorFlags}
@@ -771,12 +778,12 @@ const CustomerOrderDetail = () => {
             faceLabels={snap.faceLabels}
             bindingEdge={snap.bindingEdge}
             bindingArt={snap.bindingArt ?? bindingArtFromSlug((previewJob.configuration as any)?.raw_spec?.selected_options?.Binding)}
-            pageAspectRatio={snap.pageAspectRatio ?? undefined}
-            pdfSources={snap.pdfSources}
-            canvasSizeMm={snap.canvasSizeMm}
-            pdfSizeMm={snap.pdfSizeMm}
+            pageAspectRatio={snap.pageAspectRatio ?? fallbackPreview.pageAspectRatio ?? undefined}
+            pdfSources={previewPdfSources}
+            canvasSizeMm={snap.canvasSizeMm ?? fallbackPreview.canvasSizeMm}
+            pdfSizeMm={snap.pdfSizeMm ?? fallbackPreview.pdfSizeMm}
             scaleMode={snap.scaleMode}
-            trimCrop={snap.trimCrop}
+            trimCrop={snap.trimCrop ?? fallbackPreview.trimCrop}
             pocketCoverPath={snap.pocketCoverThumbnail}
             onClose={() => setPreviewJob(null)}
           />

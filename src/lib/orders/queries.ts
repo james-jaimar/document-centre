@@ -174,6 +174,28 @@ export async function fetchOrderDetail(orderId: string) {
     orderedByProfile = prof || null;
   }
 
+  const sourceItemIds = Array.from(
+    new Set(
+      (jobsRes.data || [])
+        .map((job: any) => job?.configuration?.source_order_item_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    )
+  );
+
+  let sourceDocuments: any[] = [];
+  if (sourceItemIds.length > 0) {
+    const { data: sourceDocs, error: sourceDocsErr } = await supabase
+      .from("documents")
+      .select("*")
+      .in("order_item_id", sourceItemIds)
+      .order("sort_order", { ascending: true });
+    if (sourceDocsErr) {
+      console.error("fetchOrderDetail: source document lookup failed", sourceDocsErr);
+    } else {
+      sourceDocuments = sourceDocs || [];
+    }
+  }
+
   return {
     order: orderRes.data,
     orderedByProfile,
@@ -184,6 +206,7 @@ export async function fetchOrderDetail(orderId: string) {
     messages: messagesRes.data || [],
     payments: paymentsRes.data || [],
     documents: docsRes.data || [],
+    sourceDocuments,
     adjustments: (adjustmentsRes as any).data || [],
   };
 }
