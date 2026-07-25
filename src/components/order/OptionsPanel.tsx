@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import type { Tables } from "@/integrations/supabase/types";
-import { isStructuredValues } from "@/lib/productOptionTypes";
+import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { humaniseSlug } from "@/lib/utils";
+
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
   Accordion,
@@ -94,6 +95,79 @@ const PACK_SPEC_KEYS = {
   sides: "Print Sides",
 } as const;
 
+/** Finishing categories where "None" is a valid customer choice. Values
+ *  matched against option name (case-insensitive) and against structured
+ *  values' `metadata.category` / `group` fields. */
+const NONE_ELIGIBLE_CATEGORIES: Array<{
+  match: RegExp;
+  slug: string;
+  label: string;
+  group: string;
+}> = [
+  { match: /staplin?g/i,      slug: "staple-none",     label: "None",         group: "Stapling" },
+  { match: /hole[\s_-]?punch/i, slug: "hole-punch-none", label: "None",       group: "Hole Punching" },
+  { match: /fold/i,           slug: "fold-none",       label: "None (flat)",  group: "Folding" },
+  { match: /bind/i,           slug: "bind-none",       label: "None (loose)", group: "Binding" },
+  { match: /collat/i,         slug: "collate-none",    label: "None",         group: "Collating" },
+  { match: /packag|packing/i, slug: "pack-none",       label: "None",         group: "Packaging" },
+  { match: /trim/i,           slug: "trim-none",       label: "None",         group: "Trimming" },
+];
+
+function isNoneLikeValue(v: StructuredOptionValue): boolean {
+  const meta = (v.metadata ?? {}) as Record<string, unknown>;
+  if (meta.none === true) return true;
+  const slug = (v.slug ?? "").toLowerCase();
+  if (/(^|[-_])(none|no)([-_]|$)/.test(slug)) return true;
+  const label = (v.label ?? "").toLowerCase().trim();
+  return label === "none" || label.startsWith("no ") || label.startsWith("none ");
+}
+
+/** Return the eligibility descriptor for an option, or null if the option
+ *  isn't one of the optional finishing groups that should offer "None". */
+function noneCategoryFor(option: ProductOption): (typeof NONE_ELIGIBLE_CATEGORIES)[number] | null {
+  const name = option.name ?? "";
+  for (const c of NONE_ELIGIBLE_CATEGORIES) {
+    if (c.match.test(name)) return c;
+  }
+  if (isStructuredValues(option.values)) {
+    for (const v of option.values) {
+      const meta = (v.metadata ?? {}) as Record<string, unknown>;
+      const cat = String(meta.category ?? v.group ?? "");
+      for (const c of NONE_ELIGIBLE_CATEGORIES) {
+        if (c.match.test(cat)) return c;
+      }
+    }
+  }
+  return null;
+}
+
+/** Return the option, augmented with a leading "None" value when the group
+ *  is optional and doesn't already contain a none-like row. Idempotent. */
+function withNoneInjected(option: ProductOption): ProductOption {
+  if (option.is_required) return option;
+  const eligible = noneCategoryFor(option);
+  if (!eligible) return option;
+  if (!isStructuredValues(option.values)) return option;
+  const values = option.values as StructuredOptionValue[];
+  const activeValues = values.filter((v) => v.is_active !== false);
+  if (activeValues.some(isNoneLikeValue)) return option;
+
+  const anyExistingDefault = values.some((v) => v.is_default);
+  const noneValue: StructuredOptionValue = {
+    label: eligible.label,
+    slug: eligible.slug,
+    group: eligible.group,
+    price_impact: 0,
+    price_type: "per_document",
+    is_default: !anyExistingDefault,
+    is_active: true,
+    metadata: { none: true, category: eligible.group.toLowerCase() },
+  };
+  return { ...option, values: [noneValue, ...values] as any };
+}
+
+
+
 export default function OptionsPanel({
   options,
   selectedOptions,
@@ -113,7 +187,9 @@ export default function OptionsPanel({
     .filter((o) =>
       blocksActive ? !PACK_MANAGED_OPTION_NAMES.has(o.name.trim().toLowerCase()) : true,
     )
-    .sort((a, b) => a.sort_order - b.sort_order);
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map(withNoneInjected);
+
 
   const lockedFor = (name: string) => lockedDisplay?.[name];
   const suppressSet = new Set(suppressPriceDeltaFor ?? []);
