@@ -559,6 +559,7 @@ export function usePlaceOrder() {
             productOptions: familyOptions as any,
             sections: itemSections as any,
             documents: itemDocs as any,
+            scaleMode: item.spec?.scale_mode,
           });
         } catch (e) {
           console.warn("[placeOrder] preview snapshot failed, using fallback", e);
