@@ -106,4 +106,93 @@ describe("buildPreviewSnapshot", () => {
       "back-1",
     ]);
   });
+
+  it("persists per-page PDF source paths for high-resolution saved previews", () => {
+    const snapshot = buildPreviewSnapshot({
+      productType: "business_cards",
+      selectedOptions: {},
+      productOptions: [],
+      scaleMode: "fit",
+      sections: [
+        {
+          id: "body-section",
+          document_id: "card-doc",
+          section_type: "body",
+          page_range_start: null,
+          page_range_end: null,
+          is_color: true,
+          is_duplex: false,
+          label: "Body",
+          color: null,
+          sort_order: 0,
+        },
+      ],
+      documents: [
+        {
+          id: "card-doc",
+          file_name: "card.pdf",
+          file_path: "uploads/original-card.pdf",
+          page_count: 2,
+          page_width_mm: 90,
+          page_height_mm: 50,
+          preflight_data: {
+            processed_file_path: "processed/card.pdf",
+          },
+          thumbnail_urls: ["thumb-1", "thumb-2"],
+        },
+      ],
+    });
+
+    expect(snapshot.thumbnails).toEqual(["thumb-1", "thumb-2"]);
+    expect(snapshot.pdfSources).toEqual([
+      { url: "processed/card.pdf", pageNumber: 1, cacheKey: "processed/card.pdf" },
+      { url: "processed/card.pdf", pageNumber: 2, cacheKey: "processed/card.pdf" },
+    ]);
+    expect(snapshot.pdfSizeMm).toEqual({ widthMm: 90, heightMm: 50 });
+    expect(snapshot.canvasSizeMm).toEqual({ widthMm: 90, heightMm: 50 });
+    expect(snapshot.scaleMode).toBe("fit");
+  });
+
+  it("skips saved TrimBox clipping when the processed PDF is already trimmed", () => {
+    const snapshot = buildPreviewSnapshot({
+      productType: "business_cards",
+      selectedOptions: {},
+      productOptions: [],
+      sections: [
+        {
+          id: "body-section",
+          document_id: "card-doc",
+          section_type: "body",
+          page_range_start: null,
+          page_range_end: null,
+          is_color: true,
+          is_duplex: false,
+          label: "Body",
+          color: null,
+          sort_order: 0,
+        },
+      ],
+      documents: [
+        {
+          id: "card-doc",
+          file_name: "card.pdf",
+          file_path: "processed/card.pdf",
+          page_count: 1,
+          page_width_mm: 90,
+          page_height_mm: 50,
+          preflight_data: {
+            boxes: {
+              MediaBox: [0, 0, 283.4646, 170.0787],
+              TrimBox: [14.1732, 14.1732, 269.2914, 155.9055],
+            },
+          },
+          thumbnail_urls: ["thumb-1"],
+        },
+      ],
+    });
+
+    expect(snapshot.trimCrop).toBeUndefined();
+    expect(snapshot.pdfSizeMm?.widthMm).toBeCloseTo(90, 1);
+    expect(snapshot.pdfSizeMm?.heightMm).toBeCloseTo(50, 1);
+  });
 });
