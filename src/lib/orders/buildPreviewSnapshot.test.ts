@@ -121,7 +121,7 @@ describe("buildPreviewSnapshot", () => {
           page_range_start: null,
           page_range_end: null,
           is_color: true,
-          is_duplex: false,
+          is_duplex: true,
           label: "Body",
           color: null,
           sort_order: 0,
