@@ -86,6 +86,25 @@ export default function OrderBuild() {
   // catalog_sizes) so what the customer sees matches what admins curate.
   const { data: options = [] } = useCatalogBackedOptions(productFamilyId, effectiveBranchId);
   const { data: variantLinks = [] } = useProductVariantLinks(productFamilyId);
+
+  // Catalog-linked sizes for this family (drives auto-seed of Document Size
+  // for products that have no explicit product_options row — e.g. large-format
+  // pull-up banners which only expose a Variant selector to customers).
+  const { data: familyCatalogLinks = [] } = useQuery({
+    queryKey: ["product_catalog_links_size", productFamilyId],
+    queryFn: async () => {
+      if (!productFamilyId) return [] as { item_code: string }[];
+      const { data, error } = await supabase
+        .from("product_catalog_links")
+        .select("item_code")
+        .eq("product_family_id", productFamilyId)
+        .eq("catalog", "size");
+      if (error) throw error;
+      return (data ?? []) as { item_code: string }[];
+    },
+    enabled: !!productFamilyId,
+  });
+
   const variantOptions = useMemo(
     () =>
       (variantLinks ?? [])
