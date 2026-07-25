@@ -1,54 +1,38 @@
 ## Problem
 
-Finishing groups like **Stapling**, **Hole Punching**, **Folding**, and **Binding** currently only offer chargeable choices — the customer has no way to pick "none". Lamination already works correctly because the master catalog has a `lam-none` row that the option adapter promotes to the default.
+Adding an Executive variant price for Pull-up Banners fails with:
+- Branch scope: `duplicate key value violates unique constraint "rcc_branch_unique"`
+- Tenant scope: `duplicate key value violates unique constraint "rcc_tenant_unique"`
 
-## Fix (two layers, so it works everywhere)
+## Root cause (confirmed via pg_indexes)
 
-### 1. Seed "None" rows into `catalog_finishing` (source of truth)
+On `public.rate_card_clicks` the three scope unique indexes are inconsistent:
 
-Add one row per optional finishing category, following the existing `lam-none` convention that `optionAdapter.finishingRowsToValues` already recognises:
+```text
+rcc_master_unique  (size, colour, sides, COALESCE(variant_code,''))       -- master
+rcc_tenant_unique  (tenant_id, size, colour, sides, COALESCE(variant_code,''))  -- tenant
+rcc_branch_unique  (branch_id, size, colour, sides)                       -- branch — MISSING variant_code
+```
 
-| category      | code            | label         | metadata          |
-| ------------- | --------------- | ------------- | ----------------- |
-| stapling      | staple-none     | None          | `{ none: true }`  |
-| hole_punching | hole-punch-none | None          | `{ none: true }`  |
-| folding       | fold-none       | None (flat)   | `{ none: true }`  |
-| binding       | bind-none       | None (loose)  | `{ none: true }`  |
-| collating     | collate-none    | None          | `{ none: true }`  |
-| packaging     | pack-none       | None          | `{ none: true }`  |
-| trimming      | trim-none       | None          | `{ none: true }`  |
+So at branch scope, Economy (size=2000x850, colour=full_colour, sides=single) and Executive with the same size/colour/sides collide — the index treats them as the same row.
 
-- `is_active = true`, `pricing_basis = 'per_document'`, `sort_order = 0`.
-- No price rows created — headline price falls to 0.
-- Migration is idempotent (`ON CONFLICT DO NOTHING` on `(category, code)` — after ensuring the partial unique index exists per current schema).
-- Backfill the corresponding branch/tenant inherited rows via the existing `ensure_branch_pricing_seeded` / seeding trigger so every branch immediately sees "None" in its rate card.
+The tenant-scope error the user also saw is the same class of bug at the write path: when the matrix inserts a variant row at tenant scope without passing `variant_code`, the `COALESCE(variant_code,'')` in the tenant index collapses Economy and Executive to the same key. Fixing the branch index removes the branch error; the tenant error needs the insert path to actually send `variant_code`.
 
-The adapter's existing `noneIndex` detection then makes "None" the seeded default for each of these groups automatically — no adapter changes needed.
+## Fix
 
-### 2. Render-time safety net in `OptionsPanel.tsx`
+1. Migration: drop and recreate `rcc_branch_unique` to include `variant_code`, matching the master/tenant shape.
 
-For groups whose values array comes from **manual** `product_options.values` (not the catalog) — e.g. the legacy Stapling / Hole Punching / Fold Type / Binding rows shown in the DB check — synthesise a leading "None" entry (slug `<category>-none`, price 0, `is_default` when no other default exists) whenever:
+   ```sql
+   DROP INDEX IF EXISTS public.rcc_branch_unique;
+   CREATE UNIQUE INDEX rcc_branch_unique
+     ON public.rate_card_clicks (branch_id, size, colour, sides, COALESCE(variant_code, ''))
+     WHERE scope_type = 'branch';
+   ```
 
-- the option is not marked `is_required`, AND
-- the values array does not already contain a none-like slug/label.
+2. Verify the insert path in `VariantPricingMatrix.tsx` (and any hook it calls, e.g. `useResolvedRateCardClicks` writers) actually sends `variant_code` for every scope — not just branch. If a tenant-scope add omits it, populate it from the selected variant before insert.
 
-This means the fix works even for products still on manual values, without a data migration touching every product family's JSON.
-
-Pricing engine impact: selecting the synthetic "None" slug already resolves to `price_impact = 0` in both `calculateItemPrice` and `calculatePriceFromRateCard`, so no pricing code changes are required. Preview/render code that keys off slugs like `staple-corner` continues to work — "None" simply doesn't match any effect and renders as a plain document.
-
-### 3. Admin visibility
-
-In the master pricing / rate-card editors, the seeded "None" rows appear as read-only 0-price entries alongside the chargeable ones, so admins can confirm the option is on offer. No new UI needed — the existing catalog list will show them.
+3. Sanity-check that any existing branch rows aren't already duplicated on the new key before creating the unique index (query first; if duplicates exist from earlier failed clones, delete the redundant one keeping the row with the non-null `variant_code`).
 
 ## Out of scope
 
-- No changes to Lamination / Cover Lamination (already correct).
-- No changes to catalog categories that are inherently required (e.g. **Paper**, **Size**, **Print colour**, **Sides**).
-- No pricing/preview refactors.
-
-## Verification
-
-1. Run the migration; confirm the 7 new `catalog_finishing` rows exist and are inherited into a test branch.
-2. Open the Stapled & Loose Pages configurator (screenshot in the report): Stapling dropdown should now list **None** (default), Corner Staple (+R 1,50/doc), Double Staple Edge (+R 2,50/doc).
-3. Same check for Hole Punching, Folding, Binding on their respective product families.
-4. Confirm price for a plain single-sided A4 with all finishing set to "None" matches the base click+paper cost with no finishing surcharge.
+No UI changes needed unless step 2 finds the insert genuinely omits `variant_code`. Master/tenant indexes are already correct.
