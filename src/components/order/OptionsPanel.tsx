@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import type { Tables } from "@/integrations/supabase/types";
-import { isStructuredValues } from "@/lib/productOptionTypes";
+import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { humaniseSlug } from "@/lib/utils";
+
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
   Accordion,
