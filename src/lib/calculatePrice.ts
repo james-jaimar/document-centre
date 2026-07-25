@@ -613,12 +613,12 @@ export function calculatePriceFromRateCard(
     finishedSize: string,
     cellColour: "mono" | "colour",
     cellSides: "simplex" | "duplex"
-  ): { unit: number; sourceSize: string; nUp: number; lineId: string } | null {
+  ): { unit: number; sourceSize: string; nUp: number; lineId: string; variantCode: string | null } | null {
     const candidates = CHILD_PARENTS[finishedSize] ?? [{ parent: finishedSize, nUp: 1 }];
     // Variant precedence: spec.variant_code → selected_options["Variant"] → null.
     const variantCode =
       (spec.variant_code ?? spec.selected_options?.["Variant"] ?? null) || null;
-    let best: { unit: number; sourceSize: string; nUp: number; lineId: string } | null = null;
+    let best: { unit: number; sourceSize: string; nUp: number; lineId: string; variantCode: string | null } | null = null;
     for (const cand of candidates) {
       // Prefer a row that matches the variant exactly; otherwise fall back
       // to a variant-less row (legacy / non-variant products).
@@ -634,16 +634,23 @@ export function calculatePriceFromRateCard(
         return codeLower === parentLower || labelUpper === cand.parent;
       });
 
+      const hasVariantRows = matches.some((c) => !!(c as any).variant_code);
       const row =
-        matches.find((c) => (c as any).variant_code === variantCode) ??
         (variantCode
-          ? matches.find((c) => !(c as any).variant_code)
+          ? matches.find((c) => (c as any).variant_code === variantCode)
           : matches.find((c) => !(c as any).variant_code)) ??
+        (!hasVariantRows ? matches.find((c) => !(c as any).variant_code) : undefined) ??
         null;
       if (!row) continue;
       const perPiece = Number(row.sell_price) / cand.nUp;
       if (!best || perPiece < Number(best.unit) / best.nUp) {
-        best = { unit: Number(row.sell_price), sourceSize: cand.parent, nUp: cand.nUp, lineId: row.id };
+        best = {
+          unit: Number(row.sell_price),
+          sourceSize: cand.parent,
+          nUp: cand.nUp,
+          lineId: row.id,
+          variantCode: ((row as any).variant_code ?? null) || null,
+        };
       }
     }
     return best;
@@ -725,9 +732,10 @@ export function calculatePriceFromRateCard(
       // n-up: parent rate divided across the imposed pieces.
       const unit = tieredParentUnit / rate.nUp;
       const sectionLabel = section.label ? `${section.label}: ` : "";
+      const variantNote = rate.variantCode ? ` ${rate.variantCode}` : "";
       const impNote = rate.nUp > 1 ? ` (${rate.nUp}-up on ${rate.sourceSize})` : "";
       lines.push({
-        label: `${sectionLabel}Print ${size} ${sectionColour} ${sectionSides}${impNote}`,
+        label: `${sectionLabel}Print ${size}${variantNote} ${sectionColour} ${sectionSides}${impNote}`,
         type: "per_page",
         unit_amount: unit,
         multiplier: clicks,
