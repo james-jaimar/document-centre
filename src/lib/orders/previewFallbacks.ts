@@ -4,6 +4,7 @@ export interface PreviewSourceDocument {
   id?: string | null;
   order_item_id?: string | null;
   file_path?: string | null;
+  storage_path?: string | null;
   page_count?: number | null;
   page_width_mm?: number | null;
   page_height_mm?: number | null;
@@ -28,7 +29,7 @@ const asPreflight = (doc: PreviewSourceDocument): Record<string, any> =>
 
 const processedPathFor = (doc: PreviewSourceDocument) => {
   const processed = asPreflight(doc).processed_file_path as string | undefined;
-  return processed || doc.file_path || null;
+  return processed || doc.file_path || doc.storage_path || null;
 };
 
 const getTrimBox = (doc: PreviewSourceDocument): number[] | undefined => {
@@ -85,9 +86,25 @@ const getTrimCrop = (doc: PreviewSourceDocument): TrimCrop | undefined => {
 
 export function sourceDocumentsForJob(job: any, sourceDocuments: PreviewSourceDocument[] = []) {
   const sourceOrderItemId = job?.configuration?.source_order_item_id as string | undefined;
-  if (!sourceOrderItemId) return [];
-  return sourceDocuments
-    .filter((doc) => doc.order_item_id === sourceOrderItemId)
+  const matches = sourceOrderItemId
+    ? sourceDocuments.filter((doc) => doc.order_item_id === sourceOrderItemId)
+    : [];
+
+  if (matches.length > 0) {
+    return matches
+      .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+  }
+
+  const sourceAssets = job?.configuration?.source_assets;
+  if (!Array.isArray(sourceAssets)) return [];
+  return sourceAssets
+    .filter((asset: any) => typeof asset?.storage_path === "string" && asset.storage_path.length > 0)
+    .map((asset: any, index: number) => ({
+      file_path: asset.storage_path,
+      storage_path: asset.storage_path,
+      page_count: Number(asset.page_count ?? 0),
+      sort_order: index,
+    }))
     .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
 }
 
