@@ -55,6 +55,7 @@ export default function PdfPageView({
   const [cachedData, setCachedData] = useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = useState(!!cacheKey);
   const [rendered, setRendered] = useState(false);
+  const [renderRetryLevel, setRenderRetryLevel] = useState(0);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -66,7 +67,8 @@ export default function PdfPageView({
   // placeholder reappears immediately for the next page.
   useEffect(() => {
     setRendered(false);
-  }, [pdfUrl, pageNumber, cacheKey]);
+    setRenderRetryLevel(0);
+  }, [pdfUrl, pageNumber, cacheKey, width, height]);
 
   // When a cacheKey is provided, fetch via the blob cache instead of
   // letting react-pdf hit the network directly.
@@ -108,7 +110,12 @@ export default function PdfPageView({
   const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(3, window.devicePixelRatio || 1)) : 1;
   const OVERSAMPLE = 3;
   const MAX_RENDER_PX = Math.round(4800 * dpr);
-  const oversampleScale = Math.min(OVERSAMPLE, Math.max(1, MAX_RENDER_PX / Math.max(displayWidth, 1)));
+  const MAX_RENDER_AREA_PX = Math.round(24_000_000 * dpr);
+  const longestEdgeScale = MAX_RENDER_PX / Math.max(displayWidth, displayHeight, 1);
+  const areaScale = Math.sqrt(MAX_RENDER_AREA_PX / Math.max(displayWidth * displayHeight, 1));
+  const baseOversampleScale = Math.max(1, Math.min(OVERSAMPLE, longestEdgeScale, areaScale));
+  const retryCeiling = renderRetryLevel === 0 ? OVERSAMPLE : renderRetryLevel === 1 ? 2 : 1.25;
+  const oversampleScale = Math.max(1, Math.min(baseOversampleScale, retryCeiling));
   const renderWidth = Math.round(displayWidth * oversampleScale);
 
 
@@ -232,6 +239,7 @@ export default function PdfPageView({
             }}
           >
             <Page
+              key={`${pageNumber}-${renderWidth}-${renderRetryLevel}`}
               pageNumber={pageNumber}
               width={renderWidth}
               renderTextLayer={false}
@@ -248,9 +256,16 @@ export default function PdfPageView({
                 if (mountedRef.current) setRendered(true);
               }}
               onRenderError={() => {
-                // If the crisp render fails, surface the placeholder-only
-                // fallback rather than leaving a blank canvas over it.
-                if (mountedRef.current) setError(true);
+                if (!mountedRef.current) return;
+                // Large trim-cropped business-card renders can hit browser
+                // canvas limits. Retry at lower render scales before falling
+                // back to the thumbnail placeholder.
+                if (renderRetryLevel < 2 && oversampleScale > 1.3) {
+                  setRendered(false);
+                  setRenderRetryLevel((level) => level + 1);
+                  return;
+                }
+                setError(true);
               }}
             />
           </div>

@@ -83,6 +83,7 @@ export default function DocumentPreview({
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
+  const [resolvedPdfSources, setResolvedPdfSources] = useState<(PdfSource | null)[] | undefined>(undefined);
   const [pocketCoverUrl, setPocketCoverUrl] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const retryRef = useRef(false);
@@ -166,6 +167,51 @@ export default function DocumentPreview({
     return () => { cancelled = true; };
   }, [thumbnailPaths, pocketCoverPath]);
 
+  // `pdfSources` can arrive either with already-signed URLs (live builder) or
+  // persisted storage paths (placed-order snapshot). Resolve storage paths here
+  // so saved customer/admin previews can render from the original PDF, not only
+  // the thumbnail rasters.
+  useEffect(() => {
+    if (!pdfSources) {
+      setResolvedPdfSources(undefined);
+      return;
+    }
+
+    const resolveDirect = (p: string | undefined): string | null => {
+      if (!p) return "";
+      if (p.startsWith("data:") || p.startsWith("http://") || p.startsWith("https://")) return p;
+      return null;
+    };
+
+    const uniquePaths = Array.from(new Set(
+      pdfSources
+        .map((source) => source?.url)
+        .filter((url): url is string => !!url && resolveDirect(url) === null)
+    ));
+
+    if (uniquePaths.length === 0) {
+      setResolvedPdfSources(pdfSources);
+      return;
+    }
+
+    let cancelled = false;
+    batchSignUrls(uniquePaths).then((map) => {
+      if (cancelled) return;
+      setResolvedPdfSources(
+        pdfSources.map((source) => {
+          if (!source) return null;
+          const direct = resolveDirect(source.url);
+          const signedUrl = direct ?? map.get(source.url);
+          return signedUrl ? { ...source, url: signedUrl } : null;
+        })
+      );
+    }).catch(() => {
+      if (!cancelled) setResolvedPdfSources(pdfSources.map(() => null));
+    });
+
+    return () => { cancelled = true; };
+  }, [pdfSources]);
+
   const handlePageChange = useCallback(
     (p: number) => setPage(Math.max(0, Math.min(p, thumbnailPaths.length - 1))),
     [setPage, thumbnailPaths.length]
@@ -215,7 +261,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={resolvedPdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
@@ -227,5 +273,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={resolvedPdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
 }

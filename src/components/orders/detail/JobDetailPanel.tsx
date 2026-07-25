@@ -226,6 +226,11 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
           bindingEdge={previewSnap.bindingEdge}
           bindingArt={previewSnap.bindingArt ?? bindingArtFromSlug((config as any)?.raw_spec?.selected_options?.Binding)}
           pageAspectRatio={previewSnap.pageAspectRatio ?? undefined}
+          pdfSources={previewSnap.pdfSources}
+          canvasSizeMm={previewSnap.canvasSizeMm}
+          pdfSizeMm={previewSnap.pdfSizeMm}
+          scaleMode={previewSnap.scaleMode}
+          trimCrop={previewSnap.trimCrop}
           pocketCoverPath={previewSnap.pocketCoverThumbnail}
           onClose={() => setPreviewOpen(false)}
         />

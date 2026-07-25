@@ -19,12 +19,9 @@
  * should filter out these synthetic faces (see `displayPageNumbers`).
  */
 import type {
-  CanvasSize,
-  PdfSource,
   PreviewEffects,
   ProductPreviewType,
   TabPosition,
-  TrimCrop,
 } from "@/components/preview/previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "@/components/preview/previewTypes";
 import {
@@ -40,8 +37,6 @@ interface DocLike {
   page_count: number | null;
   page_width_mm?: number | null;
   page_height_mm?: number | null;
-  file_path?: string | null;
-  preflight_data?: unknown;
   thumbnail_urls: unknown;
 }
 
@@ -69,7 +64,6 @@ interface PageInfo {
   thumbnailUrl: string;
   pageIndex: number;
   isColor: boolean;
-  filePath?: string | null;
   section?: SectionLike;
   label?: string;
   color?: string;
@@ -84,100 +78,6 @@ const NON_CONTENT_ROLES = new Set([
   "pvc_cover_front", "pvc_cover_back",
   "inside_back_cover_card", "back_cover_card", "inside_back_blank",
 ]);
-
-const PT_TO_MM = 25.4 / 72;
-
-function asNumberBox(value: unknown): number[] | undefined {
-  return Array.isArray(value) && value.length === 4 && value.every((n) => Number.isFinite(Number(n)))
-    ? value.map((n) => Number(n))
-    : undefined;
-}
-
-function getPreflight(doc: DocLike | undefined): Record<string, unknown> {
-  return ((doc?.preflight_data as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
-}
-
-function getProcessedPdfPath(doc: DocLike): string | null {
-  const preflight = getPreflight(doc);
-  const processed = typeof preflight.processed_file_path === "string"
-    ? preflight.processed_file_path
-    : null;
-  return processed || doc.file_path || null;
-}
-
-function getBoxes(doc: DocLike | undefined): Record<string, unknown> {
-  const boxes = getPreflight(doc).boxes;
-  return boxes && typeof boxes === "object" ? (boxes as Record<string, unknown>) : {};
-}
-
-function getTrimBox(doc: DocLike | undefined): number[] | undefined {
-  const preflight = getPreflight(doc);
-  const explicit = asNumberBox(preflight.trim_box_pt);
-  if (explicit) return explicit;
-  const boxes = getBoxes(doc);
-  return asNumberBox(boxes.TrimBox) ?? asNumberBox(boxes.CropBox);
-}
-
-function boxSizeMm(box: number[]): CanvasSize {
-  return {
-    widthMm: Math.abs(box[2] - box[0]) * PT_TO_MM,
-    heightMm: Math.abs(box[3] - box[1]) * PT_TO_MM,
-  };
-}
-
-function resolvePdfSizeMm(doc: DocLike | undefined): CanvasSize | undefined {
-  const trimBox = getTrimBox(doc);
-  if (trimBox) {
-    const size = boxSizeMm(trimBox);
-    if (size.widthMm > 0 && size.heightMm > 0) return size;
-  }
-
-  const widthMm = Number(doc?.page_width_mm);
-  const heightMm = Number(doc?.page_height_mm);
-  return widthMm > 0 && heightMm > 0 ? { widthMm, heightMm } : undefined;
-}
-
-function resolveTrimCrop(doc: DocLike | undefined): TrimCrop | undefined {
-  const trimBox = getTrimBox(doc);
-  if (!doc || !trimBox) return undefined;
-
-  const boxes = getBoxes(doc);
-  const mediaBox = asNumberBox(boxes.MediaBox);
-  let mediaWmm = Number(doc.page_width_mm) || 0;
-  let mediaHmm = Number(doc.page_height_mm) || 0;
-
-  if (mediaBox) {
-    const media = boxSizeMm(mediaBox);
-    if (media.widthMm > 0 && media.heightMm > 0) {
-      mediaWmm = media.widthMm;
-      mediaHmm = media.heightMm;
-    }
-  }
-
-  if (!mediaWmm || !mediaHmm) return undefined;
-
-  const trim = boxSizeMm(trimBox);
-  if (mediaWmm - trim.widthMm < 1 && mediaHmm - trim.heightMm < 1) return undefined;
-
-  // Match PreviewPanel's double-crop guard: if the PDF page stored in the doc
-  // row is already TrimBox-sized, do not apply a second CSS TrimBox clip.
-  const pageW = Number(doc.page_width_mm) || 0;
-  const pageH = Number(doc.page_height_mm) || 0;
-  if (pageW > 0 && pageH > 0) {
-    const distTrim = Math.abs(pageW - trim.widthMm) + Math.abs(pageH - trim.heightMm);
-    const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
-    if (distTrim < 2 && distMedia - distTrim > 2) return undefined;
-  }
-
-  const left = (Math.min(trimBox[0], trimBox[2]) * PT_TO_MM) / mediaWmm;
-  const top = 1 - (Math.max(trimBox[1], trimBox[3]) * PT_TO_MM) / mediaHmm;
-  const width = trim.widthMm / mediaWmm;
-  const height = trim.heightMm / mediaHmm;
-
-  if (![left, top, width, height].every(Number.isFinite)) return undefined;
-  if (width <= 0 || height <= 0 || width > 1 || height > 1) return undefined;
-  return { left, top, width, height };
-}
 
 function resolveEffects(
   selectedOptions: Record<string, string>,
@@ -379,7 +279,6 @@ function buildPageSequence(
         thumbnailUrl: thumbnails[i] ?? "",
         pageIndex: i,
         isColor: section.is_color,
-        filePath: getProcessedPdfPath(doc),
         section,
       });
 
@@ -452,13 +351,6 @@ function buildPageSequence(
 
 export interface PreviewSnapshot {
   thumbnails: string[];
-  /** Per-rendered-face PDF source paths. `url` is intentionally stored as a
-   * storage key; DocumentPreview signs it at render time. */
-  pdfSources?: (PdfSource | null)[];
-  canvasSizeMm?: CanvasSize;
-  pdfSizeMm?: CanvasSize;
-  scaleMode?: "fit" | "fill";
-  trimCrop?: TrimCrop;
   product_type: ProductPreviewType;
   effects: PreviewEffects;
   bindingEdge: "left" | "top";
@@ -473,9 +365,6 @@ export interface PreviewSnapshot {
   tabPositions: TabPosition[];
   displayPageNumbers: (number | null)[];
   faceLabels: string[];
-  /** Ring binders only: uploaded front-cover thumbnail painted in the
-   * binder's transparent pocket. Not part of the open-sheet sequence. */
-  pocketCoverThumbnail?: string;
 }
 
 export function buildPreviewSnapshot(input: {
@@ -484,9 +373,8 @@ export function buildPreviewSnapshot(input: {
   productOptions: OptionLike[];
   sections: SectionLike[];
   documents: DocLike[];
-  scaleMode?: "fit" | "fill";
 }): PreviewSnapshot {
-  const { productType, selectedOptions, productOptions, sections, documents, scaleMode } = input;
+  const { productType, selectedOptions, productOptions, sections, documents } = input;
   const isBound = BOUND_TYPES.has(productType);
 
   const effects = resolveEffects(selectedOptions, productOptions);
@@ -521,9 +409,8 @@ export function buildPreviewSnapshot(input: {
     const frontSource = fp[0];
     fp.unshift({
       thumbnailUrl: frontSource?.thumbnailUrl ?? "",
-      pageIndex: frontSource?.pageIndex ?? 0,
+      pageIndex: 0,
       isColor: frontSource?.isColor ?? true,
-      filePath: frontSource?.filePath ?? null,
     });
     roles.unshift("pvc_cover_front");
     fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, isColor: true });
@@ -536,22 +423,6 @@ export function buildPreviewSnapshot(input: {
   // sequence stores ONLY real physical faces (front_cover if uploaded, body,
   // blank_back, tab/tab_back, insert/insert_back).
   const isRingBinder = productType === "ring_binder";
-
-  // Ring binders: the uploaded front cover lives in the binder's transparent
-  // pocket (a hardware face), NOT as the first page of the inside sheet
-  // stack. Strip the leading front_cover entry (and the synthetic blank_back
-  // that follows a simplex single-page cover) from the open sequence so the
-  // first inside spread starts at body page 1.
-  let pocketCoverThumbnail: string | undefined;
-  if (isRingBinder && roles[0] === "front_cover") {
-    pocketCoverThumbnail = fp[0]?.thumbnailUrl || undefined;
-    fp.splice(0, 1);
-    roles.splice(0, 1);
-    if ((roles[0] as string) === "blank_back") {
-      fp.splice(0, 1);
-      roles.splice(0, 1);
-    }
-  }
 
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
   // Ring binders are hardware — they have no printed back cover sheet.
@@ -597,12 +468,6 @@ export function buildPreviewSnapshot(input: {
   });
 
   const thumbnails = fp.map((p) => p.thumbnailUrl);
-  const pdfSources = fp.map((p) => (
-    p.filePath && p.pageIndex >= 0
-      ? { url: p.filePath, pageNumber: p.pageIndex + 1, cacheKey: p.filePath }
-      : null
-  ));
-  const hasPdfSources = pdfSources.some((source) => source !== null);
   const colorFlags = fp.map((p) => p.isColor);
   const sectionTypes = fp.map((p) => p.section?.section_type ?? "body");
   const pageLabels = fp.map((p) => p.label ?? "");
@@ -657,14 +522,9 @@ export function buildPreviewSnapshot(input: {
   });
 
   const docWithSize = documents.find((d) => d.page_width_mm && d.page_height_mm);
-  const docWithPdfSource = documents.find((d) => !!getProcessedPdfPath(d));
-  const pdfSizeMm = resolvePdfSizeMm(docWithPdfSource ?? docWithSize);
-  const trimCrop = resolveTrimCrop(docWithPdfSource ?? docWithSize);
   let pageAspectRatio: number | null =
-    pdfSizeMm
-      ? pdfSizeMm.widthMm / pdfSizeMm.heightMm
-      : docWithSize && docWithSize.page_width_mm && docWithSize.page_height_mm
-        ? Number(docWithSize.page_width_mm) / Number(docWithSize.page_height_mm)
+    docWithSize && docWithSize.page_width_mm && docWithSize.page_height_mm
+      ? Number(docWithSize.page_width_mm) / Number(docWithSize.page_height_mm)
       : null;
   // Business cards fallback: standard 90×50mm = 1.8
   if (pageAspectRatio === null && isBusinessCards) pageAspectRatio = 1.8;
@@ -691,10 +551,6 @@ export function buildPreviewSnapshot(input: {
 
   return {
     thumbnails,
-    ...(hasPdfSources ? { pdfSources } : {}),
-    ...(pdfSizeMm ? { pdfSizeMm, canvasSizeMm: pdfSizeMm } : {}),
-    ...(scaleMode ? { scaleMode } : {}),
-    ...(trimCrop ? { trimCrop } : {}),
     product_type: productType,
     effects,
     bindingEdge,
@@ -709,6 +565,5 @@ export function buildPreviewSnapshot(input: {
     tabPositions,
     displayPageNumbers,
     faceLabels,
-    pocketCoverThumbnail,
   };
 }

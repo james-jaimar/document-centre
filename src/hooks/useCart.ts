@@ -465,7 +465,7 @@ export function usePlaceOrder() {
             ? supabase
                 .from("documents")
                 .select(
-                  "id, order_item_id, file_name, page_count, file_size, page_width_mm, page_height_mm, thumbnail_urls, sort_order, backend_asset_id"
+                  "id, order_item_id, file_name, file_path, page_count, file_size, page_width_mm, page_height_mm, thumbnail_urls, preflight_data, sort_order, backend_asset_id"
                 )
                 .in("order_item_id", itemIds)
                 .order("sort_order")
@@ -559,6 +559,7 @@ export function usePlaceOrder() {
             productOptions: familyOptions as any,
             sections: itemSections as any,
             documents: itemDocs as any,
+            scaleMode: item.spec?.scale_mode,
           });
         } catch (e) {
           console.warn("[placeOrder] preview snapshot failed, using fallback", e);
