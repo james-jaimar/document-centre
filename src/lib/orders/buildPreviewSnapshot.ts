@@ -159,6 +159,16 @@ function resolveTrimCrop(doc: DocLike | undefined): TrimCrop | undefined {
   const trim = boxSizeMm(trimBox);
   if (mediaWmm - trim.widthMm < 1 && mediaHmm - trim.heightMm < 1) return undefined;
 
+  // Match PreviewPanel's double-crop guard: if the PDF page stored in the doc
+  // row is already TrimBox-sized, do not apply a second CSS TrimBox clip.
+  const pageW = Number(doc.page_width_mm) || 0;
+  const pageH = Number(doc.page_height_mm) || 0;
+  if (pageW > 0 && pageH > 0) {
+    const distTrim = Math.abs(pageW - trim.widthMm) + Math.abs(pageH - trim.heightMm);
+    const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
+    if (distTrim < 2 && distMedia - distTrim > 2) return undefined;
+  }
+
   const left = (Math.min(trimBox[0], trimBox[2]) * PT_TO_MM) / mediaWmm;
   const top = 1 - (Math.max(trimBox[1], trimBox[3]) * PT_TO_MM) / mediaHmm;
   const width = trim.widthMm / mediaWmm;
@@ -474,8 +484,9 @@ export function buildPreviewSnapshot(input: {
   productOptions: OptionLike[];
   sections: SectionLike[];
   documents: DocLike[];
+  scaleMode?: "fit" | "fill";
 }): PreviewSnapshot {
-  const { productType, selectedOptions, productOptions, sections, documents } = input;
+  const { productType, selectedOptions, productOptions, sections, documents, scaleMode } = input;
   const isBound = BOUND_TYPES.has(productType);
 
   const effects = resolveEffects(selectedOptions, productOptions);
@@ -682,6 +693,7 @@ export function buildPreviewSnapshot(input: {
     thumbnails,
     ...(hasPdfSources ? { pdfSources } : {}),
     ...(pdfSizeMm ? { pdfSizeMm, canvasSizeMm: pdfSizeMm } : {}),
+    ...(scaleMode ? { scaleMode } : {}),
     ...(trimCrop ? { trimCrop } : {}),
     product_type: productType,
     effects,
