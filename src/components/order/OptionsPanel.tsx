@@ -187,7 +187,9 @@ export default function OptionsPanel({
     .filter((o) =>
       blocksActive ? !PACK_MANAGED_OPTION_NAMES.has(o.name.trim().toLowerCase()) : true,
     )
-    .sort((a, b) => a.sort_order - b.sort_order);
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map(withNoneInjected);
+
 
   const lockedFor = (name: string) => lockedDisplay?.[name];
   const suppressSet = new Set(suppressPriceDeltaFor ?? []);
