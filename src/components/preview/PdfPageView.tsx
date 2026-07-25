@@ -179,7 +179,8 @@ export default function PdfPageView({
       style={{ width: displayWidth, height: displayHeight, ...style }}
     >
       {/* Placeholder thumbnail shown instantly; fades out once the crisp
-          pdf.js render completes. */}
+          pdf.js render completes. Kept BEHIND the canvas so an unfaded
+          placeholder can never obscure a successful render. */}
       {placeholderUrl && (
         <img
           src={placeholderUrl}
@@ -194,6 +195,7 @@ export default function PdfPageView({
             opacity: rendered ? 0 : 1,
             transition: "opacity 150ms ease-out",
             pointerEvents: "none",
+            zIndex: 0,
           }}
         />
       )}
@@ -219,8 +221,9 @@ export default function PdfPageView({
         onLoadError={() => setError(true)}
       >
         {/* Outer slot sized to the requested display dimensions; the inner
-            div oversamples the PDF render and CSS-scales it back down. */}
-        <div style={{ width: displayWidth, height: displayHeight, overflow: "hidden" }}>
+            div oversamples the PDF render and CSS-scales it back down.
+            Positioned above the placeholder so the crisp canvas always wins. */}
+        <div style={{ width: displayWidth, height: displayHeight, overflow: "hidden", position: "relative", zIndex: 1 }}>
           <div
             style={{
               width: renderWidth,
@@ -244,6 +247,11 @@ export default function PdfPageView({
               onRenderSuccess={() => {
                 if (mountedRef.current) setRendered(true);
               }}
+              onRenderError={() => {
+                // If the crisp render fails, surface the placeholder-only
+                // fallback rather than leaving a blank canvas over it.
+                if (mountedRef.current) setError(true);
+              }}
             />
           </div>
         </div>
@@ -251,3 +259,4 @@ export default function PdfPageView({
     </div>
   );
 }
+
