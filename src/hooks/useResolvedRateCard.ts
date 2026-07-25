@@ -60,8 +60,18 @@ function mergeByKey<T extends { scope_type?: string }>(
 
 // ─── Clicks ──────────────────────────────────────────────────────────────
 
+const canonicalClickSize = (r: RateCardClick) =>
+  String((r as any).catalog_size_code ?? r.size ?? "")
+    .trim()
+    .toLowerCase();
+
+const clickVariant = (r: RateCardClick) =>
+  String((r as any).variant_code ?? "")
+    .trim()
+    .toLowerCase();
+
 const clickKey = (r: RateCardClick) =>
-  `${String(r.size).toUpperCase()}|${r.colour}|${r.sides}`;
+  `${canonicalClickSize(r)}|${r.colour}|${r.sides}|${clickVariant(r)}`;
 
 export function useResolvedRateCardClicks(args: Args) {
   return useQuery({
