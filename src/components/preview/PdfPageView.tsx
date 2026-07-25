@@ -101,10 +101,16 @@ export default function PdfPageView({
   // Oversample so small on-screen renders (e.g. business cards at ~300 CSS
   // px) still look crisp. We render the PDF into a larger canvas and then
   // CSS-scale it down to the slot size. Cap to keep memory bounded.
-  const OVERSAMPLE = 2.5;
-  const MAX_RENDER_PX = 3600;
+  //
+  // We also lift the ceiling with devicePixelRatio so retina/4K displays
+  // don't downsample a 3600px canvas into a soft image at large zoom
+  // (e.g. the business-card lightbox).
+  const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(3, window.devicePixelRatio || 1)) : 1;
+  const OVERSAMPLE = 3;
+  const MAX_RENDER_PX = Math.round(4800 * dpr);
   const oversampleScale = Math.min(OVERSAMPLE, Math.max(1, MAX_RENDER_PX / Math.max(displayWidth, 1)));
   const renderWidth = Math.round(displayWidth * oversampleScale);
+
 
   // When cached, pass the ArrayBuffer directly — pdf.js won't fetch again.
   // When not cached (no cacheKey), fall back to URL-based loading.
