@@ -73,6 +73,14 @@ const clickVariant = (r: RateCardClick) =>
 const clickKey = (r: RateCardClick) =>
   `${canonicalClickSize(r)}|${r.colour}|${r.sides}|${clickVariant(r)}`;
 
+export function mergeResolvedClickRows(
+  master: RateCardClick[],
+  tenant: RateCardClick[],
+  branch: RateCardClick[],
+) {
+  return mergeByKey<RateCardClick>(master, tenant, branch, clickKey);
+}
+
 export function useResolvedRateCardClicks(args: Args) {
   return useQuery({
     queryKey: KEY("clicks", args),
@@ -115,11 +123,10 @@ export function useResolvedRateCardClicks(args: Args) {
       if (m.error) throw m.error;
       if (t.error) throw t.error;
       if (b.error) throw b.error;
-      return mergeByKey<RateCardClick>(
+      return mergeResolvedClickRows(
         (m.data ?? []) as RateCardClick[],
         (t.data ?? []) as RateCardClick[],
         (b.data ?? []) as RateCardClick[],
-        clickKey,
       );
     },
   });

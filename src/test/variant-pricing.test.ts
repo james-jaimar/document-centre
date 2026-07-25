@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculatePriceFromRateCard, type ItemSpec, type RateCardBundle } from "@/lib/calculatePrice";
 import type { ProductRecipe } from "@/lib/productRecipe";
+import { mergeResolvedClickRows } from "@/hooks/useResolvedRateCard";
 
 const recipe: ProductRecipe = {
   engine: "click_charges",
@@ -60,6 +61,13 @@ const rateCard: RateCardBundle = {
 };
 
 describe("variant click pricing", () => {
+  it("keeps same-size variants as separate effective rows", () => {
+    const resolved = mergeResolvedClickRows([], [], rateCard.clicks as any);
+
+    expect(resolved).toHaveLength(2);
+    expect(resolved.map((r) => (r as any).variant_code).sort()).toEqual(["economy", "executive"]);
+  });
+
   it("prices same-size variants independently", () => {
     const economy = calculatePriceFromRateCard(
       {
