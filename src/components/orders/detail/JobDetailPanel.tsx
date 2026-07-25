@@ -11,6 +11,7 @@ import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
+import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
 
 interface Props {
   job: any;
@@ -20,9 +21,11 @@ interface Props {
   currency?: string;
   /** Parent order's human-readable order number — used for download filenames. */
   orderNumber?: string | null;
+  /** Original uploaded customer documents, used when older snapshots lack PDF metadata. */
+  sourceDocuments?: PreviewSourceDocument[];
 }
 
-export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }: Props) {
+export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, sourceDocuments = [] }: Props) {
   const fmt = (amount: number) => formatPrice(Number(amount ?? 0), currency);
   const config: JobConfiguration = job.configuration || {};
   const sections: ConfigSection[] = config.sections || [];
@@ -30,8 +33,14 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
   const jobDocs = documents.filter((d: any) => d.job_id === job.id);
 
   const previewSnap = ((config as any).preview ?? {}) as any;
-  const previewThumbs: string[] = Array.isArray(previewSnap.thumbnails) ? previewSnap.thumbnails : [];
-  const hasPreview = previewThumbs.some((t) => !!t);
+  const fallbackPreview = buildPreviewFallback(sourceDocumentsForJob(job, sourceDocuments));
+  const savedThumbs: string[] = Array.isArray(previewSnap.thumbnails) ? previewSnap.thumbnails : [];
+  const previewThumbs = savedThumbs.length > 0 ? savedThumbs : fallbackPreview.thumbnails;
+  const previewPdfSources = Array.isArray(previewSnap.pdfSources) && previewSnap.pdfSources.length > 0
+    ? previewSnap.pdfSources
+    : fallbackPreview.pdfSources;
+  const previewPageCount = Math.max(previewThumbs.length, previewPdfSources.length);
+  const hasPreview = previewThumbs.some((t) => !!t) || previewPdfSources.length > 0;
   const [previewOpen, setPreviewOpen] = useState(false);
 
   return (
@@ -75,7 +84,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
             onClick={() => setPreviewOpen(true)}
           >
             <Eye className="h-3.5 w-3.5 mr-1.5" />
-            View preview ({previewThumbs.filter(Boolean).length} pages)
+             View preview ({previewPageCount} pages)
           </Button>
         ) : (
           <div className="text-[11px] text-muted-foreground italic text-center">
@@ -225,12 +234,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
           faceLabels={previewSnap.faceLabels}
           bindingEdge={previewSnap.bindingEdge}
           bindingArt={previewSnap.bindingArt ?? bindingArtFromSlug((config as any)?.raw_spec?.selected_options?.Binding)}
-          pageAspectRatio={previewSnap.pageAspectRatio ?? undefined}
-          pdfSources={previewSnap.pdfSources}
-          canvasSizeMm={previewSnap.canvasSizeMm}
-          pdfSizeMm={previewSnap.pdfSizeMm}
+          pageAspectRatio={previewSnap.pageAspectRatio ?? fallbackPreview.pageAspectRatio ?? undefined}
+          pdfSources={previewPdfSources}
+          canvasSizeMm={previewSnap.canvasSizeMm ?? fallbackPreview.canvasSizeMm}
+          pdfSizeMm={previewSnap.pdfSizeMm ?? fallbackPreview.pdfSizeMm}
           scaleMode={previewSnap.scaleMode}
-          trimCrop={previewSnap.trimCrop}
+          trimCrop={previewSnap.trimCrop ?? fallbackPreview.trimCrop}
           pocketCoverPath={previewSnap.pocketCoverThumbnail}
           onClose={() => setPreviewOpen(false)}
         />

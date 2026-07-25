@@ -80,7 +80,7 @@ export default function BranchOrderDetail() {
     );
   }
 
-  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile } = data;
+  const { order, jobs, addresses, timeline, messages, payments, documents, sourceDocuments, orderedByProfile } = data as any;
 
   const linkedBranchIds = new Set(linkedBranches.map((b) => b.id));
   const belongsToBranch =
@@ -266,7 +266,7 @@ export default function BranchOrderDetail() {
         <div>
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
-            <JobDetailPanel job={selectedJob} documents={documents} currency={order.currency} orderNumber={order.order_number} />
+            <JobDetailPanel job={selectedJob} documents={documents} sourceDocuments={sourceDocuments} currency={order.currency} orderNumber={order.order_number} />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
               No jobs in this order

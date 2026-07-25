@@ -28,12 +28,19 @@ export default function PreviewLightbox({
 }: PreviewLightboxProps) {
   const [page, setPage] = useState(initialPage);
   const isRingBinder = productType === "ring_binder";
+  const pdfSources = (extraProps as any).pdfSources as unknown[] | undefined;
+  const pdfPageCount = pdfSources?.length ?? 0;
+  const pageCount = Math.max(thumbnailPaths.length, pdfPageCount);
+  const safeThumbnailPaths =
+    thumbnailPaths.length >= pageCount
+      ? thumbnailPaths
+      : Array.from({ length: pageCount }, (_, i) => thumbnailPaths[i] ?? "");
 
   // Ring binder uses the shared sheet-flip view model: total navigable views
   // depend on the physical sequence length (closed + open turns).
   const total = isRingBinder
-    ? ringTotalViews(thumbnailPaths.length)
-    : thumbnailPaths.length;
+    ? ringTotalViews(pageCount)
+    : pageCount;
 
   // Customer-facing counter: ignore synthetic blank-back / tab / insert faces
   // (those have a null entry in displayPageNumbers). Falls back to the raw
@@ -55,19 +62,19 @@ export default function PreviewLightbox({
 
   const goNext = useCallback(() => {
     if (isRingBinder) {
-      setPage((p) => stepRingView(p, thumbnailPaths.length, 1));
+      setPage((p) => stepRingView(p, pageCount, 1));
     } else {
       setPage((p) => Math.min(p + step, total - 1));
     }
-  }, [isRingBinder, thumbnailPaths.length, step, total]);
+  }, [isRingBinder, pageCount, step, total]);
 
   const goPrev = useCallback(() => {
     if (isRingBinder) {
-      setPage((p) => stepRingView(p, thumbnailPaths.length, -1));
+      setPage((p) => stepRingView(p, pageCount, -1));
     } else {
       setPage((p) => Math.max(p - step, 0));
     }
-  }, [isRingBinder, thumbnailPaths.length, step]);
+  }, [isRingBinder, pageCount, step]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -108,7 +115,7 @@ export default function PreviewLightbox({
 
       <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
         <DocumentPreview
-          thumbnailPaths={thumbnailPaths}
+          thumbnailPaths={safeThumbnailPaths}
           productType={productType}
           width={window.innerWidth * 0.95}
           height={window.innerHeight * 0.92}
