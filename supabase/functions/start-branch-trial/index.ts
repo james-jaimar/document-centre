@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { activateTenantOnFirstLiveBranch } from "../_shared/activateTenant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,6 +122,9 @@ Deno.serve(async (req) => {
   await sb.from("branch_subscriptions" as any)
     .update({ trial_started_via: "no_card_14", status: "trialing" })
     .eq("branch_id", branch.id);
+
+  // First live branch → flip tenant live + lift demo gate (idempotent).
+  await activateTenantOnFirstLiveBranch(sb, branch.tenant_id, "start-branch-trial");
 
   // Persist acceptances in the immutable ledger — same shape as create-branch-checkout.
   try {
