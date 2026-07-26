@@ -659,7 +659,7 @@ async function handlePreview(req: Request, ctx: UserContext) {
   const url = new URL(req.url);
   const branchId = url.searchParams.get("branch_id");
   if (!branchId) throw new Error("branch_id required");
-  await assertBranchAccess(ctx.admin, ctx.userId, branchId);
+  await assertBranchAccess(ctx.admin, ctx.userClient, ctx.userId, branchId);
   const { data: branch } = await ctx.admin
     .from("branches")
     .select("tenant_id")
@@ -695,7 +695,7 @@ async function handleApply(req: Request, ctx: UserContext) {
   const filename = (body.filename ?? "pricing.xlsx") as string;
   const changes = (body.changes ?? []) as DiffRow[];
   if (!branchId) throw new Error("branch_id required");
-  await assertBranchAccess(ctx.admin, ctx.userId, branchId);
+  await assertBranchAccess(ctx.admin, ctx.userClient, ctx.userId, branchId);
   const { data: branch } = await ctx.admin
     .from("branches")
     .select("tenant_id")
@@ -771,7 +771,7 @@ async function handleUndo(req: Request, ctx: UserContext) {
     .single();
   if (!snap) throw new Error("Snapshot not found");
   if (snap.reverted_at) throw new Error("Snapshot already reverted");
-  await assertBranchAccess(ctx.admin, ctx.userId, snap.branch_id);
+  await assertBranchAccess(ctx.admin, ctx.userClient, ctx.userId, snap.branch_id);
 
   let reverted = 0;
   const errors: string[] = [];
@@ -818,7 +818,7 @@ Deno.serve(async (req) => {
     if (action === "export") {
       const branchId = url.searchParams.get("branch_id");
       if (!branchId) throw new Error("branch_id required");
-      await assertBranchAccess(ctx.admin, ctx.userId, branchId);
+      await assertBranchAccess(ctx.admin, ctx.userClient, ctx.userId, branchId);
       return await handleExport(ctx.admin, branchId);
     }
     if (action === "preview") return await handlePreview(req, ctx);
