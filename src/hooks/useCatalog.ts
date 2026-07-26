@@ -251,8 +251,8 @@ export function useDeleteCatalogPaper() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("catalog_papers" as any).delete().eq("id", id);
-      if (error) throw error;
+      await deleteByIdChecked("catalog_papers", id);
+
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
   });
