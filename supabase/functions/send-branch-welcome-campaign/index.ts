@@ -190,7 +190,11 @@ Deno.serve(async (req) => {
           } else {
             const { data: list } = await admin.auth.admin.listUsers();
             const ex = list?.users?.find((u: any) => u.email?.toLowerCase() === email);
-            if (!ex) throw new Error("Could not locate or create auth user");
+            if (!ex) {
+              throw new Error(createErr?.message
+                ? `An account with this email couldn't be created or located: ${createErr.message}`
+                : "An account with this email couldn't be created or located.");
+            }
             profileId = ex.id;
           }
           await admin.from("profiles").upsert(
