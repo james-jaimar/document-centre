@@ -1,62 +1,46 @@
-## What went wrong
+## What I found
 
-No `platform_email_campaigns` row exists for the 514-branch attempt (largest recent campaign was `total_recipients=1`), so the function failed **before** the campaign insert on line 128 of `send-branch-marketing-campaign/index.ts` — it never even started dispatching. The most likely cause (unconfirmed — I have no captured error text; edge logs for this function are empty) is the branches lookup at line 80:
+This specific failure is **not showing as a Microsoft/Outlook send failure** and **not showing as the GCP email worker failing**.
 
-```ts
-admin.from("branches").select(...).eq("tenant_id", tenant_id).in("id", branch_ids)
-```
+Evidence checked:
+- Campaign `833fa5aa-8268-4163-ac72-538702d9e2ba`, created `2026-07-26 18:37:03`, has `514` recipients: `30` marked sent and `484` marked failed.
+- The failed recipient rows all contain the same kind of error: `Rate limit exceeded for trace 019f9f... Retry after ...ms`.
+- The `email_outbox` queue only has successfully queued/sent branch-marketing rows around that time; the 484 failures did **not** become outbox send failures.
+- `send-email` Edge Function logs show lots of boots/shutdowns around the send window, but no application-level Microsoft/Graph error.
+- Current code calls the `send-email` Edge Function once per recipient from inside `send-branch-marketing-campaign`, with parallel dispatch. That means a 514-recipient campaign creates hundreds of internal Edge Function invocations in a burst.
 
-PostgREST turns `.in()` into a URL query string. 514 UUIDs = ~19 KB in the URL, which trips the PostgREST/proxy URL length limit and comes back as an error before anything else runs.
+So the practical cause is: **our campaign Edge Function is fan-out calling another Edge Function too aggressively and hitting an Edge/Supabase gateway invocation throttle before most emails reach the durable outbox queue.**
 
-Even if we fix that, the current shape has a second, bigger problem: **everything runs sequentially inside one request**. For each of 514 branches we do 2–3 DB calls + a `fetch` to `send-email` + more DB updates. That easily exceeds the edge function wall-clock limit, and the client sees a network error mid-run.
+## Fix plan
 
-Step 1 of the plan verifies the URL-length theory (or replaces it with the real cause) before we change the transport shape.
+1. **Stop fan-out calling `send-email` for campaigns**
+   - Refactor `send-branch-marketing-campaign` so it no longer performs 514 HTTP calls to `/functions/v1/send-email`.
+   - Instead, it will render each recipient email and insert rows directly into `public.email_outbox` in database chunks.
+   - This makes campaign creation a durable queueing operation, not a burst of Edge Function invocations.
 
-## Plan
+2. **Use one platform sender resolution per campaign**
+   - Resolve the active platform email account once at the start.
+   - Use that `email_account_id` on every queued marketing email.
+   - If no platform sender exists, fail the campaign clearly before creating hundreds of failed recipient rows.
 
-### 1. Confirm the immediate error
+3. **Queue in safe chunks**
+   - Insert outbox rows in controlled chunks, e.g. 50 at a time.
+   - Update `platform_email_campaign_recipients` as `queued`/`sent` only after the corresponding outbox row is created.
+   - Keep the existing tracking pixel and activation link per recipient.
 
-- Re-run the campaign against a small subset (say 20 branches) to make sure the current code path is healthy at small scale.
-- Re-run against the full 514 with light instrumentation (`console.log` around the branches lookup + campaign insert) and read logs via `supabase--edge_function_logs`. Only then commit to a root cause.
+4. **Kick the Cloud Run email worker once, not hundreds of times**
+   - After queueing a batch/campaign, call the email worker notification once.
+   - The Python worker/Cloud Tasks pipeline then drains `email_outbox` normally.
 
-### 2. Fix the branches lookup so it survives 500+ IDs
+5. **Make Microsoft throttling safer if it happens later**
+   - Keep provider-level Microsoft Graph 429 handling in the worker as retryable.
+   - Apply the configured sender pacing more strictly: the active platform account currently has `send_delay_ms = 1500` and Graph OAuth transport, but the worker path should explicitly respect the configured delay/concurrency instead of relying on campaign Edge Function pacing.
 
-Regardless of which query blew up, `.in("id", branch_ids)` with 500+ UUIDs is unsafe. Replace it with either:
+6. **Repair/retry this campaign safely**
+   - Do not resend the 30 already-sent recipients.
+   - After the code fix, add a safe retry path for campaign `833fa5aa-8268-4163-ac72-538702d9e2ba` that queues only the 484 failed recipients whose error starts with `Rate limit exceeded for trace`.
+   - Update the campaign counts after retry queueing so the UI reflects the corrected state.
 
-- a chunked lookup (200 IDs per call, merged), **or**
-- a single `select("id, name, email, slug, url_slug, trading_name").eq("tenant_id", tenant_id)` and filter to the requested set in memory (tenant has ~517 branches — one round trip, no URL pressure).
+## Expected result
 
-The in-memory filter is simpler and matches the "we already have the full branch list on the client" reality.
-
-### 3. Move the send loop off the request thread
-
-Rework `send-branch-marketing-campaign` to return quickly and dispatch in the background:
-
-1. Resolve template + tenant + branches + platform sender (fast).
-2. Insert the `platform_email_campaigns` row.
-3. **Bulk-insert all recipient rows as `status='pending'`** in a single call (chunked at ~500 per insert if needed) — no per-branch round-trips up front.
-4. Kick off dispatch with `EdgeRuntime.waitUntil(dispatch(campaignId))` and immediately return `{ campaign_id, total_recipients }` to the caller.
-5. Inside `dispatch`, iterate pending recipients in **small parallel batches** (e.g. `Promise.all` over 10 at a time) — each batch mints/refreshes the activation page, renders HTML, appends the tracking pixel, and calls `send-email` (which just enqueues to `email_outbox` — the real SMTP send happens in the Python worker, so this is cheap).
-6. After each batch, update `platform_email_campaigns.sent_count / failed_count`. Mark campaign `completed` (or `partial`) at the end.
-
-`send-email` already enqueues rather than sending inline, so all we need the edge function to do is create outbox rows. That's fast enough to finish 500+ within the background budget.
-
-### 4. Client UX
-
-- The composer (`PlatformCommunications` / marketing campaign modal) currently awaits the full response. Change it to:
-  - accept the immediate `{ campaign_id, total_recipients }` response,
-  - show a toast "Queued 514 recipients — sending in the background",
-  - subscribe to / poll `platform_email_campaigns` + `platform_email_campaign_recipients` for progress (the existing campaign card UI already reads these).
-
-### 5. SMTP-side note (no code change needed)
-
-The Microsoft Graph transport in `pdf-server/app/email/graph_oauth_client.py` sends one message per API call. The Python worker's concurrency is capped per-account by `account_slot(...)` (see `email_tasks.py`), so even if we enqueue 514 rows at once the worker will pace them correctly. No throttling logic needs to live in the edge function.
-
-## Technical notes
-
-- Files to change:
-  - `supabase/functions/send-branch-marketing-campaign/index.ts` — lookup fix, bulk recipient insert, `EdgeRuntime.waitUntil` background dispatch, batched parallelism.
-  - Frontend composer (likely `src/pages/platform/PlatformCommunications.tsx` or its child modal — will confirm in build mode) — treat response as "queued", switch to progress polling.
-- No schema changes. Existing `platform_email_campaign_recipients` columns (`status`, `sent_at`, `error`, `action_link`) already model per-recipient state.
-- Keep `dry_run` behavior synchronous (it's bounded and admins want the results inline).
-- Preserve current per-branch idempotency (reuse existing `platform_branch_activation_pages.slug`).
+A 500+ recipient campaign should return quickly as queued, create durable `email_outbox` rows without Edge Function rate-limit failures, and let the existing email worker send through Outlook at a controlled pace.
