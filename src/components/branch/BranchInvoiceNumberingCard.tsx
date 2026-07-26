@@ -85,7 +85,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
     setForm({
       prefix: (b.invoice_prefix as string) ?? "",
       suffix: (b.invoice_suffix as string) ?? "",
-      format: (b.invoice_number_format as string) ?? "",
+      format: (b.invoice_number_format as string) || INHERIT,
       next_number:
         b.invoice_next_number !== undefined && b.invoice_next_number !== null
           ? String(b.invoice_next_number)
