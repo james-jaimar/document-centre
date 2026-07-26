@@ -7227,20 +7227,15 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: undefined
       }
-      next_number:
-        | {
-            Args: { p_app_id: string; p_sequence_type: string }
-            Returns: number
-          }
-        | {
-            Args: {
-              p_app_id: string
-              p_branch_id?: string
-              p_sequence_type: string
-              p_tenant_id?: string
-            }
-            Returns: number
-          }
+      next_number: {
+        Args: {
+          p_app_id: string
+          p_branch_id?: string
+          p_sequence_type: string
+          p_tenant_id?: string
+        }
+        Returns: number
+      }
       platform_legal_acceptance_status: {
         Args: never
         Returns: {
