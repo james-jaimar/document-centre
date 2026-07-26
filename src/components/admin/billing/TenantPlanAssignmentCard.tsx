@@ -6,12 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Building2, RefreshCw } from "lucide-react";
+import { Loader2, Building2, RefreshCw, Search } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useBranchPlans } from "@/hooks/useBranchSubscriptions";
 import { useTenantPlanAssignment, useAssignTenantPlan } from "@/hooks/useTenantPlanAssignment";
+import { StripeCatalogueDialog } from "./StripeCatalogueDialog";
 
 interface Props { tenantId: string }
 
