@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { activateTenantOnFirstLiveBranch } from "../_shared/activateTenant.ts";
 import {
   platformNotify,
   tenantOwnerEmails,
@@ -258,6 +259,11 @@ async function upsertBranchSubscription(
   if (error) {
     console.error("Error upserting branch subscription:", error);
     throw error;
+  }
+
+  // First live branch → flip tenant live + lift demo gate (idempotent).
+  if (sub.status === "active" || sub.status === "trialing") {
+    await activateTenantOnFirstLiveBranch(supabaseAdmin, tenantId, `stripe-webhook:${sub.status}`);
   }
 }
 
