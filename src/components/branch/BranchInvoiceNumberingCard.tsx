@@ -46,7 +46,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
   const [form, setForm] = useState<FormState>({
     prefix: "",
     suffix: "",
-    format: "",
+    format: INHERIT,
     next_number: "",
   });
   const [saving, setSaving] = useState(false);
