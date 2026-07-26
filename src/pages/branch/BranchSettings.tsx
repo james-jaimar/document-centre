@@ -21,6 +21,7 @@ import { BranchOnboardingChecklist } from "@/components/branch/BranchOnboardingC
 import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
+import { BranchInvoiceNumberingCard } from "@/components/branch/BranchInvoiceNumberingCard";
 import { useSearchParams } from "react-router-dom";
 import { isBranchManagerRole } from "@/lib/auth/branchPermissions";
 
