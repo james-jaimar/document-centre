@@ -20,8 +20,9 @@ interface Props {
   branchId: string;
 }
 
+const INHERIT = "__inherit__";
 const FORMAT_PRESETS = [
-  { value: "", label: "Inherit from tenant" },
+  { value: INHERIT, label: "Inherit from tenant" },
   { value: "{prefix}-{yyyy}-{seq}", label: "PREFIX-YYYY-00001" },
   { value: "{prefix}-{seq}", label: "PREFIX-00001" },
   { value: "{prefix}-{yyyymm}-{seq}", label: "PREFIX-YYYYMM-00001" },
