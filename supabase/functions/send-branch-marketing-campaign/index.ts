@@ -10,6 +10,7 @@ import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
+import { appendTrackingPixel } from "../_shared/emailTracking.ts";
 
 // No hero image — admins insert their own images via the template editor.
 
@@ -240,8 +241,10 @@ Deno.serve(async (req) => {
           }).select("id").single();
         if (rcptErr || !rcpt) throw new Error(`recipient_insert: ${rcptErr?.message}`);
 
-        // NOTE: no tracking injection on marketing emails (see comment above).
-        const trackedHtml = html;
+        // Inject a 1x1 open-pixel only; leave <a href> URLs untouched so the
+        // branded activation link stays a clean direct URL. This gives us
+        // "at least this many opened" telemetry without polluting visible links.
+        const trackedHtml = await appendTrackingPixel(html, campaignId, rcpt.id, null);
 
         if (!platformSender) {
           await admin.from("platform_email_campaign_recipients").update({

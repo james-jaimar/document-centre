@@ -1,48 +1,36 @@
-
-## Problem
-
-On **Tenant Settings → Billing → Tenant Subscription Plan**, the "Refresh from Stripe" button only re-verifies the single `stripe_price_id` already stored on the currently-selected `platform_pricing_plans` row. There is no way to see what products/prices actually exist in the Stripe catalogue and pick one — the link between a tenant plan and a Stripe price is effectively hard-coded at seed time.
-
 ## Goal
 
-Let a platform admin, from the Tenant Subscription Plan card:
+Track whether Postnet (and other) recipients actually open the marketing/activation blast, without touching the visible `<a href>` links (which stay clean, direct URLs — so branded activation links remain the primary success metric).
 
-1. Pull the **live list** of Stripe products + prices from the connected account.
-2. Choose any active price and attach it to the selected `platform_pricing_plans` row (updating `stripe_price_id`, unit amount, currency, and product name/label).
-3. Keep the existing "verify current" behaviour as a fallback.
+## Current state (verified)
 
-## Changes
+- `supabase/functions/_shared/emailTracking.ts` already exposes `appendTrackingPixel`, `rewriteLinksForTracking`, and `injectTracking`, signed with `EMAIL_TRACKING_HMAC_SECRET`.
+- The public `email-track` edge function already logs opens/clicks into `email_tracking_events` and rolls up `open_count` / `first_opened_at` / `click_count` on `platform_email_campaign_recipients`.
+- Welcome campaign (`send-branch-welcome-campaign`) and trigger dispatcher already inject full tracking.
+- `send-branch-marketing-campaign/index.ts` (lines 208-244) **explicitly skips tracking** with `const trackedHtml = html;`. That's the only reason marketing sends have no open data.
+- No Amplify rewrite exists for `/email-track` on the tenant custom domain, so pixel URLs will resolve to the raw Supabase functions host. That's acceptable for an invisible 1×1 GIF (recipient never sees the URL unless they view source), and is the same host already used by the welcome campaign.
 
-### 1. New edge function `stripe-list-catalog` (read-only)
-- Auth: same rules as `stripe-verify-price` (platform admin or active tenant admin).
-- Calls Stripe REST `GET /v1/products?active=true&limit=100&expand[]=data.default_price` and (optionally) `GET /v1/prices?active=true&limit=100&expand[]=data.product` to also surface non-default prices.
-- Returns a flat list: `[{ product_id, product_name, price_id, currency, unit_amount, unit_amount_decimal, recurring: {interval, interval_count} | null, active }]`.
-- Optional query filter: `currency` (to pre-filter by the tenant's region currency).
+## Change
 
-### 2. `TenantPlanAssignmentCard.tsx`
-- Add a **"Browse Stripe catalogue"** button next to the existing "Refresh from Stripe" button.
-- Opens a dialog that:
-  - Calls `stripe-list-catalog` (filtered by the selected region's currency when present).
-  - Shows a searchable table of Product · Price · Interval · Currency · Status.
-  - "Attach to this plan" action on each row updates the currently selected `platform_pricing_plans` record with:
-    - `stripe_price_id = <chosen price id>`
-    - `price = unit_amount / 100`
-    - `currency_code = currency` (if the column exists)
-    - Optionally refresh `plan_name` from Stripe product name (with a checkbox "also update plan label").
-  - Invalidates `platform_pricing_plans` / `branch_plans` queries and toasts a success message.
-- Keep the existing "Refresh from Stripe" button as-is for one-off verification of the already-linked price.
-- Show the currently attached `stripe_price_id` (masked, last 8 chars) under the Branch plan selector so it's obvious what's linked.
+1. **`send-branch-marketing-campaign/index.ts`**
+   - Import `appendTrackingPixel` from `../_shared/emailTracking.ts`.
+   - Replace `const trackedHtml = html;` with `const trackedHtml = await appendTrackingPixel(html, campaignId, rcpt.id, null);`.
+   - Keep the deliberate decision to **not** rewrite `<a href>` links — activation links stay as clean `https://<tenant>/activate/<slug>` URLs.
+   - Update the block comment above to reflect: "Inject 1×1 open pixel only; leave `<a href>` untouched so activation URLs remain branded."
 
-### 3. No DB schema change
-All writes go through the existing `platform_pricing_plans` update path already used by `refreshFromStripe`.
+2. **Platform Communications UI (`src/pages/platform/PlatformCommunications.tsx`)** — where the marketing recipient list is shown, surface the open data that will now start populating:
+   - Add an "Opened" column / badge next to each recipient row driven by `open_count > 0` and `first_opened_at`.
+   - Add a small campaign-level summary chip (e.g. `Opened 4 / 12`).
+   - No new queries needed if the recipients list already selects `*`; otherwise add `open_count, first_opened_at` to the select.
+
+3. **Secret check** — `EMAIL_TRACKING_HMAC_SECRET` is already required by the welcome campaign path, so nothing to add. If it were ever missing, `signTrackingToken` throws and the send would fail; the plan assumes it's set (welcome campaign already depends on it).
 
 ## Out of scope
-- Creating new plans from Stripe products (still a manual seed step in `PlatformMasterPricing`).
-- Editing coupons/promotion codes from the browse dialog (still linked in the Stripe dashboard).
-- Non-recurring / one-off Stripe prices — filtered out in the list.
 
-## Files touched
-- `supabase/functions/stripe-list-catalog/index.ts` (new)
-- `supabase/config.toml` (register the new function with `verify_jwt = true`)
-- `src/components/admin/billing/TenantPlanAssignmentCard.tsx` (browse dialog + attach action)
-- `src/components/admin/billing/StripeCatalogueDialog.tsx` (new; dialog UI)
+- Click tracking on marketing emails (would replace visible URLs with `functions.supabase.co/email-track?...`, defeating the "clean branded link" goal).
+- Amplify/tenant rewrite for `/email-track` — nice-to-have follow-up if we want the pixel host to also read as the tenant domain; not required for opens to work.
+- Per-campaign toggle for tracking — can add later if a customer objects; opens are industry-standard and unobtrusive.
+
+## Caveats to flag to the user
+
+- Open tracking is inherently approximate: Apple Mail Privacy Protection pre-fetches images, which inflates opens; Gmail proxies images, which is fine but hides IPs; plain-text-only clients never trigger it. Treat the number as "at least this many were opened / previewed."
