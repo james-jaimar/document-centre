@@ -301,6 +301,16 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
           </>
         )}
       </CardContent>
+      {selectedPlan && (
+        <StripeCatalogueDialog
+          open={browseOpen}
+          onOpenChange={setBrowseOpen}
+          planId={(selectedPlan as any).id}
+          planName={(selectedPlan as any).plan_name}
+          currentPriceId={(selectedPlan as any).stripe_price_id}
+          currency={(regions ?? []).find((r) => r.id === form.region_id)?.currency_code}
+        />
+      )}
     </Card>
   );
 }
