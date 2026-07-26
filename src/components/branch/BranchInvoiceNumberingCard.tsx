@@ -20,8 +20,9 @@ interface Props {
   branchId: string;
 }
 
+const INHERIT = "__inherit__";
 const FORMAT_PRESETS = [
-  { value: "", label: "Inherit from tenant" },
+  { value: INHERIT, label: "Inherit from tenant" },
   { value: "{prefix}-{yyyy}-{seq}", label: "PREFIX-YYYY-00001" },
   { value: "{prefix}-{seq}", label: "PREFIX-00001" },
   { value: "{prefix}-{yyyymm}-{seq}", label: "PREFIX-YYYYMM-00001" },
@@ -45,7 +46,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
   const [form, setForm] = useState<FormState>({
     prefix: "",
     suffix: "",
-    format: "",
+    format: INHERIT,
     next_number: "",
   });
   const [saving, setSaving] = useState(false);
@@ -84,7 +85,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
     setForm({
       prefix: (b.invoice_prefix as string) ?? "",
       suffix: (b.invoice_suffix as string) ?? "",
-      format: (b.invoice_number_format as string) ?? "",
+      format: (b.invoice_number_format as string) || INHERIT,
       next_number:
         b.invoice_next_number !== undefined && b.invoice_next_number !== null
           ? String(b.invoice_next_number)
@@ -101,7 +102,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
   const preview = useMemo(() => {
     const prefix = form.prefix || tenantPrefix;
     const suffix = form.suffix || tenantSuffix;
-    const format = form.format || tenantFormat;
+    const format = form.format && form.format !== INHERIT ? form.format : tenantFormat;
     const seq = form.next_number ? String(form.next_number).padStart(5, "0") : "00001";
     const now = new Date();
     const yyyy = String(now.getFullYear());
@@ -128,7 +129,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
       if (form.suffix.trim() === "") deletes.push("invoice_suffix");
       else upserts.push({ setting_key: "invoice_suffix", setting_value: form.suffix.trim(), value_type: "string" });
 
-      if (form.format === "") deletes.push("invoice_number_format");
+      if (form.format === INHERIT || form.format === "") deletes.push("invoice_number_format");
       else upserts.push({ setting_key: "invoice_number_format", setting_value: form.format, value_type: "string" });
 
       if (form.next_number.trim() === "") deletes.push("invoice_next_number");
