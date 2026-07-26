@@ -1,6 +1,42 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+/** Thrown when a DELETE returns no rows — typically means RLS filtered the
+ *  target row (e.g. current session is not platform_admin) or the row is
+ *  already gone. PostgREST returns HTTP 404 with code PGRST116 for this. */
+export class CatalogDeleteBlockedError extends Error {
+  constructor(table: string, id: string) {
+    super(
+      `Could not delete ${table} row ${id}. Either it no longer exists, or your session is not authorised to delete it (platform_admin required for master rows). Try signing out and back in.`,
+    );
+    this.name = "CatalogDeleteBlockedError";
+  }
+}
+
+/** Delete a single row by id and confirm at least one row was actually
+ *  removed. Chaining .select() after .delete() forces PostgREST to return the
+ *  deleted rows; if RLS filtered every candidate, the result is an empty
+ *  array (or a PGRST116 error), which we surface as a real error rather than
+ *  silently succeeding. */
+async function deleteByIdChecked(table: string, id: string) {
+  const { data, error } = await supabase
+    .from(table as any)
+    .delete()
+    .eq("id", id)
+    .select("id");
+  if (error) {
+    // PostgREST returns 404 / PGRST116 when RLS hides every candidate row.
+    if ((error as any).code === "PGRST116" || /not found/i.test(error.message)) {
+      throw new CatalogDeleteBlockedError(table, id);
+    }
+    throw error;
+  }
+  if (!data || data.length === 0) {
+    throw new CatalogDeleteBlockedError(table, id);
+  }
+}
+
+
 export type CatalogScope = "master" | "tenant" | "branch";
 export interface CatalogScopeArgs {
   scope?: CatalogScope;
