@@ -18,6 +18,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 interface UserContext {
   userId: string;
+  userClient: ReturnType<typeof createClient>;
   admin: ReturnType<typeof createClient>;
 }
 
@@ -31,21 +32,35 @@ async function getUser(req: Request): Promise<UserContext | null> {
   if (error || !data.user) return null;
   return {
     userId: data.user.id,
+    userClient: client,
     admin: createClient(SUPABASE_URL, SERVICE_KEY),
   };
 }
 
-async function assertBranchAccess(admin: any, userId: string, branchId: string) {
-  const { data, error } = await admin.rpc("user_can_manage_branch", { p_branch_id: branchId });
+async function assertBranchAccess(admin: any, userClient: any, userId: string, branchId: string) {
+  const { data, error } = await userClient.rpc("user_can_manage_branch", { p_branch_id: branchId });
   if (!error && data === true) return;
+  console.warn("branch-pricing-workbook access check fell back", {
+    branchId,
+    rpcFailed: !!error,
+    rpcMessage: error?.message ?? null,
+    rpcAllowed: data === true,
+  });
   // Fallback: check membership directly for manager-level roles.
-  const { data: mem } = await admin
+  const { data: mem, error: memError } = await admin
     .from("tenant_memberships")
-    .select("role,branch_id")
-    .eq("user_id", userId);
+    .select("role,branch_id,is_active")
+    .eq("profile_id", userId)
+    .eq("is_active", true);
+  if (memError) {
+    console.warn("branch-pricing-workbook membership fallback failed", {
+      branchId,
+      message: memError.message,
+    });
+  }
   const ok = (mem ?? []).some(
     (m: any) =>
-      (m.role === "owner" || m.role === "admin" || m.role === "branch_manager") &&
+      (m.role === "owner" || m.role === "admin" || m.role === "branch_manager" || m.role === "store_operator") &&
       (m.branch_id === null || m.branch_id === branchId),
   );
   if (!ok) throw new Error("Not authorised for this branch");
