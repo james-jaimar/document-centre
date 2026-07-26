@@ -808,29 +808,12 @@ export default function PreviewPanel({
     // Only apply crop if trim is meaningfully smaller than media (>1mm difference)
     if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
 
-    // GUARD: if the file the browser is about to render has already been
-    // cropped to the TrimBox on the server (its own page size ~= trim), a
-    // second CSS clip would over-crop by the trim inset on every side.
-    // Detect this by comparing the doc's reported page size against the
-    // TrimBox and the MediaBox — closer to TrimBox = already trimmed.
-    const pageW = Number(doc.page_width_mm) || 0;
-    const pageH = Number(doc.page_height_mm) || 0;
-    if (pageW > 0 && pageH > 0) {
-      const distTrim = Math.abs(pageW - trimW) + Math.abs(pageH - trimH);
-      const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
-      // Tolerance: within 1mm on both axes of trim, and clearly closer to
-      // trim than to media (>2mm delta).
-      if (distTrim < 2 && distMedia - distTrim > 2) {
-        if (import.meta.env.DEV) {
-          // eslint-disable-next-line no-console
-          console.debug(
-            "[PreviewPanel] Skipping trim crop — processed PDF already sized to TrimBox",
-            { file: doc.file_name, pageW, pageH, trimW, trimH, mediaWmm, mediaHmm },
-          );
-        }
-        return undefined;
-      }
-    }
+    // NOTE: no "already trimmed" guard based on page_width_mm — that value
+    // comes from preflight (TrimBox size) and doesn't reflect the actual
+    // MediaBox of the rendered PDF. When preflight reports MediaBox > TrimBox
+    // the file we render (processed or original) still carries the MediaBox,
+    // so we must always CSS-clip. The `mediaBox - trim < 1mm` early-out
+    // above already handles genuinely-trimmed files.
 
     const left = Math.min(resolvedTrimBox[0], resolvedTrimBox[2]) * PT_TO_MM / mediaWmm;
     const top = 1 - (Math.max(resolvedTrimBox[1], resolvedTrimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
