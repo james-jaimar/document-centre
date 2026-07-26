@@ -1,56 +1,32 @@
+## Problem
 
-## What's actually wrong
+Placing an order fails with:
+`generate_order_number failed: function public.next_number(uuid, unknown) is not unique`
 
-Branch activation emails are being enqueued as **branch-scoped mail** (tenant_id + branch_id set), so `resolveEmailAccount` in `supabase/functions/_shared/email-queue.ts` looks only at the branch's own senders, finds none (the branch has never been activated), and throws `EMAIL_NOT_CONFIGURED`. That's the log line at 14:53:43.
+## Root cause (confirmed via pg_proc)
 
-That's the wrong scope for activation. Activation is a **platform** email — it comes from Document Centre inviting a branch manager to sign in for the first time. It must send from the platform sender (`hello@document-centre.com`, currently the Microsoft 365 mailbox connected under Platform → Settings → Email), not from the branch. The current design was a leftover from before we blocked the automatic tenant/branch fallback to the platform sender.
+There are two overloads of `public.next_number` in the database:
 
-## Changes
+1. `next_number(p_app_id uuid, p_sequence_type text)` — legacy 2‑arg
+2. `next_number(p_app_id uuid, p_sequence_type text, p_tenant_id uuid, p_branch_id uuid)` — 4‑arg (added with per‑branch invoice numbering)
 
-### 1. Send activation emails as platform-scoped
+The 4‑arg version has DEFAULTs for `p_tenant_id` / `p_branch_id`, so a call like `next_number(p_app_id, 'order')` matches BOTH overloads and Postgres refuses with "is not unique". `generate_order_number` and `generate_quote_number` both call the 2‑arg form, so every order/quote placement now fails.
 
-`supabase/functions/_shared/sendBranchActivation.ts` — when calling `send-email`, set `tenant_id: null, branch_id: null` so `resolveEmailAccount` picks the platform default. Keep `related_type: "branch_activation"` and `related_id: branch_id` (plus `metadata.tenant_id`, `metadata.branch_id`) so Sent Mail and tracking still associate the message with the branch, but the *sender* is the platform mailbox.
+## Fix
 
-Same change in:
-- `supabase/functions/send-branch-welcome-campaign/index.ts`
-- `supabase/functions/send-branch-marketing-campaign/index.ts` (marketing outreach for activation is also platform-originated)
-- `supabase/functions/request-activation-email/index.ts` (self-service `/activate/:slug` path)
+Single migration to remove the ambiguity by dropping the legacy 2‑arg overload and routing everything through the 4‑arg version (which already defaults tenant/branch to NULL, preserving old behaviour for order/quote sequences that are app‑scoped only).
 
-The `from_name` for activation should be the tenant's display name where useful ("PostNet Sandton via Document Centre") but the underlying sender account stays the platform mailbox — no tenant/branch SMTP is required.
+Steps:
 
-### 2. Guardrail: refuse activation send when no platform sender exists
+1. `DROP FUNCTION public.next_number(uuid, text);` (the 2‑arg overload only — leaves the 4‑arg one intact).
+2. Recreate `generate_order_number` and `generate_quote_number` to call `next_number(p_app_id, 'order'/'quote', NULL, NULL)` explicitly, so the intent is unambiguous even if someone re‑adds an overload later.
+3. Leave `generate_invoice_number` / `issue_invoice_number` alone — they already pass all 4 args.
 
-Before enqueueing, check for an active platform `email_accounts` row (`tenant_id IS NULL AND branch_id IS NULL AND is_active`). If none:
-- `send-branch-welcome-campaign` / `send-branch-marketing-campaign`: mark the recipient `status: "failed"`, `error: "Platform sender mailbox not configured — connect one under Platform → Settings → Email."` and continue to the next branch (no throw).
-- `request-activation-email`: return `code: "email_not_configured"` (400) so `/activate/:slug` shows a clear message instead of the generic "Something went wrong".
+No app / TypeScript changes required. No RLS or grants change.
 
-### 3. Surface the failure clearly in the Platform Communications UI
+## Verification
 
-`src/pages/platform/PlatformCommunications.tsx`:
-- Render failed recipients with the returned `error` string in a red row.
-- If any recipient failed with the "Platform sender mailbox not configured" reason, show a top banner linking to `/platform/settings?tab=email`.
-
-### 4. Better duplicate-email error in `send-branch-welcome-campaign`
-
-Two clean-ups so "duplicate email" isn't opaque:
-- Reuse the branch-aware membership reconciliation from `_shared/sendBranchActivation.ts` (exact match → orphan reclaim → new membership) instead of the current tenant-only check that silently skips new-branch memberships.
-- Translate `unique_violation` from the membership insert into `"This email already manages another branch in this tenant — remove the existing membership first, or activate that branch instead."`. Replace the opaque `"Could not locate or create auth user"` throw with the actual auth error message.
-
-### 5. Verify
-
-- With the platform mailbox connected, re-send activation for demo4 → `send-email` log shows a queued row using the platform account, email arrives from `hello@document-centre.com`, recipient marked `sent`.
-- Temporarily disable the platform mailbox and re-send → recipient marked `failed_sender_not_configured` with the actionable message, no silent success.
-- Send activation to an email that already manages another branch in the same tenant → new membership row created, email arrives, `/welcome?token=…` signs into the new branch.
-- Existing tenant/branch-scoped mail (order confirmations, quotes, branch-authored messages) still requires a branch/tenant sender — unchanged behaviour.
-
-## Technical notes
-
-- No schema changes.
-- `resolveEmailAccount` already picks a platform-scope account when `tenant_id`/`branch_id` are both null and a platform default is active — we just need to *call* it that way for activation.
-- Files touched:
-  - `supabase/functions/_shared/sendBranchActivation.ts`
-  - `supabase/functions/send-branch-welcome-campaign/index.ts`
-  - `supabase/functions/send-branch-marketing-campaign/index.ts`
-  - `supabase/functions/request-activation-email/index.ts`
-  - `src/pages/platform/PlatformCommunications.tsx`
-- Deploy the four edge functions after edits.
+- Re-run `pg_proc` query to confirm only the 4‑arg `next_number` remains.
+- Place an order from the branch admin "as customer" flow and confirm order number is generated (e.g. `INV-00123`).
+- Create a spec quote and confirm quote number is generated.
+- Generate an invoice on a branch with a custom prefix to confirm branch‑scoped numbering still works.
