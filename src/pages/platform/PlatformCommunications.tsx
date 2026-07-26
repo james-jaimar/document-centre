@@ -362,12 +362,19 @@ function ComposeTab() {
       return;
     }
     setResult(data);
-    toast({
-      title: dryRun ? "Dry run complete" : "Campaign sent",
-      description: dryRun
-        ? `Ready ${totals.dry_run_ok ?? 0} · Failed ${totals.failed} · Skipped ${totals.skipped}`
-        : `Sent ${totals.sent} · Failed ${totals.failed} · Skipped ${totals.skipped}`,
-    });
+    if (!dryRun && data.queued) {
+      toast({
+        title: "Campaign queued",
+        description: `${totals.pending ?? 0} email(s) sending in the background. Refresh the campaign card to see progress.`,
+      });
+    } else {
+      toast({
+        title: dryRun ? "Dry run complete" : "Campaign sent",
+        description: dryRun
+          ? `Ready ${totals.dry_run_ok ?? 0} · Failed ${totals.failed} · Skipped ${totals.skipped}`
+          : `Sent ${totals.sent} · Failed ${totals.failed} · Skipped ${totals.skipped}`,
+      });
+    }
   };
 
   return (
