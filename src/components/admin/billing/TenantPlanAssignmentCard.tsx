@@ -6,12 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Building2, RefreshCw } from "lucide-react";
+import { Loader2, Building2, RefreshCw, Search } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useBranchPlans } from "@/hooks/useBranchSubscriptions";
 import { useTenantPlanAssignment, useAssignTenantPlan } from "@/hooks/useTenantPlanAssignment";
+import { StripeCatalogueDialog } from "./StripeCatalogueDialog";
 
 interface Props { tenantId: string }
 
@@ -39,6 +40,7 @@ async function getFunctionErrorMessage(error: any, fallback = "Verify failed") {
 export function TenantPlanAssignmentCard({ tenantId }: Props) {
   const qc = useQueryClient();
   const [verifying, setVerifying] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const { data: current, isLoading } = useTenantPlanAssignment(tenantId);
   const assign = useAssignTenantPlan();
 
@@ -194,20 +196,34 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                 </Select>
               </div>
               <div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <Label>Branch plan</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={refreshFromStripe}
-                    disabled={!selectedPlan || verifying}
-                    title="Pull live price/coupon from Stripe and update the database"
-                  >
-                    {verifying ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                    Refresh from Stripe
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setBrowseOpen(true)}
+                      disabled={!selectedPlan}
+                      title="Browse the live Stripe catalogue and attach any price to this plan"
+                    >
+                      <Search className="h-3 w-3 mr-1" />
+                      Browse Stripe catalogue
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={refreshFromStripe}
+                      disabled={!selectedPlan || verifying}
+                      title="Re-verify the currently attached price/coupon against Stripe"
+                    >
+                      {verifying ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                      Verify current
+                    </Button>
+                  </div>
                 </div>
                 <Select value={form.plan_slug} onValueChange={(v) => setForm((f) => ({ ...f, plan_slug: v }))}>
                   <SelectTrigger><SelectValue placeholder="Choose plan" /></SelectTrigger>
@@ -223,6 +239,11 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedPlan && (
+                  <p className="mt-1 text-[11px] text-muted-foreground font-mono">
+                    Attached price: {(selectedPlan as any).stripe_price_id || <span className="italic text-amber-600">none — click "Browse Stripe catalogue"</span>}
+                  </p>
+                )}
               </div>
               {hasStripeCoupon && (
                 <div className="md:col-span-2 rounded-md border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 p-3 text-xs text-emerald-900 dark:text-emerald-100">
@@ -280,6 +301,16 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
           </>
         )}
       </CardContent>
+      {selectedPlan && (
+        <StripeCatalogueDialog
+          open={browseOpen}
+          onOpenChange={setBrowseOpen}
+          planId={(selectedPlan as any).id}
+          planName={(selectedPlan as any).plan_name}
+          currentPriceId={(selectedPlan as any).stripe_price_id}
+          currency={(regions ?? []).find((r) => r.id === form.region_id)?.currency_code}
+        />
+      )}
     </Card>
   );
 }
