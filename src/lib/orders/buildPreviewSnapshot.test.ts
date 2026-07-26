@@ -153,7 +153,7 @@ describe("buildPreviewSnapshot", () => {
     expect(snapshot.scaleMode).toBe("fit");
   });
 
-  it("skips saved TrimBox clipping when the processed PDF is already trimmed", () => {
+  it("emits TrimBox clipping when MediaBox is larger than TrimBox, even if page dims match trim", () => {
     const snapshot = buildPreviewSnapshot({
       productType: "business_cards",
       selectedOptions: {},
@@ -191,8 +191,8 @@ describe("buildPreviewSnapshot", () => {
       ],
     });
 
-    expect(snapshot.trimCrop).toBeUndefined();
-    expect(snapshot.pdfSizeMm?.widthMm).toBeCloseTo(90, 1);
-    expect(snapshot.pdfSizeMm?.heightMm).toBeCloseTo(50, 1);
+    expect(snapshot.trimCrop).toBeDefined();
+    expect(snapshot.trimCrop!.width).toBeCloseTo(0.9, 2);
+    expect(snapshot.trimCrop!.height).toBeCloseTo(0.833, 2);
   });
 });
