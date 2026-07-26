@@ -111,6 +111,17 @@ Deno.serve(async (req) => {
     if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
     const appOrigin = resolved.origin;
 
+    // Preflight: marketing/activation emails send from the platform sender.
+    const { data: platformSender } = await admin
+      .from("email_accounts")
+      .select("id")
+      .is("tenant_id", null)
+      .is("branch_id", null)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    const NO_PLATFORM_SENDER = "Platform sender mailbox not configured — connect one under Platform → Settings → Email.";
+
     let campaignId: string | null = null;
     if (!dryRun) {
       const { data: campaign, error: campErr } = await admin
