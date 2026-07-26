@@ -1,45 +1,26 @@
-## Auto-activate tenant + auto-lift demo gate on first branch subscription
+## Goal
+For the **3at1** tenant, take every branch offline (`is_live = false`) except the `demo` branch, so branches only appear on the storefront once their subscription activates.
 
-When any branch of a tenant enters a live subscription state (14-day no-card trial, 30-day Stripe trial, or paid checkout), automatically:
+## Current state (verified)
+- 3at1 has ~40+ branches. All except a handful are already `status='incomplete'` / `trial_status='not_started'` (no active subscription).
+- Most of those are still flagged `is_live = true`, so their storefront routes resolve today.
+- Only `demo` has an active comp'd subscription and should remain live.
 
-1. **Flip the tenant to live** — set `tenants.is_active = true` if it isn't already. This is what the storefront hooks (`useTenantFromHost`, `useTenantFromSlug`) gate on, so the store becomes reachable.
-2. **Lift the demo/security page for that tenant** — if `tenant_demo_gate.enabled = true`, flip it to `false` the first time any branch under that tenant activates. A real live branch means the concept-demo disclaimer is no longer appropriate.
+## Change
+One data update via the insert/update tool:
 
-Both actions are idempotent and one-way (we don't re-disable if a subscription later cancels — admins keep manual control from that point on).
-
-### Where to hook
-
-Three entry points cover every activation path:
-
-- `supabase/functions/start-branch-trial/index.ts` — after the successful `start_branch_trial` RPC (14-day no-card).
-- `supabase/functions/create-branch-checkout/index.ts` — right after stamping `trial_started_via: "stripe_30"` / creating the Stripe session (covers 30-day trial-with-card and Activate-now paid).
-- `supabase/functions/stripe-webhook/index.ts` — inside `checkout.session.completed` and `customer.subscription.updated` when status becomes `active` or `trialing`, as the authoritative safety net (in case the browser never returns from Stripe).
-
-### Shared helper
-
-Add a small helper (inline in each function or as a shared util) `activateTenantOnFirstLiveBranch(sb, tenantId)` that runs two updates with the service-role client:
-
-```ts
-// 1. Ensure tenant is live
-await sb.from("tenants")
-  .update({ is_active: true })
-  .eq("id", tenantId)
-  .eq("is_active", false);   // no-op if already live
-
-// 2. Lift demo gate (only if currently enabled)
-await sb.from("tenant_demo_gate")
-  .update({ enabled: false })
-  .eq("tenant_id", tenantId)
-  .eq("enabled", true);
+```sql
+UPDATE branches b
+SET is_live = false
+FROM tenants t
+WHERE b.tenant_id = t.id
+  AND t.slug = '3at1'
+  AND b.slug <> 'demo'
+  AND b.is_live = true;
 ```
 
-Both updates are guarded by the current value so they only write once and don't fight an admin who intentionally re-enables either later.
+No schema change. No code change. The existing `BranchSlugRoute` already routes non-live branches to `StoreNotAvailable`, and the existing activation edge functions (`start-branch-trial`, `create-branch-checkout`, `stripe-webhook`) already flip `is_live = true` on successful trial start / paid activation, so branches will come back online automatically when their manager subscribes.
 
-### Notes
-
-- No schema changes required — `tenants.is_active` and `tenant_demo_gate.enabled` already exist.
-- Existing `StorefrontEntitlementGuard` / branch-level gates continue to control per-branch access; this only unblocks the tenant-wide storefront and removes the demo overlay.
-- No UI change; the platform admin still sees the toggles in `PlatformTenants` and `DemoModeCard` and can override manually.
-- Emit a short `console.log` from each entry point so we can trace which path triggered the flip in edge-function logs.
-
-Ready to build once you approve.
+## Out of scope
+- No change to the demo branch.
+- No change to any branch that already has an active/trialing subscription (the WHERE clause leaves those alone if they happen to be live — but per the query above, `demo` is the only such 3at1 branch today).
