@@ -323,17 +323,45 @@ ${logoBlock}
 
         const trackedHtml = await injectTracking(html, campaignId!, recipientRow.id, appOrigin);
 
+        // Preflight: if no platform sender is configured we won't be able to
+        // send this row — fail it cleanly with an actionable message instead
+        // of letting send-email return a swallowed EMAIL_NOT_CONFIGURED.
+        if (!platformSender) {
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: NO_PLATFORM_SENDER,
+          }).eq("id", recipientRow.id);
+          throw new Error(NO_PLATFORM_SENDER);
+        }
+
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-          body: JSON.stringify({ to: email, subject, html: trackedHtml, text: finalText || undefined }),
+          body: JSON.stringify({
+            to: email, subject, html: trackedHtml, text: finalText || undefined,
+            // Platform-scope send: activation is Document Centre inviting a
+            // new branch — must not use the (nonexistent) branch mailbox.
+            tenant_id: null, branch_id: null, app_id: tenant.app_id ?? null,
+            from_name: `${portalName} via Document Centre`,
+            category: "system",
+            related_type: "branch_activation",
+            related_id: b.id,
+            metadata: { tenant_id, branch_id: b.id, campaign_id: campaignId, recipient_id: recipientRow.id, kind: "branch_activation" },
+          }),
         });
+        const sendText = await sendResp.text();
+        let sendBody: any = null;
+        try { sendBody = JSON.parse(sendText); } catch { /* not JSON */ }
         if (!sendResp.ok) {
-          const t = await sendResp.text();
           await admin.from("platform_email_campaign_recipients").update({
-            status: "failed", error: `send-email ${sendResp.status}: ${t}`,
+            status: "failed", error: `send-email ${sendResp.status}: ${sendText}`,
           }).eq("id", recipientRow.id);
-          throw new Error(`send-email ${sendResp.status}: ${t}`);
+          throw new Error(`send-email ${sendResp.status}: ${sendText}`);
+        }
+        if (sendBody?.error === "EMAIL_NOT_CONFIGURED") {
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: NO_PLATFORM_SENDER,
+          }).eq("id", recipientRow.id);
+          throw new Error(NO_PLATFORM_SENDER);
         }
 
         sent++;
