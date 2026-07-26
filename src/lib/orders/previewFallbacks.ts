@@ -71,13 +71,10 @@ const getTrimCrop = (doc: PreviewSourceDocument): TrimCrop | undefined => {
   const { widthMm: trimW, heightMm: trimH } = trimSizeMm(trimBox);
   if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
 
-  const pageW = Number(doc.page_width_mm ?? 0);
-  const pageH = Number(doc.page_height_mm ?? 0);
-  if (pageW > 0 && pageH > 0) {
-    const distTrim = Math.abs(pageW - trimW) + Math.abs(pageH - trimH);
-    const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
-    if (distTrim < 2 && distMedia - distTrim > 2) return undefined;
-  }
+  // No page_width_mm-based "already trimmed" guard — that value is
+  // preflight-derived from the TrimBox and does not describe the rendered
+  // PDF's MediaBox. The `mediaBox - trim < 1mm` early-out above already
+  // covers files that are genuinely at TrimBox size.
 
   const left = (Math.min(trimBox[0], trimBox[2]) * PT_TO_MM) / mediaWmm;
   const top = 1 - (Math.max(trimBox[1], trimBox[3]) * PT_TO_MM) / mediaHmm;
