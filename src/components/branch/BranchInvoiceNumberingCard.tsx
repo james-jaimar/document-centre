@@ -129,7 +129,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
       if (form.suffix.trim() === "") deletes.push("invoice_suffix");
       else upserts.push({ setting_key: "invoice_suffix", setting_value: form.suffix.trim(), value_type: "string" });
 
-      if (form.format === "") deletes.push("invoice_number_format");
+      if (form.format === INHERIT || form.format === "") deletes.push("invoice_number_format");
       else upserts.push({ setting_key: "invoice_number_format", setting_value: form.format, value_type: "string" });
 
       if (form.next_number.trim() === "") deletes.push("invoice_next_number");
