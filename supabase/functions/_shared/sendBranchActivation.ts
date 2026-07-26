@@ -218,6 +218,11 @@ ${logoBlock}
 
   const finalText = textBody ?? htmlToText(htmlBody);
 
+  // Activation is a platform-originated email (Document Centre inviting a new
+  // branch to sign in for the first time), so send from the platform sender —
+  // NOT the branch/tenant sender (the branch has never been configured yet).
+  // We keep the tenant/branch association via related_type + metadata for
+  // Sent Mail filtering, but the outbound account is platform-scope.
   const sendResp = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
@@ -226,14 +231,24 @@ ${logoBlock}
       subject,
       html: finalHtml,
       text: finalText || undefined,
-      tenant_id: tenantId,
-      branch_id: branchId,
+      tenant_id: null,
+      branch_id: null,
       app_id: tenant.app_id ?? null,
+      from_name: `${portalName} via Document Centre`,
+      category: "system",
+      related_type: "branch_activation",
+      related_id: branchId,
+      metadata: { tenant_id: tenantId, branch_id: branchId, kind: "branch_activation" },
     }),
   });
+  const sendText = await sendResp.text();
+  let sendBody: any = null;
+  try { sendBody = JSON.parse(sendText); } catch { /* not JSON */ }
   if (!sendResp.ok) {
-    const t = await sendResp.text();
-    return { ok: false, error: `send-email ${sendResp.status}: ${t}` };
+    return { ok: false, error: `send-email ${sendResp.status}: ${sendText}` };
+  }
+  if (sendBody?.error === "EMAIL_NOT_CONFIGURED") {
+    return { ok: false, error: "EMAIL_NOT_CONFIGURED: Platform sender mailbox not configured — connect one under Platform → Settings → Email." };
   }
 
   return { ok: true, opaqueToken, actionLink, email, profileId: profileId!, isReturningUser, subject };
