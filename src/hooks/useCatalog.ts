@@ -319,8 +319,8 @@ export function useDeleteCatalogFinishing() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("catalog_finishing" as any).delete().eq("id", id);
-      if (error) throw error;
+      await deleteByIdChecked("catalog_finishing", id);
+
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_finishing"] }),
   });
