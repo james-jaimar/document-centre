@@ -75,6 +75,8 @@ export default function BranchCatalogPricing() {
 
   return (
     <div className="p-6 space-y-8">
+      <BranchPricingIO branchId={branchId} />
+
       {onboarding && !onboarding.pricing_reviewed && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
