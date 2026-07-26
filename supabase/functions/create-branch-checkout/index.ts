@@ -103,12 +103,16 @@ Deno.serve(async (req) => {
       metadata: { branch_id: branch.id, tenant_id: branch.tenant_id },
     });
     customerId = customer.id;
+    // Persist the Stripe customer id only. Do NOT stamp status/billing_status
+    // here — the user hasn't paid yet, and if they hit the browser Back button
+    // on Stripe Checkout no webhook fires, which would leave the row stuck in
+    // `incomplete` / `pending_payment` and lock the branch out via
+    // resolve_branch_entitlement. Lifecycle transitions must come from the
+    // Stripe webhook or from trial helpers.
     await supabaseAdmin.from("branch_subscriptions" as any).upsert({
       branch_id: branch.id,
       tenant_id: branch.tenant_id,
       stripe_customer_id: customerId,
-      status: "incomplete",
-      billing_status: "pending_payment",
     }, { onConflict: "branch_id" });
   }
 
