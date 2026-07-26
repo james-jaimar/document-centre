@@ -15,6 +15,9 @@ export function useNewOrdersCount(tenantId?: string | null, branchId?: string | 
     queryKey: key,
     enabled: !!branchId,
     staleTime: 15_000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       let q = supabase
         .from("orders")
@@ -32,12 +35,18 @@ export function useNewOrdersCount(tenantId?: string | null, branchId?: string | 
 
   useEffect(() => {
     if (!branchId) return;
+    // No server-side filter: orders often start as carts and only match the
+    // new_order/submitted_at criteria after an UPDATE, which CDC filters can
+    // miss. Filter client-side and invalidate on any relevant change.
     const channel = supabase
       .channel(`new-orders-count:${branchId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "orders", filter: `branch_id=eq.${branchId}` },
-        () => {
+        { event: "*", schema: "public", table: "orders" },
+        (payload) => {
+          const row: any = (payload as any).new ?? (payload as any).old ?? {};
+          if (row.branch_id && row.branch_id !== branchId) return;
+          if (tenantId && row.tenant_id && row.tenant_id !== tenantId) return;
           qc.invalidateQueries({ queryKey: key });
         },
       )
@@ -50,3 +59,4 @@ export function useNewOrdersCount(tenantId?: string | null, branchId?: string | 
 
   return query.data ?? 0;
 }
+

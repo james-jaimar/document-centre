@@ -1,38 +1,18 @@
+# New Orders Badge — Reliable Auto-Refresh
+
 ## Problem
-
-The order-files lightbox now renders the real PDF (previous fix worked) but it shows the **entire MediaBox** — crop marks and bleed visible — instead of clipping to the TrimBox. The customer should only see the trimmed printed area.
-
-## Suspected cause (to verify before fixing)
-
-Both `OrderFiles.tsx` (`lightboxTrimCrop`) and `PreviewPanel.tsx` (`trimCrop`) build the CSS clip from `preflight.boxes.MediaBox` + `TrimBox`, but then apply a "double-crop guard" that returns **undefined** whenever `page_width_mm/page_height_mm ≈ TrimBox size`. That guard was written assuming: *"if the doc's stored page size matches the TrimBox, the PDF we're about to render must already be the server-cropped/processed file, so a second CSS clip would over-crop."*
-
-That assumption breaks when we fall back to the **original** upload:
-
-- `lightboxPdfPath = preflight.processed_file_path || file_path`
-- `page_width_mm` in the DB is stored from preflight as the **TrimBox** size (that's how business cards are recorded).
-- If `processed_file_path` is missing/expired, we render the **original** PDF (which still has MediaBox + crop marks), but the guard still sees `page_width_mm ≈ trim` and skips clipping → the whole MediaBox is shown.
-
-This matches the screenshot (dog-behaviourist business card with visible crop marks at all four corners).
+The sidebar "Orders" badge (`useNewOrdersCount`) didn't update when a new order landed — user had to refresh to see the count go from 2 → 3. A realtime subscription exists but clearly didn't fire (or fired before the row matched the filter: `admin_status='new_order'` AND `submitted_at IS NOT NULL`).
 
 ## Plan
 
-1. **Verify the cause first (no code changes yet).** For the order shown in the screenshot, check `order_documents.preflight_data` to confirm:
-   - `boxes.MediaBox` and `boxes.TrimBox` are present and differ.
-   - `preflight_data.processed_file_path` is **absent** (or points to a missing/expired object) so the lightbox falls back to `file_path`.
-   - `page_width_mm/page_height_mm` match the TrimBox dimensions.
-   Only proceed to the fix once this is confirmed.
+1. **Add a 5-minute polling safety net** in `src/hooks/useNewOrdersCount.ts`:
+   - `refetchInterval: 5 * 60 * 1000`
+   - `refetchIntervalInBackground: false` (only poll when tab is visible — no wasted traffic)
+   - `refetchOnWindowFocus: true` (instant update when user returns to tab)
 
-2. **Fix the guard** in `src/components/order/PreviewPanel.tsx` and `src/pages/dashboard/OrderFiles.tsx` (and mirror the change in `src/lib/orders/previewFallbacks.ts` `getTrimCrop`):
-   - Track which file is actually being rendered (processed vs original) by reading `preflight.processed_file_path` alongside `file_path`.
-   - Only skip the CSS TrimBox clip when the URL being rendered **is** the processed/trimmed file. When the render URL is the original upload, always honour the MediaBox→TrimBox crop even if `page_width_mm` happens to equal the TrimBox.
-   - Keep the existing "mediaBox missing" and "trim within 1mm of media" early-outs.
+2. **Make realtime more forgiving.** The current channel filters `branch_id=eq.<id>`. An order row is often first inserted as a cart (no `branch_id` or different status) and later UPDATEd on submit — the UPDATE payload's *new* row matches the filter, but Postgres CDC filters on the *old* row for some transitions. Switch to subscribing without the server-side filter and do the branch/tenant check client-side inside the handler before invalidating. Cheap: one branch runs one channel.
 
-3. **Verify visually.** Reload the order files page for the business-card order in the screenshot and confirm the lightbox now shows only the trimmed card (no crop marks, no bleed strip). Spot-check a bound document and a flyer to make sure the guard still correctly suppresses clipping when the processed file is really being rendered (no over-crop regression).
+3. **Investigation step (no code change unless needed):** confirm via a quick read of `orders` for the missed order whether `branch_id` was set at INSERT vs later UPDATE. If it's set late, item 2 above is the actual fix; if it's set at INSERT, then realtime replication for that table isn't enabled and we'll enable it via migration.
 
-### Files touched (fix step)
-
-- `src/components/order/PreviewPanel.tsx`
-- `src/pages/dashboard/OrderFiles.tsx`
-- `src/lib/orders/previewFallbacks.ts`
-
-No schema, no backend, no snapshot-format changes.
+## Out of scope
+No changes to order submission logic, no new tables, no UI restyling.
