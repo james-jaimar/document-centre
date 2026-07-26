@@ -36,20 +36,19 @@ async function getUser(req: Request): Promise<UserContext | null> {
 }
 
 async function assertBranchAccess(admin: any, userId: string, branchId: string) {
-  const { data, error } = await admin.rpc("user_can_manage_branch", { _branch_id: branchId });
-  // fallback: some deployments use different signature; check membership directly
-  if (error || data !== true) {
-    const { data: mem } = await admin
-      .from("tenant_memberships")
-      .select("role,branch_id")
-      .eq("user_id", userId);
-    const ok = (mem ?? []).some(
-      (m: any) =>
-        (m.role === "owner" || m.role === "admin") &&
-        (m.branch_id === null || m.branch_id === branchId),
-    );
-    if (!ok) throw new Error("Not authorised for this branch");
-  }
+  const { data, error } = await admin.rpc("user_can_manage_branch", { p_branch_id: branchId });
+  if (!error && data === true) return;
+  // Fallback: check membership directly for manager-level roles.
+  const { data: mem } = await admin
+    .from("tenant_memberships")
+    .select("role,branch_id")
+    .eq("user_id", userId);
+  const ok = (mem ?? []).some(
+    (m: any) =>
+      (m.role === "owner" || m.role === "admin" || m.role === "branch_manager") &&
+      (m.branch_id === null || m.branch_id === branchId),
+  );
+  if (!ok) throw new Error("Not authorised for this branch");
 }
 
 // ---------- Tab definitions ----------
