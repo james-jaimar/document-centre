@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Send, Save, Megaphone, AlertCircle, Code2, Plus, Copy, Trash2, Eye, MousePointerClick, CheckCircle2 } from "lucide-react";
+import { Loader2, Send, Save, Megaphone, AlertCircle, Code2, Plus, Copy, Trash2, Eye, MousePointerClick, CheckCircle2, RotateCcw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
@@ -38,6 +38,9 @@ interface CampaignRecipient {
   first_opened_at?: string | null; open_count?: number;
   first_clicked_at?: string | null; click_count?: number;
   last_clicked_url?: string | null; activated_at?: string | null;
+}
+interface RetryCampaignResponse {
+  totals?: { pending?: number };
 }
 
 const TOKENS_ACTIVATION = ["branch_name", "contact_name", "store_url", "login_email", "action_link", "tenant_name", "portal_name"];
@@ -766,26 +769,57 @@ function TemplatesTab() {
 }
 
 function HistoryTab() {
+  const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
+  const [retrying, setRetrying] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("platform_email_campaigns")
-        .select("*").order("created_at", { ascending: false }).limit(50);
-      setCampaigns((data ?? []) as Campaign[]);
-    })();
-  }, []);
+  const loadCampaigns = async () => {
+    const { data } = await supabase.from("platform_email_campaigns")
+      .select("*").order("created_at", { ascending: false }).limit(50);
+    setCampaigns((data ?? []) as Campaign[]);
+  };
+
+  const loadRecipients = async (campaignId: string) => {
+    const { data } = await supabase.from("platform_email_campaign_recipients")
+      .select("*").eq("campaign_id", campaignId).order("created_at");
+    setRecipients((data ?? []) as CampaignRecipient[]);
+  };
+
+  useEffect(() => { loadCampaigns(); }, []);
 
   useEffect(() => {
     if (!selected) { setRecipients([]); return; }
-    (async () => {
-      const { data } = await supabase.from("platform_email_campaign_recipients")
-        .select("*").eq("campaign_id", selected).order("created_at");
-      setRecipients((data ?? []) as CampaignRecipient[]);
-    })();
+    loadRecipients(selected);
   }, [selected]);
+
+  useEffect(() => {
+    const hasRunning = campaigns.some(c => c.status === "running");
+    if (!hasRunning && !selected) return;
+    const t = window.setInterval(() => {
+      loadCampaigns();
+      if (selected) loadRecipients(selected);
+    }, 10000);
+    return () => window.clearInterval(t);
+  }, [campaigns, selected]);
+
+  const retryFailed = async (campaignId: string) => {
+    setRetrying(campaignId);
+    const response = await invokeEdgeFunctionVerbose("send-branch-marketing-campaign", {
+      retry_failed: true,
+      retry_campaign_id: campaignId,
+    });
+    setRetrying(null);
+    if (!response.ok) {
+      toast({ title: "Retry failed", description: response.error ?? "Could not queue retry", variant: "destructive" });
+      return;
+    }
+    const totals = (response.data as RetryCampaignResponse | null)?.totals ?? {};
+    toast({ title: "Retry queued", description: `${totals.pending ?? 0} recipient(s) will be re-enqueued.` });
+    await loadCampaigns();
+    if (selected === campaignId) await loadRecipients(campaignId);
+  };
 
   const stats = useMemo(() => {
     const sent = recipients.filter(r => r.status === "sent" || r.status === "sent_existing_user" || r.status === "completed").length;
@@ -803,8 +837,14 @@ function HistoryTab() {
         <CardContent className="space-y-1 max-h-[600px] overflow-auto">
           {campaigns.length === 0 && <div className="text-sm text-muted-foreground">No campaigns yet.</div>}
           {campaigns.map(c => (
-            <button key={c.id} onClick={() => setSelected(c.id)}
-              className={`w-full text-left p-3 rounded border ${selected === c.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+            <div
+              key={c.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(c.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelected(c.id); }}
+              className={`w-full text-left p-3 rounded border cursor-pointer ${selected === c.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-medium truncate">{c.subject_snapshot}</div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -812,13 +852,28 @@ function HistoryTab() {
                   <div className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</div>
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground mt-1 flex gap-3">
+              <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-3">
                 <span>Total: {c.total_recipients}</span>
-                <span className="text-green-700">Sent: {c.sent_count}</span>
+                <span className="text-green-700">Queued: {c.sent_count}</span>
                 {c.failed_count > 0 && <span className="text-red-700">Failed: {c.failed_count}</span>}
                 {c.skipped_count > 0 && <span>Skipped: {c.skipped_count}</span>}
+                <Badge variant={c.status === "failed" ? "destructive" : "secondary"} className="text-[10px]">
+                  {c.status}
+                </Badge>
+                {c.failed_count > 0 && c.kind === "marketing" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px]"
+                    onClick={(e) => { e.stopPropagation(); retryFailed(c.id); }}
+                    disabled={retrying === c.id}
+                  >
+                    {retrying === c.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+                    Retry failed
+                  </Button>
+                )}
               </div>
-            </button>
+            </div>
           ))}
         </CardContent>
       </Card>
