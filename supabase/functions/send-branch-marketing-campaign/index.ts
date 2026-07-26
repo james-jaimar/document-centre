@@ -449,11 +449,14 @@ async function handleRetry(
     });
   }
 
-  const branchIds = recipientRows.map((r) => r.branch_id).filter(Boolean) as string[];
+  // Load ALL branches for the tenant in one query and filter in memory.
+  // Avoids passing a 400+ UUID `id=in.(...)` URL through PostgREST — that
+  // was blowing the gateway URL-length limit and returning the giant
+  // encoded-UUID error the operator was seeing on retry.
   const { data: branches, error: branchErr } = await admin
     .from("branches")
     .select("id, name, email, slug, url_slug, trading_name")
-    .in("id", branchIds);
+    .eq("tenant_id", campaign.tenant_id);
   if (branchErr) return json({ error: `Branch lookup failed: ${branchErr.message}` }, 500);
 
   const branchesById = new Map<string, BranchRow>();
@@ -499,13 +502,13 @@ async function handleRetry(
   await admin.from("platform_email_campaigns").update({ status: "running" }).eq("id", campaignId);
 
   if (missing.length) {
-    for (const c of chunk(missing, INSERT_CHUNK)) {
-      await Promise.all(c.map((f) => admin
-        .from("platform_email_campaign_recipients")
-        .update({ status: "failed", error: f.error })
-        .eq("id", f.recipientId)));
-    }
+    await bulkUpdateRecipients(
+      admin,
+      campaignId,
+      missing.map((f) => ({ id: f.recipientId, status: "failed", error: f.error })),
+    );
   }
+
 
   EdgeRuntime.waitUntil((async () => {
     try {
