@@ -18,7 +18,7 @@ interface PageInfo {
   already_completed: boolean;
 }
 
-type View = "loading" | "ready" | "submitting" | "sent" | "rate_limited" | "inactive" | "not_found" | "error";
+type View = "loading" | "ready" | "submitting" | "sent" | "rate_limited" | "inactive" | "not_found" | "email_not_configured" | "error";
 
 export default function Activate() {
   const { slug } = useParams<{ slug: string }>();
