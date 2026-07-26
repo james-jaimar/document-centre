@@ -460,11 +460,21 @@ function ComposeTab() {
           {result && (
             <div className="border rounded-md p-3 bg-muted/40 text-sm space-y-2 max-h-72 overflow-auto">
               <div className="font-medium">Results</div>
+              {(result.results ?? []).some((r: any) => typeof r.error === "string" && r.error.includes("Platform sender mailbox not configured")) && (
+                <div className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="font-medium">Platform sender not configured</div>
+                    <div className="mt-0.5">Activation emails send from the Document Centre platform mailbox, not the branch. Connect one under Platform → Settings → Email, then re-send.</div>
+                    <a href="/platform/settings?tab=email" className="underline mt-1 inline-block">Open Platform Email settings</a>
+                  </div>
+                </div>
+              )}
               {result.results?.map((r: any, i: number) => (
                 <div key={i} className="flex items-center justify-between gap-2 text-xs border-b last:border-0 py-1">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{r.branch} {r.email ? `· ${r.email}` : ""}</span>
-                    {r.error && <span className="block truncate text-destructive">{r.error}</span>}
+                    {r.error && <span className="block truncate text-destructive" title={r.error}>{r.error}</span>}
                     {r.activation_link && (
                       <span className="mt-1 flex items-center gap-1 min-w-0 text-muted-foreground">
                         <a className="truncate underline" href={r.activation_link} target="_blank" rel="noreferrer">

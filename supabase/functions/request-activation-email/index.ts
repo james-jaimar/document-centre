@@ -109,6 +109,13 @@ Deno.serve(async (req) => {
     if (!result.ok) {
       await audit("failed", true);
       console.error("activation send failed:", result.error);
+      if (result.error && result.error.includes("EMAIL_NOT_CONFIGURED")) {
+        return json({
+          ok: false,
+          code: "email_not_configured",
+          message: "This site's email sender isn't configured yet. Please contact support so they can finish email setup.",
+        }, 400);
+      }
       return json({ ok: false, code: "send_failed" }, 500);
     }
 

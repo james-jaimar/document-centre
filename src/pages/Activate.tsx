@@ -18,7 +18,7 @@ interface PageInfo {
   already_completed: boolean;
 }
 
-type View = "loading" | "ready" | "submitting" | "sent" | "rate_limited" | "inactive" | "not_found" | "error";
+type View = "loading" | "ready" | "submitting" | "sent" | "rate_limited" | "inactive" | "not_found" | "email_not_configured" | "error";
 
 export default function Activate() {
   const { slug } = useParams<{ slug: string }>();
@@ -52,6 +52,7 @@ export default function Activate() {
     if (error) { setView("error"); return; }
     if (data?.code === "rate_limited") { setView("rate_limited"); return; }
     if (data?.code === "inactive") { setView("inactive"); return; }
+    if (data?.code === "email_not_configured") { setView("email_not_configured"); return; }
     // Always treat "sent_if_valid" as success — generic by design
     setView("sent");
   };
@@ -189,6 +190,18 @@ export default function Activate() {
               <p className="text-sm text-muted-foreground">
                 We've sent a few sign-in links for this branch recently. Please wait an hour and try again,
                 or check your inbox (and spam) for the previous one.
+              </p>
+            </div>
+          )}
+
+          {view === "email_not_configured" && (
+            <div className="text-center space-y-3 py-4">
+              <AlertCircle className="h-10 w-10 text-amber-500 mx-auto" />
+              <h1 className="text-lg font-semibold">Email setup pending</h1>
+              <p className="text-sm text-muted-foreground">
+                We can't send your sign-in link right now because the sender mailbox for this site
+                hasn't been fully set up. Please contact the team so they can finish configuring email —
+                once that's done, come back and request a new link.
               </p>
             </div>
           )}

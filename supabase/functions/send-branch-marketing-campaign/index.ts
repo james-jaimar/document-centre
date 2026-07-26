@@ -111,6 +111,17 @@ Deno.serve(async (req) => {
     if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
     const appOrigin = resolved.origin;
 
+    // Preflight: marketing/activation emails send from the platform sender.
+    const { data: platformSender } = await admin
+      .from("email_accounts")
+      .select("id")
+      .is("tenant_id", null)
+      .is("branch_id", null)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    const NO_PLATFORM_SENDER = "Platform sender mailbox not configured — connect one under Platform → Settings → Email.";
+
     let campaignId: string | null = null;
     if (!dryRun) {
       const { data: campaign, error: campErr } = await admin
@@ -232,17 +243,41 @@ Deno.serve(async (req) => {
         // NOTE: no tracking injection on marketing emails (see comment above).
         const trackedHtml = html;
 
+        if (!platformSender) {
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: NO_PLATFORM_SENDER,
+          }).eq("id", rcpt.id);
+          throw new Error(NO_PLATFORM_SENDER);
+        }
+
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-          body: JSON.stringify({ to: email, subject, html: trackedHtml, text }),
+          body: JSON.stringify({
+            to: email, subject, html: trackedHtml, text,
+            // Platform-scope send (Document Centre marketing to prospective branches).
+            tenant_id: null, branch_id: null, app_id: tenant.app_id ?? null,
+            from_name: `${tenant.name} via Document Centre`,
+            category: "system",
+            related_type: "branch_marketing",
+            related_id: b.id,
+            metadata: { tenant_id, branch_id: b.id, campaign_id: campaignId, recipient_id: rcpt.id, kind: "branch_marketing" },
+          }),
         });
+        const sendText = await sendResp.text();
+        let sendBody: any = null;
+        try { sendBody = JSON.parse(sendText); } catch { /* not JSON */ }
         if (!sendResp.ok) {
-          const t = await sendResp.text();
           await admin.from("platform_email_campaign_recipients").update({
-            status: "failed", error: `send-email ${sendResp.status}: ${t}`,
+            status: "failed", error: `send-email ${sendResp.status}: ${sendText}`,
           }).eq("id", rcpt.id);
-          throw new Error(`send-email ${sendResp.status}: ${t}`);
+          throw new Error(`send-email ${sendResp.status}: ${sendText}`);
+        }
+        if (sendBody?.error === "EMAIL_NOT_CONFIGURED") {
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: NO_PLATFORM_SENDER,
+          }).eq("id", rcpt.id);
+          throw new Error(NO_PLATFORM_SENDER);
         }
 
         sent++;

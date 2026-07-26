@@ -109,6 +109,19 @@ Deno.serve(async (req) => {
       .eq("tenant_id", tenant_id)
       .in("id", branch_ids);
 
+    // Preflight: activation emails send from the platform sender. If no
+    // active platform mailbox is configured, refuse before we bother
+    // provisioning users so the admin gets an immediate, actionable message.
+    const { data: platformSender } = await admin
+      .from("email_accounts")
+      .select("id")
+      .is("tenant_id", null)
+      .is("branch_id", null)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    const NO_PLATFORM_SENDER = "Platform sender mailbox not configured — connect one under Platform → Settings → Email.";
+
     const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
     const resolved = await resolveAppOriginDetailed(admin, tenant_id, callerOrigin);
     if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
@@ -177,7 +190,11 @@ Deno.serve(async (req) => {
           } else {
             const { data: list } = await admin.auth.admin.listUsers();
             const ex = list?.users?.find((u: any) => u.email?.toLowerCase() === email);
-            if (!ex) throw new Error("Could not locate or create auth user");
+            if (!ex) {
+              throw new Error(createErr?.message
+                ? `An account with this email couldn't be created or located: ${createErr.message}`
+                : "An account with this email couldn't be created or located.");
+            }
             profileId = ex.id;
           }
           await admin.from("profiles").upsert(
@@ -186,19 +203,46 @@ Deno.serve(async (req) => {
           );
         }
 
-        const { data: existingMembership } = await admin
+        // Branch-aware membership reconciliation. Mirrors _shared/sendBranchActivation.ts:
+        //  (a) exact row for this branch → keep (reactivate if needed)
+        //  (b) orphan row (branch_id NULL after previous branch delete) → adopt
+        //  (c) row for a different branch → add a NEW row for this branch
+        // Previously we only checked (profile_id, tenant_id) with maybeSingle(),
+        // which silently skipped adding this branch when the user already
+        // managed another branch in the tenant.
+        const { data: allMems } = await admin
           .from("tenant_memberships")
-          .select("id")
+          .select("id, branch_id, role, is_active")
           .eq("profile_id", profileId!)
           .eq("tenant_id", tenant_id)
-          .eq("app_id", tenant.app_id)
-          .maybeSingle();
-        if (!existingMembership) {
-          await admin.from("tenant_memberships").insert({
-            profile_id: profileId,
-            tenant_id, app_id: tenant.app_id,
-            role: "branch_manager", branch_id: b.id, is_active: true,
-          });
+          .eq("app_id", tenant.app_id);
+        const memRows = (allMems ?? []) as Array<{ id: string; branch_id: string | null; role: string; is_active: boolean }>;
+        const exactMem = memRows.find((r) => r.branch_id === b.id);
+        if (exactMem) {
+          if (!exactMem.is_active) {
+            await admin.from("tenant_memberships").update({ is_active: true }).eq("id", exactMem.id);
+          }
+        } else {
+          const orphanMem = memRows.find((r) => r.branch_id === null && (r.role === "branch_manager" || r.role === "store_operator"));
+          if (orphanMem) {
+            await admin.from("tenant_memberships").update({
+              branch_id: b.id, is_active: true, role: "branch_manager",
+            }).eq("id", orphanMem.id);
+          } else {
+            const { error: memInsErr } = await admin.from("tenant_memberships").insert({
+              profile_id: profileId,
+              tenant_id, app_id: tenant.app_id,
+              role: "branch_manager", branch_id: b.id, is_active: true,
+            });
+            if (memInsErr) {
+              const msg = memInsErr.message || "";
+              // Translate opaque duplicate-key errors into something an admin can act on.
+              if (memInsErr.code === "23505" || /duplicate key|unique constraint/i.test(msg)) {
+                throw new Error("This email already has a conflicting membership in this tenant — remove or update the existing membership before re-sending activation.");
+              }
+              throw new Error(`membership_insert: ${msg}`);
+            }
+          }
         }
 
         // Detect whether this email already manages other branches across the system.
@@ -283,17 +327,45 @@ ${logoBlock}
 
         const trackedHtml = await injectTracking(html, campaignId!, recipientRow.id, appOrigin);
 
+        // Preflight: if no platform sender is configured we won't be able to
+        // send this row — fail it cleanly with an actionable message instead
+        // of letting send-email return a swallowed EMAIL_NOT_CONFIGURED.
+        if (!platformSender) {
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: NO_PLATFORM_SENDER,
+          }).eq("id", recipientRow.id);
+          throw new Error(NO_PLATFORM_SENDER);
+        }
+
         const sendResp = await fetch(`${url}/functions/v1/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
-          body: JSON.stringify({ to: email, subject, html: trackedHtml, text: finalText || undefined }),
+          body: JSON.stringify({
+            to: email, subject, html: trackedHtml, text: finalText || undefined,
+            // Platform-scope send: activation is Document Centre inviting a
+            // new branch — must not use the (nonexistent) branch mailbox.
+            tenant_id: null, branch_id: null, app_id: tenant.app_id ?? null,
+            from_name: `${portalName} via Document Centre`,
+            category: "system",
+            related_type: "branch_activation",
+            related_id: b.id,
+            metadata: { tenant_id, branch_id: b.id, campaign_id: campaignId, recipient_id: recipientRow.id, kind: "branch_activation" },
+          }),
         });
+        const sendText = await sendResp.text();
+        let sendBody: any = null;
+        try { sendBody = JSON.parse(sendText); } catch { /* not JSON */ }
         if (!sendResp.ok) {
-          const t = await sendResp.text();
           await admin.from("platform_email_campaign_recipients").update({
-            status: "failed", error: `send-email ${sendResp.status}: ${t}`,
+            status: "failed", error: `send-email ${sendResp.status}: ${sendText}`,
           }).eq("id", recipientRow.id);
-          throw new Error(`send-email ${sendResp.status}: ${t}`);
+          throw new Error(`send-email ${sendResp.status}: ${sendText}`);
+        }
+        if (sendBody?.error === "EMAIL_NOT_CONFIGURED") {
+          await admin.from("platform_email_campaign_recipients").update({
+            status: "failed", error: NO_PLATFORM_SENDER,
+          }).eq("id", recipientRow.id);
+          throw new Error(NO_PLATFORM_SENDER);
         }
 
         sent++;
