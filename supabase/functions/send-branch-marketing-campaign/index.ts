@@ -10,6 +10,7 @@ import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { renderBrandedEmail, renderBrandedText, escapeHtml } from "../_shared/branded-shell.ts";
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
+import { appendTrackingPixel } from "../_shared/emailTracking.ts";
 
 // No hero image — admins insert their own images via the template editor.
 
