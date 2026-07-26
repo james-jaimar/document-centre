@@ -52,6 +52,7 @@ export default function Activate() {
     if (error) { setView("error"); return; }
     if (data?.code === "rate_limited") { setView("rate_limited"); return; }
     if (data?.code === "inactive") { setView("inactive"); return; }
+    if (data?.code === "email_not_configured") { setView("email_not_configured"); return; }
     // Always treat "sent_if_valid" as success — generic by design
     setView("sent");
   };
