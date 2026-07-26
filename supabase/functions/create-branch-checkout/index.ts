@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { activateTenantOnFirstLiveBranch } from "../_shared/activateTenant.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
 
@@ -164,6 +165,9 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from("branch_subscriptions" as any)
       .update({ trial_started_via: "stripe_30" })
       .eq("branch_id", branch.id);
+    // Trial-with-card: flip tenant live + lift demo gate immediately so the
+    // storefront is reachable while Stripe finishes the checkout handshake.
+    await activateTenantOnFirstLiveBranch(supabaseAdmin, branch.tenant_id, "create-branch-checkout:trial");
   }
 
   // Discount priority: (1) plan-level Stripe promotion code, (2) plan-level Stripe coupon
