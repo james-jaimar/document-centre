@@ -193,6 +193,18 @@ export default function Activate() {
               </p>
             </div>
           )}
+
+          {view === "email_not_configured" && (
+            <div className="text-center space-y-3 py-4">
+              <AlertCircle className="h-10 w-10 text-amber-500 mx-auto" />
+              <h1 className="text-lg font-semibold">Email setup pending</h1>
+              <p className="text-sm text-muted-foreground">
+                We can't send your sign-in link right now because the sender mailbox for this site
+                hasn't been fully set up. Please contact the team so they can finish configuring email —
+                once that's done, come back and request a new link.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="px-8 py-4 border-t bg-slate-50 text-center">
