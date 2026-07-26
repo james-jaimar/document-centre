@@ -329,6 +329,11 @@ const BranchSettings = () => {
       {tenantId && branchId && (
         <BranchTaxCard tenantId={tenantId} branchId={branchId} />
       )}
+
+      {/* Invoice numbering override */}
+      {tenantId && branchId && (
+        <BranchInvoiceNumberingCard tenantId={tenantId} branchId={branchId} />
+      )}
         </TabsContent>
       </Tabs>
     </div>
