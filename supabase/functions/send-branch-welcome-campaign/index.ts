@@ -109,6 +109,19 @@ Deno.serve(async (req) => {
       .eq("tenant_id", tenant_id)
       .in("id", branch_ids);
 
+    // Preflight: activation emails send from the platform sender. If no
+    // active platform mailbox is configured, refuse before we bother
+    // provisioning users so the admin gets an immediate, actionable message.
+    const { data: platformSender } = await admin
+      .from("email_accounts")
+      .select("id")
+      .is("tenant_id", null)
+      .is("branch_id", null)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    const NO_PLATFORM_SENDER = "Platform sender mailbox not configured — connect one under Platform → Settings → Email.";
+
     const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
     const resolved = await resolveAppOriginDetailed(admin, tenant_id, callerOrigin);
     if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
