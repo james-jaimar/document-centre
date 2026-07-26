@@ -196,20 +196,34 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                 </Select>
               </div>
               <div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <Label>Branch plan</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={refreshFromStripe}
-                    disabled={!selectedPlan || verifying}
-                    title="Pull live price/coupon from Stripe and update the database"
-                  >
-                    {verifying ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                    Refresh from Stripe
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setBrowseOpen(true)}
+                      disabled={!selectedPlan}
+                      title="Browse the live Stripe catalogue and attach any price to this plan"
+                    >
+                      <Search className="h-3 w-3 mr-1" />
+                      Browse Stripe catalogue
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={refreshFromStripe}
+                      disabled={!selectedPlan || verifying}
+                      title="Re-verify the currently attached price/coupon against Stripe"
+                    >
+                      {verifying ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                      Verify current
+                    </Button>
+                  </div>
                 </div>
                 <Select value={form.plan_slug} onValueChange={(v) => setForm((f) => ({ ...f, plan_slug: v }))}>
                   <SelectTrigger><SelectValue placeholder="Choose plan" /></SelectTrigger>
@@ -225,6 +239,11 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedPlan && (
+                  <p className="mt-1 text-[11px] text-muted-foreground font-mono">
+                    Attached price: {(selectedPlan as any).stripe_price_id || <span className="italic text-amber-600">none — click "Browse Stripe catalogue"</span>}
+                  </p>
+                )}
               </div>
               {hasStripeCoupon && (
                 <div className="md:col-span-2 rounded-md border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 p-3 text-xs text-emerald-900 dark:text-emerald-100">
