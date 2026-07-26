@@ -1,16 +1,19 @@
-## Problem
+## Fix: "Not authorised for this branch" on Excel download
 
-Downloading branch pricing fails with a CORS error in the browser, but the actual issue is that the `branch-pricing-workbook` edge function returns **`404 NOT_FOUND`** from the Supabase gateway. Direct curl against both `OPTIONS` and `GET` on `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/branch-pricing-workbook` returns `sb-error-code: NOT_FOUND`. Because the 404 has no CORS-compliant status on the preflight, Chrome surfaces it as "Response to preflight request doesn't pass access control check".
+### Root cause
+In `supabase/functions/branch-pricing-workbook/index.ts`, `assertBranchAccess` calls the `user_can_manage_branch` RPC with the wrong parameter name (`_branch_id` instead of `p_branch_id`), so the RPC always errors. The fallback then only accepts `owner`/`admin` roles — but branch managers using this feature have the `branch_manager` role, so they're rejected.
 
-The function source exists at `supabase/functions/branch-pricing-workbook/index.ts` with correct `corsHeaders` (`*` origin, allowed headers include `authorization, x-client-info, apikey, content-type`, allowed methods `GET, POST, OPTIONS`). It simply was never deployed.
+### Change
+Edit `supabase/functions/branch-pricing-workbook/index.ts` only:
 
-## Fix
+1. Call the RPC with the correct argument name: `admin.rpc("user_can_manage_branch", { p_branch_id: branchId })`.
+2. Expand the fallback role check to include `branch_manager` alongside `owner` and `admin` (keep `store_operator` blocked — bulk price edits are a manager action, consistent with `isBranchManagerRole` in `src/lib/auth/branchPermissions.ts`).
 
-1. Deploy `branch-pricing-workbook` via `supabase--deploy_edge_functions`.
-2. Re-run the same `OPTIONS` preflight and `GET ?action=export` curl against the deployed URL and confirm both return `200/2xx` with `access-control-allow-origin: *`.
-3. In the browser preview (branch portal → Pricing), click **Download pricing (.xlsx)** and confirm the file downloads. Then upload it back to confirm `preview` + `apply` paths also work end-to-end (they share the same function, so once deployed all four actions come online).
+Then redeploy the function.
 
-## Not doing
+### Verify
+- As the branch manager (`james_b_hawkins@icloud.com`) on Demo2, click **Download pricing (.xlsx)** — file downloads.
+- Upload it back and confirm preview + apply still work end-to-end.
 
-- No code changes to the function, the client component (`BranchPricingIO.tsx`), or `supabase/config.toml` — the CORS wiring is already correct; the function just needs to exist on the gateway.
-- No change to auth/JWT settings — the client sends `Authorization` + `apikey`, which the function already validates in-code.
+### Not doing
+- No schema changes, no client changes, no changes to `BranchPricingIO.tsx` or the pricing page.
