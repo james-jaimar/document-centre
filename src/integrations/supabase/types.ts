@@ -3024,24 +3024,30 @@ export type Database = {
       number_sequences: {
         Row: {
           app_id: string
+          branch_id: string | null
           id: string
           last_value: number
           prefix: string
           sequence_type: string
+          tenant_id: string | null
         }
         Insert: {
           app_id: string
+          branch_id?: string | null
           id?: string
           last_value?: number
           prefix: string
           sequence_type: string
+          tenant_id?: string | null
         }
         Update: {
           app_id?: string
+          branch_id?: string | null
           id?: string
           last_value?: number
           prefix?: string
           sequence_type?: string
+          tenant_id?: string | null
         }
         Relationships: [
           {
@@ -7141,7 +7147,7 @@ export type Database = {
       }
       expire_branch_trials: { Args: never; Returns: number }
       generate_invoice_number: {
-        Args: { p_app_id: string; p_tenant_id: string }
+        Args: { p_app_id: string; p_branch_id?: string; p_tenant_id: string }
         Returns: string
       }
       generate_job_number: {
@@ -7202,7 +7208,7 @@ export type Database = {
       }
       is_demo_tenant: { Args: { p_tenant_id: string }; Returns: boolean }
       issue_invoice_number: {
-        Args: { p_app_id: string; p_tenant_id: string }
+        Args: { p_app_id: string; p_branch_id?: string; p_tenant_id: string }
         Returns: string
       }
       map_customer_job_status: {
@@ -7221,10 +7227,20 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: undefined
       }
-      next_number: {
-        Args: { p_app_id: string; p_sequence_type: string }
-        Returns: number
-      }
+      next_number:
+        | {
+            Args: { p_app_id: string; p_sequence_type: string }
+            Returns: number
+          }
+        | {
+            Args: {
+              p_app_id: string
+              p_branch_id?: string
+              p_sequence_type: string
+              p_tenant_id?: string
+            }
+            Returns: number
+          }
       platform_legal_acceptance_status: {
         Args: never
         Returns: {
