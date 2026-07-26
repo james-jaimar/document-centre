@@ -199,19 +199,46 @@ Deno.serve(async (req) => {
           );
         }
 
-        const { data: existingMembership } = await admin
+        // Branch-aware membership reconciliation. Mirrors _shared/sendBranchActivation.ts:
+        //  (a) exact row for this branch → keep (reactivate if needed)
+        //  (b) orphan row (branch_id NULL after previous branch delete) → adopt
+        //  (c) row for a different branch → add a NEW row for this branch
+        // Previously we only checked (profile_id, tenant_id) with maybeSingle(),
+        // which silently skipped adding this branch when the user already
+        // managed another branch in the tenant.
+        const { data: allMems } = await admin
           .from("tenant_memberships")
-          .select("id")
+          .select("id, branch_id, role, is_active")
           .eq("profile_id", profileId!)
           .eq("tenant_id", tenant_id)
-          .eq("app_id", tenant.app_id)
-          .maybeSingle();
-        if (!existingMembership) {
-          await admin.from("tenant_memberships").insert({
-            profile_id: profileId,
-            tenant_id, app_id: tenant.app_id,
-            role: "branch_manager", branch_id: b.id, is_active: true,
-          });
+          .eq("app_id", tenant.app_id);
+        const memRows = (allMems ?? []) as Array<{ id: string; branch_id: string | null; role: string; is_active: boolean }>;
+        const exactMem = memRows.find((r) => r.branch_id === b.id);
+        if (exactMem) {
+          if (!exactMem.is_active) {
+            await admin.from("tenant_memberships").update({ is_active: true }).eq("id", exactMem.id);
+          }
+        } else {
+          const orphanMem = memRows.find((r) => r.branch_id === null && (r.role === "branch_manager" || r.role === "store_operator"));
+          if (orphanMem) {
+            await admin.from("tenant_memberships").update({
+              branch_id: b.id, is_active: true, role: "branch_manager",
+            }).eq("id", orphanMem.id);
+          } else {
+            const { error: memInsErr } = await admin.from("tenant_memberships").insert({
+              profile_id: profileId,
+              tenant_id, app_id: tenant.app_id,
+              role: "branch_manager", branch_id: b.id, is_active: true,
+            });
+            if (memInsErr) {
+              const msg = memInsErr.message || "";
+              // Translate opaque duplicate-key errors into something an admin can act on.
+              if (memInsErr.code === "23505" || /duplicate key|unique constraint/i.test(msg)) {
+                throw new Error("This email already has a conflicting membership in this tenant — remove or update the existing membership before re-sending activation.");
+              }
+              throw new Error(`membership_insert: ${msg}`);
+            }
+          }
         }
 
         // Detect whether this email already manages other branches across the system.
