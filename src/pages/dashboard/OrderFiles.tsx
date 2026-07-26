@@ -1537,15 +1537,10 @@ export default function OrderFiles() {
     const trimW = Math.abs(lightboxTrimBox[2] - lightboxTrimBox[0]) * PT_TO_MM;
     const trimH = Math.abs(lightboxTrimBox[3] - lightboxTrimBox[1]) * PT_TO_MM;
     if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
-    // Same double-crop guard as PreviewPanel: if the rendered file is
-    // already sized to the TrimBox, don't clip again.
-    const pageW = Number(previewDoc.page_width_mm) || 0;
-    const pageH = Number(previewDoc.page_height_mm) || 0;
-    if (pageW > 0 && pageH > 0) {
-      const distTrim = Math.abs(pageW - trimW) + Math.abs(pageH - trimH);
-      const distMedia = Math.abs(pageW - mediaWmm) + Math.abs(pageH - mediaHmm);
-      if (distTrim < 2 && distMedia - distTrim > 2) return undefined;
-    }
+    // No page_width_mm-based "already trimmed" guard: that value is
+    // preflight-derived from the TrimBox and does not reflect the actual
+    // MediaBox of the rendered PDF. The mediaBox≈trim early-out above
+    // already handles genuinely-trimmed files.
     const left = Math.min(lightboxTrimBox[0], lightboxTrimBox[2]) * PT_TO_MM / mediaWmm;
     const top = 1 - (Math.max(lightboxTrimBox[1], lightboxTrimBox[3]) * PT_TO_MM / mediaHmm);
     return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
