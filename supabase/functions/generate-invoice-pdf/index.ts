@@ -328,6 +328,7 @@ Deno.serve(async (req) => {
       const { data: issued, error: inErr } = await admin.rpc("issue_invoice_number", {
         p_tenant_id: order.tenant_id,
         p_app_id: order.app_id,
+        p_branch_id: (order as any).branch_id ?? null,
       });
       if (inErr || !issued) return json({ error: `invoice number: ${inErr?.message}` }, 500);
       invNum = issued as string;
