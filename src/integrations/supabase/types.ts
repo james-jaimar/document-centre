@@ -582,6 +582,60 @@ export type Database = {
           },
         ]
       }
+      branch_pricing_import_snapshots: {
+        Row: {
+          applied_at: string
+          branch_id: string
+          created_at: string
+          filename: string | null
+          id: string
+          reverted_at: string | null
+          row_count: number
+          snapshot: Json
+          tenant_id: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          applied_at?: string
+          branch_id: string
+          created_at?: string
+          filename?: string | null
+          id?: string
+          reverted_at?: string | null
+          row_count?: number
+          snapshot: Json
+          tenant_id: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          applied_at?: string
+          branch_id?: string
+          created_at?: string
+          filename?: string | null
+          id?: string
+          reverted_at?: string | null
+          row_count?: number
+          snapshot?: Json
+          tenant_id?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_pricing_import_snapshots_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_pricing_import_snapshots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_private: {
         Row: {
           accounts_email: string | null

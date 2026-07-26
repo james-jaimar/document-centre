@@ -1,6 +1,7 @@
 import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
 import BranchPackPricingEditor from "@/components/pricing/BranchPackPricingEditor";
+import BranchPricingIO from "@/components/pricing/BranchPricingIO";
 import BranchVariantPricingSection from "@/components/pricing/BranchVariantPricingSection";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -74,6 +75,8 @@ export default function BranchCatalogPricing() {
 
   return (
     <div className="p-6 space-y-8">
+      <BranchPricingIO branchId={branchId} />
+
       {onboarding && !onboarding.pricing_reviewed && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
