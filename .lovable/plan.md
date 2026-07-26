@@ -1,32 +1,47 @@
 ## Problem
 
-Placing an order fails with:
-`generate_order_number failed: function public.next_number(uuid, unknown) is not unique`
+When a branch clicks **Subscribe now** and the browser sends them to Stripe Checkout, `create-branch-checkout` immediately writes `status: "incomplete", billing_status: "pending_payment"` onto `branch_subscriptions` (as part of the "create Stripe customer" branch of the upsert). If the user hits the browser Back button instead of completing or cancelling checkout, Stripe never fires a webhook, so that row is left in `incomplete` / `pending_payment` forever.
 
-## Root cause (confirmed via pg_proc)
+`resolve_branch_entitlement` then falls through its trial / active / grace / past_due checks and returns:
 
-There are two overloads of `public.next_number` in the database:
+```
+{ state: "restricted", reason: "incomplete" }
+```
 
-1. `next_number(p_app_id uuid, p_sequence_type text)` — legacy 2‑arg
-2. `next_number(p_app_id uuid, p_sequence_type text, p_tenant_id uuid, p_branch_id uuid)` — 4‑arg (added with per‑branch invoice numbering)
+Result: the branch is locked out of the storefront and the admin sees the red **"This branch is read-only — Subscription is restricted"** banner (matches the screenshot), even though the customer never actually did anything.
 
-The 4‑arg version has DEFAULTs for `p_tenant_id` / `p_branch_id`, so a call like `next_number(p_app_id, 'order')` matches BOTH overloads and Postgres refuses with "is not unique". `generate_order_number` and `generate_quote_number` both call the 2‑arg form, so every order/quote placement now fails.
+## Root cause (verified)
+
+Confirmed by reading:
+- `supabase/functions/create-branch-checkout/index.ts` — the upsert that stamps `status: "incomplete", billing_status: "pending_payment"` when it first creates a Stripe customer.
+- `supabase/migrations/20260720082314_…_.sql` — `resolve_branch_entitlement` returns `restricted` when `status` is `incomplete` and there is no active trial / paid state to override it.
 
 ## Fix
 
-Single migration to remove the ambiguity by dropping the legacy 2‑arg overload and routing everything through the 4‑arg version (which already defaults tenant/branch to NULL, preserving old behaviour for order/quote sequences that are app‑scoped only).
+1. **Stop `create-branch-checkout` from downgrading entitlement state.**
+   Split the "ensure Stripe customer exists" step from the "record subscription lifecycle" step. Persist `stripe_customer_id` (and `tenant_id`) without touching `status` or `billing_status`:
+   - If a row exists → `update` only `stripe_customer_id` (and `updated_at`).
+   - If no row exists → `insert` a minimal row with `branch_id`, `tenant_id`, `stripe_customer_id`. No `status`, no `billing_status`.
+   
+   Status transitions should come exclusively from Stripe webhooks (`stripe-webhook`) or the trial helpers (`start_branch_trial`, `assign-branch-plan`).
 
-Steps:
+2. **Also drop the `status: 'incomplete'` write from the trial-days branch further down** — same reasoning; a Checkout session that isn't completed shouldn't restrict a branch.
 
-1. `DROP FUNCTION public.next_number(uuid, text);` (the 2‑arg overload only — leaves the 4‑arg one intact).
-2. Recreate `generate_order_number` and `generate_quote_number` to call `next_number(p_app_id, 'order'/'quote', NULL, NULL)` explicitly, so the intent is unambiguous even if someone re‑adds an overload later.
-3. Leave `generate_invoice_number` / `issue_invoice_number` alone — they already pass all 4 args.
+3. **Self-heal existing stuck rows** in the same migration/deploy:
+   ```sql
+   UPDATE public.branch_subscriptions
+   SET status = NULL, billing_status = NULL, updated_at = now()
+   WHERE status = 'incomplete'
+     AND billing_status = 'pending_payment'
+     AND stripe_subscription_id IS NULL;
+   ```
+   This unblocks branches (including the one in the screenshot) that got wedged by the current bug. `resolve_branch_entitlement` will then re-evaluate them normally (trialing if `trial_ends_at` is in the future, otherwise `restricted` with reason `no_subscription`, which correctly re-shows the "pick a plan / start trial" modal).
 
-No app / TypeScript changes required. No RLS or grants change.
+4. **Verification**
+   - Re-run `resolve_branch_entitlement` for the affected demo4 branch and confirm state is no longer `restricted` with reason `incomplete`.
+   - Manually open `create-branch-checkout` for a trialing branch, cancel the redirect in the browser, and confirm entitlement stays `trialing`.
 
-## Verification
+## Out of scope
 
-- Re-run `pg_proc` query to confirm only the 4‑arg `next_number` remains.
-- Place an order from the branch admin "as customer" flow and confirm order number is generated (e.g. `INV-00123`).
-- Create a spec quote and confirm quote number is generated.
-- Generate an invoice on a branch with a custom prefix to confirm branch‑scoped numbering still works.
+- No changes to Stripe webhook handling — successful subscriptions still transition to `active` normally.
+- No UI changes; `BranchSubscriptionRequiredModal` / `BranchSubscriptionPanel` already show the right recovery UI whenever entitlement is `restricted` for a legitimate reason (trial expired, no plan, etc.).
