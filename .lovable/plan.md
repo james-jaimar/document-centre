@@ -1,62 +1,43 @@
-## What's actually happening
+## Problem
 
-The toast `operator does not exist: catalog_kind = text` is **not** an RLS problem, not an impersonation problem, and not a "layers of complexity" problem. It is a single-line bug in one database trigger function that I introduced when we added the "delete master catalogue rows also cleans up product_catalog_links" behaviour.
+In production (Amplify), the console shows:
 
-The function `public.cleanup_product_catalog_links_on_catalog_delete` runs on `BEFORE DELETE` on `catalog_finishing` / `catalog_papers` / `catalog_sizes` / `catalog_print_attrs`. Inside it, `_catalog` is declared as `text`, but `product_catalog_links.catalog` is the enum `catalog_kind`. So this line:
-
-```sql
-DELETE FROM public.product_catalog_links
- WHERE catalog = _catalog       -- catalog_kind = text  → no such operator
+```
+/assets/pdf.worker.min-qwK7q_zL.mjs
+Failed to load module script: Expected a JavaScript-or-Wasm module script
+but the server responded with a MIME type of "text/html".
 ```
 
-aborts the whole DELETE with the exact error you saw. Because it's a `BEFORE DELETE` trigger, the parent delete never happens — and because the earlier hook change now surfaces errors, the toast finally shows up. Same root cause was silently blocking Foil Stamping / Embossing before.
+Amplify's default SPA rewrite rule doesn't whitelist `.mjs`, so the hashed worker asset gets rewritten to `index.html`. PDF.js therefore never initialises, `PdfPageView` never renders, and `LooseSheetsPreview` falls back to the low‑res raster thumbnail (line 195 of `LooseSheetsPreview.tsx`). Business cards feel worst because their thumbnails are lowest DPI, but the same failure hits every PDF preview.
 
-Nothing else is wrong here — the RLS policies on `catalog_finishing` are correct, you *are* platform_admin, and the impersonation cleanup from the previous turn is fine and can stay.
+## Fix (code‑only, no Amplify console change needed)
 
-## The fix (one migration)
+Load the worker as a bundled string and serve it from a blob URL. Our CSP already allows `worker-src 'self' blob:`, so this works in production without touching Amplify rewrites or CSP.
 
-Replace the trigger function so `_catalog` is the enum type:
+**`src/components/preview/PdfPageView.tsx`** — replace the current worker init:
 
-```sql
-CREATE OR REPLACE FUNCTION public.cleanup_product_catalog_links_on_catalog_delete()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  _catalog public.catalog_kind;
-BEGIN
-  _catalog := CASE TG_TABLE_NAME
-    WHEN 'catalog_sizes'       THEN 'size'::public.catalog_kind
-    WHEN 'catalog_papers'      THEN 'paper'::public.catalog_kind
-    WHEN 'catalog_finishing'   THEN 'finishing'::public.catalog_kind
-    WHEN 'catalog_print_attrs' THEN 'print_attr'::public.catalog_kind
-  END;
+```ts
+// before
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
-  IF _catalog IS NULL THEN
-    RETURN OLD;
-  END IF;
-
-  DELETE FROM public.product_catalog_links
-   WHERE catalog = _catalog
-     AND lower(item_code) = lower(OLD.code);
-
-  RETURN OLD;
-END;
-$$;
+// after — inline the worker so no .mjs asset is fetched from the origin
+import pdfWorkerSource from "pdfjs-dist/build/pdf.worker.min.mjs?raw";
+const workerBlob = new Blob([pdfWorkerSource], { type: "application/javascript" });
+pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
 ```
 
-That's the whole change. No schema changes, no RLS changes, no code changes.
+Vite's `?raw` import inlines the worker into the main JS bundle, so there's no separate `.mjs` request for Amplify's rewrite to swallow.
 
 ## Verification
 
-1. In `/platform/catalog`, delete a master-scope Foil Stamping / Embossing row — expect success (row disappears, no toast).
-2. Re-run for a row that has a linked product → confirm both the catalog row and the `product_catalog_links` rows for it are gone.
-3. Repeat once for `catalog_sizes`, `catalog_papers`, `catalog_print_attrs` to confirm all four table triggers work.
+1. Build and open the same order URL in production (or preview) and check console — the `pdf.worker.min-*.mjs` MIME error should be gone.
+2. Open a business card lightbox → should render the high‑res PDF (crisp text), not the pixelated thumbnail.
+3. Sanity‑check other PDF previews (loose sheets, brochures) still render correctly.
 
-## Not doing (deliberately)
+## Out of scope
 
-- Not touching RLS on `catalog_*`.
-- Not touching the impersonation isolation logic added last turn — it's correct and unrelated.
-- Not "simplifying layers" broadly; the actual cause is one function. If after this fix you still feel the catalogue area is over-complex, tell me which surface feels wrong and I'll scope a separate cleanup plan.
+- No changes to `OrderFiles.tsx`, `PreviewLightbox.tsx`, `LooseSheetsPreview.tsx`, or the fallback logic — those were already correct.
+- No Amplify rewrite / CSP changes. (If we later prefer a separate worker asset, we'd add an `.mjs` exclusion in the Amplify console rewrite rule, but that's an infra change we can defer.)
