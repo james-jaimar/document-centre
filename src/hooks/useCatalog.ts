@@ -151,8 +151,8 @@ export function useDeleteCatalogSize() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("catalog_sizes" as any).delete().eq("id", id);
-      if (error) throw error;
+      await deleteByIdChecked("catalog_sizes", id);
+
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_sizes"] }),
   });
