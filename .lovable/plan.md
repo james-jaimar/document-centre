@@ -1,43 +1,38 @@
 ## Problem
 
-In production (Amplify), the console shows:
+The order-files lightbox now renders the real PDF (previous fix worked) but it shows the **entire MediaBox** — crop marks and bleed visible — instead of clipping to the TrimBox. The customer should only see the trimmed printed area.
 
-```
-/assets/pdf.worker.min-qwK7q_zL.mjs
-Failed to load module script: Expected a JavaScript-or-Wasm module script
-but the server responded with a MIME type of "text/html".
-```
+## Suspected cause (to verify before fixing)
 
-Amplify's default SPA rewrite rule doesn't whitelist `.mjs`, so the hashed worker asset gets rewritten to `index.html`. PDF.js therefore never initialises, `PdfPageView` never renders, and `LooseSheetsPreview` falls back to the low‑res raster thumbnail (line 195 of `LooseSheetsPreview.tsx`). Business cards feel worst because their thumbnails are lowest DPI, but the same failure hits every PDF preview.
+Both `OrderFiles.tsx` (`lightboxTrimCrop`) and `PreviewPanel.tsx` (`trimCrop`) build the CSS clip from `preflight.boxes.MediaBox` + `TrimBox`, but then apply a "double-crop guard" that returns **undefined** whenever `page_width_mm/page_height_mm ≈ TrimBox size`. That guard was written assuming: *"if the doc's stored page size matches the TrimBox, the PDF we're about to render must already be the server-cropped/processed file, so a second CSS clip would over-crop."*
 
-## Fix (code‑only, no Amplify console change needed)
+That assumption breaks when we fall back to the **original** upload:
 
-Load the worker as a bundled string and serve it from a blob URL. Our CSP already allows `worker-src 'self' blob:`, so this works in production without touching Amplify rewrites or CSP.
+- `lightboxPdfPath = preflight.processed_file_path || file_path`
+- `page_width_mm` in the DB is stored from preflight as the **TrimBox** size (that's how business cards are recorded).
+- If `processed_file_path` is missing/expired, we render the **original** PDF (which still has MediaBox + crop marks), but the guard still sees `page_width_mm ≈ trim` and skips clipping → the whole MediaBox is shown.
 
-**`src/components/preview/PdfPageView.tsx`** — replace the current worker init:
+This matches the screenshot (dog-behaviourist business card with visible crop marks at all four corners).
 
-```ts
-// before
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+## Plan
 
-// after — inline the worker so no .mjs asset is fetched from the origin
-import pdfWorkerSource from "pdfjs-dist/build/pdf.worker.min.mjs?raw";
-const workerBlob = new Blob([pdfWorkerSource], { type: "application/javascript" });
-pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
-```
+1. **Verify the cause first (no code changes yet).** For the order shown in the screenshot, check `order_documents.preflight_data` to confirm:
+   - `boxes.MediaBox` and `boxes.TrimBox` are present and differ.
+   - `preflight_data.processed_file_path` is **absent** (or points to a missing/expired object) so the lightbox falls back to `file_path`.
+   - `page_width_mm/page_height_mm` match the TrimBox dimensions.
+   Only proceed to the fix once this is confirmed.
 
-Vite's `?raw` import inlines the worker into the main JS bundle, so there's no separate `.mjs` request for Amplify's rewrite to swallow.
+2. **Fix the guard** in `src/components/order/PreviewPanel.tsx` and `src/pages/dashboard/OrderFiles.tsx` (and mirror the change in `src/lib/orders/previewFallbacks.ts` `getTrimCrop`):
+   - Track which file is actually being rendered (processed vs original) by reading `preflight.processed_file_path` alongside `file_path`.
+   - Only skip the CSS TrimBox clip when the URL being rendered **is** the processed/trimmed file. When the render URL is the original upload, always honour the MediaBox→TrimBox crop even if `page_width_mm` happens to equal the TrimBox.
+   - Keep the existing "mediaBox missing" and "trim within 1mm of media" early-outs.
 
-## Verification
+3. **Verify visually.** Reload the order files page for the business-card order in the screenshot and confirm the lightbox now shows only the trimmed card (no crop marks, no bleed strip). Spot-check a bound document and a flyer to make sure the guard still correctly suppresses clipping when the processed file is really being rendered (no over-crop regression).
 
-1. Build and open the same order URL in production (or preview) and check console — the `pdf.worker.min-*.mjs` MIME error should be gone.
-2. Open a business card lightbox → should render the high‑res PDF (crisp text), not the pixelated thumbnail.
-3. Sanity‑check other PDF previews (loose sheets, brochures) still render correctly.
+### Files touched (fix step)
 
-## Out of scope
+- `src/components/order/PreviewPanel.tsx`
+- `src/pages/dashboard/OrderFiles.tsx`
+- `src/lib/orders/previewFallbacks.ts`
 
-- No changes to `OrderFiles.tsx`, `PreviewLightbox.tsx`, `LooseSheetsPreview.tsx`, or the fallback logic — those were already correct.
-- No Amplify rewrite / CSP changes. (If we later prefer a separate worker asset, we'd add an `.mjs` exclusion in the Amplify console rewrite rule, but that's an infra change we can defer.)
+No schema, no backend, no snapshot-format changes.
