@@ -191,8 +191,14 @@ export default function PlatformCatalog() {
   };
   const removePaper = async (id: string) => {
     if (!confirm("Remove this paper from the master catalogue?")) return;
-    await deletePaper.mutateAsync(id);
+    try {
+      await deletePaper.mutateAsync(id);
+      toast.success("Paper deleted");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    }
   };
+
 
   // ------- finishing dialog -------
   const [finDlg, setFinDlg] = useState<Partial<CatalogFinishing> | null>(null);
