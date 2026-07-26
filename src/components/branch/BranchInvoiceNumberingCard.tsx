@@ -102,7 +102,7 @@ export function BranchInvoiceNumberingCard({ tenantId, branchId }: Props) {
   const preview = useMemo(() => {
     const prefix = form.prefix || tenantPrefix;
     const suffix = form.suffix || tenantSuffix;
-    const format = form.format || tenantFormat;
+    const format = form.format && form.format !== INHERIT ? form.format : tenantFormat;
     const seq = form.next_number ? String(form.next_number).padStart(5, "0") : "00001";
     const now = new Date();
     const yyyy = String(now.getFullYear());
