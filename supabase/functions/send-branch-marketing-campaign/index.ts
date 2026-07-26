@@ -313,22 +313,38 @@ async function refreshCampaignCounts(
   return { sent, failed, skipped };
 }
 
+async function bulkUpdateRecipients(
+  admin: SupabaseAdmin,
+  campaignId: string,
+  rows: Array<Record<string, unknown>>,
+): Promise<void> {
+  if (!rows.length) return;
+  for (const c of chunk(rows, INSERT_CHUNK)) {
+    const payload = c.map((r) => ({ campaign_id: campaignId, ...r }));
+    const { error } = await admin
+      .from("platform_email_campaign_recipients")
+      .upsert(payload, { onConflict: "id" });
+    if (error) throw new Error(`recipient_bulk_update: ${error.message}`);
+  }
+}
+
 async function enqueuePrepared(
   admin: SupabaseAdmin,
   campaignId: string,
   prepared: PreparedRecipient[],
   failed: FailedRecipient[],
 ): Promise<{ queued: number; failed: number }> {
-  for (const c of chunk(failed, INSERT_CHUNK)) {
-    await Promise.all(c.map((f) => admin
-      .from("platform_email_campaign_recipients")
-      .update({
-        status: "failed",
-        error: f.error,
-        action_link: f.activationLink ?? null,
-      })
-      .eq("id", f.recipientId)));
-  }
+  // Mark prepare-time failures in one bulk upsert per chunk.
+  await bulkUpdateRecipients(
+    admin,
+    campaignId,
+    failed.map((f) => ({
+      id: f.recipientId,
+      status: "failed",
+      error: f.error,
+      action_link: f.activationLink ?? null,
+    })),
+  );
 
   let queued = 0;
   const insertFailed: FailedRecipient[] = [];
@@ -347,30 +363,32 @@ async function enqueuePrepared(
     }
 
     queued += c.length;
-    await Promise.all(c.map((p) => admin
-      .from("platform_email_campaign_recipients")
-      .update({
+    await bulkUpdateRecipients(
+      admin,
+      campaignId,
+      c.map((p) => ({
+        id: p.recipientId,
         status: "sent",
         sent_at: new Date().toISOString(),
         error: null,
         action_link: p.activationLink,
-      })
-      .eq("id", p.recipientId)));
+      })),
+    );
 
     await refreshCampaignCounts(admin, campaignId, "running");
   }
 
   if (insertFailed.length) {
-    for (const c of chunk(insertFailed, INSERT_CHUNK)) {
-      await Promise.all(c.map((f) => admin
-        .from("platform_email_campaign_recipients")
-        .update({
-          status: "failed",
-          error: f.error,
-          action_link: f.activationLink ?? null,
-        })
-        .eq("id", f.recipientId)));
-    }
+    await bulkUpdateRecipients(
+      admin,
+      campaignId,
+      insertFailed.map((f) => ({
+        id: f.recipientId,
+        status: "failed",
+        error: f.error,
+        action_link: f.activationLink ?? null,
+      })),
+    );
   }
 
   const failedCount = failed.length + insertFailed.length;
@@ -379,6 +397,7 @@ async function enqueuePrepared(
   if (queued > 0) kickEmailWorker();
   return { queued, failed: failedCount };
 }
+
 
 async function runDispatch(
   ctx: DispatchContext,
@@ -430,11 +449,14 @@ async function handleRetry(
     });
   }
 
-  const branchIds = recipientRows.map((r) => r.branch_id).filter(Boolean) as string[];
+  // Load ALL branches for the tenant in one query and filter in memory.
+  // Avoids passing a 400+ UUID `id=in.(...)` URL through PostgREST — that
+  // was blowing the gateway URL-length limit and returning the giant
+  // encoded-UUID error the operator was seeing on retry.
   const { data: branches, error: branchErr } = await admin
     .from("branches")
     .select("id, name, email, slug, url_slug, trading_name")
-    .in("id", branchIds);
+    .eq("tenant_id", campaign.tenant_id);
   if (branchErr) return json({ error: `Branch lookup failed: ${branchErr.message}` }, 500);
 
   const branchesById = new Map<string, BranchRow>();
@@ -480,13 +502,13 @@ async function handleRetry(
   await admin.from("platform_email_campaigns").update({ status: "running" }).eq("id", campaignId);
 
   if (missing.length) {
-    for (const c of chunk(missing, INSERT_CHUNK)) {
-      await Promise.all(c.map((f) => admin
-        .from("platform_email_campaign_recipients")
-        .update({ status: "failed", error: f.error })
-        .eq("id", f.recipientId)));
-    }
+    await bulkUpdateRecipients(
+      admin,
+      campaignId,
+      missing.map((f) => ({ id: f.recipientId, status: "failed", error: f.error })),
+    );
   }
+
 
   EdgeRuntime.waitUntil((async () => {
     try {
