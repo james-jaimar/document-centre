@@ -351,7 +351,7 @@ function ComposeTab() {
     }
     const data = response.data as any;
     const totals = data.totals ?? { sent: 0, failed: 0, skipped: 0, dry_run_ok: 0 };
-    const resolvedTotal = Number(totals.sent ?? 0) + Number(totals.failed ?? 0) + Number(totals.skipped ?? 0) + Number(totals.dry_run_ok ?? 0);
+    const resolvedTotal = Number(totals.sent ?? 0) + Number(totals.failed ?? 0) + Number(totals.skipped ?? 0) + Number(totals.dry_run_ok ?? 0) + Number(totals.pending ?? 0);
     if (selectedCount > 0 && resolvedTotal === 0) {
       setResult(data);
       toast({
