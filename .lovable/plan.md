@@ -1,36 +1,62 @@
-## Goal
+## What went wrong
 
-Track whether Postnet (and other) recipients actually open the marketing/activation blast, without touching the visible `<a href>` links (which stay clean, direct URLs — so branded activation links remain the primary success metric).
+No `platform_email_campaigns` row exists for the 514-branch attempt (largest recent campaign was `total_recipients=1`), so the function failed **before** the campaign insert on line 128 of `send-branch-marketing-campaign/index.ts` — it never even started dispatching. The most likely cause (unconfirmed — I have no captured error text; edge logs for this function are empty) is the branches lookup at line 80:
 
-## Current state (verified)
+```ts
+admin.from("branches").select(...).eq("tenant_id", tenant_id).in("id", branch_ids)
+```
 
-- `supabase/functions/_shared/emailTracking.ts` already exposes `appendTrackingPixel`, `rewriteLinksForTracking`, and `injectTracking`, signed with `EMAIL_TRACKING_HMAC_SECRET`.
-- The public `email-track` edge function already logs opens/clicks into `email_tracking_events` and rolls up `open_count` / `first_opened_at` / `click_count` on `platform_email_campaign_recipients`.
-- Welcome campaign (`send-branch-welcome-campaign`) and trigger dispatcher already inject full tracking.
-- `send-branch-marketing-campaign/index.ts` (lines 208-244) **explicitly skips tracking** with `const trackedHtml = html;`. That's the only reason marketing sends have no open data.
-- No Amplify rewrite exists for `/email-track` on the tenant custom domain, so pixel URLs will resolve to the raw Supabase functions host. That's acceptable for an invisible 1×1 GIF (recipient never sees the URL unless they view source), and is the same host already used by the welcome campaign.
+PostgREST turns `.in()` into a URL query string. 514 UUIDs = ~19 KB in the URL, which trips the PostgREST/proxy URL length limit and comes back as an error before anything else runs.
 
-## Change
+Even if we fix that, the current shape has a second, bigger problem: **everything runs sequentially inside one request**. For each of 514 branches we do 2–3 DB calls + a `fetch` to `send-email` + more DB updates. That easily exceeds the edge function wall-clock limit, and the client sees a network error mid-run.
 
-1. **`send-branch-marketing-campaign/index.ts`**
-   - Import `appendTrackingPixel` from `../_shared/emailTracking.ts`.
-   - Replace `const trackedHtml = html;` with `const trackedHtml = await appendTrackingPixel(html, campaignId, rcpt.id, null);`.
-   - Keep the deliberate decision to **not** rewrite `<a href>` links — activation links stay as clean `https://<tenant>/activate/<slug>` URLs.
-   - Update the block comment above to reflect: "Inject 1×1 open pixel only; leave `<a href>` untouched so activation URLs remain branded."
+Step 1 of the plan verifies the URL-length theory (or replaces it with the real cause) before we change the transport shape.
 
-2. **Platform Communications UI (`src/pages/platform/PlatformCommunications.tsx`)** — where the marketing recipient list is shown, surface the open data that will now start populating:
-   - Add an "Opened" column / badge next to each recipient row driven by `open_count > 0` and `first_opened_at`.
-   - Add a small campaign-level summary chip (e.g. `Opened 4 / 12`).
-   - No new queries needed if the recipients list already selects `*`; otherwise add `open_count, first_opened_at` to the select.
+## Plan
 
-3. **Secret check** — `EMAIL_TRACKING_HMAC_SECRET` is already required by the welcome campaign path, so nothing to add. If it were ever missing, `signTrackingToken` throws and the send would fail; the plan assumes it's set (welcome campaign already depends on it).
+### 1. Confirm the immediate error
 
-## Out of scope
+- Re-run the campaign against a small subset (say 20 branches) to make sure the current code path is healthy at small scale.
+- Re-run against the full 514 with light instrumentation (`console.log` around the branches lookup + campaign insert) and read logs via `supabase--edge_function_logs`. Only then commit to a root cause.
 
-- Click tracking on marketing emails (would replace visible URLs with `functions.supabase.co/email-track?...`, defeating the "clean branded link" goal).
-- Amplify/tenant rewrite for `/email-track` — nice-to-have follow-up if we want the pixel host to also read as the tenant domain; not required for opens to work.
-- Per-campaign toggle for tracking — can add later if a customer objects; opens are industry-standard and unobtrusive.
+### 2. Fix the branches lookup so it survives 500+ IDs
 
-## Caveats to flag to the user
+Regardless of which query blew up, `.in("id", branch_ids)` with 500+ UUIDs is unsafe. Replace it with either:
 
-- Open tracking is inherently approximate: Apple Mail Privacy Protection pre-fetches images, which inflates opens; Gmail proxies images, which is fine but hides IPs; plain-text-only clients never trigger it. Treat the number as "at least this many were opened / previewed."
+- a chunked lookup (200 IDs per call, merged), **or**
+- a single `select("id, name, email, slug, url_slug, trading_name").eq("tenant_id", tenant_id)` and filter to the requested set in memory (tenant has ~517 branches — one round trip, no URL pressure).
+
+The in-memory filter is simpler and matches the "we already have the full branch list on the client" reality.
+
+### 3. Move the send loop off the request thread
+
+Rework `send-branch-marketing-campaign` to return quickly and dispatch in the background:
+
+1. Resolve template + tenant + branches + platform sender (fast).
+2. Insert the `platform_email_campaigns` row.
+3. **Bulk-insert all recipient rows as `status='pending'`** in a single call (chunked at ~500 per insert if needed) — no per-branch round-trips up front.
+4. Kick off dispatch with `EdgeRuntime.waitUntil(dispatch(campaignId))` and immediately return `{ campaign_id, total_recipients }` to the caller.
+5. Inside `dispatch`, iterate pending recipients in **small parallel batches** (e.g. `Promise.all` over 10 at a time) — each batch mints/refreshes the activation page, renders HTML, appends the tracking pixel, and calls `send-email` (which just enqueues to `email_outbox` — the real SMTP send happens in the Python worker, so this is cheap).
+6. After each batch, update `platform_email_campaigns.sent_count / failed_count`. Mark campaign `completed` (or `partial`) at the end.
+
+`send-email` already enqueues rather than sending inline, so all we need the edge function to do is create outbox rows. That's fast enough to finish 500+ within the background budget.
+
+### 4. Client UX
+
+- The composer (`PlatformCommunications` / marketing campaign modal) currently awaits the full response. Change it to:
+  - accept the immediate `{ campaign_id, total_recipients }` response,
+  - show a toast "Queued 514 recipients — sending in the background",
+  - subscribe to / poll `platform_email_campaigns` + `platform_email_campaign_recipients` for progress (the existing campaign card UI already reads these).
+
+### 5. SMTP-side note (no code change needed)
+
+The Microsoft Graph transport in `pdf-server/app/email/graph_oauth_client.py` sends one message per API call. The Python worker's concurrency is capped per-account by `account_slot(...)` (see `email_tasks.py`), so even if we enqueue 514 rows at once the worker will pace them correctly. No throttling logic needs to live in the edge function.
+
+## Technical notes
+
+- Files to change:
+  - `supabase/functions/send-branch-marketing-campaign/index.ts` — lookup fix, bulk recipient insert, `EdgeRuntime.waitUntil` background dispatch, batched parallelism.
+  - Frontend composer (likely `src/pages/platform/PlatformCommunications.tsx` or its child modal — will confirm in build mode) — treat response as "queued", switch to progress polling.
+- No schema changes. Existing `platform_email_campaign_recipients` columns (`status`, `sent_at`, `error`, `action_link`) already model per-recipient state.
+- Keep `dry_run` behavior synchronous (it's bounded and admins want the results inline).
+- Preserve current per-branch idempotency (reuse existing `platform_branch_activation_pages.slug`).
