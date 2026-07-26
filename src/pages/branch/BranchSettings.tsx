@@ -21,6 +21,7 @@ import { BranchOnboardingChecklist } from "@/components/branch/BranchOnboardingC
 import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
+import { BranchInvoiceNumberingCard } from "@/components/branch/BranchInvoiceNumberingCard";
 import { useSearchParams } from "react-router-dom";
 import { isBranchManagerRole } from "@/lib/auth/branchPermissions";
 
@@ -327,6 +328,11 @@ const BranchSettings = () => {
       {/* Tax / VAT override */}
       {tenantId && branchId && (
         <BranchTaxCard tenantId={tenantId} branchId={branchId} />
+      )}
+
+      {/* Invoice numbering override */}
+      {tenantId && branchId && (
+        <BranchInvoiceNumberingCard tenantId={tenantId} branchId={branchId} />
       )}
         </TabsContent>
       </Tabs>

@@ -142,7 +142,10 @@ export function FinancialTab() {
       <Card>
         <CardHeader>
           <CardTitle>Invoice Numbering</CardTitle>
-          <CardDescription>Prefix and next number for invoice generation</CardDescription>
+          <CardDescription>
+            Default prefix and next number for invoice generation. Individual
+            branches can override these under Branch Settings → Operations.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 max-w-lg">
           <div className="space-y-2">
