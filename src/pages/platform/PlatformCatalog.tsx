@@ -237,8 +237,14 @@ export default function PlatformCatalog() {
   };
   const removeFin = async (id: string) => {
     if (!confirm("Remove this finishing item from the master catalogue?")) return;
-    await deleteFin.mutateAsync(id);
+    try {
+      await deleteFin.mutateAsync(id);
+      toast.success("Finishing deleted");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    }
   };
+
 
   const attrGroups = attrs.reduce<Record<string, typeof attrs>>((acc, a) => {
     (acc[a.attribute] ||= []).push(a);
