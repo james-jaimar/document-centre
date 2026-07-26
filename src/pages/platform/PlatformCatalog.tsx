@@ -191,8 +191,14 @@ export default function PlatformCatalog() {
   };
   const removePaper = async (id: string) => {
     if (!confirm("Remove this paper from the master catalogue?")) return;
-    await deletePaper.mutateAsync(id);
+    try {
+      await deletePaper.mutateAsync(id);
+      toast.success("Paper deleted");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    }
   };
+
 
   // ------- finishing dialog -------
   const [finDlg, setFinDlg] = useState<Partial<CatalogFinishing> | null>(null);
@@ -231,8 +237,14 @@ export default function PlatformCatalog() {
   };
   const removeFin = async (id: string) => {
     if (!confirm("Remove this finishing item from the master catalogue?")) return;
-    await deleteFin.mutateAsync(id);
+    try {
+      await deleteFin.mutateAsync(id);
+      toast.success("Finishing deleted");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    }
   };
+
 
   const attrGroups = attrs.reduce<Record<string, typeof attrs>>((acc, a) => {
     (acc[a.attribute] ||= []).push(a);

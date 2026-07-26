@@ -13,10 +13,21 @@ const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 // cannot read or clobber the staff tab's localStorage-backed session.
 // The flag is set synchronously on first load of /impersonation/consume and
 // persists for the lifetime of that tab via sessionStorage.
+//
+// Safety net: staff routes (/platform, /admin, /branch) must NEVER run under
+// the impersonation storage key — a stuck flag there silently downgrades every
+// write to `anon`, producing 404s from RLS. If we're on a staff route, clear
+// the flag before creating the client.
 const isImpersonationTab = (() => {
   if (typeof window === 'undefined') return false;
   try {
-    if (window.location.pathname.startsWith('/impersonation/consume')) {
+    const path = window.location.pathname;
+    const STAFF_PREFIXES = ['/platform', '/admin', '/branch'];
+    if (STAFF_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) {
+      window.sessionStorage.removeItem('dc.impersonation.tab');
+      return false;
+    }
+    if (path.startsWith('/impersonation/consume')) {
       window.sessionStorage.setItem('dc.impersonation.tab', '1');
       return true;
     }
@@ -25,6 +36,7 @@ const isImpersonationTab = (() => {
     return false;
   }
 })();
+
 
 const authOptions = isImpersonationTab
   ? {
