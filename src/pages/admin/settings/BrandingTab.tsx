@@ -135,6 +135,7 @@ export function BrandingTab() {
       setEmailLogoUrl((settingsMap.email_logo_url as string) ?? "");
       setHeroImageUrl((settingsMap.hero_image_url as string) ?? "");
       setAuthBackgroundUrl((settingsMap.auth_background_url as string) ?? "");
+      setAuthBackgroundColor((settingsMap.auth_background_color as string) ?? "");
       setTagline((settingsMap.tagline as string) ?? "");
       setFontHeading((settingsMap.font_heading as string) ?? "");
       setFontBody((settingsMap.font_body as string) ?? "");
@@ -231,6 +232,7 @@ export function BrandingTab() {
         { category: "branding", setting_key: "email_logo_url", setting_value: emailLogoUrl, value_type: "string" },
         { category: "branding", setting_key: "hero_image_url", setting_value: heroImageUrl, value_type: "string" },
         { category: "branding", setting_key: "auth_background_url", setting_value: authBackgroundUrl, value_type: "string" },
+        { category: "branding", setting_key: "auth_background_color", setting_value: authBackgroundColor, value_type: "string" },
         { category: "branding", setting_key: "tagline", setting_value: tagline, value_type: "string" },
         { category: "branding", setting_key: "font_heading", setting_value: fontHeading, value_type: "string" },
         { category: "branding", setting_key: "font_body", setting_value: fontBody, value_type: "string" },
@@ -396,14 +398,41 @@ export function BrandingTab() {
             fileKey="hero"
             previewClass="h-20 w-auto object-cover"
           />
-          <ImageUploadField
-            label="Sign-in Background"
-            value={authBackgroundUrl}
-            onChange={setAuthBackgroundUrl}
-            tenantId={tenantId}
-            fileKey="auth-bg"
-            previewClass="h-20 w-auto object-cover"
-          />
+          <div className="space-y-2">
+            <ImageUploadField
+              label="Sign-in Background Image"
+              value={authBackgroundUrl}
+              onChange={setAuthBackgroundUrl}
+              tenantId={tenantId}
+              fileKey="auth-bg"
+              previewClass="h-20 w-auto object-cover"
+            />
+            <div className="pt-2">
+              <Label>Sign-in Background Colour</Label>
+              <div className="flex gap-2 items-center mt-2">
+                <Input
+                  type="color"
+                  value={authBackgroundColor || "#f8f9fa"}
+                  onChange={(e) => setAuthBackgroundColor(e.target.value)}
+                  className="w-16 h-10 p-1 cursor-pointer"
+                />
+                <Input
+                  value={authBackgroundColor}
+                  onChange={(e) => setAuthBackgroundColor(e.target.value)}
+                  placeholder="#f8f9fa (leave blank for default)"
+                  className="flex-1"
+                />
+                {authBackgroundColor && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setAuthBackgroundColor("")}>
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Used when no background image is set. Leave both blank for the default light grey.
+              </p>
+            </div>
+          </div>
           <ImageUploadField
             label="Favicon"
             value={faviconUrl}
