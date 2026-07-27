@@ -64,7 +64,7 @@ export function useTenantFromSlug() {
     const fetchOnce = async () => {
       const { data, error: err } = await supabase
         .from("tenants")
-        .select("id, name, slug, logo_url, custom_domain, is_demo, country_code")
+        .select("id, name, slug, logo_url, custom_domain, is_demo, country_code, show_country_selector")
 
         .eq("slug", slug)
         .eq("is_active", true)
