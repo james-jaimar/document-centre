@@ -39,6 +39,7 @@ const DEFAULTS: TenantBranding = {
   logo_url: "",
   hero_image_url: "",
   auth_background_url: "",
+  auth_background_color: "",
   tagline: "Professional printing, delivered.",
   font_heading: "",
   font_body: "",
