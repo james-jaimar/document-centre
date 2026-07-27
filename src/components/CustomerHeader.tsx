@@ -213,7 +213,7 @@ export default function CustomerHeader() {
         </div>
       ) : null}
 
-      <CountryFlagBadge countryCode={tenant?.country_code} />
+      {tenant?.show_country_selector && <CountryFlagBadge countryCode={tenant?.country_code} />}
 
 
 

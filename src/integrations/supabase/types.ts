@@ -6655,6 +6655,7 @@ export type Database = {
           proof_mode: string
           registration_number: string | null
           settings: Json
+          show_country_selector: boolean
           slug: string
           support_email: string | null
           support_phone: string | null
@@ -6695,6 +6696,7 @@ export type Database = {
           proof_mode?: string
           registration_number?: string | null
           settings?: Json
+          show_country_selector?: boolean
           slug: string
           support_email?: string | null
           support_phone?: string | null
@@ -6735,6 +6737,7 @@ export type Database = {
           proof_mode?: string
           registration_number?: string | null
           settings?: Json
+          show_country_selector?: boolean
           slug?: string
           support_email?: string | null
           support_phone?: string | null
