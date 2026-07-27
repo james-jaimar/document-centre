@@ -322,11 +322,13 @@ const Auth = () => {
     : "Platform staff sign-in";
 
   const authBgUrl = isTenantPortal ? branding?.auth_background_url?.trim() : "";
+  const authBgColor = isTenantPortal ? branding?.auth_background_color?.trim() : "";
+  const logoUrl = (isTenantPortal ? branding?.logo_url?.trim() : "") || brandedTenant?.logo_url || "";
 
   return (
     <div
-      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#f8f9fa] px-4 py-10"
-      style={brandVarsStyle}
+      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-4 py-10"
+      style={{ ...(brandVarsStyle ?? {}), backgroundColor: authBgColor || "#f8f9fa" }}
     >
       {/* Tenant-supplied background photograph (e.g. PostNet store interior) */}
       {authBgUrl && (
@@ -369,10 +371,10 @@ const Auth = () => {
 
           {/* Brand Header */}
           <div className="mb-8 flex flex-col items-center text-center">
-            {isTenantPortal && brandedTenant?.logo_url ? (
+            {isTenantPortal && logoUrl ? (
               <img
-                src={brandedTenant.logo_url}
-                alt={`${brandedTenant.name} logo`}
+                src={logoUrl}
+                alt={`${brandedTenant?.name ?? "Portal"} logo`}
                 className="mb-6 h-14 w-auto max-w-[220px] object-contain"
               />
             ) : isTenantPortal && brandedTenant ? (

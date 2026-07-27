@@ -14,24 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      _backfill_report: {
-        Row: {
-          err: string | null
-          healed: boolean | null
-          out_branch_id: string | null
-        }
-        Insert: {
-          err?: string | null
-          healed?: boolean | null
-          out_branch_id?: string | null
-        }
-        Update: {
-          err?: string | null
-          healed?: boolean | null
-          out_branch_id?: string | null
-        }
-        Relationships: []
-      }
       apps: {
         Row: {
           created_at: string
