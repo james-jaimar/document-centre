@@ -1,23 +1,31 @@
-## Goal
-Make the country selector per-tenant instead of global. Default OFF. Enable it only for tenants that actually serve multiple countries (Postnet).
+## What's happening
 
-## Changes
+Google sign-in on the 3at1 storefront takes the user to `document-centre.com` instead of back to 3at1's cart.
 
-**1. Data**
-- Add `show_country_selector boolean not null default false` to `public.tenants` (single migration; no RLS change needed — column follows existing tenant read policies).
-- Backfill: set `true` for the Postnet tenant only. All others (3at1, Jetline, demo, etc.) stay `false`.
+## Root cause (confirmed)
 
-**2. Tenant branding admin**
-- In the tenant admin Branding tab (`src/pages/admin/...` BrandingTab), add a toggle: **"Show country selector in storefront header"** with help text explaining it's for multi-country tenants.
-- Wire read/write via the existing tenants update path.
+- Tenant custom domains (from DB):
+  - **Postnet** → `postnetprintcentre.com` (works)
+  - **3 at 1** → `3at1printcentre.com` (broken)
+  - **Jetline** → no custom domain, served under `document-centre.com/t/jetline`
+- `SocialAuthButtons.tsx` builds `redirectTo` from `window.location.origin`, so on 3at1 it asks Supabase to redirect back to `https://3at1printcentre.com/auth/callback?tenant=3at1`.
+- Supabase Auth only honours `redirectTo` values that match an entry in **Auth → URL Configuration → Redirect URLs**. When it doesn't match, Supabase silently falls back to the project **Site URL** (currently `https://document-centre.com`) — exactly the "landed on document-centre homepage" symptom.
+- Postnet works because `postnetprintcentre.com` was added when we launched it. `3at1printcentre.com` was never added.
+- **Jetline** has no custom domain, so `window.location.origin` is already `https://document-centre.com`, which is on the allowlist. Jetline is fine as-is — no action needed until it gets its own domain.
 
-**3. Storefront header gating**
-- `src/components/CustomerHeader.tsx` and `src/components/customer/mobile/MobileHeader.tsx`: only render `<CountryFlagBadge />` when `tenant.show_country_selector === true`.
-- Fetch the flag through the existing tenant hook (`useTenantBranding` / `useTenantFromHost`) — add the column to those selects if not already returned.
+This is a Supabase dashboard configuration issue, not a code bug. Code is behaving correctly.
 
-**4. Types**
-- After migration approval, regenerated Supabase types will include the new column; update the two header components and BrandingTab to consume it.
+## Plan
 
-## Out of scope
-- No changes to `CountryFlagBadge` itself, `detect-region`, or `src/lib/countries.ts`.
-- No change to the platform-level country list.
+1. **You (or I via the Supabase settings) add the following to Supabase → Authentication → URL Configuration → Redirect URLs**:
+   - `https://3at1printcentre.com/auth/callback`
+   - `https://3at1printcentre.com/**` (wildcard so future paths like password reset also work)
+2. **Verify by test**: from the 3at1 cart, click "Continue with Google" → should land back on `https://3at1printcentre.com/t/3at1/.../cart` (or the branch cart).
+3. **Add an operational checklist item** to `mem://saas/tenant-onboarding-lifecycle` (or a new memory) that says: whenever a tenant is given a custom domain, add `https://<domain>/auth/callback` and `https://<domain>/**` to the Supabase Auth redirect allowlist. This prevents the same trap for the next tenant.
+4. **Jetline**: no change needed while it stays on `document-centre.com/t/jetline`. If/when Jetline gets its own domain, apply the same allowlist entries.
+
+## Optional follow-up (not in this change unless you want it)
+
+Add a lightweight platform-admin check that, for every tenant with a `custom_domain`, pings Supabase Auth settings (or shows a manual checkbox "Redirect URL registered ✓") so this misconfiguration is visible in the tenant admin UI instead of only surfacing when a customer tries to log in.
+
+Want me to also add that admin-side visibility check, or just do the Supabase allowlist entries?
