@@ -83,7 +83,7 @@ export default function MobileHeader() {
           </div>
         ) : null}
 
-        <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />
+        {(tenant as any)?.show_country_selector && <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />}
 
 
 

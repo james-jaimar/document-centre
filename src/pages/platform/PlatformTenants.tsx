@@ -64,7 +64,7 @@ const PlatformTenants = () => {
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [paymentsTenant, setPaymentsTenant] = useState<Tenant | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", slug: "", logo_url: "", country_code: "ZA" });
+  const [form, setForm] = useState({ name: "", slug: "", logo_url: "", country_code: "ZA", show_country_selector: false });
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE);
 
   // Subscription lookup by tenant_id
@@ -92,6 +92,7 @@ const PlatformTenants = () => {
       slug: t.slug,
       logo_url: t.logo_url || "",
       country_code: ((t as any).country_code as string) || "ZA",
+      show_country_selector: !!(t as any).show_country_selector,
     });
   };
 
@@ -110,6 +111,7 @@ const PlatformTenants = () => {
         slug: form.slug,
         logo_url: form.logo_url || null,
         country_code: form.country_code,
+        show_country_selector: form.show_country_selector,
       } as any);
       toast.success("Tenant updated");
       setEditing(null);
@@ -267,7 +269,21 @@ const PlatformTenants = () => {
                   <SelectItem value="US">🇺🇸 United States</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground mt-1">Shown as a flag in the customer header.</p>
+              <p className="text-xs text-muted-foreground mt-1">Shown as a flag in the customer header when the selector is enabled below.</p>
+            </div>
+            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+              <div>
+                <Label className="text-sm">Show country selector in storefront header</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enable only for tenants that operate in multiple countries. When off, the header shows no country badge.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={form.show_country_selector}
+                onChange={(e) => setForm({ ...form, show_country_selector: e.target.checked })}
+              />
             </div>
           </div>
 
