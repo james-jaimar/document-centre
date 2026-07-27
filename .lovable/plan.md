@@ -1,26 +1,37 @@
-## Goal
-For the **3at1** tenant, take every branch offline (`is_live = false`) except the `demo` branch, so branches only appear on the storefront once their subscription activates.
+# Ingest Jetline branches
 
-## Current state (verified)
-- 3at1 has ~40+ branches. All except a handful are already `status='incomplete'` / `trial_status='not_started'` (no active subscription).
-- Most of those are still flagged `is_live = true`, so their storefront routes resolve today.
-- Only `demo` has an active comp'd subscription and should remain live.
+Jetline tenant already exists (`ee502eb0-fc87-4659-a09e-12dd230178fc`, app `document-centre`) and has zero branches. The spreadsheet lists 44 stores.
 
-## Change
-One data update via the insert/update tool:
+## What gets created
 
-```sql
-UPDATE branches b
-SET is_live = false
-FROM tenants t
-WHERE b.tenant_id = t.id
-  AND t.slug = '3at1'
-  AND b.slug <> 'demo'
-  AND b.is_live = true;
-```
+One row in `public.branches` per store, with:
 
-No schema change. No code change. The existing `BranchSlugRoute` already routes non-live branches to `StoreNotAvailable`, and the existing activation edge functions (`start-branch-trial`, `create-branch-checkout`, `stripe-webhook`) already flip `is_live = true` on successful trial start / paid activation, so branches will come back online automatically when their manager subscribes.
+| Column | Source |
+| --- | --- |
+| `tenant_id` | Jetline tenant id (fixed) |
+| `name` | `store_name` with the "Jetline " prefix stripped (e.g. "Bryanston", "Wits University") |
+| `slug` | last segment of `store_url` (e.g. `jetline-bryanston`) — unique per tenant |
+| `url_slug` | same as `slug` (used in `/t/jetline/:branchSlug`) |
+| `address` | full `address` field verbatim |
+| `province` | mapped from `province_slug` → "Gauteng", "Western Cape", "KwaZulu-Natal", "North West", "Limpopo", etc. |
+| `city` | best-effort parse from the tail of `address` (e.g. "Johannesburg", "Cape Town", "Pretoria"); left NULL when ambiguous |
+| `country` | `ZA` (default) |
+| `phone` | `phone` verbatim |
+| `email` | `email` verbatim (lowercased) |
+| `trading_name` | `store_name` (full "Jetline …") |
+| `is_active` | `true` |
+| `is_live` | `false` — matches the pattern used for PostNet / 3at1: branches only go live when they start a trial or activate a paid subscription |
 
-## Out of scope
-- No change to the demo branch.
-- No change to any branch that already has an active/trialing subscription (the WHERE clause leaves those alone if they happen to be live — but per the query above, `demo` is the only such 3at1 branch today).
+No `tenant_membership` accounts, no activation emails, no subscriptions are created here — activation is a separate step (handled by the existing `provision-branch-admins` + `send-branch-activation` flow you already use).
+
+## How
+
+A single `INSERT` via the data tool with all 44 rows built from the spreadsheet. Idempotent guard: `ON CONFLICT (tenant_id, slug) DO NOTHING` so re-running is safe.
+
+## Out of scope (confirm if you want these too)
+
+- Provisioning branch-manager users from the `email` column (would run `provision-branch-admins` afterwards).
+- Sending activation emails.
+- Seeding pricing — the `trg_clone_pricing_for_new_branch` trigger already handles this automatically on insert.
+
+Say the word and I'll insert the 44 rows.
