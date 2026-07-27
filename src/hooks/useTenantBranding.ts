@@ -9,6 +9,7 @@ export interface TenantBranding {
   logo_url: string;
   hero_image_url: string;
   auth_background_url: string;
+  auth_background_color: string;
   tagline: string;
   font_heading: string;
   font_body: string;
