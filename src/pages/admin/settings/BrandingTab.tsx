@@ -92,6 +92,7 @@ export function BrandingTab() {
   const [emailLogoUrl, setEmailLogoUrl] = useState("");
   const [heroImageUrl, setHeroImageUrl] = useState("");
   const [authBackgroundUrl, setAuthBackgroundUrl] = useState("");
+  const [authBackgroundColor, setAuthBackgroundColor] = useState("");
   const [tagline, setTagline] = useState("");
   const [fontHeading, setFontHeading] = useState("");
   const [fontBody, setFontBody] = useState("");
