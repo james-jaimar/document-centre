@@ -16,19 +16,19 @@ export type Database = {
     Tables: {
       _backfill_report: {
         Row: {
-          branch_id: string | null
           err: string | null
           healed: boolean | null
+          out_branch_id: string | null
         }
         Insert: {
-          branch_id?: string | null
           err?: string | null
           healed?: boolean | null
+          out_branch_id?: string | null
         }
         Update: {
-          branch_id?: string | null
           err?: string | null
           healed?: boolean | null
+          out_branch_id?: string | null
         }
         Relationships: []
       }
