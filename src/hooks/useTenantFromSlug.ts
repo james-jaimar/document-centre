@@ -10,6 +10,7 @@ interface SlugTenant {
   custom_domain: string | null;
   is_demo: boolean;
   country_code: string | null;
+  show_country_selector: boolean;
 }
 
 
