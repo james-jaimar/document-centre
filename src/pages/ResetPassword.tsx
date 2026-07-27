@@ -133,6 +133,8 @@ const ResetPassword = () => {
   }
 
   const authBgUrl = isTenantPortal ? branding?.auth_background_url?.trim() : "";
+  const authBgColor = isTenantPortal ? branding?.auth_background_color?.trim() : "";
+  const resolvedLogoUrl = (isTenantPortal ? branding?.logo_url?.trim() : "") || brandedTenant?.logo_url || "";
 
   if (!isRecovery) {
     return (
@@ -162,8 +164,8 @@ const ResetPassword = () => {
 
   return (
     <div
-      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#f8f9fa] px-4 py-10"
-      style={brandVarsStyle}
+      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-4 py-10"
+      style={{ ...(brandVarsStyle ?? {}), backgroundColor: authBgColor || "#f8f9fa" }}
     >
       {authBgUrl && (
         <>
@@ -193,10 +195,10 @@ const ResetPassword = () => {
       <div className="relative w-full max-w-[460px]">
         <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] sm:p-10 md:p-12">
           <div className="mb-8 flex flex-col items-center text-center">
-            {isTenantPortal && brandedTenant?.logo_url ? (
+            {isTenantPortal && resolvedLogoUrl ? (
               <img
-                src={brandedTenant.logo_url}
-                alt={`${brandedTenant.name} logo`}
+                src={resolvedLogoUrl}
+                alt={`${brandedTenant?.name ?? "Portal"} logo`}
                 className="mb-6 h-14 w-auto max-w-[220px] object-contain"
               />
             ) : isTenantPortal && brandedTenant ? (
