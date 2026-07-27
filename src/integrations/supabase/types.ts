@@ -7260,9 +7260,9 @@ export type Database = {
       platform_backfill_branch_seeding: {
         Args: never
         Returns: {
-          branch_id: string
           err: string
           healed: boolean
+          out_branch_id: string
         }[]
       }
       platform_legal_acceptance_status: {
