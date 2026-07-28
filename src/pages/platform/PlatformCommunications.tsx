@@ -31,6 +31,7 @@ interface Campaign {
   id: string; tenant_id: string | null; template_slug: string; subject_snapshot: string;
   total_recipients: number; sent_count: number; failed_count: number; skipped_count: number;
   status: string; created_at: string; kind?: "activation" | "marketing" | null;
+  parent_campaign_id?: string | null;
 }
 interface CampaignRecipient {
   id: string; branch_id: string | null; email: string | null;
