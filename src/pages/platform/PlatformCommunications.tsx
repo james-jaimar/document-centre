@@ -850,6 +850,7 @@ function HistoryTab() {
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-medium truncate">{c.subject_snapshot}</div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {c.parent_campaign_id && <Badge variant="outline" className="text-[10px]">follow-up</Badge>}
                   {c.kind && <Badge variant="outline" className="text-[10px]">{c.kind}</Badge>}
                   <div className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</div>
                 </div>
@@ -874,11 +875,28 @@ function HistoryTab() {
                     Retry failed
                   </Button>
                 )}
+                {c.kind === "marketing" && c.sent_count > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px]"
+                    onClick={(e) => { e.stopPropagation(); setResendFor(c); }}
+                  >
+                    <MailPlus className="h-3 w-3 mr-1" />
+                    Resend to unopened
+                  </Button>
+                )}
               </div>
             </div>
           ))}
         </CardContent>
       </Card>
+
+      <ResendUnopenedDialog
+        campaign={resendFor}
+        onClose={() => setResendFor(null)}
+        onSent={() => { setResendFor(null); loadCampaigns(); }}
+      />
 
       <Card>
         <CardHeader><CardTitle className="text-base">Recipients</CardTitle></CardHeader>
