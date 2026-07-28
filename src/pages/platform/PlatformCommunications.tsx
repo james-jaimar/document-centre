@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Send, Save, Megaphone, AlertCircle, Code2, Plus, Copy, Trash2, Eye, MousePointerClick, CheckCircle2, RotateCcw } from "lucide-react";
+import { Loader2, Send, Save, Megaphone, AlertCircle, Code2, Plus, Copy, Trash2, Eye, MousePointerClick, CheckCircle2, RotateCcw, MailPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
