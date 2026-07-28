@@ -802,6 +802,19 @@ Deno.serve(async (req) => {
       return await handleRetry(admin, retryCampaignId, templateSlug);
     }
 
+    const resendUnopenedId = String(body.resend_unopened_campaign_id ?? "").trim();
+    if (resendUnopenedId) {
+      const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
+      return await handleResendUnopened(
+        admin,
+        caller.id,
+        callerOrigin,
+        resendUnopenedId,
+        typeof body.subject_override === "string" ? body.subject_override : null,
+        body.preview_only === true,
+      );
+    }
+
     const tenant_id = String(body.tenant_id ?? "").trim();
     const branch_ids = normalizeBranchIds(body.branch_ids);
     const dryRun = body.dry_run === true;
