@@ -943,6 +943,119 @@ function StatBox({ label, value, icon }: { label: string; value: number | string
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// Resend-to-unopened dialog. Calls send-branch-marketing-campaign
+// with { resend_unopened_campaign_id, preview_only } first to fetch
+// the audience breakdown, then again without preview_only to send.
+// ─────────────────────────────────────────────────────────────
+interface ResendPreview {
+  parent_sent: number;
+  unopened: number;
+  suppressed: number;
+  already_followed_up: number;
+  eligible: number;
+}
+
+function ResendUnopenedDialog({
+  campaign, onClose, onSent,
+}: { campaign: Campaign | null; onClose: () => void; onSent: () => void }) {
+  const { toast } = useToast();
+  const [preview, setPreview] = useState<ResendPreview | null>(null);
+  const [subject, setSubject] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (!campaign) { setPreview(null); setSubject(""); return; }
+    setSubject(campaign.subject_snapshot.startsWith("Re: ")
+      ? campaign.subject_snapshot
+      : `Re: ${campaign.subject_snapshot}`);
+    (async () => {
+      setLoading(true);
+      const resp = await invokeEdgeFunctionVerbose("send-branch-marketing-campaign", {
+        resend_unopened_campaign_id: campaign.id,
+        preview_only: true,
+      });
+      setLoading(false);
+      if (!resp.ok) {
+        toast({ title: "Could not load audience", description: resp.error ?? "unknown", variant: "destructive" });
+        onClose();
+        return;
+      }
+      const totals = (resp.data as { totals?: ResendPreview } | null)?.totals ?? null;
+      setPreview(totals);
+    })();
+  }, [campaign]);
+
+  const send = async () => {
+    if (!campaign || !preview || preview.eligible === 0) return;
+    setSending(true);
+    const resp = await invokeEdgeFunctionVerbose("send-branch-marketing-campaign", {
+      resend_unopened_campaign_id: campaign.id,
+      subject_override: subject.trim() || undefined,
+    });
+    setSending(false);
+    if (!resp.ok) {
+      toast({ title: "Follow-up send failed", description: resp.error ?? "unknown", variant: "destructive" });
+      return;
+    }
+    const totals = (resp.data as { totals?: { pending?: number } } | null)?.totals ?? {};
+    toast({
+      title: "Follow-up queued",
+      description: `${totals.pending ?? preview.eligible} recipient(s) will be sent in the background.`,
+    });
+    onSent();
+  };
+
+  return (
+    <Dialog open={!!campaign} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Resend to unopened</DialogTitle>
+        </DialogHeader>
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+            <Loader2 className="h-4 w-4 animate-spin" /> Calculating audience…
+          </div>
+        )}
+        {!loading && preview && (
+          <div className="space-y-4">
+            <div className="text-xs text-muted-foreground">
+              Parent: <span className="font-medium">{campaign?.subject_snapshot}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="border rounded p-2"><div className="text-muted-foreground">Originally sent</div><div className="text-base font-semibold">{preview.parent_sent}</div></div>
+              <div className="border rounded p-2"><div className="text-muted-foreground">Not opened</div><div className="text-base font-semibold">{preview.unopened}</div></div>
+              <div className="border rounded p-2"><div className="text-muted-foreground">Suppressed / bounced</div><div className="text-base font-semibold">{preview.suppressed}</div></div>
+              <div className="border rounded p-2"><div className="text-muted-foreground">Already followed up</div><div className="text-base font-semibold">{preview.already_followed_up}</div></div>
+              <div className="border rounded p-2 col-span-2 bg-primary/5">
+                <div className="text-muted-foreground">Eligible for this follow-up</div>
+                <div className="text-lg font-semibold">{preview.eligible}</div>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Subject (used for this follow-up only)</Label>
+              <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+            </div>
+            <div className="text-[11px] text-muted-foreground leading-snug">
+              Opens are measured by a 1×1 tracking pixel — so "not opened" also includes recipients who read the email
+              with images blocked (common in Outlook). Body and branding stay the same as the original send. The follow-up
+              gets its own tracking so you can measure the incremental lift.
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>
+          <Button onClick={send} disabled={sending || loading || !preview || preview.eligible === 0}>
+            {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <MailPlus className="h-4 w-4 mr-2" />}
+            Send to {preview?.eligible ?? 0}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============= Template CRUD =============
 
 function slugify(s: string) {
