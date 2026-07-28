@@ -4461,6 +4461,7 @@ export type Database = {
           failed_count: number
           id: string
           kind: string
+          parent_campaign_id: string | null
           sent_count: number
           skipped_count: number
           status: string
@@ -4477,6 +4478,7 @@ export type Database = {
           failed_count?: number
           id?: string
           kind?: string
+          parent_campaign_id?: string | null
           sent_count?: number
           skipped_count?: number
           status?: string
@@ -4493,6 +4495,7 @@ export type Database = {
           failed_count?: number
           id?: string
           kind?: string
+          parent_campaign_id?: string | null
           sent_count?: number
           skipped_count?: number
           status?: string
@@ -4502,6 +4505,13 @@ export type Database = {
           total_recipients?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "platform_email_campaigns_parent_campaign_id_fkey"
+            columns: ["parent_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaigns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "platform_email_campaigns_tenant_id_fkey"
             columns: ["tenant_id"]

@@ -63,6 +63,10 @@ type FunctionBody = {
   tenant_id?: string;
   branch_ids?: unknown;
   dry_run?: boolean;
+  // Follow-up ("resend to unopened") mode:
+  resend_unopened_campaign_id?: string;
+  subject_override?: string;
+  preview_only?: boolean;
 };
 
 interface DispatchContext {
@@ -529,6 +533,245 @@ async function handleRetry(
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+// Resend-to-unopened follow-up:
+//   Given a parent campaign, build the audience of recipients who
+//   were successfully sent to but whose tracking pixel never fired
+//   (first_opened_at IS NULL). Exclude suppressions and anyone who
+//   already received a follow-up of this campaign. When preview_only
+//   is set we just return the counts + a sample; otherwise we create
+//   a new child campaign row and dispatch via runDispatch.
+// ─────────────────────────────────────────────────────────────
+async function buildUnopenedAudience(
+  admin: SupabaseAdmin,
+  parentCampaignId: string,
+): Promise<{
+  tenantId: string | null;
+  branches: BranchRow[];
+  totals: {
+    parent_sent: number;
+    unopened: number;
+    suppressed: number;
+    already_followed_up: number;
+    eligible: number;
+  };
+}> {
+  // 1. Parent recipients that were sent + never opened + have a branch_id
+  const { data: parentRecipients, error: recErr } = await admin
+    .from("platform_email_campaign_recipients")
+    .select("email, branch_id, first_opened_at, status")
+    .eq("campaign_id", parentCampaignId);
+  if (recErr) throw new Error(`parent_recipients: ${recErr.message}`);
+
+  const parentRows = (parentRecipients ?? []) as Array<{
+    email: string | null; branch_id: string | null;
+    first_opened_at: string | null; status: string;
+  }>;
+  const sentRows = parentRows.filter((r) =>
+    (r.status === "sent" || r.status === "completed" || r.status === "sent_existing_user")
+    && !!r.branch_id && !!(r.email ?? "").trim()
+  );
+  const unopenedRows = sentRows.filter((r) => !r.first_opened_at);
+
+  // 2. Suppressions
+  const emailsLower = [...new Set(unopenedRows.map((r) => (r.email ?? "").toLowerCase()))];
+  let suppressed = new Set<string>();
+  if (emailsLower.length) {
+    const { data: sup } = await admin
+      .from("email_suppressions")
+      .select("email")
+      .in("email", emailsLower);
+    suppressed = new Set(((sup ?? []) as Array<{ email: string }>).map((s) => s.email.toLowerCase()));
+  }
+
+  // 3. Already sent in a prior follow-up chain for this parent
+  const { data: children } = await admin
+    .from("platform_email_campaigns")
+    .select("id")
+    .eq("parent_campaign_id", parentCampaignId);
+  const childIds = ((children ?? []) as Array<{ id: string }>).map((c) => c.id);
+  const alreadyFollowed = new Set<string>();
+  if (childIds.length) {
+    const { data: childRecs } = await admin
+      .from("platform_email_campaign_recipients")
+      .select("branch_id")
+      .in("campaign_id", childIds);
+    for (const r of (childRecs ?? []) as Array<{ branch_id: string | null }>) {
+      if (r.branch_id) alreadyFollowed.add(r.branch_id);
+    }
+  }
+
+  const eligibleRows = unopenedRows.filter((r) =>
+    !suppressed.has((r.email ?? "").toLowerCase())
+    && !alreadyFollowed.has(r.branch_id!)
+  );
+
+  // 4. Resolve branch details (tenant scope for safety)
+  const { data: parentCamp } = await admin
+    .from("platform_email_campaigns")
+    .select("tenant_id")
+    .eq("id", parentCampaignId).maybeSingle();
+  const tenantId = (parentCamp as { tenant_id: string | null } | null)?.tenant_id ?? null;
+
+  let branches: BranchRow[] = [];
+  if (tenantId && eligibleRows.length) {
+    const wantedIds = new Set(eligibleRows.map((r) => r.branch_id!));
+    const { data: allBranches } = await admin
+      .from("branches")
+      .select("id, name, email, slug, url_slug, trading_name")
+      .eq("tenant_id", tenantId);
+    branches = ((allBranches ?? []) as BranchRow[]).filter((b) => wantedIds.has(b.id));
+  }
+
+  const suppressedCount = unopenedRows.filter((r) =>
+    suppressed.has((r.email ?? "").toLowerCase())
+  ).length;
+  const alreadyCount = unopenedRows.filter((r) =>
+    !suppressed.has((r.email ?? "").toLowerCase()) && alreadyFollowed.has(r.branch_id!)
+  ).length;
+
+  return {
+    tenantId,
+    branches,
+    totals: {
+      parent_sent: sentRows.length,
+      unopened: unopenedRows.length,
+      suppressed: suppressedCount,
+      already_followed_up: alreadyCount,
+      eligible: branches.length,
+    },
+  };
+}
+
+async function handleResendUnopened(
+  admin: SupabaseAdmin,
+  callerId: string,
+  callerOrigin: string | null,
+  parentCampaignId: string,
+  subjectOverride: string | null,
+  previewOnly: boolean,
+): Promise<Response> {
+  const { data: parent, error: parentErr } = await admin
+    .from("platform_email_campaigns")
+    .select("id, tenant_id, template_slug, subject_snapshot, body_html_snapshot, body_text_snapshot, kind")
+    .eq("id", parentCampaignId).maybeSingle();
+  if (parentErr) return json({ error: `Parent lookup failed: ${parentErr.message}` }, 500);
+  if (!parent) return json({ error: "Parent campaign not found" }, 404);
+  if (!parent.tenant_id) return json({ error: "Parent campaign has no tenant" }, 400);
+  if (parent.kind !== "marketing") {
+    return json({ error: "Only marketing campaigns can be resent to unopened" }, 400);
+  }
+
+  const audience = await buildUnopenedAudience(admin, parentCampaignId);
+
+  if (previewOnly) {
+    return json({
+      preview: true,
+      parent_campaign_id: parentCampaignId,
+      totals: audience.totals,
+      sample: audience.branches.slice(0, 8).map((b) => ({ id: b.id, name: b.name, email: b.email })),
+    });
+  }
+
+  if (!audience.branches.length) {
+    return json({
+      parent_campaign_id: parentCampaignId,
+      totals: audience.totals,
+      message: "No eligible unopened recipients to resend to.",
+    });
+  }
+
+  const { data: tenant } = await admin
+    .from("tenants").select("id, app_id, name, slug").eq("id", parent.tenant_id).maybeSingle();
+  if (!tenant) return json({ error: "Tenant not found" }, 404);
+
+  const resolved = await resolveAppOriginDetailed(admin, parent.tenant_id, callerOrigin);
+  if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
+  const platformSenderId = await getPlatformSenderId(admin);
+
+  const finalSubject = (subjectOverride ?? "").trim()
+    || (parent.subject_snapshot.startsWith("Re: ")
+      ? parent.subject_snapshot
+      : `Re: ${parent.subject_snapshot}`);
+
+  // Create child campaign row
+  const { data: newCamp, error: newCampErr } = await admin
+    .from("platform_email_campaigns")
+    .insert({
+      tenant_id: parent.tenant_id,
+      template_slug: parent.template_slug,
+      subject_snapshot: finalSubject,
+      body_html_snapshot: parent.body_html_snapshot,
+      body_text_snapshot: parent.body_text_snapshot,
+      total_recipients: audience.branches.length,
+      created_by: callerId,
+      status: "running",
+      kind: "marketing",
+      parent_campaign_id: parentCampaignId,
+    }).select("id").single();
+  if (newCampErr) return json({ error: `Follow-up create failed: ${newCampErr.message}` }, 500);
+  const campaignId = newCamp.id as string;
+
+  // Insert pending recipient rows in bulk
+  const pending: { branch: BranchRow; recipientId: string }[] = [];
+  for (const c of chunk(audience.branches, INSERT_CHUNK)) {
+    const payload = c.map((b) => ({
+      campaign_id: campaignId,
+      branch_id: b.id,
+      email: (b.email ?? "").trim().toLowerCase(),
+      status: "pending",
+    }));
+    const { data: inserted, error: insErr } = await admin
+      .from("platform_email_campaign_recipients")
+      .insert(payload)
+      .select("id, branch_id");
+    if (insErr) {
+      await admin.from("platform_email_campaigns").update({
+        status: "failed", failed_count: c.length,
+      }).eq("id", campaignId);
+      return json({ error: `Recipient insert failed: ${insErr.message}`, campaign_id: campaignId }, 500);
+    }
+    const byBranch = new Map<string, string>();
+    for (const r of (inserted ?? []) as Array<{ branch_id: string; id: string }>) byBranch.set(r.branch_id, r.id);
+    for (const b of c) {
+      const rid = byBranch.get(b.id);
+      if (rid) pending.push({ branch: b, recipientId: rid });
+    }
+  }
+
+  const ctx: DispatchContext = {
+    admin,
+    template: {
+      subject: finalSubject,
+      body_html: parent.body_html_snapshot,
+      body_text: parent.body_text_snapshot,
+    },
+    tenant,
+    appOrigin: resolved.origin,
+    campaignId,
+    platformSenderId,
+  };
+
+  EdgeRuntime.waitUntil((async () => {
+    try {
+      await runDispatch(ctx, pending, 0);
+    } catch (err) {
+      console.error("follow-up dispatch failed:", err);
+      try {
+        await admin.from("platform_email_campaigns").update({ status: "failed" }).eq("id", campaignId);
+      } catch { /* best-effort */ }
+    }
+  })());
+
+  return json({
+    campaign_id: campaignId,
+    parent_campaign_id: parentCampaignId,
+    queued: true,
+    totals: { ...audience.totals, pending: pending.length },
+    message: `Follow-up queued for ${pending.length} unopened recipient(s).`,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
@@ -557,6 +800,19 @@ Deno.serve(async (req) => {
     if (body.retry_failed === true) {
       if (!retryCampaignId) return json({ error: "retry_campaign_id required" }, 400);
       return await handleRetry(admin, retryCampaignId, templateSlug);
+    }
+
+    const resendUnopenedId = String(body.resend_unopened_campaign_id ?? "").trim();
+    if (resendUnopenedId) {
+      const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
+      return await handleResendUnopened(
+        admin,
+        caller.id,
+        callerOrigin,
+        resendUnopenedId,
+        typeof body.subject_override === "string" ? body.subject_override : null,
+        body.preview_only === true,
+      );
     }
 
     const tenant_id = String(body.tenant_id ?? "").trim();
