@@ -775,6 +775,7 @@ function HistoryTab() {
   const [selected, setSelected] = useState<string | null>(null);
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [resendFor, setResendFor] = useState<Campaign | null>(null);
 
   const loadCampaigns = async () => {
     const { data } = await supabase.from("platform_email_campaigns")
