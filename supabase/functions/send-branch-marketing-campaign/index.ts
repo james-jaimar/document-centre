@@ -63,6 +63,10 @@ type FunctionBody = {
   tenant_id?: string;
   branch_ids?: unknown;
   dry_run?: boolean;
+  // Follow-up ("resend to unopened") mode:
+  resend_unopened_campaign_id?: string;
+  subject_override?: string;
+  preview_only?: boolean;
 };
 
 interface DispatchContext {
