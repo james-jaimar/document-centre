@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -96,19 +97,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 /* ── Queries ── */
 function useProductFamiliesActive() {
-  return useQuery({
-    queryKey: ["product_families_active"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("product_families")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-  });
+  const { families, isLoading } = useVisibleProductFamilies();
+  return { data: families, isLoading };
 }
+
 
 function useRecentDocuments(userId: string | undefined, tenantId: string | null) {
   return useQuery({
