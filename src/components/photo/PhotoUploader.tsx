@@ -119,7 +119,7 @@ export default function PhotoUploader({
           ref={inputRef}
           type="file"
           multiple
-          accept={ACCEPT}
+          accept={accept}
           className="sr-only"
           onChange={(e) => {
             handleFiles(e.target.files);
