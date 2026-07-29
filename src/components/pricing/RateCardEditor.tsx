@@ -63,6 +63,7 @@ import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useCatalogSizes, useCatalogPrintAttrs, type CatalogSize } from "@/hooks/useCatalog";
+import CanvasPrintsTab from "./CanvasPrintsTab";
 
 interface Props {
   scope: RateCardScope;
@@ -250,6 +251,7 @@ export default function RateCardEditor({
           <TabsTrigger value="clicks">Click Charges</TabsTrigger>
           <TabsTrigger value="photo">Photo Prints</TabsTrigger>
           <TabsTrigger value="business_cards">Business Cards</TabsTrigger>
+          <TabsTrigger value="canvas">Canvas Prints</TabsTrigger>
         </TabsList>
 
         <TabsContent value="clicks" className="mt-4">
@@ -260,6 +262,9 @@ export default function RateCardEditor({
         </TabsContent>
         <TabsContent value="business_cards" className="mt-4">
           <BusinessCardsTab items={businessCards} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
+        </TabsContent>
+        <TabsContent value="canvas" className="mt-4">
+          <CanvasPrintsTab scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
       </Tabs>
     </div>

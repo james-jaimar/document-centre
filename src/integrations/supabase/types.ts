@@ -5837,6 +5837,129 @@ export type Database = {
           },
         ]
       }
+      rate_card_canvas_prints: {
+        Row: {
+          branch_id: string | null
+          cost_price: number
+          created_at: string
+          height_mm: number
+          id: string
+          is_active: boolean
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price: number
+          size_label: string
+          size_slug: string
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+          width_mm: number
+          wrap_mm: number
+        }
+        Insert: {
+          branch_id?: string | null
+          cost_price?: number
+          created_at?: string
+          height_mm: number
+          id?: string
+          is_active?: boolean
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size_label: string
+          size_slug: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          width_mm: number
+          wrap_mm: number
+        }
+        Update: {
+          branch_id?: string | null
+          cost_price?: number
+          created_at?: string
+          height_mm?: number
+          id?: string
+          is_active?: boolean
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size_label?: string
+          size_slug?: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          width_mm?: number
+          wrap_mm?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_canvas_prints_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rate_card_canvas_prints_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rate_card_canvas_wrap_surcharges: {
+        Row: {
+          branch_id: string | null
+          cost_price: number
+          created_at: string
+          id: string
+          is_active: boolean
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price: number
+          tenant_id: string | null
+          updated_at: string
+          wrap_mode: string
+        }
+        Insert: {
+          branch_id?: string | null
+          cost_price?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          tenant_id?: string | null
+          updated_at?: string
+          wrap_mode: string
+        }
+        Update: {
+          branch_id?: string | null
+          cost_price?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          tenant_id?: string | null
+          updated_at?: string
+          wrap_mode?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_canvas_wrap_surcharges_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rate_card_canvas_wrap_surcharges_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rate_card_clicks: {
         Row: {
           branch_id: string | null

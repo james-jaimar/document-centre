@@ -37,6 +37,13 @@ import {
 } from "@/lib/canvasPrints/presets";
 import type { CanvasPrintEntry, CanvasPrintsSpec } from "@/lib/canvasPrints/canvasSpecTypes";
 import { rasterisePdfPageOneToImage } from "@/lib/canvasPrints/pdfToImage";
+import {
+  useResolvedRateCardCanvasPrints,
+  useResolvedRateCardCanvasSurcharges,
+  priceCanvasEntry,
+} from "@/hooks/useCanvasPrintsPricing";
+import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const CANVAS_FAMILY_SLUG_DEFAULT = "canvas-prints";
 
@@ -381,6 +388,27 @@ export default function CanvasPrintsBuilder() {
     });
   }, [sizeChoices]);
 
+  // ── Pricing (base by size × wrap depth + optional wrap-mode surcharge)
+  const { data: canvasBaseRows = [] } = useResolvedRateCardCanvasPrints({
+    tenantId: tenantId ?? null,
+    branchId: activeBranch?.id ?? null,
+  });
+  const { data: canvasSurcharges = [] } = useResolvedRateCardCanvasSurcharges({
+    tenantId: tenantId ?? null,
+    branchId: activeBranch?.id ?? null,
+  });
+  const priceDisplay = usePriceDisplay();
+
+  const pricedCanvases = useMemo(() => {
+    return spec.canvases.map((c) => {
+      const p = priceCanvasEntry(c, canvasBaseRows, canvasSurcharges);
+      return { canvas: c, ...p, line: p.unit * Math.max(c.quantity, 1) };
+    });
+  }, [spec.canvases, canvasBaseRows, canvasSurcharges]);
+
+  const anyUnpriced = pricedCanvases.some((p) => !p.matched);
+  const netTotal = pricedCanvases.reduce((s, p) => s + p.line, 0);
+
   // ── Add to cart
   const [submitting, setSubmitting] = useState(false);
   const totalQty = spec.canvases.reduce((s, c) => s + c.quantity, 0);
@@ -391,23 +419,41 @@ export default function CanvasPrintsBuilder() {
       toast.error("Add at least one canvas before checking out.");
       return;
     }
+    if (anyUnpriced) {
+      toast.error("Some canvases don't have a price set up yet. Please contact us.");
+      return;
+    }
     setSubmitting(true);
     try {
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
+      const safeQty = Math.max(totalQty, 1);
       await addItemToCart.mutateAsync({
         orderItemId: orderItem.id,
         draftOrderId: order.id,
         title: `Canvas Prints (${spec.canvases.length})`,
-        unitPrice: 0,
-        quantity: Math.max(totalQty, 1),
-        totalPrice: 0,
+        unitPrice: safeQty > 0 ? netTotal / safeQty : 0,
+        quantity: safeQty,
+        totalPrice: netTotal,
         spec: {
           page_count: spec.canvases.length,
-          quantity: Math.max(totalQty, 1),
+          quantity: safeQty,
           is_color: true,
           is_duplex: false,
           selected_options: {},
           canvas_prints: spec,
+          canvas_pricing: {
+            currency: "ZAR",
+            net_total: netTotal,
+            lines: pricedCanvases.map((p) => ({
+              canvas_id: p.canvas.id,
+              size_slug: p.canvas.size_slug,
+              wrap_mm: p.canvas.wrapMm,
+              wrap_mode: p.canvas.wrapMode,
+              quantity: p.canvas.quantity,
+              unit_price: p.unit,
+              line_total: p.line,
+            })),
+          },
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
       });
@@ -491,11 +537,42 @@ export default function CanvasPrintsBuilder() {
               <span className="text-muted-foreground">Total prints</span>
               <span className="font-medium tabular-nums">{totalQty}</span>
             </div>
+            {priceDisplay.showVatBreakdown ? (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal (ex VAT)</span>
+                  <span className="font-medium tabular-nums">{formatPrice(netTotal, "ZAR")}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{priceDisplay.vatLineLabel}</span>
+                  <span className="font-medium tabular-nums">
+                    {formatPrice(priceDisplay.vatOf(netTotal), "ZAR")}
+                  </span>
+                </div>
+                <div className="flex justify-between text-base pt-1 border-t border-border">
+                  <span className="font-semibold">Total</span>
+                  <span className="font-semibold tabular-nums">
+                    {formatPrice(priceDisplay.toGross(netTotal), "ZAR")}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between text-base pt-1 border-t border-border">
+                <span className="font-semibold">Total</span>
+                <span className="font-semibold tabular-nums">{formatPrice(netTotal, "ZAR")}</span>
+              </div>
+            )}
+            {anyUnpriced && (
+              <p className="text-[11px] text-destructive leading-snug">
+                Some canvases have no matching price on your rate card yet — please contact us to
+                confirm pricing before checkout.
+              </p>
+            )}
             <Button
               className="w-full"
               size="lg"
               onClick={handleAddToCart}
-              disabled={spec.canvases.length === 0 || submitting}
+              disabled={spec.canvases.length === 0 || submitting || anyUnpriced}
             >
               {submitting
                 ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
