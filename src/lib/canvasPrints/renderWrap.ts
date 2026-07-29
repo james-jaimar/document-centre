@@ -8,10 +8,11 @@ import { mmToPx, totalWidthMm, totalHeightMm } from "./presets";
  * why Mirror / Blur previously appeared broken).
  */
 export function renderProductionCanvas(
-  image: HTMLImageElement,
+  image: HTMLImageElement | HTMLCanvasElement,
   state: CanvasTransformState,
   previewDpi: number,
 ): HTMLCanvasElement {
+
   const { frontWidthMm, frontHeightMm, wrapMm, bleedMm, wrapMode, wrapColorHex } = state;
 
   const totalWpx = mmToPx(totalWidthMm(frontWidthMm, wrapMm, bleedMm), previewDpi);
