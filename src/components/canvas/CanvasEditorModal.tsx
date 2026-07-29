@@ -381,9 +381,9 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
           </div>
 
           {/* RIGHT — live 3D preview + settings */}
-          <div className="min-w-0 min-h-0 flex flex-col bg-muted/20 overflow-hidden">
-            <div className="flex-1 min-h-0 p-4 pb-2 flex flex-col">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+          <div className="min-w-0 min-h-0 grid grid-rows-[minmax(0,1fr)_auto] bg-muted/20 overflow-hidden h-full">
+            <div className="min-h-0 overflow-hidden p-4 pb-2 flex flex-col">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 shrink-0">
                 How it will look on the wall
               </p>
               <div className="w-full flex-1 min-h-0">
@@ -397,7 +397,8 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
               </div>
             </div>
 
-            <div className="border-t border-border p-4 space-y-3 overflow-y-auto shrink-0 max-h-[300px]">
+            <div className="border-t border-border p-4 space-y-3 overflow-y-auto max-h-[45vh]">
+
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
