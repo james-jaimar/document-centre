@@ -217,6 +217,7 @@ export default function CanvasPrintsBuilder() {
 
   // ── Signed-URL resolution for tile/editor previews
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [blobVersion, setBlobVersion] = useState(0);
   useEffect(() => {
     const wanted = new Set<string>();
     for (const c of spec.canvases) {
@@ -260,7 +261,7 @@ export default function CanvasPrintsBuilder() {
     ).then((items) => {
       if (cancelled) return;
       if (items.some((item) => item.ok)) {
-        setSignedUrls((prev) => ({ ...prev }));
+        setBlobVersion((v) => v + 1);
       }
     });
     return () => { cancelled = true; };
@@ -270,8 +271,8 @@ export default function CanvasPrintsBuilder() {
     if (!path) return null;
     const blob = getCachedBlobUrl(path);
     if (blob) return blob;
-    return signedUrls[path] ?? null;
-  }, [signedUrls]);
+    return null;
+  }, [blobVersion]);
 
   // ── QR upload
   const [qrOpen, setQrOpen] = useState(false);
