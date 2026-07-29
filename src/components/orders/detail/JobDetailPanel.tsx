@@ -9,6 +9,8 @@ import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
+import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
+
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
 import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
