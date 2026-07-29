@@ -440,8 +440,6 @@ export default function CanvasEditorModal({
           </div>
         </div>
 
-
-
         <DialogFooter className="px-6 py-4 border-t border-border bg-muted/30">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave}>Save</Button>
