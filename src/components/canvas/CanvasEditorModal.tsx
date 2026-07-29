@@ -335,14 +335,14 @@ export default function CanvasEditorModal({
           </div>
 
           {/* RIGHT — live 3D preview + settings */}
-          <div className="min-w-0 flex flex-col bg-muted/20 overflow-hidden">
-            <div className="flex-1 min-h-[300px] p-5 pb-2">
+          <div className="min-w-0 flex flex-col bg-muted/20 overflow-hidden min-h-0">
+            <div className="flex-1 min-h-[240px] p-4 pb-2 flex flex-col">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 How it will look on the wall
               </p>
-              <div className="w-full h-[calc(100%-1.5rem)]">
-                {previewTransform && imgEl ? (
-                  <Canvas3DPreview image={imgEl} state={previewTransform} />
+              <div className="w-full flex-1 min-h-0">
+                {previewTransform && faceBitmap ? (
+                  <Canvas3DPreview image={faceBitmap} state={previewTransform} />
                 ) : (
                   <div className="w-full h-full rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200 border flex items-center justify-center text-sm text-muted-foreground">
                     Loading preview…
@@ -351,12 +351,12 @@ export default function CanvasEditorModal({
               </div>
             </div>
 
-            <div className="border-t border-border p-5 space-y-5 overflow-y-auto max-h-[45%]">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide">Canvas size</Label>
+            <div className="border-t border-border p-4 space-y-3 overflow-y-auto shrink-0" style={{ maxHeight: "45%" }}>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
                   <Select value={sizeSlug} onValueChange={setSizeSlug}>
-                    <SelectTrigger><SelectValue placeholder="Choose size" /></SelectTrigger>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Choose size" /></SelectTrigger>
                     <SelectContent>
                       {sizes.map((s) => (
                         <SelectItem key={s.slug} value={s.slug}>{s.label}</SelectItem>
@@ -365,8 +365,8 @@ export default function CanvasEditorModal({
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide">Orientation</Label>
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wide">Orientation</Label>
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
@@ -386,8 +386,8 @@ export default function CanvasEditorModal({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide">Wrap depth</Label>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold uppercase tracking-wide">Wrap depth</Label>
                 <RadioGroup
                   value={String(wrapMm)}
                   onValueChange={(v) => setWrapMm(Number(v))}
@@ -396,7 +396,7 @@ export default function CanvasEditorModal({
                   {depthOpts.map((d) => (
                     <label
                       key={d}
-                      className={`border rounded-md p-2 text-center cursor-pointer text-sm ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
+                      className={`border rounded-md py-1.5 text-center cursor-pointer text-xs ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
                     >
                       <RadioGroupItem value={String(d)} className="sr-only" />
                       {d} mm
@@ -405,8 +405,8 @@ export default function CanvasEditorModal({
                 </RadioGroup>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide">Edge finish</Label>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-wide">Edge finish</Label>
                 <div className="grid grid-cols-2 gap-1.5">
                   {WRAP_MODE_OPTIONS.map((opt) => (
                     <label
@@ -435,12 +435,11 @@ export default function CanvasEditorModal({
                     />
                   </div>
                 )}
-                <p className="text-[11px] text-muted-foreground leading-snug">
-                  {WRAP_MODE_OPTIONS.find((o) => o.value === wrapMode)?.help}
-                </p>
               </div>
             </div>
           </div>
+        </div>
+
         </div>
 
         <DialogFooter className="px-6 py-4 border-t border-border bg-muted/30">
