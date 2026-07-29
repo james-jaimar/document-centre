@@ -1,8 +1,6 @@
 export type WrapMode =
   | "no_edge_print"
   | "gallery_wrap"
-  | "mirror_wrap"
-  | "blur_wrap"
   | "colour_wrap"
   | "face_only";
 
@@ -18,16 +16,6 @@ export const WRAP_MODE_OPTIONS: { value: WrapMode; label: string; help: string }
     value: "gallery_wrap",
     label: "Gallery wrap",
     help: "Your image continues around the canvas sides. Keep important faces/text inside the front safe area.",
-  },
-  {
-    value: "mirror_wrap",
-    label: "Mirror wrap",
-    help: "The front image stays intact. The sides are filled by mirroring the image edges.",
-  },
-  {
-    value: "blur_wrap",
-    label: "Blur wrap",
-    help: "The front stays intact. The sides use a soft blurred stretch of the edge.",
   },
   {
     value: "colour_wrap",
