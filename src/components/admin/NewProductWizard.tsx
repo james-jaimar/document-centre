@@ -31,6 +31,7 @@ const KIND_DEFAULTS: Record<FamilyKind, { pricing: PricingEngine; suggestSizes: 
   business_card:   { pricing: "business_cards", suggestSizes: [] },
   large_format:    { pricing: "click_charges", suggestSizes: [] },
   photo_print:     { pricing: "photo_prints", suggestSizes: [] },
+  canvas_wrap:     { pricing: "click_charges", suggestSizes: [] },
   custom:          { pricing: "click_charges", suggestSizes: [] },
 };
 
