@@ -308,7 +308,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
         </DialogHeader>
 
         {/* Left: upload + scale/crop | Right: 3D preview + settings */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 min-h-0 flex-1 overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[35%_1fr] min-h-0 flex-1 overflow-hidden">
           {/* LEFT — cropper */}
           <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
             <div
