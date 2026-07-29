@@ -8,10 +8,11 @@ import { mmToPx, totalWidthMm, totalHeightMm } from "./presets";
  * why Mirror / Blur previously appeared broken).
  */
 export function renderProductionCanvas(
-  image: HTMLImageElement,
+  image: HTMLImageElement | HTMLCanvasElement,
   state: CanvasTransformState,
   previewDpi: number,
 ): HTMLCanvasElement {
+
   const { frontWidthMm, frontHeightMm, wrapMm, bleedMm, wrapMode, wrapColorHex } = state;
 
   const totalWpx = mmToPx(totalWidthMm(frontWidthMm, wrapMm, bleedMm), previewDpi);
@@ -32,9 +33,12 @@ export function renderProductionCanvas(
   sctx.fillStyle = "#ffffff";
   sctx.fillRect(0, 0, totalWpx, totalHpx);
 
-  const src = { w: image.naturalWidth, h: image.naturalHeight };
+  const srcW = "naturalWidth" in image ? image.naturalWidth : image.width;
+  const srcH = "naturalHeight" in image ? image.naturalHeight : image.height;
+  const src = { w: srcW, h: srcH };
   const rot = ((state.imageRotation % 360) + 360) % 360;
   const srcAspect = rot === 90 || rot === 270 ? src.h / src.w : src.w / src.h;
+
   const frontAspect = frontWpx / frontHpx;
   let baseFrontW: number, baseFrontH: number;
   if (srcAspect > frontAspect) {
@@ -97,11 +101,12 @@ export function renderProductionCanvas(
  * Back is white (nothing prints on the back).
  */
 export function renderFaceBitmaps(
-  image: HTMLImageElement,
+  image: HTMLImageElement | HTMLCanvasElement,
   state: CanvasTransformState,
   previewDpi: number,
 ): {
   front: HTMLCanvasElement;
+
   back: HTMLCanvasElement;
   top: HTMLCanvasElement;
   bottom: HTMLCanvasElement;
