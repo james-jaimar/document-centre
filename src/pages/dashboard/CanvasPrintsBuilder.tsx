@@ -540,11 +540,42 @@ export default function CanvasPrintsBuilder() {
               <span className="text-muted-foreground">Total prints</span>
               <span className="font-medium tabular-nums">{totalQty}</span>
             </div>
+            {priceDisplay.showVatBreakdown ? (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal (ex VAT)</span>
+                  <span className="font-medium tabular-nums">{formatPrice(netTotal, "ZAR")}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{priceDisplay.vatLineLabel}</span>
+                  <span className="font-medium tabular-nums">
+                    {formatPrice(priceDisplay.vatOf(netTotal), "ZAR")}
+                  </span>
+                </div>
+                <div className="flex justify-between text-base pt-1 border-t border-border">
+                  <span className="font-semibold">Total</span>
+                  <span className="font-semibold tabular-nums">
+                    {formatPrice(priceDisplay.toGross(netTotal), "ZAR")}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between text-base pt-1 border-t border-border">
+                <span className="font-semibold">Total</span>
+                <span className="font-semibold tabular-nums">{formatPrice(netTotal, "ZAR")}</span>
+              </div>
+            )}
+            {anyUnpriced && (
+              <p className="text-[11px] text-destructive leading-snug">
+                Some canvases have no matching price on your rate card yet — please contact us to
+                confirm pricing before checkout.
+              </p>
+            )}
             <Button
               className="w-full"
               size="lg"
               onClick={handleAddToCart}
-              disabled={spec.canvases.length === 0 || submitting}
+              disabled={spec.canvases.length === 0 || submitting || anyUnpriced}
             >
               {submitting
                 ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
