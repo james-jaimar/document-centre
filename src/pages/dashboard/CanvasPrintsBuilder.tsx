@@ -292,12 +292,15 @@ export default function CanvasPrintsBuilder() {
       mime_type: u.mimeType,
       source_was_pdf: prepared[i]?.wasPdf ?? false,
       size_slug: defaultSize.slug,
-      frontWidthMm: defaultSize.frontWidthMm,
-      frontHeightMm: defaultSize.frontHeightMm,
+      // Landscape default: long edge is width.
+      frontWidthMm: Math.max(defaultSize.frontWidthMm, defaultSize.frontHeightMm),
+      frontHeightMm: Math.min(defaultSize.frontWidthMm, defaultSize.frontHeightMm),
+      pageOrientation: "landscape",
       wrapMm: defaultWrap,
       bleedMm: DEFAULT_BLEED_MM,
       dpi: DEFAULT_DPI,
       wrapMode: "gallery_wrap",
+
       crop: { x: 0, y: 0 },
       zoom: 1,
       rotation: 0,
