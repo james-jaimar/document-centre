@@ -494,6 +494,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                   150 DPI for a sharp canvas (300 DPI is ideal).
                 </div>
               )}
+            </div>
           </div>
 
           {/* RIGHT — 3D preview (fills column) */}
