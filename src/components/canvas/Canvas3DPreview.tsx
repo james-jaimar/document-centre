@@ -20,14 +20,15 @@ interface Props {
 export default function Canvas3DPreview({ image, state }: Props) {
   if (!image) {
     return (
-      <div className="w-full h-full min-h-[320px] rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200 flex items-center justify-center border">
+      <div className="w-full h-full rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200 flex items-center justify-center border">
         <p className="text-sm text-muted-foreground">Upload an image to see the finished canvas.</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full min-h-[320px] rounded-lg bg-gradient-to-br from-neutral-50 to-neutral-200 border overflow-hidden">
+    <div className="w-full h-full rounded-lg bg-gradient-to-br from-neutral-50 to-neutral-200 border overflow-hidden">
+
       <Canvas
         shadows
         dpr={[1, 2]}
