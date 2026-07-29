@@ -35,6 +35,7 @@ export default function CanvasTile({
   useEffect(() => {
     if (!signedUrl) return;
     let cancelled = false;
+    const corsSafeUrl = signedUrl + (signedUrl.includes("?") ? "&" : "?") + "cors=1";
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -66,7 +67,7 @@ export default function CanvasTile({
         console.warn("[canvas-tile] preview render failed", e);
       }
     };
-    img.src = signedUrl;
+    img.src = corsSafeUrl;
     return () => { cancelled = true; };
   }, [signedUrl, canvas.size_slug, canvas.frontWidthMm, canvas.frontHeightMm,
       canvas.wrapMm, canvas.bleedMm, canvas.dpi, canvas.wrapMode,
