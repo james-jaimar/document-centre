@@ -177,13 +177,17 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         </div>
       </div>
 
-      {/* Photo Prints — admin gallery (replaces both attached files + photo list) */}
-      {(config as any).photo_prints || job.product_category === "photo-prints" ? (
+      {/* Canvas Prints — admin proof gallery */}
+      {(config as any).canvas_prints || job.product_category === "canvas-prints" ? (
+        <CanvasPrintsAdminGallery canvasPrints={(config as any).canvas_prints} />
+      ) : /* Photo Prints — admin gallery (replaces both attached files + photo list) */
+      (config as any).photo_prints || job.product_category === "photo-prints" ? (
         <PhotoPrintsAdminGallery
           photoPrints={(config as any).photo_prints}
           orderItemId={(config as any).source_order_item_id ?? null}
         />
       ) : (
+
         /* Attached files — hidden for photo prints jobs (gallery shows them visually instead) */
         jobDocs.length > 0 && (
           <div className="rounded-lg border bg-card p-3">
