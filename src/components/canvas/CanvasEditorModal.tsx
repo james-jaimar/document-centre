@@ -23,6 +23,7 @@ import { useElementSize } from "@/hooks/useElementSize";
 import Canvas3DPreview from "@/components/canvas/Canvas3DPreview";
 import DebouncedColorInput from "@/components/canvas/DebouncedColorInput";
 import type { CanvasTransformState } from "@/lib/canvasPrints/types";
+import { sampleEdgeColourFromBitmap } from "@/lib/canvasPrints/renderWrap";
 
 export interface CanvasSizeChoice {
   slug: string;
@@ -93,21 +94,33 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
     return { ...rawSize, frontWidthMm: w, frontHeightMm: h };
   }, [rawSize, orientation]);
 
-  const aspect = orientedSize ? orientedSize.frontWidthMm / orientedSize.frontHeightMm : 1;
+  // Gallery wrap prints the image right over the edges, so the crop the
+  // customer makes must cover the WHOLE extent (front + wrap + bleed) —
+  // otherwise the cropper shows more of the image than the front face does.
+  const bleedsOverEdge = wrapMode === "gallery_wrap";
+  const insetMm = bleedsOverEdge ? wrapMm + DEFAULT_BLEED_MM : 0;
+  const cropWidthMm = orientedSize ? orientedSize.frontWidthMm + insetMm * 2 : 0;
+  const cropHeightMm = orientedSize ? orientedSize.frontHeightMm + insetMm * 2 : 0;
+  const aspect = cropWidthMm > 0 && cropHeightMm > 0 ? cropWidthMm / cropHeightMm : 1;
+  /** Front-face inset as a fraction of the crop frame (0 when not wrapping). */
+  const insetFracX = cropWidthMm > 0 ? insetMm / cropWidthMm : 0;
+  const insetFracY = cropHeightMm > 0 ? insetMm / cropHeightMm : 0;
 
   // Effective print DPI of the front face at the selected finished size.
   // Warns the customer only when the image would fall below 150 DPI —
   // 300 DPI is ideal but we don't hard-block below that.
   const effectiveDpi = useMemo(() => {
-    if (!orientedSize || !croppedAreaPixels) return null;
+    if (!orientedSize || !croppedAreaPixels || cropWidthMm <= 0) return null;
     const wIn = orientedSize.frontWidthMm / 25.4;
     const hIn = orientedSize.frontHeightMm / 25.4;
     if (wIn <= 0 || hIn <= 0) return null;
-    return Math.floor(
-      Math.min(croppedAreaPixels.width / wIn, croppedAreaPixels.height / hIn),
-    );
-  }, [orientedSize, croppedAreaPixels]);
+    // Only the front-face slice of the crop lands on the visible face.
+    const facePxW = croppedAreaPixels.width * (orientedSize.frontWidthMm / cropWidthMm);
+    const facePxH = croppedAreaPixels.height * (orientedSize.frontHeightMm / cropHeightMm);
+    return Math.floor(Math.min(facePxW / wIn, facePxH / hIn));
+  }, [orientedSize, croppedAreaPixels, cropWidthMm, cropHeightMm]);
   const dpiTooLow = effectiveDpi !== null && effectiveDpi < 150;
+
 
   const {
     fillZoom,
@@ -209,15 +222,16 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
   const handleFill = () => { setFitMode("fill"); setCrop({ x: 0, y: 0 }); setZoom(fillZoom); };
   const handleFit  = () => { setFitMode("fit");  setCrop({ x: 0, y: 0 }); setZoom(fitZoom); };
 
-  // Build a pre-cropped face bitmap that matches the cropper exactly. The
-  // 3D preview then treats this as a fit-cover face image (no pan/scale),
-  // so what's inside the crop box == what's on the front of the canvas.
+  // Build a pre-cropped bitmap that matches the cropper exactly. It covers the
+  // same physical extent as the crop frame (front face only, or front + wrap +
+  // bleed for gallery wrap) so what's inside the crop box == what's printed.
   const faceBitmap = useMemo<HTMLCanvasElement | null>(() => {
-    if (!imgEl || !orientedSize || !croppedAreaPixels) return null;
+    if (!imgEl || !orientedSize || !croppedAreaPixels || cropWidthMm <= 0) return null;
     const targetLong = 900;
-    const aspectFace = orientedSize.frontWidthMm / orientedSize.frontHeightMm;
+    const aspectFace = cropWidthMm / cropHeightMm;
     const outW = aspectFace >= 1 ? targetLong : Math.round(targetLong * aspectFace);
     const outH = aspectFace >= 1 ? Math.round(targetLong / aspectFace) : targetLong;
+
     const c = document.createElement("canvas");
     c.width = outW; c.height = outH;
     const ctx = c.getContext("2d")!;
@@ -250,7 +264,23 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
       }
     } catch { /* ignore draw errors */ }
     return c;
-  }, [imgEl, orientedSize, croppedAreaPixels]);
+  }, [imgEl, orientedSize, croppedAreaPixels, cropWidthMm, cropHeightMm]);
+
+  // ── Auto-pick the wrap colour from the artwork edge and put it into the
+  // picker, so what the preview shows is exactly what gets saved (and printed).
+  // Stops re-sampling as soon as the customer chooses their own colour.
+  const colourWasManual = useRef(false);
+  useEffect(() => {
+    if (!open || !canvas) return;
+    colourWasManual.current = Boolean(canvas.wrapColorHex);
+  }, [open, canvas?.id]);
+
+  useEffect(() => {
+    if (!faceBitmap || colourWasManual.current) return;
+    const sampled = sampleEdgeColourFromBitmap(faceBitmap);
+    setWrapColorHex((prev) => (prev === sampled ? prev : sampled));
+  }, [faceBitmap]);
+
 
 
   const previewTransform: CanvasTransformState | null = useMemo(() => {
@@ -365,7 +395,34 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                   Loading image…
                 </div>
               )}
+
+              {/* Front-face guide — for gallery wrap the crop frame covers the
+                  whole printed extent, so mark where the visible face ends. */}
+              {imageUrl && bleedsOverEdge && cropSize.width > 0 && (
+                <div
+                  className="pointer-events-none absolute left-1/2 top-1/2"
+                  style={{
+                    width: cropSize.width,
+                    height: cropSize.height,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  <div
+                    className="absolute border-2 border-dashed border-amber-300/90"
+                    style={{
+                      left: `${insetFracX * 100}%`,
+                      top: `${insetFracY * 100}%`,
+                      right: `${insetFracX * 100}%`,
+                      bottom: `${insetFracY * 100}%`,
+                    }}
+                  />
+                  <span className="absolute left-1 bottom-1 text-[10px] font-medium text-amber-200 bg-black/50 px-1 rounded">
+                    Dashed line = visible front face · outside wraps the edges
+                  </span>
+                </div>
+              )}
             </div>
+
 
             <div className="flex items-center gap-3">
               <Label className="text-xs w-14 shrink-0">Zoom</Label>
@@ -479,14 +536,22 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                 ))}
               </div>
               {wrapMode === "colour_wrap" && (
-                <div className="flex items-center gap-2 pt-1">
-                  <Label className="text-xs">Colour</Label>
-                  <DebouncedColorInput
-                    value={wrapColorHex ?? "#ffffff"}
-                    onChange={(v) => setWrapColorHex(v)}
-                  />
+                <div className="space-y-1 pt-1">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs">Colour</Label>
+                    <DebouncedColorInput
+                      value={wrapColorHex ?? "#ffffff"}
+                      onChange={(v) => { colourWasManual.current = true; setWrapColorHex(v); }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {colourWasManual.current
+                      ? "Custom edge colour."
+                      : "Auto-picked from your image — change it any time."}
+                  </p>
                 </div>
               )}
+
               {dpiTooLow && (
                 <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
                   <strong>Low resolution.</strong> This image will print at

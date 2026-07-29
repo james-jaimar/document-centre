@@ -1,73 +1,39 @@
-## Goal
-Server-side print-ready PDF per canvas upload — CMYK, sized to real print geometry, ready for a large-format canvas printer.
+## 1. Auto-picked wrap colour must land in the colour picker
 
-## Output contract
-- **One canvas = one PDF.** Each `CanvasPrintEntry` produces its own single-page PDF at `order_jobs.print_ready_pdf_path` (array column) — no multi-page concatenation.
-- **CMYK** throughout. No RGB output.
-- **300 dpi target.** Never upscale beyond the source. Warn the customer at editor/checkout time if the effective front-face DPI falls below 150.
+**Current behaviour (verified):** `wrapColorHex` starts `undefined`. `renderProductionCanvas` (`src/lib/canvasPrints/renderWrap.ts:94`) falls back to `sampleEdgeColour(...)` at render time, so the *preview* shows a sampled colour — but the picker in `CanvasEditorModal.tsx:485` renders `wrapColorHex ?? "#ffffff"` (white), and `handleSave` persists `wrapColorHex: undefined`, so the production PDF has no colour to fill with.
 
-## Page geometry
-Given finished front `W × H` (mm), wrap depth `D` mm (25/38/50), overwrap bleed `B = 5 mm`:
+**Fix:**
+- In `CanvasEditorModal`, when `faceBitmap` first becomes available and `wrapColorHex` is unset, sample the face edge (`sampleEdgeColour` against the face bitmap context) and `setWrapColorHex(sampled)`.
+- Re-sample when the source image or crop changes *only while the user hasn't manually picked* — track a `colourWasManual` flag set by the picker's `onChange`.
+- Remove the render-time fallback reliance: `wrapColorHex` is now always a concrete hex by the time the user sees it, so the picker, preview, and saved spec all agree.
+- Same seeding applies in `CanvasTile.tsx` so tile thumbnails match.
 
-| Wrap mode        | Page size                              | Image placement |
-|------------------|----------------------------------------|-----------------|
-| No edge print    | `W × H`                                | Crop fills the page |
-| Gallery wrap     | `(W + 2D + 2B) × (H + 2D + 2B)`        | Whole image scaled to fill the full page; crop remains centred on the front face |
-| Colour wrap      | `(W + 2D + 2B) × (H + 2D + 2B)`        | Page filled with CMYK-converted `wrapColorHex`; cropped image placed at exact `W × H` in the centre |
+Result: the auto-picked colour appears in the swatch, is editable, and is what the PDF engine fills with.
 
-```text
-  ┌──────── B (5mm) ────────┐
-  │  ┌──── D (25/38/50) ──┐ │
-  │  │  ┌──────────────┐  │ │
-  │  │  │  W × H front │  │ │
-  │  │  └──────────────┘  │ │
-  │  └────────────────────┘ │
-  └─────────────────────────┘
-```
+## 2. Colour picker sluggishness
 
-TrimBox = front `W × H`, MediaBox = full page (front + wrap + bleed).
+Every colour change currently rebuilds the full `previewTransform` → composed production canvas → all six face bitmaps in `renderFaceBitmaps`.
 
-## Colour handling
-- **Front image**: flatten onto opaque white first (kills PNG/HEIC alpha), embed sRGB source profile, convert to CMYK using the family's configured ICC profile (default `fogra39` — same pipeline as the rest of production PDF).
-- **Wrap fill colour**: convert `wrapColorHex` from sRGB to the destination CMYK profile using the same intent as the family (default `relative_colorimetric`), and paint the wrap+bleed area with that CMYK value directly (no RGB round-trip in the PDF).
-- No transparent objects in output — everything flattened.
+**Fix:**
+- Keep the debounce in `DebouncedColorInput` but raise it and commit on `change` (release) only, dropping the live `onInput` commit.
+- Stop re-rasterising for colour: in `Canvas3DPreview`, when `wrapMode === "colour_wrap"`, paint the four side faces with a flat three.js material colour driven by `wrapColorHex` instead of regenerating strip bitmaps. Front/back bitmaps then don't depend on colour at all, so dragging the picker is a material update, not a canvas re-render.
 
-## DPI warning (customer-facing, not a hard block)
-- Compute effective DPI = `croppedAreaPixels.width / (W_mm / 25.4)`.
-- Show an inline warning in `CanvasEditorModal` and on the cart summary when `< 150 dpi`.
-- Never warn about resolution above 150; never auto-scale; never refuse checkout.
+## 3. Cropper vs 3D preview mismatch
 
-## Where the work runs
-Real render happens on the pdf-server (Cloud Run / Python), consistent with the rest of production PDF. Edge functions stay thin proxies.
+**Confirmed cause:** the cropper's frame aspect is the *front face* (`orientedSize.frontWidthMm / frontHeightMm`), and `faceBitmap` is built straight from `croppedAreaPixels`. But for `gallery_wrap`, `renderProductionCanvas` scales the image to the **total** extent (front + 2×wrap + 2×bleed) and the visible front face is the inner rect. So the front face in the 3D preview shows *less* of the image than the crop box — the crop looks "slightly enlarged".
 
-1. **pdf-server (Python)**
-   - New service module `pdf-server/app/services/canvas_prints_assembly.py` alongside `photo_prints_assembly.py`.
-   - New endpoint `POST /v1/operations/assemble-canvas-print-ready` accepting `{ job_id }`, returning an async `job_id` in the same shape as the other operations.
-   - For each `CanvasPrintEntry` on the job:
-     - Download the source from S3 (existing storage helpers).
-     - Flatten onto white.
-     - Build the front raster at `W × H` from the crop (using `croppedAreaPixels` + rotation) at ≥300 dpi (or source-native if lower).
-     - For gallery wrap: rescale the whole flattened image to the full page instead.
-     - Convert to CMYK via `icc_profiles.resolve_profile()`.
-     - Compose the page: CMYK wrap fill (colour wrap) or transparent (others), then paint the image at the correct offset.
-     - Emit a single-page PDF with the MediaBox/TrimBox above, embed the CMYK output profile, and upload to S3.
-   - Write the array of storage paths back to `order_jobs.print_ready_pdf_paths` (new jsonb column) and mirror the first path into the existing `print_ready_pdf_path` for backwards compatibility with the download UI.
+**Fix:**
+- Drive the cropper aspect from the total extent when the wrap mode bleeds image over the edges (`gallery_wrap`), i.e. `totalWidthMm / totalHeightMm`.
+- Overlay a non-interactive inset guide inside the crop frame marking the front-face boundary (wrap + bleed inset), labelled "wrapped edge — keep content inside".
+- Feed the 3D preview the whole cropped region as the production source in gallery mode (rather than treating the crop as the face), so the face rect it slices out is exactly the region inside the guide.
+- For `no_edge_print` and `colour_wrap` the crop box stays the front face — no guide, no change.
 
-2. **Supabase side**
-   - Migration: add `print_ready_pdf_paths jsonb` to `order_jobs` (nullable). Grants/policies unchanged (already covered by existing job policies).
-   - `production-pdf` edge function: add a new `action = "assemble_canvas"` mapped to the new pdf-server endpoint.
-   - `enqueue-print-ready`: route jobs whose `product_category` is `canvas_wrap` (or family kind `canvas_wrap`) to `assemble_canvas` instead of the standard `assemble`. Remove canvas from the RGB skip list — it needs a proper CMYK assemble.
-
-3. **Frontend**
-   - `useProductionArtefacts`: surface `print_ready_pdf_paths` as an array so the operator UI shows one download link per canvas.
-   - `CanvasEditorModal` + cart tile: add the < 150 dpi warning banner using the formula above.
+## Files touched
+- `src/components/canvas/CanvasEditorModal.tsx` — colour seeding, cropper aspect + inset guide
+- `src/components/canvas/Canvas3DPreview.tsx` — flat material for colour wrap sides
+- `src/components/canvas/DebouncedColorInput.tsx` — commit on release
+- `src/components/canvas/CanvasTile.tsx` — same colour seeding for tiles
+- `src/lib/canvasPrints/renderWrap.ts` — expose a helper to sample from a face bitmap; keep the render fallback as a safety net
 
 ## Non-goals
-- No changes to on-screen 3D preview, cropper, or pricing.
-- No imposition for canvas — each PDF is printed as its own sheet on the large-format device.
-- No print-shop-side proofing UI changes beyond exposing the download links.
-
-## Technical notes
-- CMYK conversion uses the same `icc_profiles` / `render_intent` config already used for the rest of production PDF (`FamilyPrintConfig` fields on the canvas product family). Default `fogra39` / `relative_colorimetric` if unset.
-- The 5 mm overwrap is included in the MediaBox as bleed — the printer's cutter/wrapping station uses it as the tuck-under.
-- `print_ready_pdf_paths` stays ordered to match `spec.canvas_prints.canvases[]` so operators can match a PDF back to a specific canvas in the item.
+No pricing, no PDF-server changes — `canvas_prints_assembly.py` already reads `wrapColorHex`; it just needed a real value.

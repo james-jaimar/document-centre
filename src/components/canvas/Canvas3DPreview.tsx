@@ -72,6 +72,11 @@ function CanvasBox({ image, state }: { image: HTMLImageElement | HTMLCanvasEleme
     return { w, h, d };
   }, [state.frontWidthMm, state.frontHeightMm, state.wrapMm]);
 
+  // For colour_wrap the side strips are a flat colour — render them with a
+  // material colour instead of re-rasterising six bitmaps on every pick.
+  const flatSideColour =
+    state.wrapMode === "colour_wrap" ? (state.wrapColorHex || "#ffffff") : null;
+
   // Rebuild bitmaps only when inputs that affect the artwork change.
   const bitmaps = useMemo(
     () => renderFaceBitmaps(image, state, PREVIEW_DPI),
@@ -83,7 +88,8 @@ function CanvasBox({ image, state }: { image: HTMLImageElement | HTMLCanvasEleme
       state.wrapMm,
       state.bleedMm,
       state.wrapMode,
-      state.wrapColorHex,
+      // Colour only affects flat side materials now — no re-raster needed.
+      flatSideColour ? "flat" : state.wrapColorHex,
       state.imageScale,
       state.imageX,
       state.imageY,
@@ -124,17 +130,21 @@ function CanvasBox({ image, state }: { image: HTMLImageElement | HTMLCanvasEleme
   });
 
   // BoxGeometry face material order: +x (right), -x (left), +y (top), -y (bottom), +z (front), -z (back).
-  const materials = useMemo(
-    () => [
-      new THREE.MeshStandardMaterial({ map: textures.right, roughness: 0.85, metalness: 0 }),
-      new THREE.MeshStandardMaterial({ map: textures.left, roughness: 0.85, metalness: 0 }),
-      new THREE.MeshStandardMaterial({ map: textures.top, roughness: 0.85, metalness: 0 }),
-      new THREE.MeshStandardMaterial({ map: textures.bottom, roughness: 0.85, metalness: 0 }),
+  const materials = useMemo(() => {
+    const side = (map: THREE.Texture) =>
+      flatSideColour
+        ? new THREE.MeshStandardMaterial({ color: flatSideColour, roughness: 0.85, metalness: 0 })
+        : new THREE.MeshStandardMaterial({ map, roughness: 0.85, metalness: 0 });
+    return [
+      side(textures.right),
+      side(textures.left),
+      side(textures.top),
+      side(textures.bottom),
       new THREE.MeshStandardMaterial({ map: textures.front, roughness: 0.78, metalness: 0 }),
       new THREE.MeshStandardMaterial({ map: textures.back, roughness: 0.9, metalness: 0 }),
-    ],
-    [textures],
-  );
+    ];
+  }, [textures, flatSideColour]);
+
 
   useEffect(() => {
     return () => materials.forEach((m) => m.dispose());
