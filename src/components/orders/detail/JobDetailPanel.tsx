@@ -88,11 +88,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
             <Eye className="h-3.5 w-3.5 mr-1.5" />
              View preview ({previewPageCount} pages)
           </Button>
-        ) : (
+        ) : isCanvasJob ? null : (
           <div className="text-[11px] text-muted-foreground italic text-center">
             No customer preview available
           </div>
         )}
+
 
         <Separator className="my-1" />
 
