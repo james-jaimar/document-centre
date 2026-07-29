@@ -9,18 +9,27 @@ interface Props {
 }
 
 /**
- * Native colour input that commits only on release or after a debounce —
- * avoids the storm of change events during drag that was choking the preview.
+ * Native colour input that keeps the swatch responsive locally and only
+ * commits upstream on release (or after a short debounce), so dragging the
+ * picker never re-runs the expensive preview pipeline mid-drag.
  */
-export default function DebouncedColorInput({ value, onChange, delay = 150 }: Props) {
+export default function DebouncedColorInput({ value, onChange, delay = 250 }: Props) {
   const [local, setLocal] = useState(value);
   const timer = useRef<number | null>(null);
+  const dirty = useRef(false);
 
-  useEffect(() => setLocal(value), [value]);
+  useEffect(() => {
+    if (!dirty.current) setLocal(value);
+  }, [value]);
+
+  useEffect(() => () => {
+    if (timer.current) window.clearTimeout(timer.current);
+  }, []);
 
   const commit = (hex: string) => {
+    dirty.current = false;
     if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => onChange(hex), delay);
+    onChange(hex);
   };
 
   return (
@@ -28,17 +37,21 @@ export default function DebouncedColorInput({ value, onChange, delay = 150 }: Pr
       <Input
         type="color"
         value={local}
+        // Live drag: update the swatch only — no upstream re-render.
         onInput={(e) => {
           const v = (e.target as HTMLInputElement).value;
+          dirty.current = true;
           setLocal(v);
-          commit(v);
+          if (timer.current) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => commit(v), delay);
         }}
+        // Release / dialog confirm: commit immediately.
         onChange={(e) => {
           const v = e.target.value;
           setLocal(v);
-          if (timer.current) window.clearTimeout(timer.current);
-          onChange(v);
+          commit(v);
         }}
+        onBlur={() => commit(local)}
         className="h-8 w-14 p-1"
       />
       <span className="text-xs font-mono tabular-nums text-muted-foreground">
@@ -47,3 +60,4 @@ export default function DebouncedColorInput({ value, onChange, delay = 150 }: Pr
     </div>
   );
 }
+
