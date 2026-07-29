@@ -835,27 +835,47 @@ export default function PhotoPrintsBuilder() {
             .select("id, file_name, file_path, mime_type, preflight_data")
             .in("id", fileIds);
           if (!docs?.length) return;
+
+          const { getDownloadUrls } = await import("@/lib/s3Storage");
+          const urlMap = await getDownloadUrls(docs.map((d: any) => d.file_path));
+          const readDims = (url: string) =>
+            new Promise<{ w: number; h: number }>((resolve) => {
+              const img = new Image();
+              img.crossOrigin = "anonymous";
+              img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+              img.onerror = () => resolve({ w: 0, h: 0 });
+              img.src = url;
+            });
+
           const currentSize = photoSpec.print_size_slug;
-          const newEntries: PhotoPrintEntry[] = docs.map((d: any) => ({
-            id: crypto.randomUUID(),
-            document_id: d.id,
-            file_name: d.file_name,
-            original_storage_path: d.file_path,
-            source_width_px: d.preflight_data?.source_width_px ?? 0,
-            source_height_px: d.preflight_data?.source_height_px ?? 0,
-            mime_type: d.mime_type || "image/jpeg",
-            print_size_slug: currentSize,
-            crop: { x: 0, y: 0 },
-            zoom: 1,
-            rotation: 0,
-            fit_mode: "fill" as const,
-            croppedAreaPixels: null,
-            quantity: 1,
-            thumb_path: d.preflight_data?.thumb_path,
-            preview_path: d.preflight_data?.preview_path,
-            preview_width_px: d.preflight_data?.preview_width_px,
-            preview_height_px: d.preflight_data?.preview_height_px,
-          }));
+          const newEntries: PhotoPrintEntry[] = [];
+          for (const d of docs as any[]) {
+            const url = urlMap[d.file_path];
+            const measured = url ? await readDims(url) : { w: 0, h: 0 };
+            const width = d.preflight_data?.source_width_px ?? measured.w;
+            const height = d.preflight_data?.source_height_px ?? measured.h;
+            const entry: PhotoPrintEntry = {
+              id: crypto.randomUUID(),
+              document_id: d.id,
+              file_name: d.file_name,
+              original_storage_path: d.file_path,
+              source_width_px: width,
+              source_height_px: height,
+              mime_type: d.mime_type || "image/jpeg",
+              print_size_slug: currentSize,
+              crop: { x: 0, y: 0 },
+              zoom: 1,
+              rotation: 0,
+              fit_mode: "fill" as const,
+              croppedAreaPixels: null,
+              quantity: 1,
+              thumb_path: d.preflight_data?.thumb_path,
+              preview_path: d.preflight_data?.preview_path,
+              preview_width_px: d.preflight_data?.preview_width_px,
+              preview_height_px: d.preflight_data?.preview_height_px,
+            };
+            newEntries.push(applyDefaultCrop(entry));
+          }
           setPhotoSpec((prev) => ({
             ...prev,
             photos: [...prev.photos, ...newEntries],
