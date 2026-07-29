@@ -20,6 +20,8 @@ interface Props {
   open: boolean;
   /** Representative image file for preview / dimension detection */
   imageFile: File | null;
+  /** Optional list of sizes to offer. Falls back to ISO_SIZES when omitted/empty. */
+  allowedSizes?: PaperSize[];
   onConfirm: (selection: ImageSizeSelection) => void;
   onCancel: () => void;
 }
@@ -29,6 +31,7 @@ const PX_TO_MM = 25.4 / 72;
 export default function ImageSizeDialog({
   open,
   imageFile,
+  allowedSizes,
   onConfirm,
   onCancel,
 }: Props) {
@@ -55,7 +58,7 @@ export default function ImageSizeDialog({
   // Reset selection when dialog opens
   useEffect(() => {
     if (open) {
-      setSelectedIdx(0); // default to A4
+      setSelectedIdx(0); // default to first size
     }
   }, [open]);
 
@@ -70,14 +73,18 @@ export default function ImageSizeDialog({
       }
     : null;
 
-  // Build options with orientation-matched dimensions
+  // Prefer product-family allowed sizes; fall back to the ISO A-series.
+  const sourceSizes = allowedSizes && allowedSizes.length > 0 ? allowedSizes : ISO_SIZES;
+
+  // Orientation-match rectangular sizes to the uploaded image; keep squares as-is.
   const sizeOptions = useMemo(() => {
-    return ISO_SIZES.map((s) => {
+    return sourceSizes.map((s) => {
+      if (s.widthMm === s.heightMm) return { ...s };
       const w = isLandscape ? Math.max(s.widthMm, s.heightMm) : Math.min(s.widthMm, s.heightMm);
       const h = isLandscape ? Math.min(s.widthMm, s.heightMm) : Math.max(s.widthMm, s.heightMm);
       return { ...s, widthMm: w, heightMm: h };
     });
-  }, [isLandscape]);
+  }, [sourceSizes, isLandscape]);
 
   const fitLabel = (target: PaperSize) => {
     if (!imgDims) return "";

@@ -1,17 +1,29 @@
 ## Problem
-The "Create product" step for Canvas Prints fails with `Invalid product family kind: canvas_wrap`. The DB trigger `public.validate_product_family_kind` (migration `20260724112024`) whitelists kinds but was never updated when we added `canvas_wrap` to the frontend `FamilyKind` enum.
+
+When a customer uploads a non-standard image on the Canvas Prints (and any non-generic) product, the "Choose Output Size" dialog shows the hard-coded ISO A-series list (`ISO_SIZES` in `src/components/order/ImageSizeDialog.tsx`) instead of the sizes actually enabled for that product family in the catalogue (e.g. Canvas Prints has A0–A4 plus square 300–1000 mm).
+
+Root cause (verified):
+- `ImageSizeDialog.tsx` builds `sizeOptions` from the constant `ISO_SIZES` and ignores the current product family.
+- `OrderFiles.tsx` renders `<ImageSizeDialog>` without passing any product context.
+- Resolved sizes are already available via `useResolvedCatalogOptions` / `useResolvedAllowedSizeLabels` / `useResolvedAllowedCustomSizes` (product_family_id + branch_id).
 
 ## Fix
-One-line migration to replace `validate_product_family_kind` so its allowed set matches the frontend enum in `src/lib/products/familyKind.ts`:
 
-- `flat_sheet`
-- `bound_document`
-- `folded_leaflet`
-- `saddle_stitched`
-- `business_card`
-- `large_format`
-- `photo_print`
-- `canvas_wrap`  ← add
-- `custom`
+1. `ImageSizeDialog.tsx`
+   - Add optional prop `allowedSizes?: PaperSize[]`.
+   - When provided and non-empty, use it as the source list instead of `ISO_SIZES` (still orientation-matched to the image, still with "Original Size" row at the bottom).
+   - Fall back to `ISO_SIZES` when not provided (preserves current behaviour for other flows).
 
-No table, RLS, or code changes needed. After the migration runs, the "Create product" wizard will succeed for Canvas wrap.
+2. `OrderFiles.tsx`
+   - Compute the effective size list for the current `productFamily`:
+     - Start with resolved ISO labels from `useResolvedAllowedSizeLabels` → map each label back to its `PaperSize` via `ISO_SIZES` / non-ISO tables.
+     - Append custom sizes from `useResolvedAllowedCustomSizes` (already `PaperSize[]`).
+   - Pass the merged list as `allowedSizes` to `<ImageSizeDialog>`.
+   - If nothing resolves (unconfigured family), leave prop undefined so the dialog behaves as today.
+
+3. No changes to Canvas Builder page (it has its own size flow); this only affects the generic upload dialog used by `OrderFiles.tsx`, which is the surface the user hit.
+
+## Out of scope
+
+- Pricing, upload pipeline, and PosterImageEditor flows are unchanged.
+- No DB or RLS changes.
