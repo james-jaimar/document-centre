@@ -211,15 +211,33 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, outW, outH);
     try {
-      ctx.drawImage(
-        imgEl,
-        croppedAreaPixels.x, croppedAreaPixels.y,
-        croppedAreaPixels.width, croppedAreaPixels.height,
-        0, 0, outW, outH,
-      );
+      // Clip croppedAreaPixels to actual image bounds so out-of-media
+      // regions render as white bars (matching the cropper's letterboxing).
+      const cx = croppedAreaPixels.x;
+      const cy = croppedAreaPixels.y;
+      const cw = croppedAreaPixels.width;
+      const ch = croppedAreaPixels.height;
+      const iw = imgEl.naturalWidth;
+      const ih = imgEl.naturalHeight;
+      const sx = Math.max(0, cx);
+      const sy = Math.max(0, cy);
+      const sxEnd = Math.min(iw, cx + cw);
+      const syEnd = Math.min(ih, cy + ch);
+      const sw = Math.max(0, sxEnd - sx);
+      const sh = Math.max(0, syEnd - sy);
+      if (sw > 0 && sh > 0) {
+        const scaleX = outW / cw;
+        const scaleY = outH / ch;
+        const dx = (sx - cx) * scaleX;
+        const dy = (sy - cy) * scaleY;
+        const dw = sw * scaleX;
+        const dh = sh * scaleY;
+        ctx.drawImage(imgEl, sx, sy, sw, sh, dx, dy, dw, dh);
+      }
     } catch { /* ignore draw errors */ }
     return c;
   }, [imgEl, orientedSize, croppedAreaPixels]);
+
 
   const previewTransform: CanvasTransformState | null = useMemo(() => {
     if (!canvas || !orientedSize || !faceBitmap) return null;
