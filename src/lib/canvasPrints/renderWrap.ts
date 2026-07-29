@@ -71,7 +71,7 @@ export function renderProductionCanvas(
   if (wrapMode === "gallery_wrap") {
     // Image bleeds naturally across the entire production area.
     drawImage(ctx);
-  } else if (wrapMode === "face_only") {
+  } else if (wrapMode === "face_only" || wrapMode === "no_edge_print") {
     // Only the front prints — leave wraps + bleed white.
     ctx.save();
     ctx.beginPath();

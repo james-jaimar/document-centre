@@ -1,20 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranch } from "@/contexts/BranchContext";
-import { useCreateOrder, useUpdateOrderItemSpec, useOrderData } from "@/hooks/useOrderBuilder";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
+import { usePhotoUpload } from "@/hooks/usePhotoUpload";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { resolveUrls } from "@/lib/thumbnailUtils";
+import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
+import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import {
+  useResolvedAllowedSizeLabels,
+  useResolvedAllowedCustomSizes,
+} from "@/hooks/useResolvedCatalogOptions";
+import { ISO_SIZES, NON_ISO_SIZES } from "@/lib/paperSizes";
+import type { PaperSize } from "@/lib/paperSizes";
+
+import PhotoUploader from "@/components/photo/PhotoUploader";
+import QRUploadModal from "@/components/order/QRUploadModal";
+import CanvasTile from "@/components/canvas/CanvasTile";
+import CanvasEditorModal, { type CanvasSizeChoice } from "@/components/canvas/CanvasEditorModal";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Input } from "@/components/ui/input";
-import { ArrowLeft, ImagePlus, Loader2, ShoppingCart } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
+
 import {
   CANVAS_PRESETS,
   DEFAULT_BLEED_MM,
@@ -23,47 +35,88 @@ import {
   WRAP_DEPTH_PRESETS_MM,
   findPreset,
 } from "@/lib/canvasPrints/presets";
-import type { CanvasTransformState, WrapMode } from "@/lib/canvasPrints/types";
-import { WRAP_MODE_OPTIONS } from "@/lib/canvasPrints/types";
-import { sampleEdgeColourFromImage } from "@/lib/canvasPrints/renderWrap";
-import CanvasEditor from "@/components/canvas/CanvasEditor";
-import FlatProofPreview from "@/components/canvas/FlatProofPreview";
-import AngledPreview from "@/components/canvas/AngledPreview";
-import ResolutionBadge from "@/components/canvas/ResolutionBadge";
+import type { CanvasPrintEntry, CanvasPrintsSpec } from "@/lib/canvasPrints/canvasSpecTypes";
+import { rasterisePdfPageOneToImage } from "@/lib/canvasPrints/pdfToImage";
 
 const CANVAS_FAMILY_SLUG_DEFAULT = "canvas-prints";
 
-type PrintingRulesWithCanvas = {
+type CanvasPrintingRules = {
   allowed_finished_sizes?: string[];
   canvas_wrap_depths_mm?: number[];
   canvas_default_wrap_mm?: number;
 };
 
+/** Build the size choice list from the family's configured sizes.
+ *  Falls back to CANVAS_PRESETS when no sizes are configured. */
+function useCanvasSizeChoices(
+  familyId: string | null,
+  branchId: string | null,
+): CanvasSizeChoice[] {
+  const { labels: allowedLabels } = useResolvedAllowedSizeLabels(familyId, branchId);
+  const { sizes: customSizes } = useResolvedAllowedCustomSizes(familyId, branchId);
+
+  return useMemo(() => {
+    const choices: CanvasSizeChoice[] = [];
+    const seen = new Set<string>();
+
+    const addFromPaper = (p: PaperSize, slugPrefix = "iso") => {
+      const slug = `${slugPrefix}-${p.name.toLowerCase().replace(/\s+/g, "-")}`;
+      if (seen.has(slug)) return;
+      seen.add(slug);
+      choices.push({
+        slug,
+        label: `${p.name} (${p.widthMm} × ${p.heightMm} mm)`,
+        frontWidthMm: p.widthMm,
+        frontHeightMm: p.heightMm,
+      });
+    };
+
+    if (allowedLabels && allowedLabels.length > 0) {
+      const allSizes = [...ISO_SIZES, ...NON_ISO_SIZES];
+      for (const label of allowedLabels) {
+        const match = allSizes.find((s) => s.name === label);
+        if (match) addFromPaper(match);
+      }
+    }
+    for (const cs of customSizes) addFromPaper(cs, "custom");
+
+    if (choices.length === 0) {
+      // Fallback to the built-in canvas presets.
+      for (const p of CANVAS_PRESETS) {
+        choices.push({
+          slug: p.id,
+          label: p.label,
+          frontWidthMm: p.frontWidthMm,
+          frontHeightMm: p.frontHeightMm,
+        });
+      }
+    }
+    return choices;
+  }, [allowedLabels, customSizes]);
+}
+
 export default function CanvasPrintsBuilder() {
   const { id: orderIdParam } = useParams<{ id?: string }>();
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { tenantId } = useTenantContext();
   const { activeBranch } = useBranch();
 
   const createOrder = useCreateOrder();
-  const updateSpec = useUpdateOrderItemSpec();
   const addItemToCart = useAddItemToCart();
-  const { order, orderItem } = useOrderData(orderIdParam);
 
-  // ── Look up the canvas-prints product family (kind = canvas_wrap) for
-  // the current tenant so admins can configure wrap depth presets per product.
+  // ── Resolve the canvas_wrap product family for this tenant.
   const { data: family } = useQuery({
     queryKey: ["canvas_family", tenantId],
     queryFn: async () => {
-      const query: any = supabase
+      const { data, error } = await supabase
         .from("product_families")
         .select("*")
-        .eq("kind", "canvas_wrap");
-      const filtered = tenantId
-        ? query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
-        : query.is("tenant_id", null);
-      const { data, error } = await filtered;
+        .eq("kind", "canvas_wrap")
+        .or(tenantId
+          ? `tenant_id.eq.${tenantId},tenant_id.is.null`
+          : "tenant_id.is.null");
       if (error) throw error;
       const rows = (data ?? []) as any[];
       return rows.find((r) => r.tenant_id === tenantId) ?? rows[0] ?? null;
@@ -71,147 +124,303 @@ export default function CanvasPrintsBuilder() {
   });
 
   const familyId: string | null = family?.id ?? null;
-  const allowedDepths: number[] = useMemo(() => {
-    const rules = (family?.printing_rules ?? {}) as PrintingRulesWithCanvas;
+
+  const allowedDepths = useMemo<number[]>(() => {
+    const rules = (family?.printing_rules ?? {}) as CanvasPrintingRules;
     const arr = Array.isArray(rules.canvas_wrap_depths_mm) && rules.canvas_wrap_depths_mm.length > 0
       ? rules.canvas_wrap_depths_mm.filter((d) => WRAP_DEPTH_PRESETS_MM.includes(d as any))
       : (WRAP_DEPTH_PRESETS_MM as unknown as number[]);
     return arr;
   }, [family]);
+
   const defaultWrap = useMemo(() => {
-    const rules = (family?.printing_rules ?? {}) as PrintingRulesWithCanvas;
+    const rules = (family?.printing_rules ?? {}) as CanvasPrintingRules;
     return allowedDepths.includes(rules.canvas_default_wrap_mm ?? DEFAULT_WRAP_MM)
       ? (rules.canvas_default_wrap_mm ?? DEFAULT_WRAP_MM)
       : allowedDepths[0];
   }, [family, allowedDepths]);
 
-  // ── State ────────────────────────────────────────────────────────────────
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
-  const [state, setState] = useState<CanvasTransformState>({
-    presetId: "sq-600",
-    frontWidthMm: 600,
-    frontHeightMm: 600,
-    wrapMm: DEFAULT_WRAP_MM,
-    bleedMm: DEFAULT_BLEED_MM,
-    dpi: DEFAULT_DPI,
-    wrapMode: "gallery_wrap",
-    imageScale: 1,
-    imageX: 0,
-    imageY: 0,
-    imageRotation: 0,
-    imageNaturalWidth: 0,
-    imageNaturalHeight: 0,
-  });
+  const sizeChoices = useCanvasSizeChoices(familyId, activeBranch?.id ?? null);
+  const defaultSize = sizeChoices[0] ?? null;
 
-  // Sync wrap when family loads.
+  // ── Order lazy-init
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
+  const effectiveOrderId = orderIdParam ?? createdOrderId ?? undefined;
+  const { order, orderItem } = useOrderData(effectiveOrderId);
+
+  const ensureOrder = useCallback(async (): Promise<string> => {
+    if (orderItem?.id) return orderItem.id;
+    if (!familyId) throw new Error("Canvas Prints product isn't configured yet.");
+    const newOrder = await createOrder.mutateAsync({
+      productFamilyId: familyId,
+      branchId: activeBranch?.id ?? null,
+    });
+    setCreatedOrderId(newOrder.id);
+    const { data: newItem, error } = await supabase
+      .from("order_items")
+      .select("id")
+      .eq("order_id", newOrder.id)
+      .single();
+    if (error || !newItem) throw error ?? new Error("Failed to load order item");
+    return newItem.id;
+  }, [orderItem?.id, familyId, createOrder, activeBranch?.id]);
+
+  // ── Photo-style upload (reused verbatim — canvases ARE just images)
+  const { uploadPhotos } = usePhotoUpload(orderItem?.id);
+
+  // ── Spec state
+  const [spec, setSpec] = useState<CanvasPrintsSpec>({ canvases: [] });
+  const hydratedRef = useRef(false);
   useEffect(() => {
-    if (!allowedDepths.includes(state.wrapMm)) {
-      setState((s) => ({ ...s, wrapMm: defaultWrap }));
+    if (hydratedRef.current) return;
+    const s = orderItem?.spec as any;
+    if (s?.canvas_prints?.canvases) {
+      setSpec({ canvases: s.canvas_prints.canvases as CanvasPrintEntry[] });
+      hydratedRef.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultWrap, allowedDepths.join(",")]);
+  }, [orderItem?.spec]);
 
-  // Load previously saved spec if returning to an existing order.
+  // ── Debounced persist
+  const persistTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    const spec = (orderItem?.spec ?? null) as any;
-    if (spec?.canvas_transform) {
-      setState((s) => ({ ...s, ...spec.canvas_transform }));
-    }
-  }, [orderItem?.id]);
-
-  const patch = (p: Partial<CanvasTransformState>) => setState((s) => ({ ...s, ...p }));
-
-  // ── File handling ────────────────────────────────────────────────────────
-  const fileRef = useRef<HTMLInputElement>(null);
-  const handleFile = (f: File) => {
-    setImageFile(f);
-    const url = URL.createObjectURL(f);
-    const img = new Image();
-    img.onload = () => {
-      setImageEl(img);
-      const wrapColorHex = sampleEdgeColourFromImage(img);
-      patch({
-        imageNaturalWidth: img.naturalWidth,
-        imageNaturalHeight: img.naturalHeight,
-        wrapColorHex,
-        imageScale: 1,
-        imageX: 0,
-        imageY: 0,
-        imageRotation: 0,
-      });
-    };
-    img.src = url;
-  };
-
-  // ── Size selection ───────────────────────────────────────────────────────
-  const setPreset = (id: string) => {
-    const p = findPreset(id);
-    if (!p) return;
-    patch({ presetId: id, frontWidthMm: p.frontWidthMm, frontHeightMm: p.frontHeightMm });
-  };
-
-  // ── Save + continue ──────────────────────────────────────────────────────
-  const [saving, setSaving] = useState(false);
-  async function handleAddToCart() {
-    if (!imageEl || !imageFile) { toast.error("Please upload an image first."); return; }
-    if (!familyId) { toast.error("Canvas Prints product isn't configured yet."); return; }
-    setSaving(true);
-    try {
-      let orderId = orderIdParam;
-      let itemId = orderItem?.id;
-      if (!orderId) {
-        const created = await createOrder.mutateAsync({
-          productFamilyId: familyId,
-          branchId: activeBranch?.id ?? null,
-        });
-        orderId = created.id;
-        // Look up the freshly-created order item.
-        const { data: newItem } = await supabase
-          .from("order_items")
-          .select("id")
-          .eq("order_id", orderId)
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        itemId = newItem?.id;
-      }
-      if (!itemId) throw new Error("Could not locate order item");
-
-      const spec = {
-        page_count: 1,
-        quantity: 1,
+    if (!orderItem?.id) return;
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(async () => {
+      const totalQty = spec.canvases.reduce((s, c) => s + c.quantity, 0);
+      const baseSpec = (orderItem.spec as any) || {};
+      const nextSpec = {
+        ...baseSpec,
+        page_count: spec.canvases.length,
+        quantity: Math.max(totalQty, 1),
         is_color: true,
         is_duplex: false,
-        selected_options: {},
-        canvas_transform: state,
-        size_slug: state.presetId,
-      } as any;
+        selected_options: {
+          ...(baseSpec.selected_options || {}),
+        },
+        canvas_prints: spec,
+      };
+      await supabase
+        .from("order_items")
+        .update({ spec: nextSpec, quantity: Math.max(totalQty, 1) })
+        .eq("id", orderItem.id);
+    }, 600);
+    return () => { if (persistTimer.current) clearTimeout(persistTimer.current); };
+  }, [spec, orderItem?.id, orderItem?.spec]);
 
-      await updateSpec.mutateAsync({ id: itemId, spec });
+  // ── Signed-URL resolution for tile/editor previews
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const wanted = new Set<string>();
+    for (const c of spec.canvases) {
+      if (c.original_storage_path) wanted.add(c.original_storage_path);
+      if (c.preview_path) wanted.add(c.preview_path);
+      if (c.thumb_path) wanted.add(c.thumb_path);
+    }
+    const paths = Array.from(wanted).filter((p) => !signedUrls[p]);
+    if (paths.length === 0) return;
+    let cancelled = false;
+    resolveUrls(paths).then((urls) => {
+      if (cancelled) return;
+      const next: Record<string, string> = {};
+      paths.forEach((p, i) => { if (urls[i]) next[p] = urls[i]; });
+      setSignedUrls((prev) => ({ ...prev, ...next }));
+      for (const c of spec.canvases) {
+        if (c.preview_path && next[c.preview_path] && !getCachedBlobUrl(c.preview_path)) {
+          void prefetchToCache(c.preview_path, next[c.preview_path]);
+        }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [spec.canvases, signedUrls]);
 
-      await addItemToCart.mutateAsync({
-        orderItemId: itemId,
-        draftOrderId: orderId!,
-        title: `Canvas Print · ${state.frontWidthMm}×${state.frontHeightMm}mm`,
-        unitPrice: 0,
-        quantity: 1,
-        totalPrice: 0,
-        spec,
+  const resolveUrl = useCallback((path: string | undefined | null): string | null => {
+    if (!path) return null;
+    const blob = getCachedBlobUrl(path);
+    if (blob) return blob;
+    return signedUrls[path] ?? null;
+  }, [signedUrls]);
+
+  // ── QR upload
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrItemId, setQrItemId] = useState<string | undefined>();
+  const handlePhoneUpload = useCallback(async () => {
+    try {
+      const id = await ensureOrder();
+      setQrItemId(id);
+      setQrOpen(true);
+    } catch {
+      toast.error("Could not start phone upload. Please try again.");
+    }
+  }, [ensureOrder]);
+
+  // ── File handling
+  const [uploading, setUploading] = useState(0);
+  const handleFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0 || !defaultSize) return;
+    setUploading(files.length);
+
+    // Rasterise any PDFs to page-1 JPEGs before uploading.
+    const prepared: { file: File; wasPdf: boolean }[] = [];
+    for (const f of files) {
+      const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+      if (isPdf) {
+        try {
+          const img = await rasterisePdfPageOneToImage(f);
+          prepared.push({ file: img, wasPdf: true });
+        } catch (e: any) {
+          console.error("[canvas] pdf rasterise failed", e);
+          toast.error(`Couldn't read PDF ${f.name}: ${e?.message ?? "unknown error"}`);
+        }
+      } else {
+        prepared.push({ file: f, wasPdf: false });
+      }
+    }
+    if (prepared.length === 0) { setUploading(0); return; }
+
+    const targetItemId = await ensureOrder();
+    const uploaded = await uploadPhotos(prepared.map((p) => p.file), targetItemId);
+    setUploading(0);
+    if (uploaded.length === 0) return;
+
+    const newEntries: CanvasPrintEntry[] = uploaded.map((u, i) => ({
+      id: crypto.randomUUID(),
+      document_id: u.documentId,
+      file_name: u.fileName,
+      original_storage_path: u.storagePath,
+      source_width_px: u.width,
+      source_height_px: u.height,
+      mime_type: u.mimeType,
+      source_was_pdf: prepared[i]?.wasPdf ?? false,
+      size_slug: defaultSize.slug,
+      frontWidthMm: defaultSize.frontWidthMm,
+      frontHeightMm: defaultSize.frontHeightMm,
+      wrapMm: defaultWrap,
+      bleedMm: DEFAULT_BLEED_MM,
+      dpi: DEFAULT_DPI,
+      wrapMode: "gallery_wrap",
+      crop: { x: 0, y: 0 },
+      zoom: 1,
+      rotation: 0,
+      fit_mode: "fill",
+      croppedAreaPixels: null,
+      quantity: 1,
+      thumb_path: u.thumbPath,
+      preview_path: u.previewPath,
+      preview_width_px: u.previewWidthPx,
+      preview_height_px: u.previewHeightPx,
+    }));
+
+    setSpec((prev) => ({ canvases: [...prev.canvases, ...newEntries] }));
+    toast.success(`Added ${uploaded.length} canvas${uploaded.length === 1 ? "" : "es"}`);
+
+    // Auto-open editor for the first newly-added canvas.
+    if (newEntries[0]) setEditorId(newEntries[0].id);
+  }, [defaultSize, defaultWrap, ensureOrder, uploadPhotos]);
+
+  const updateCanvas = (id: string, patch: Partial<CanvasPrintEntry>) => {
+    setSpec((prev) => ({
+      canvases: prev.canvases.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
+  };
+
+  const removeCanvas = async (id: string) => {
+    const target = spec.canvases.find((c) => c.id === id);
+    setSpec((prev) => ({ canvases: prev.canvases.filter((c) => c.id !== id) }));
+    if (target) {
+      try {
+        await supabase.from("documents").delete().eq("id", target.document_id);
+        const { deleteFromS3 } = await import("@/lib/s3Storage");
+        await deleteFromS3([target.original_storage_path]);
+      } catch (e) {
+        console.warn("[canvas] remove cleanup failed", e);
+      }
+    }
+  };
+
+  const duplicateCanvas = (id: string) => {
+    setSpec((prev) => {
+      const idx = prev.canvases.findIndex((c) => c.id === id);
+      if (idx === -1) return prev;
+      const copy = { ...prev.canvases[idx], id: crypto.randomUUID() };
+      const next = [...prev.canvases];
+      next.splice(idx + 1, 0, copy);
+      return { canvases: next };
+    });
+  };
+
+  // ── Editor
+  const [editorId, setEditorId] = useState<string | null>(null);
+  const editorCanvas = spec.canvases.find((c) => c.id === editorId) ?? null;
+  const editorSignedUrl = editorCanvas
+    ? (resolveUrl(editorCanvas.preview_path) ?? resolveUrl(editorCanvas.original_storage_path))
+    : null;
+  const editorPixelScale = editorCanvas && editorCanvas.preview_width_px && editorCanvas.source_width_px
+    ? editorCanvas.source_width_px / editorCanvas.preview_width_px
+    : 1;
+
+  // ── Auto-correct stale sizes
+  useEffect(() => {
+    if (sizeChoices.length === 0 || spec.canvases.length === 0) return;
+    setSpec((prev) => {
+      let changed = false;
+      const canvases = prev.canvases.map((c) => {
+        if (sizeChoices.some((s) => s.slug === c.size_slug)) return c;
+        const fallback = sizeChoices[0];
+        changed = true;
+        return {
+          ...c,
+          size_slug: fallback.slug,
+          frontWidthMm: fallback.frontWidthMm,
+          frontHeightMm: fallback.frontHeightMm,
+        };
       });
+      return changed ? { canvases } : prev;
+    });
+  }, [sizeChoices]);
+
+  // ── Add to cart
+  const [submitting, setSubmitting] = useState(false);
+  const totalQty = spec.canvases.reduce((s, c) => s + c.quantity, 0);
+
+  const handleAddToCart = async () => {
+    if (!order || !orderItem || submitting) return;
+    if (spec.canvases.length === 0) {
+      toast.error("Add at least one canvas before checking out.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
+      await addItemToCart.mutateAsync({
+        orderItemId: orderItem.id,
+        draftOrderId: order.id,
+        title: `Canvas Prints (${spec.canvases.length})`,
+        unitPrice: 0,
+        quantity: Math.max(totalQty, 1),
+        totalPrice: 0,
+        spec: {
+          page_count: spec.canvases.length,
+          quantity: Math.max(totalQty, 1),
+          is_color: true,
+          is_duplex: false,
+          selected_options: {},
+          canvas_prints: spec,
+        } as any,
+        replacesCartItemId: replacesCartItemId || undefined,
+      });
+      invalidateUserOrderCaches(qc);
       toast.success("Added to cart");
       navigate(tenantPath("cart"));
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to save canvas");
+      console.error("[canvas] add to cart failed", e);
+      toast.error(e?.message ?? "Failed to add to cart");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
-  }
-
-  const currentDepthOptions = allowedDepths;
+  };
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -219,128 +428,109 @@ export default function CanvasPrintsBuilder() {
         <h1 className="text-2xl font-semibold">Canvas Prints</h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
-        {/* ── Left: controls ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        {/* ── Left: upload + tile grid */}
         <div className="space-y-5">
-          <Card className="p-4 space-y-3">
-            <Label className="font-semibold">1. Upload your image</Label>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-                e.target.value = "";
-              }}
-            />
-            <Button variant="outline" className="w-full" onClick={() => fileRef.current?.click()}>
-              <ImagePlus className="h-4 w-4 mr-2" />
-              {imageFile ? "Replace image" : "Upload image"}
-            </Button>
-            {imageFile && (
-              <p className="text-xs text-muted-foreground truncate">
-                {imageFile.name} · {state.imageNaturalWidth} × {state.imageNaturalHeight} px
-              </p>
-            )}
-          </Card>
+          <PhotoUploader
+            onFiles={handleFiles}
+            acceptPdf
+            helperText="JPG, PNG, WEBP, HEIC or PDF (page 1 only) · up to 200 MB each"
+            orderItemId={orderItem?.id}
+            onPhoneUpload={handlePhoneUpload}
+            onMobileFilesReceived={() => {
+              qc.invalidateQueries({ queryKey: ["order-data", effectiveOrderId] });
+            }}
+          />
 
-          <Card className="p-4 space-y-3">
-            <Label className="font-semibold">2. Canvas size</Label>
-            <Select value={state.presetId} onValueChange={setPreset}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {CANVAS_PRESETS.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Card>
+          {uploading > 0 && (
+            <div className="text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Uploading {uploading} file{uploading === 1 ? "" : "s"}…
+            </div>
+          )}
 
-          <Card className="p-4 space-y-3">
-            <Label className="font-semibold">3. Wrap depth</Label>
-            <RadioGroup
-              value={String(state.wrapMm)}
-              onValueChange={(v) => patch({ wrapMm: Number(v) })}
-              className="grid grid-cols-3 gap-2"
-            >
-              {currentDepthOptions.map((d) => (
-                <label
-                  key={d}
-                  className={`border rounded-md p-2 text-center cursor-pointer text-sm ${state.wrapMm === d ? "border-primary bg-primary/5 font-medium" : "hover:border-primary/50"}`}
-                >
-                  <RadioGroupItem value={String(d)} className="sr-only" />
-                  {d} mm
-                </label>
-              ))}
-            </RadioGroup>
-          </Card>
+          {spec.canvases.length === 0 && uploading === 0 && (
+            <div className="text-center text-sm text-muted-foreground py-8">
+              Upload photos or PDF artwork above to start building canvases.
+            </div>
+          )}
 
-          <Card className="p-4 space-y-3">
-            <Label className="font-semibold">4. Wrap style</Label>
-            <div className="space-y-2">
-              {WRAP_MODE_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className={`block border rounded-md p-2.5 cursor-pointer text-sm transition ${state.wrapMode === opt.value ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      className="accent-primary"
-                      checked={state.wrapMode === opt.value}
-                      onChange={() => patch({ wrapMode: opt.value as WrapMode })}
-                    />
-                    <span className="font-medium">{opt.label}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1 ml-6">{opt.help}</p>
-                </label>
+          {spec.canvases.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+              {spec.canvases.map((c) => (
+                <CanvasTile
+                  key={c.id}
+                  canvas={c}
+                  signedUrl={
+                    resolveUrl(c.preview_path) ??
+                    resolveUrl(c.thumb_path) ??
+                    resolveUrl(c.original_storage_path)
+                  }
+                  onEdit={() => setEditorId(c.id)}
+                  onDuplicate={() => duplicateCanvas(c.id)}
+                  onRemove={() => removeCanvas(c.id)}
+                  onQuantityChange={(q) => updateCanvas(c.id, { quantity: q })}
+                />
               ))}
             </div>
-            {state.wrapMode === "colour_wrap" && (
-              <div className="flex items-center gap-2 pt-1">
-                <Label className="text-xs">Side colour</Label>
-                <Input
-                  type="color"
-                  value={state.wrapColorHex ?? "#ffffff"}
-                  onChange={(e) => patch({ wrapColorHex: e.target.value })}
-                  className="h-8 w-14 p-1"
-                />
-                <span className="text-xs text-muted-foreground">Auto-picked from your image edges — override any time.</span>
-              </div>
-            )}
-          </Card>
-
-          {imageEl && <ResolutionBadge state={state} />}
-
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleAddToCart}
-            disabled={!imageEl || saving}
-          >
-            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShoppingCart className="h-4 w-4 mr-2" />}
-            Add to cart
-          </Button>
+          )}
         </div>
 
-        {/* ── Right: previews ──────────────────────────────────────────── */}
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Position your image</h2>
-            <CanvasEditor image={imageEl} state={state} onChange={patch} />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Production proof</h2>
-            <FlatProofPreview image={imageEl} state={state} />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">How it will look on the wall</h2>
-            <AngledPreview image={imageEl} state={state} />
+        {/* ── Right: summary */}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3 sticky top-4">
+            <h3 className="font-semibold">Order summary</h3>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Canvases</span>
+              <span className="font-medium tabular-nums">{spec.canvases.length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Total prints</span>
+              <span className="font-medium tabular-nums">{totalQty}</span>
+            </div>
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={handleAddToCart}
+              disabled={spec.canvases.length === 0 || submitting}
+            >
+              {submitting
+                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                : <ShoppingCart className="h-4 w-4 mr-2" />}
+              Add to cart
+            </Button>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Each canvas is priced per unit. Wrap depth and edge finish are set per canvas — tap
+              "Edit" on any tile to change them.
+            </p>
           </div>
         </div>
       </div>
+
+      <CanvasEditorModal
+        open={!!editorCanvas}
+        canvas={editorCanvas}
+        signedUrl={editorSignedUrl}
+        sizes={sizeChoices}
+        allowedWrapDepthsMm={allowedDepths}
+        pixelScale={editorPixelScale}
+        onClose={() => setEditorId(null)}
+        onSave={(patch) => {
+          if (editorCanvas) updateCanvas(editorCanvas.id, patch);
+          setEditorId(null);
+        }}
+      />
+
+      {qrItemId && (
+        <QRUploadModal
+          open={qrOpen}
+          onOpenChange={setQrOpen}
+          orderItemId={qrItemId}
+          onFilesReceived={() => {
+            qc.invalidateQueries({ queryKey: ["order-data", effectiveOrderId] });
+          }}
+        />
+      )}
     </div>
   );
 }

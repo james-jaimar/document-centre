@@ -12,9 +12,13 @@ interface PhotoUploaderProps {
   onMobileFilesReceived?: (fileIds: string[]) => void;
   /** If provided, the "Upload from Phone" button always shows. Called when user clicks it — parent should ensure order exists then open QR modal. */
   onPhoneUpload?: () => void;
+  /** When true, PDFs are also accepted (used by Canvas Prints — parent rasterises page 1). */
+  acceptPdf?: boolean;
+  /** Override the helper copy — otherwise "JPG, PNG, WEBP or HEIC · up to 200 MB each". */
+  helperText?: string;
 }
 
-const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
 
 export default function PhotoUploader({
   onFiles,
@@ -23,20 +27,26 @@ export default function PhotoUploader({
   orderItemId,
   onMobileFilesReceived,
   onPhoneUpload,
+  acceptPdf,
+  helperText,
 }: PhotoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [qrOpen, setQrOpen] = useState(false);
 
+  const accept = acceptPdf ? `${IMAGE_ACCEPT},application/pdf` : IMAGE_ACCEPT;
+
   const handleFiles = useCallback(
     (fileList: FileList | null) => {
       if (!fileList || fileList.length === 0) return;
-      const files = Array.from(fileList).filter((f) =>
-        /^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type) ||
-        /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name),
-      );
+      const files = Array.from(fileList).filter((f) => {
+        if (/^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type)) return true;
+        if (/\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)) return true;
+        if (acceptPdf && (f.type === "application/pdf" || /\.pdf$/i.test(f.name))) return true;
+        return false;
+      });
       if (files.length > 0) onFiles(files);
     },
-    [onFiles],
+    [onFiles, acceptPdf],
   );
 
   const onDrop = useCallback(
@@ -76,7 +86,7 @@ export default function PhotoUploader({
             Drag photos here, or click to browse
           </p>
           <p className="text-xs text-muted-foreground">
-            JPG, PNG, WEBP or HEIC · up to 200 MB each
+            {helperText ?? "JPG, PNG, WEBP or HEIC · up to 200 MB each"}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -109,7 +119,7 @@ export default function PhotoUploader({
           ref={inputRef}
           type="file"
           multiple
-          accept={ACCEPT}
+          accept={accept}
           className="sr-only"
           onChange={(e) => {
             handleFiles(e.target.files);
