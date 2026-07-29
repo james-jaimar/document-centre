@@ -346,8 +346,8 @@ export default function CanvasEditorModal({
           </div>
 
           {/* RIGHT — live 3D preview + settings */}
-          <div className="min-w-0 flex flex-col bg-muted/20 overflow-hidden min-h-0">
-            <div className="flex-1 min-h-[240px] p-4 pb-2 flex flex-col">
+          <div className="min-w-0 min-h-0 flex flex-col bg-muted/20 overflow-hidden">
+            <div className="flex-1 min-h-0 p-4 pb-2 flex flex-col">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 How it will look on the wall
               </p>
@@ -362,7 +362,8 @@ export default function CanvasEditorModal({
               </div>
             </div>
 
-            <div className="border-t border-border p-4 space-y-3 overflow-y-auto shrink-0" style={{ maxHeight: "45%" }}>
+            <div className="border-t border-border p-4 space-y-3 overflow-y-auto shrink-0 max-h-[300px]">
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
