@@ -1,4 +1,5 @@
 export type WrapMode =
+  | "no_edge_print"
   | "gallery_wrap"
   | "mirror_wrap"
   | "blur_wrap"
@@ -6,6 +7,11 @@ export type WrapMode =
   | "face_only";
 
 export const WRAP_MODE_OPTIONS: { value: WrapMode; label: string; help: string }[] = [
+  {
+    value: "no_edge_print",
+    label: "No edge print",
+    help: "Only the front prints. Wrapped sides are left blank white — the cleanest, most economical finish.",
+  },
   {
     value: "gallery_wrap",
     label: "Gallery wrap",
