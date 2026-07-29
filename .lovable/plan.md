@@ -1,31 +1,27 @@
 ## Problem
-`CustomerDashboard.tsx` ("My Print Centre") lists product families using `useProductFamiliesActive`, which just queries all rows where `is_active = true` on `product_families`. It does not apply:
-- the tenant-level `tenant_product_toggles` (Admin → Products off), or
-- the branch-level `branch_product_capabilities` (`is_enabled`, `temporary_outage`)
 
-`NewOrder.tsx` already applies both filters correctly. So Canvas disappears from the "New Order" grid but still appears on the dashboard tiles and in any other place that reuses the raw list.
+All 5 issues in the screenshots stem from the same root cause: the order was opened through the generic `/orders/:id/files` → `/orders/:id/build` route, not through the dedicated `CanvasPrintsBuilder` at `/orders/:id/canvas-prints`.
+
+The Canvas builder page already exists and already implements everything the user is asking for — customer image tiles (not the product hero), a "canvas"-shaped upload target (no Front/Body/Back sectioning), simplex-only spec (`is_duplex: false` hard-coded), the `CanvasEditorModal` cropper/wrap editor, `CanvasTile` previews, and `QRUploadModal` for phone upload. The generic flow shown in the screenshots has none of that because it is the bound-document/flyer flow.
+
+Verified in code:
+- `src/App.tsx` lines 169/174 register `/orders/new/canvas-prints` and `/orders/:id/canvas-prints` → `CanvasPrintsBuilder`.
+- `src/pages/dashboard/NewOrder.tsx` line 58 redirects the "new order" tile for `canvas-prints` correctly.
+- `src/pages/dashboard/OrderFiles.tsx` and `OrderBuild.tsx` have no `canvas_wrap` branch, so any existing canvas order opened from the Orders list / cart / email link lands in the generic sectioned uploader.
 
 ## Fix
-Extract the filtered-families logic used by `NewOrder.tsx` into a single hook (e.g. `useVisibleProductFamilies`) and use it in both places.
 
-Hook responsibilities:
-1. Load master (tenant_id null) active `product_families`.
-2. Load `tenant_product_toggles` for current `tenantId`; drop families explicitly disabled.
-3. If an `activeBranch` exists, load its `branch_product_capabilities`; drop families where the row is missing, `is_enabled=false`, or `temporary_outage=true`.
-4. Return `{ families, isLoading }`.
+Add a family-kind redirect at the top of both `OrderFiles.tsx` and `OrderBuild.tsx`: when the loaded `order_items.spec` / `product_families.kind` is `canvas_wrap`, `navigate(tenantPath(\`orders/${id}/canvas-prints\`), { replace: true })` before rendering anything else. Same guard should also cover `photo_print` for symmetry (currently only protected by initial navigation, so a deep link exhibits the same class of bug).
 
-Then:
-- Replace the inline query in `NewOrder.tsx` with the hook (behaviour unchanged).
-- Replace `useProductFamiliesActive` usage in `CustomerDashboard.tsx` with the hook so the tile grid and the "Create" popover both respect toggles.
+### Details
 
-No schema / RLS changes. No customer-facing copy changes. Purely a filtering fix.
+1. In `OrderFiles.tsx`, after `order` / `orderItem` load, read `orderItem.product_family_id` → look up `product_families.kind`; if `canvas_wrap` redirect to `/orders/:id/canvas-prints`, if `photo_print` redirect to `/orders/:id/photo-prints`. Render a small "Loading…" while the family fetch resolves so we don't flash the wrong UI.
+2. Same guard added at the top of `OrderBuild.tsx`.
+3. Audit `CustomerOrderDetail`, cart, and email/nudge links that emit `/orders/:id/files` or `/build` — if the target order is a canvas or photo order, emit the specialised path directly (belt-and-braces; the redirect above already covers late arrivals).
 
-## Files touched
-- `src/hooks/useVisibleProductFamilies.ts` — new
-- `src/pages/dashboard/CustomerDashboard.tsx` — swap query hook
-- `src/pages/dashboard/NewOrder.tsx` — swap to shared hook
+No changes are needed to `CanvasPrintsBuilder` itself — it already handles the existing-order case via `orderIdParam`, already writes `is_duplex: false`, already renders `CanvasTile` for the customer's own uploaded image, and already exposes the QR uploader through `handlePhoneUpload`.
 
-## Verification
-- With Canvas toggled off at tenant level: dashboard tiles + "Create" list + New Order grid all hide Canvas.
-- Toggle back on: it reappears everywhere.
-- Branch with Canvas capability disabled: hidden on that branch only.
+### Out of scope
+
+- No changes to the canvas pricing/options/preview logic.
+- No schema changes.

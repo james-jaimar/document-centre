@@ -96,14 +96,26 @@ export default function OrderFiles() {
       if (!productFamilyId) return null;
       const { data, error } = await supabase
         .from("product_families")
-        .select("name, slug, color_output, cmyk_profile, render_intent")
+        .select("name, slug, kind, color_output, cmyk_profile, render_intent")
         .eq("id", productFamilyId)
         .single();
       if (error) throw error;
-      return data as { name: string; slug: string; color_output: string; cmyk_profile: string; render_intent: string };
+      return data as { name: string; slug: string; kind: string; color_output: string; cmyk_profile: string; render_intent: string };
     },
     enabled: !!productFamilyId,
   });
+
+  // Specialised-builder redirect: canvas_wrap and photo_print orders must
+  // never render in the generic sectioned uploader. If a customer lands on
+  // /orders/:id/files for one of those, bounce them to the dedicated builder.
+  useEffect(() => {
+    if (!effectiveOrderId || !productFamily?.kind) return;
+    if (productFamily.kind === "canvas_wrap") {
+      navigate(tenantPath(`orders/${effectiveOrderId}/canvas-prints`), { replace: true });
+    } else if (productFamily.kind === "photo_print") {
+      navigate(tenantPath(`orders/${effectiveOrderId}/photo-prints`), { replace: true });
+    }
+  }, [effectiveOrderId, productFamily?.kind, navigate, tenantPath]);
 
   // Branch-resolved product options → restrict the size advisory to sizes
   // this branch actually sells for the current product family.

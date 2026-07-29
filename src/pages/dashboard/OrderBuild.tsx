@@ -137,6 +137,17 @@ export default function OrderBuild() {
     enabled: !!productFamilyId,
   });
 
+  // Specialised-builder redirect: canvas_wrap and photo_print orders must
+  // never render in the generic build view.
+  useEffect(() => {
+    if (!orderId || !productFamily?.kind) return;
+    if (productFamily.kind === "canvas_wrap") {
+      navigate(tenantPath(`orders/${orderId}/canvas-prints`), { replace: true });
+    } else if (productFamily.kind === "photo_print") {
+      navigate(tenantPath(`orders/${orderId}/photo-prints`), { replace: true });
+    }
+  }, [orderId, productFamily?.kind, navigate, tenantPath]);
+
   // Derive preview type from binding option metadata or product family slug
   const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
     wire_bound: "wire_bound",
