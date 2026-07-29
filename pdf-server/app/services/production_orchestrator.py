@@ -385,6 +385,7 @@ def write_job_field(job_id: str, column: str, value) -> None:
         "assembly_report",
         "print_ready_assembled_at",
         "print_ready_spec_hash",
+        "print_ready_pdf_paths",
     }:
         raise ValueError(f"Refusing to write to unexpected column {column!r}")
     sb = _client()

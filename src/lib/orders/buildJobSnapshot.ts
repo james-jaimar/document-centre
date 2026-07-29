@@ -531,6 +531,8 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
 
   const resolved = resolveSelectedOptions(selected, productOptions);
   const isPhotoPrints = item.product_families?.slug === "photo-prints";
+  const isCanvasPrints = item.product_families?.slug === "canvas-prints";
+  const isRasterProduct = isPhotoPrints || isCanvasPrints;
 
   const totalPages = documents.reduce((s, d) => s + (d.page_count ?? 0), 0);
   const summary = buildSummary(resolved, spec, totalPages);
@@ -538,7 +540,7 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
 
   // Print/Per-section/Files blocks are not relevant for photo prints — the
   // dedicated PhotoPrintsAdminGallery replaces them with a visual tile grid.
-  if (!isPhotoPrints) {
+  if (!isRasterProduct) {
     const printColourSection = buildPrintColourSection(sections);
     if (printColourSection) groupedSections.push(printColourSection);
 
@@ -553,9 +555,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   }
 
   // Build merge directives for the eventual server-side PDF concatenation.
-  // Photo prints have their own merge path (PhotoPrintsAdminGallery) — skip.
-  const mergeDirectives = isPhotoPrints ? [] : buildMergeDirectives(sections, documents);
-  const sourceAssets = isPhotoPrints ? [] : buildSourceAssets(documents);
+  // Raster products (photo/canvas prints) have their own assembly path.
+  const mergeDirectives = isRasterProduct ? [] : buildMergeDirectives(sections, documents);
+  const sourceAssets = isRasterProduct ? [] : buildSourceAssets(documents);
 
   return {
     configuration: {
@@ -565,6 +567,11 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       // cropped tile previews + the print-ready PDF download button.
       ...(isPhotoPrints && spec?.photo_prints
         ? { photo_prints: spec.photo_prints }
+        : {}),
+      // Surface the full canvas_prints block so the print-ready assembler
+      // (and admin gallery) can render / render one CMYK PDF per canvas.
+      ...(isCanvasPrints && spec?.canvas_prints
+        ? { canvas_prints: spec.canvas_prints }
         : {}),
       // Ordered instructions for the print-shop merge worker.
       // See `MergeDirective` for the contract.

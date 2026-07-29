@@ -125,6 +125,75 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             job_repo.mark_done(db, pdf_job_id, result)
             return result
 
+        # ── Canvas-prints branch ────────────────────────────────────────
+        # Canvas jobs upload raw images and configure per-canvas
+        # size / wrap / edge finish. We render one CMYK PDF per canvas
+        # (one canvas upload = one PDF) and store the ordered list on
+        # order_jobs.print_ready_pdf_paths (with the first entry mirrored
+        # to print_ready_pdf_path for backwards compatibility).
+        from app.services.canvas_prints_assembly import (
+            is_canvas_prints_job,
+            assemble_canvas_prints,
+        )
+        if is_canvas_prints_job(bundle):
+            cfg_cp = (bundle.configuration or {}).get("canvas_prints") if isinstance(bundle.configuration, dict) else None
+            canvas_spec_inputs = {
+                "engine": "canvas_prints",
+                "canvases": [
+                    {
+                        "id": e.get("id"),
+                        "src": e.get("original_storage_path"),
+                        "size_slug": e.get("size_slug"),
+                        "frontWidthMm": e.get("frontWidthMm"),
+                        "frontHeightMm": e.get("frontHeightMm"),
+                        "pageOrientation": e.get("pageOrientation"),
+                        "wrapMm": e.get("wrapMm"),
+                        "bleedMm": e.get("bleedMm"),
+                        "wrapMode": e.get("wrapMode"),
+                        "wrapColorHex": e.get("wrapColorHex"),
+                        "rotation": e.get("rotation"),
+                        "crop": e.get("croppedAreaPixels"),
+                    }
+                    for e in ((cfg_cp or {}).get("canvases") or [])
+                    if isinstance(e, dict)
+                ],
+                "canvas_pipeline_version": 1,
+            }
+            canvas_hash = pdf_ops.spec_hash(canvas_spec_inputs)
+            existing_hash = bundle.job.get("print_ready_spec_hash")
+            existing_paths = bundle.job.get("print_ready_pdf_paths")
+            if (not force) and existing_hash == canvas_hash and existing_paths:
+                result = {
+                    "storage_path": (existing_paths[0] if isinstance(existing_paths, list) and existing_paths else None),
+                    "storage_paths": existing_paths,
+                    "reused_cache": True,
+                    "spec_hash": canvas_hash,
+                }
+                job_repo.mark_done(db, pdf_job_id, result)
+                return result
+
+            from datetime import datetime, timezone
+            job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
+            with Workspace() as ws:
+                storage_paths, report = assemble_canvas_prints(bundle, ws, job_number)
+
+            first_path = storage_paths[0]
+            write_artefact_path(job_id, "print_ready_pdf_path", first_path)
+            write_job_field(job_id, "print_ready_pdf_paths", storage_paths)
+            write_job_field(job_id, "assembly_report", report)
+            write_job_field(job_id, "print_ready_spec_hash", canvas_hash)
+            write_job_field(job_id, "print_ready_assembled_at", datetime.now(timezone.utc).isoformat())
+
+            result = {
+                "storage_path": first_path,
+                "storage_paths": storage_paths,
+                "reused_cache": False,
+                "spec_hash": canvas_hash,
+                **report,
+            }
+            job_repo.mark_done(db, pdf_job_id, result)
+            return result
+
         if not bundle.asset_paths:
             cfg = bundle.configuration or {}
             src_item = cfg.get("source_order_item_id") if isinstance(cfg, dict) else None
