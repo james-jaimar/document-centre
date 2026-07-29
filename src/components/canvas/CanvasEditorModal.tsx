@@ -279,7 +279,7 @@ export default function CanvasEditorModal({
           <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
             <div
               ref={containerRef}
-              className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-[380px]"
+              className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-0"
             >
               {signedUrl ? (
                 <Cropper
