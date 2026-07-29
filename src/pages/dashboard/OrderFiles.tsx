@@ -2865,6 +2865,7 @@ export default function OrderFiles() {
       <ImageSizeDialog
         open={imageSizeDialogOpen}
         imageFile={pendingImageFile}
+        allowedSizes={dialogAllowedSizes}
         onConfirm={handleImageSizeConfirm}
         onCancel={handleImageSizeCancel}
       />
