@@ -63,6 +63,7 @@ import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useCatalogSizes, useCatalogPrintAttrs, type CatalogSize } from "@/hooks/useCatalog";
+import CanvasPrintsTab from "./CanvasPrintsTab";
 
 interface Props {
   scope: RateCardScope;
