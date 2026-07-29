@@ -526,8 +526,65 @@ export default function CanvasPrintsBuilder() {
           open={qrOpen}
           onOpenChange={setQrOpen}
           orderItemId={qrItemId}
-          onFilesReceived={() => {
-            qc.invalidateQueries({ queryKey: ["order-data", effectiveOrderId] });
+          onFilesReceived={async (fileIds) => {
+            if (!fileIds.length || !defaultSize) return;
+            try {
+              const { data: docs } = await supabase
+                .from("documents")
+                .select("id, file_name, file_path, mime_type")
+                .in("id", fileIds);
+              if (!docs?.length) return;
+
+              const { getDownloadUrls } = await import("@/lib/s3Storage");
+              const urlMap = await getDownloadUrls(docs.map((d: any) => d.file_path));
+
+              const readDims = (url: string) =>
+                new Promise<{ w: number; h: number }>((resolve) => {
+                  const img = new Image();
+                  img.crossOrigin = "anonymous";
+                  img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+                  img.onerror = () => resolve({ w: 0, h: 0 });
+                  img.src = url;
+                });
+
+              const newEntries: CanvasPrintEntry[] = [];
+              for (const d of docs as any[]) {
+                const url = urlMap[d.file_path];
+                const dims = url ? await readDims(url) : { w: 0, h: 0 };
+                newEntries.push({
+                  id: crypto.randomUUID(),
+                  document_id: d.id,
+                  file_name: d.file_name,
+                  original_storage_path: d.file_path,
+                  source_width_px: dims.w,
+                  source_height_px: dims.h,
+                  mime_type: d.mime_type || "image/jpeg",
+                  source_was_pdf: false,
+                  size_slug: defaultSize.slug,
+                  frontWidthMm: defaultSize.frontWidthMm,
+                  frontHeightMm: defaultSize.frontHeightMm,
+                  wrapMm: defaultWrap,
+                  bleedMm: DEFAULT_BLEED_MM,
+                  dpi: DEFAULT_DPI,
+                  wrapMode: "gallery_wrap",
+                  crop: { x: 0, y: 0 },
+                  zoom: 1,
+                  rotation: 0,
+                  fit_mode: "fill",
+                  croppedAreaPixels: null,
+                  quantity: 1,
+                });
+              }
+              setSpec((prev) => ({ canvases: [...prev.canvases, ...newEntries] }));
+              toast.success(
+                `Added ${newEntries.length} canvas${newEntries.length === 1 ? "" : "es"} from phone`,
+              );
+              if (newEntries[0]) setEditorId(newEntries[0].id);
+              qc.invalidateQueries({ queryKey: ["order-data", effectiveOrderId] });
+            } catch (e: any) {
+              console.error("[canvas] QR ingest failed", e);
+              toast.error("Could not import phone uploads");
+            }
           }}
         />
       )}
