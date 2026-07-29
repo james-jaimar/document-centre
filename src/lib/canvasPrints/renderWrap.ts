@@ -39,20 +39,27 @@ export function renderProductionCanvas(
   const rot = ((state.imageRotation % 360) + 360) % 360;
   const srcAspect = rot === 90 || rot === 270 ? src.h / src.w : src.w / src.h;
 
-  const frontAspect = frontWpx / frontHpx;
-  let baseFrontW: number, baseFrontH: number;
-  if (srcAspect > frontAspect) {
-    baseFrontH = frontHpx;
-    baseFrontW = frontHpx * srcAspect;
+  // For gallery_wrap the crop must extend past the face into the wrap
+  // strips, so size the drawn image against the TOTAL canvas extent and
+  // center on the total canvas. All other modes size to the front face
+  // (strips are filled by mirror/blur/colour/white).
+  const isGallery = wrapMode === "gallery_wrap";
+  const fitW = isGallery ? totalWpx : frontWpx;
+  const fitH = isGallery ? totalHpx : frontHpx;
+  const fitAspect = fitW / fitH;
+  let baseW: number, baseH: number;
+  if (srcAspect > fitAspect) {
+    baseH = fitH;
+    baseW = fitH * srcAspect;
   } else {
-    baseFrontW = frontWpx;
-    baseFrontH = frontWpx / srcAspect;
+    baseW = fitW;
+    baseH = fitW / srcAspect;
   }
-  const drawW = baseFrontW * state.imageScale;
-  const drawH = baseFrontH * state.imageScale;
+  const drawW = baseW * state.imageScale;
+  const drawH = baseH * state.imageScale;
 
-  const centerX = insetPx + frontWpx / 2 + state.imageX;
-  const centerY = insetPx + frontHpx / 2 + state.imageY;
+  const centerX = (isGallery ? totalWpx / 2 : insetPx + frontWpx / 2) + state.imageX;
+  const centerY = (isGallery ? totalHpx / 2 : insetPx + frontHpx / 2) + state.imageY;
 
   sctx.save();
   sctx.translate(centerX, centerY);
@@ -61,6 +68,7 @@ export function renderProductionCanvas(
   const dh = rot === 90 || rot === 270 ? drawW : drawH;
   sctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
   sctx.restore();
+
 
   // ── Composed canvas: what we ship as the proof.
   const canvas = document.createElement("canvas");
