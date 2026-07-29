@@ -6,6 +6,8 @@ export type WrapMode =
   | "colour_wrap"
   | "face_only";
 
+export type PageOrientation = "landscape" | "portrait";
+
 export const WRAP_MODE_OPTIONS: { value: WrapMode; label: string; help: string }[] = [
   {
     value: "no_edge_print",

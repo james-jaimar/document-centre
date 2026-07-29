@@ -3,11 +3,9 @@ import { mmToPx, totalWidthMm, totalHeightMm } from "./presets";
 
 /**
  * Render the composed production artwork (front + all four wrap strips) to
- * an offscreen canvas. Both FlatProofPreview and AngledPreview consume this
- * so the sides visibly match the flat proof.
- *
- * `previewDpi` lets us render a lightweight preview (~72 dpi) rather than
- * the full 150 dpi print resolution.
+ * an offscreen canvas. Wrap-mode composition now uses a *separate* source
+ * canvas so we never read+write the same bitmap under a transform (which is
+ * why Mirror / Blur previously appeared broken).
  */
 export function renderProductionCanvas(
   image: HTMLImageElement,
@@ -24,25 +22,22 @@ export function renderProductionCanvas(
   const bleedPx = mmToPx(bleedMm, previewDpi);
   const insetPx = wrapPx + bleedPx;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = totalWpx;
-  canvas.height = totalHpx;
-  const ctx = canvas.getContext("2d")!;
-  ctx.imageSmoothingQuality = "high";
+  // ── Source canvas: the image drawn at the full production extent, using
+  // the user's pan/zoom/rotate. Everything else reads from this.
+  const source = document.createElement("canvas");
+  source.width = totalWpx;
+  source.height = totalHpx;
+  const sctx = source.getContext("2d")!;
+  sctx.imageSmoothingQuality = "high";
+  sctx.fillStyle = "#ffffff";
+  sctx.fillRect(0, 0, totalWpx, totalHpx);
 
-  // Background — matters for face_only + as a safety fallback.
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, totalWpx, totalHpx);
-
-  // Compute the front-face placement of the source image using the transform
-  // state. imageScale=1 == fit-cover baseline (image fills the front face).
   const src = { w: image.naturalWidth, h: image.naturalHeight };
   const rot = ((state.imageRotation % 360) + 360) % 360;
   const srcAspect = rot === 90 || rot === 270 ? src.h / src.w : src.w / src.h;
   const frontAspect = frontWpx / frontHpx;
   let baseFrontW: number, baseFrontH: number;
   if (srcAspect > frontAspect) {
-    // image wider than front → fit height, overflow width
     baseFrontH = frontHpx;
     baseFrontW = frontHpx * srcAspect;
   } else {
@@ -55,117 +50,165 @@ export function renderProductionCanvas(
   const centerX = insetPx + frontWpx / 2 + state.imageX;
   const centerY = insetPx + frontHpx / 2 + state.imageY;
 
-  const drawImage = (target: CanvasRenderingContext2D) => {
-    target.save();
-    target.translate(centerX, centerY);
-    target.rotate((rot * Math.PI) / 180);
-    // When rotated 90/270, swap the draw dimensions so orientation is
-    // consistent with the aspect calc above.
-    const dw = rot === 90 || rot === 270 ? drawH : drawW;
-    const dh = rot === 90 || rot === 270 ? drawW : drawH;
-    target.drawImage(image, -dw / 2, -dh / 2, dw, dh);
-    target.restore();
-  };
+  sctx.save();
+  sctx.translate(centerX, centerY);
+  sctx.rotate((rot * Math.PI) / 180);
+  const dw = rot === 90 || rot === 270 ? drawH : drawW;
+  const dh = rot === 90 || rot === 270 ? drawW : drawH;
+  sctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
+  sctx.restore();
 
-  // ── Front + wrap-mode strips ─────────────────────────────────────────────
+  // ── Composed canvas: what we ship as the proof.
+  const canvas = document.createElement("canvas");
+  canvas.width = totalWpx;
+  canvas.height = totalHpx;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, totalWpx, totalHpx);
+
+  const outer = wrapPx + bleedPx; // strip thickness
+
   if (wrapMode === "gallery_wrap") {
-    // Image bleeds naturally across the entire production area.
-    drawImage(ctx);
+    ctx.drawImage(source, 0, 0);
   } else if (wrapMode === "face_only" || wrapMode === "no_edge_print") {
-    // Only the front prints — leave wraps + bleed white.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(insetPx, insetPx, frontWpx, frontHpx);
-    ctx.clip();
-    drawImage(ctx);
-    ctx.restore();
+    // Face only — sides stay white.
+    ctx.drawImage(source, insetPx, insetPx, frontWpx, frontHpx, insetPx, insetPx, frontWpx, frontHpx);
   } else {
-    // mirror / blur / colour → draw front first, then fill wraps.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(insetPx, insetPx, frontWpx, frontHpx);
-    ctx.clip();
-    drawImage(ctx);
-    ctx.restore();
+    // Draw face first.
+    ctx.drawImage(source, insetPx, insetPx, frontWpx, frontHpx, insetPx, insetPx, frontWpx, frontHpx);
 
     if (wrapMode === "mirror_wrap") {
-      fillMirrorStrips(ctx, insetPx, frontWpx, frontHpx, wrapPx, bleedPx, totalWpx, totalHpx);
+      fillMirrorStrips(ctx, source, insetPx, frontWpx, frontHpx, outer, totalWpx, totalHpx);
     } else if (wrapMode === "blur_wrap") {
-      fillBlurStrips(ctx, insetPx, frontWpx, frontHpx, wrapPx, bleedPx, totalWpx, totalHpx);
+      fillBlurStrips(ctx, source, insetPx, frontWpx, frontHpx, outer, totalWpx, totalHpx);
     } else if (wrapMode === "colour_wrap") {
-      const colour = wrapColorHex || sampleEdgeColour(ctx, insetPx, frontWpx, frontHpx);
-      fillColourStrips(ctx, insetPx, frontWpx, frontHpx, wrapPx, bleedPx, totalWpx, totalHpx, colour);
+      const colour = wrapColorHex || sampleEdgeColour(sctx, insetPx, frontWpx, frontHpx);
+      fillColourStrips(ctx, insetPx, frontWpx, frontHpx, outer, totalWpx, totalHpx, colour);
     }
   }
 
   return canvas;
 }
 
+/**
+ * Return one canvas per face for the 3D preview. Front is the composed
+ * front-face rect; the four side faces mirror what will actually wrap.
+ * Back is white (nothing prints on the back).
+ */
+export function renderFaceBitmaps(
+  image: HTMLImageElement,
+  state: CanvasTransformState,
+  previewDpi: number,
+): {
+  front: HTMLCanvasElement;
+  back: HTMLCanvasElement;
+  top: HTMLCanvasElement;
+  bottom: HTMLCanvasElement;
+  left: HTMLCanvasElement;
+  right: HTMLCanvasElement;
+} {
+  const composed = renderProductionCanvas(image, state, previewDpi);
+  const r = faceRect(state, previewDpi);
+
+  const face = (w: number, h: number, sx: number, sy: number, sw: number, sh: number) => {
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w));
+    c.height = Math.max(1, Math.round(h));
+    c.getContext("2d")!.drawImage(composed, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  };
+
+  const front = face(r.w, r.h, r.x, r.y, r.w, r.h);
+  // Side strips = wrap band from the composed canvas, sized to physical depth × edge length.
+  const right = face(r.wrapPx, r.h, r.x + r.w, r.y, r.wrapPx, r.h);
+  const left = face(r.wrapPx, r.h, r.x - r.wrapPx, r.y, r.wrapPx, r.h);
+  const top = face(r.w, r.wrapPx, r.x, r.y - r.wrapPx, r.w, r.wrapPx);
+  const bottom = face(r.w, r.wrapPx, r.x, r.y + r.h, r.w, r.wrapPx);
+
+  const back = document.createElement("canvas");
+  back.width = Math.max(1, Math.round(r.w));
+  back.height = Math.max(1, Math.round(r.h));
+  const bctx = back.getContext("2d")!;
+  bctx.fillStyle = "#f8f8f8";
+  bctx.fillRect(0, 0, back.width, back.height);
+
+  return { front, back, top, bottom, left, right };
+}
+
 // ──────────────────────────────────────────────────────────────────────────
-// Wrap strip fillers — all operate on the composed canvas after the front
-// image has been drawn into the visible face.
+// Wrap strip fillers — read from `source`, write to `ctx` (composed).
 // ──────────────────────────────────────────────────────────────────────────
 
 function fillMirrorStrips(
   ctx: CanvasRenderingContext2D,
+  source: HTMLCanvasElement,
   inset: number,
   fw: number,
   fh: number,
-  wrap: number,
-  bleed: number,
+  outer: number,
   totalW: number,
   totalH: number,
 ) {
-  const outer = wrap + bleed;
-  // Left strip: mirror leftmost `outer` px of the front horizontally.
+  // Left strip: mirror the leftmost `outer`px of the face horizontally.
   ctx.save();
-  ctx.translate(inset, 0);
+  ctx.translate(inset, inset);
   ctx.scale(-1, 1);
-  ctx.drawImage(ctx.canvas, inset, inset, outer, fh, 0, inset, outer, fh);
+  ctx.drawImage(source, inset, inset, outer, fh, -outer, 0, outer, fh);
   ctx.restore();
   // Right strip
   ctx.save();
-  ctx.translate(inset + fw + outer, 0);
+  ctx.translate(inset + fw, inset);
   ctx.scale(-1, 1);
-  ctx.drawImage(ctx.canvas, inset + fw - outer, inset, outer, fh, 0, inset, outer, fh);
+  ctx.drawImage(source, inset + fw - outer, inset, outer, fh, -outer, 0, outer, fh);
   ctx.restore();
-  // Top strip (mirror top `outer` px of the whole width incl. now-filled sides)
+  // Top strip (full width, incl. corners from now-mirrored sides)
+  const rowSource = document.createElement("canvas");
+  rowSource.width = totalW; rowSource.height = outer;
+  rowSource.getContext("2d")!.drawImage(ctx.canvas, 0, inset, totalW, outer, 0, 0, totalW, outer);
   ctx.save();
   ctx.translate(0, inset);
   ctx.scale(1, -1);
-  ctx.drawImage(ctx.canvas, 0, inset, totalW, outer, 0, 0, totalW, outer);
+  ctx.drawImage(rowSource, 0, -outer);
   ctx.restore();
   // Bottom strip
+  const rowSourceB = document.createElement("canvas");
+  rowSourceB.width = totalW; rowSourceB.height = outer;
+  rowSourceB.getContext("2d")!.drawImage(ctx.canvas, 0, inset + fh - outer, totalW, outer, 0, 0, totalW, outer);
   ctx.save();
-  ctx.translate(0, inset + fh + outer);
+  ctx.translate(0, inset + fh);
   ctx.scale(1, -1);
-  ctx.drawImage(ctx.canvas, 0, inset + fh - outer, totalW, outer, 0, 0, totalW, outer);
+  ctx.drawImage(rowSourceB, 0, 0);
   ctx.restore();
 }
 
 function fillBlurStrips(
   ctx: CanvasRenderingContext2D,
+  source: HTMLCanvasElement,
   inset: number,
   fw: number,
   fh: number,
-  wrap: number,
-  bleed: number,
+  outer: number,
   totalW: number,
   totalH: number,
 ) {
-  const outer = wrap + bleed;
-  // Cheap "blur" = stretch a 1-2px edge slice over the strip. Good enough for preview.
+  // Pre-blur the source into an offscreen so canvas.filter is only applied once.
+  const blurred = document.createElement("canvas");
+  blurred.width = source.width; blurred.height = source.height;
+  const bctx = blurred.getContext("2d")!;
+  bctx.filter = "blur(10px)";
+  bctx.drawImage(source, 0, 0);
+  bctx.filter = "none";
+
+  // Stretch a 2px edge slice of the blurred face across each strip.
   // Left
-  ctx.save();
-  ctx.filter = "blur(6px)";
-  ctx.drawImage(ctx.canvas, inset, inset, 2, fh, 0, inset, outer, fh);
+  ctx.drawImage(blurred, inset, inset, 2, fh, 0, inset, outer, fh);
   // Right
-  ctx.drawImage(ctx.canvas, inset + fw - 2, inset, 2, fh, inset + fw, inset, outer, fh);
-  // Top (across full width)
+  ctx.drawImage(blurred, inset + fw - 2, inset, 2, fh, inset + fw, inset, outer, fh);
+  // Top (across whole width, incl. now-filled sides)
   ctx.drawImage(ctx.canvas, 0, inset, totalW, 2, 0, 0, totalW, outer);
   // Bottom
   ctx.drawImage(ctx.canvas, 0, inset + fh - 2, totalW, 2, 0, inset + fh, totalW, outer);
-  ctx.restore();
 }
 
 function fillColourStrips(
@@ -173,22 +216,19 @@ function fillColourStrips(
   inset: number,
   fw: number,
   fh: number,
-  wrap: number,
-  bleed: number,
+  outer: number,
   totalW: number,
   totalH: number,
   colour: string,
 ) {
-  const outer = wrap + bleed;
   ctx.fillStyle = colour;
-  ctx.fillRect(0, 0, totalW, outer + inset - outer); // top full width
-  ctx.fillRect(0, inset + fh, totalW, outer);        // bottom full width
-  ctx.fillRect(0, inset, outer, fh);                 // left
-  ctx.fillRect(inset + fw, inset, outer, fh);        // right
+  ctx.fillRect(0, 0, totalW, inset);             // top band (full width incl. corners)
+  ctx.fillRect(0, inset + fh, totalW, inset);    // bottom band
+  ctx.fillRect(0, inset, inset, fh);             // left
+  ctx.fillRect(inset + fw, inset, inset, fh);    // right
 }
 
-/** Sample the average edge colour of the front face — used as the default
- *  for `colour_wrap`. */
+/** Average the top 4-px strip of the face — used as default for colour_wrap. */
 export function sampleEdgeColour(
   ctx: CanvasRenderingContext2D,
   inset: number,
@@ -197,7 +237,7 @@ export function sampleEdgeColour(
 ): string {
   try {
     const strip = 4;
-    const data = ctx.getImageData(inset, inset, fw, strip).data;
+    const data = ctx.getImageData(inset, inset, Math.min(fw, ctx.canvas.width - inset), strip).data;
     let r = 0, g = 0, b = 0, n = 0;
     for (let i = 0; i < data.length; i += 4) {
       r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;

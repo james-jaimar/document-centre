@@ -4,7 +4,8 @@
  */
 
 import type { CroppedAreaPixels, PhotoCrop, PhotoFitMode } from "@/lib/photoPrints/types";
-import type { WrapMode } from "./types";
+import type { PageOrientation, WrapMode } from "./types";
+
 
 export interface CanvasPrintEntry {
   id: string;
@@ -22,6 +23,9 @@ export interface CanvasPrintEntry {
   size_slug: string;
   frontWidthMm: number;
   frontHeightMm: number;
+  /** Landscape (default) vs portrait — swaps the effective W/H at render time. */
+  pageOrientation?: PageOrientation;
+
 
   /** Wrap depth in mm — one of the allowed presets (25/38/50). */
   wrapMm: number;
