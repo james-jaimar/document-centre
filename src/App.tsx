@@ -55,6 +55,7 @@ import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
 import PhotoPrintsBuilder from "@/pages/dashboard/PhotoPrintsBuilder";
+import CanvasPrintsBuilder from "@/pages/dashboard/CanvasPrintsBuilder";
 import Cart from "@/pages/dashboard/Cart";
 import Checkout from "@/pages/dashboard/Checkout";
 import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
