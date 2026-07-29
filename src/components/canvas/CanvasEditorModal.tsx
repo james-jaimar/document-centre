@@ -13,15 +13,15 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Input } from "@/components/ui/input";
 import { RotateCw, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import type { CanvasPrintEntry } from "@/lib/canvasPrints/canvasSpecTypes";
 import type { CroppedAreaPixels, PhotoFitMode } from "@/lib/photoPrints/types";
-import { WRAP_MODE_OPTIONS, type WrapMode } from "@/lib/canvasPrints/types";
+import { WRAP_MODE_OPTIONS, type PageOrientation, type WrapMode } from "@/lib/canvasPrints/types";
 import { DEFAULT_BLEED_MM, DEFAULT_DPI, WRAP_DEPTH_PRESETS_MM } from "@/lib/canvasPrints/presets";
 import { useCropperZoom } from "@/hooks/useCropperZoom";
 import { useElementSize } from "@/hooks/useElementSize";
-import AngledPreview from "@/components/canvas/AngledPreview";
+import Canvas3DPreview from "@/components/canvas/Canvas3DPreview";
+import DebouncedColorInput from "@/components/canvas/DebouncedColorInput";
 import type { CanvasTransformState } from "@/lib/canvasPrints/types";
 
 export interface CanvasSizeChoice {
@@ -43,6 +43,20 @@ interface CanvasEditorModalProps {
   pixelScale?: number;
 }
 
+/** Return the effective face dimensions for a size + orientation. */
+function orientedDims(
+  size: CanvasSizeChoice | null,
+  orientation: PageOrientation,
+): { w: number; h: number } {
+  if (!size) return { w: 0, h: 0 };
+  const [longEdge, shortEdge] = size.frontWidthMm >= size.frontHeightMm
+    ? [size.frontWidthMm, size.frontHeightMm]
+    : [size.frontHeightMm, size.frontWidthMm];
+  return orientation === "landscape"
+    ? { w: longEdge, h: shortEdge }
+    : { w: shortEdge, h: longEdge };
+}
+
 export default function CanvasEditorModal({
   open,
   canvas,
@@ -54,6 +68,7 @@ export default function CanvasEditorModal({
   pixelScale = 1,
 }: CanvasEditorModalProps) {
   const [sizeSlug, setSizeSlug] = useState<string>("");
+  const [orientation, setOrientation] = useState<PageOrientation>("landscape");
   const [wrapMm, setWrapMm] = useState<number>(38);
   const [wrapMode, setWrapMode] = useState<WrapMode>("gallery_wrap");
   const [wrapColorHex, setWrapColorHex] = useState<string | undefined>();
@@ -68,11 +83,17 @@ export default function CanvasEditorModal({
 
   const [containerRef, containerSize] = useElementSize<HTMLDivElement>(open);
 
-  const size = useMemo(
+  const rawSize = useMemo(
     () => sizes.find((s) => s.slug === sizeSlug) ?? sizes[0] ?? null,
     [sizes, sizeSlug],
   );
-  const aspect = size ? size.frontWidthMm / size.frontHeightMm : 1;
+  const orientedSize = useMemo<CanvasSizeChoice | null>(() => {
+    if (!rawSize) return null;
+    const { w, h } = orientedDims(rawSize, orientation);
+    return { ...rawSize, frontWidthMm: w, frontHeightMm: h };
+  }, [rawSize, orientation]);
+
+  const aspect = orientedSize ? orientedSize.frontWidthMm / orientedSize.frontHeightMm : 1;
 
   const {
     fillZoom,
@@ -90,10 +111,17 @@ export default function CanvasEditorModal({
     containerHeight: containerSize.height,
   });
 
-  // Seed from entry on open
+  // Seed from entry on open.
   useEffect(() => {
     if (!open || !canvas) return;
     setSizeSlug(canvas.size_slug || sizes[0]?.slug || "");
+    // Derive orientation from stored dims (landscape when w >= h).
+    const persisted: PageOrientation | undefined = (canvas as any).pageOrientation;
+    if (persisted === "landscape" || persisted === "portrait") {
+      setOrientation(persisted);
+    } else {
+      setOrientation(canvas.frontWidthMm >= canvas.frontHeightMm ? "landscape" : "landscape");
+    }
     setWrapMm(canvas.wrapMm || allowedWrapDepthsMm[0] || 38);
     setWrapMode(canvas.wrapMode || "gallery_wrap");
     setWrapColorHex(canvas.wrapColorHex);
@@ -104,7 +132,7 @@ export default function CanvasEditorModal({
     setCroppedAreaPixels(canvas.croppedAreaPixels ?? null);
   }, [open, canvas, sizes, allowedWrapDepthsMm]);
 
-  // Load an <img> element for the live 2.5D preview.
+  // Load an <img> element for the live 3D preview.
   useEffect(() => {
     if (!signedUrl) { setImgEl(null); return; }
     const img = new Image();
@@ -117,7 +145,7 @@ export default function CanvasEditorModal({
     setCroppedAreaPixels(areaPixels);
   }, []);
 
-  // Auto-snap fill/fit when the cropper settles
+  // Auto-snap fill/fit when the cropper settles.
   const prevSnapKey = useRef("");
   useEffect(() => {
     if (!ready) return;
@@ -133,41 +161,53 @@ export default function CanvasEditorModal({
     setRotation(0);
     setFitMode("fill");
   };
-  const handleRotate = () => {
+  const handleRotateImage = () => {
     setRotation((r) => (r + 90) % 360);
     setCrop({ x: 0, y: 0 });
   };
   const handleFill = () => { setFitMode("fill"); setCrop({ x: 0, y: 0 }); setZoom(fillZoom); };
   const handleFit  = () => { setFitMode("fit");  setCrop({ x: 0, y: 0 }); setZoom(fitZoom); };
 
-  // Live 2.5D preview transform state — derived so it matches what we'll save.
+  // Live 3D preview transform — derive pan/scale from the crop rect so the
+  // preview reflects the user's cropping decisions.
   const previewTransform: CanvasTransformState | null = useMemo(() => {
-    if (!canvas || !size || !imgEl) return null;
-    // Crude approximation: we drive the AngledPreview from the imageScale
-    // implied by the current zoom (fillZoom == scale 1). This is a preview
-    // only — the print-ready output on the server rebuilds from the exact
-    // croppedAreaPixels rect.
+    if (!canvas || !orientedSize || !imgEl) return null;
     const scale = fillZoom > 0 ? zoom / fillZoom : 1;
+
+    // Convert crop offset (image px) into an approximate face-space pan.
+    let panX = 0, panY = 0;
+    if (croppedAreaPixels && orientedSize.frontWidthMm) {
+      const pxPerMmFace = 6; // approximate — preview render will normalise
+      const facePx = orientedSize.frontWidthMm * pxPerMmFace;
+      const srcW = imgEl.naturalWidth;
+      // Fraction of image offset from centre → face-pan.
+      const centreX = croppedAreaPixels.x + croppedAreaPixels.width / 2;
+      const centreY = croppedAreaPixels.y + croppedAreaPixels.height / 2;
+      panX = ((srcW / 2 - centreX) / srcW) * facePx;
+      panY = ((imgEl.naturalHeight / 2 - centreY) / imgEl.naturalHeight)
+        * (orientedSize.frontHeightMm * pxPerMmFace);
+    }
+
     return {
-      presetId: size.slug,
-      frontWidthMm: size.frontWidthMm,
-      frontHeightMm: size.frontHeightMm,
+      presetId: orientedSize.slug,
+      frontWidthMm: orientedSize.frontWidthMm,
+      frontHeightMm: orientedSize.frontHeightMm,
       wrapMm,
       bleedMm: DEFAULT_BLEED_MM,
       dpi: DEFAULT_DPI,
       wrapMode,
       wrapColorHex,
       imageScale: scale,
-      imageX: 0,
-      imageY: 0,
+      imageX: panX,
+      imageY: panY,
       imageRotation: rotation,
       imageNaturalWidth: imgEl.naturalWidth,
       imageNaturalHeight: imgEl.naturalHeight,
     };
-  }, [canvas, size, imgEl, wrapMm, wrapMode, wrapColorHex, rotation, zoom, fillZoom]);
+  }, [canvas, orientedSize, imgEl, wrapMm, wrapMode, wrapColorHex, rotation, zoom, fillZoom, croppedAreaPixels]);
 
   const handleSave = () => {
-    if (!size) return;
+    if (!orientedSize) return;
     let scaled = croppedAreaPixels;
     if (scaled && pixelScale && Math.abs(pixelScale - 1) > 0.001) {
       scaled = {
@@ -178,9 +218,10 @@ export default function CanvasEditorModal({
       };
     }
     onSave({
-      size_slug: size.slug,
-      frontWidthMm: size.frontWidthMm,
-      frontHeightMm: size.frontHeightMm,
+      size_slug: orientedSize.slug,
+      frontWidthMm: orientedSize.frontWidthMm,
+      frontHeightMm: orientedSize.frontHeightMm,
+      pageOrientation: orientation,
       wrapMm,
       bleedMm: DEFAULT_BLEED_MM,
       dpi: DEFAULT_DPI,
@@ -191,7 +232,7 @@ export default function CanvasEditorModal({
       rotation,
       fit_mode: fitMode,
       croppedAreaPixels: scaled,
-    });
+    } as Partial<CanvasPrintEntry>);
   };
 
   if (!canvas) return null;
@@ -202,20 +243,24 @@ export default function CanvasEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-5xl p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-2">
+      <DialogContent className="w-[90vw] max-w-[1600px] h-[90vh] p-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
           <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
           <DialogDescription className="text-xs">
             {canvas.file_name}
-            {size && ` · ${size.label}`}
-            {` · ${wrapMm} mm wrap`}
+            {orientedSize && ` · ${orientedSize.label}`}
+            {` · ${orientation === "landscape" ? "Landscape" : "Portrait"} · ${wrapMm} mm wrap`}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-0 max-h-[70vh] overflow-hidden">
-          {/* Left: cropper + 2.5D preview */}
-          <div className="min-w-0 space-y-3 p-4 overflow-y-auto">
-            <div ref={containerRef} className="relative w-full bg-black rounded-md overflow-hidden" style={{ height: 380 }}>
+        {/* Left: upload + scale/crop | Right: 3D preview + settings */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 min-h-0 flex-1 overflow-hidden">
+          {/* LEFT — cropper */}
+          <div className="min-w-0 flex flex-col p-5 gap-3 overflow-y-auto border-r border-border">
+            <div
+              ref={containerRef}
+              className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-[380px]"
+            >
               {signedUrl ? (
                 <Cropper
                   image={signedUrl}
@@ -243,7 +288,8 @@ export default function CanvasEditorModal({
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Label className="text-xs w-14 shrink-0">Zoom</Label>
               <Slider
                 value={[zoom]}
                 min={minZoom}
@@ -252,14 +298,14 @@ export default function CanvasEditorModal({
                 onValueChange={(v) => setZoom(v[0])}
                 className="flex-1"
               />
-              <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">
+              <span className="text-xs text-muted-foreground tabular-nums w-14 text-right">
                 {zoom.toFixed(2)}×
               </span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleRotate} className="gap-1.5">
-                <RotateCw className="h-3.5 w-3.5" /> Rotate 90°
+              <Button variant="outline" size="sm" onClick={handleRotateImage} className="gap-1.5">
+                <RotateCw className="h-3.5 w-3.5" /> Rotate image
               </Button>
               <Button
                 variant={fitMode === "fill" ? "default" : "outline"}
@@ -277,82 +323,113 @@ export default function CanvasEditorModal({
                 <RotateCcw className="h-3.5 w-3.5" /> Reset
               </Button>
             </div>
-
-            {previewTransform && imgEl && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                  How it will look on the wall
-                </p>
-                <AngledPreview image={imgEl} state={previewTransform} />
-              </div>
-            )}
           </div>
 
-          {/* Right: settings */}
-          <div className="border-l border-border bg-muted/20 p-4 space-y-5 overflow-y-auto">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wide">Canvas size</Label>
-              <Select value={sizeSlug} onValueChange={setSizeSlug}>
-                <SelectTrigger><SelectValue placeholder="Choose size" /></SelectTrigger>
-                <SelectContent>
-                  {sizes.map((s) => (
-                    <SelectItem key={s.slug} value={s.slug}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wide">Wrap depth</Label>
-              <RadioGroup
-                value={String(wrapMm)}
-                onValueChange={(v) => setWrapMm(Number(v))}
-                className="grid grid-cols-3 gap-2"
-              >
-                {depthOpts.map((d) => (
-                  <label
-                    key={d}
-                    className={`border rounded-md p-2 text-center cursor-pointer text-sm ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
-                  >
-                    <RadioGroupItem value={String(d)} className="sr-only" />
-                    {d} mm
-                  </label>
-                ))}
-              </RadioGroup>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide">Edge finish</Label>
-              <div className="space-y-1.5">
-                {WRAP_MODE_OPTIONS.map((opt) => (
-                  <label
-                    key={opt.value}
-                    className={`block border rounded-md p-2 cursor-pointer text-xs transition ${wrapMode === opt.value ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        className="accent-primary"
-                        checked={wrapMode === opt.value}
-                        onChange={() => setWrapMode(opt.value)}
-                      />
-                      <span className="font-medium">{opt.label}</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 ml-6 leading-snug">{opt.help}</p>
-                  </label>
-                ))}
+          {/* RIGHT — live 3D preview + settings */}
+          <div className="min-w-0 flex flex-col bg-muted/20 overflow-hidden">
+            <div className="flex-1 min-h-[300px] p-5 pb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                How it will look on the wall
+              </p>
+              <div className="w-full h-[calc(100%-1.5rem)]">
+                {previewTransform && imgEl ? (
+                  <Canvas3DPreview image={imgEl} state={previewTransform} />
+                ) : (
+                  <div className="w-full h-full rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200 border flex items-center justify-center text-sm text-muted-foreground">
+                    Loading preview…
+                  </div>
+                )}
               </div>
-              {wrapMode === "colour_wrap" && (
-                <div className="flex items-center gap-2 pt-1">
-                  <Label className="text-xs">Colour</Label>
-                  <Input
-                    type="color"
-                    value={wrapColorHex ?? "#ffffff"}
-                    onChange={(e) => setWrapColorHex(e.target.value)}
-                    className="h-8 w-14 p-1"
-                  />
+            </div>
+
+            <div className="border-t border-border p-5 space-y-5 overflow-y-auto max-h-[45%]">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold uppercase tracking-wide">Canvas size</Label>
+                  <Select value={sizeSlug} onValueChange={setSizeSlug}>
+                    <SelectTrigger><SelectValue placeholder="Choose size" /></SelectTrigger>
+                    <SelectContent>
+                      {sizes.map((s) => (
+                        <SelectItem key={s.slug} value={s.slug}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold uppercase tracking-wide">Orientation</Label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setOrientation("landscape")}
+                      className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "landscape" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                    >
+                      Landscape
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrientation("portrait")}
+                      className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "portrait" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                    >
+                      Portrait
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide">Wrap depth</Label>
+                <RadioGroup
+                  value={String(wrapMm)}
+                  onValueChange={(v) => setWrapMm(Number(v))}
+                  className="grid grid-cols-3 gap-2"
+                >
+                  {depthOpts.map((d) => (
+                    <label
+                      key={d}
+                      className={`border rounded-md p-2 text-center cursor-pointer text-sm ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
+                    >
+                      <RadioGroupItem value={String(d)} className="sr-only" />
+                      {d} mm
+                    </label>
+                  ))}
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide">Edge finish</Label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {WRAP_MODE_OPTIONS.map((opt) => (
+                    <label
+                      key={opt.value}
+                      className={`block border rounded-md p-2 cursor-pointer text-xs transition ${wrapMode === opt.value ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                      title={opt.help}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          className="accent-primary"
+                          checked={wrapMode === opt.value}
+                          onChange={() => setWrapMode(opt.value)}
+                        />
+                        <span className="font-medium">{opt.label}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {wrapMode === "colour_wrap" && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Label className="text-xs">Colour</Label>
+                    <DebouncedColorInput
+                      value={wrapColorHex ?? "#ffffff"}
+                      onChange={(v) => setWrapColorHex(v)}
+                    />
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {WRAP_MODE_OPTIONS.find((o) => o.value === wrapMode)?.help}
+                </p>
+              </div>
             </div>
           </div>
         </div>
