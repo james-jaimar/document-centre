@@ -27,20 +27,26 @@ export default function PhotoUploader({
   orderItemId,
   onMobileFilesReceived,
   onPhoneUpload,
+  acceptPdf,
+  helperText,
 }: PhotoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [qrOpen, setQrOpen] = useState(false);
 
+  const accept = acceptPdf ? `${IMAGE_ACCEPT},application/pdf` : IMAGE_ACCEPT;
+
   const handleFiles = useCallback(
     (fileList: FileList | null) => {
       if (!fileList || fileList.length === 0) return;
-      const files = Array.from(fileList).filter((f) =>
-        /^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type) ||
-        /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name),
-      );
+      const files = Array.from(fileList).filter((f) => {
+        if (/^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type)) return true;
+        if (/\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)) return true;
+        if (acceptPdf && (f.type === "application/pdf" || /\.pdf$/i.test(f.name))) return true;
+        return false;
+      });
       if (files.length > 0) onFiles(files);
     },
-    [onFiles],
+    [onFiles, acceptPdf],
   );
 
   const onDrop = useCallback(
