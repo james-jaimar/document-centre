@@ -142,6 +142,28 @@ export default function OrderFiles() {
     return sizes.length > 0 ? sizes.map((s) => s.name) : null;
   }, [catalogAllowedSizeLabels, resolvedOptions]);
 
+  // Merged list of product-family-allowed sizes for the "Choose Output Size"
+  // dialog: ISO/non-ISO names resolved from the catalogue plus catalogue-
+  // defined custom sizes (real mm). When the family has none configured we
+  // return undefined so the dialog falls back to the default ISO A-series.
+  const dialogAllowedSizes = useMemo<PaperSize[] | undefined>(() => {
+    const out: PaperSize[] = [];
+    const seen = new Set<string>();
+    const push = (s: PaperSize) => {
+      if (seen.has(s.name)) return;
+      seen.add(s.name);
+      out.push(s);
+    };
+    if (allowedSizeNames && allowedSizeNames.length > 0) {
+      for (const name of allowedSizeNames) {
+        const iso = ISO_SIZES.find((s) => s.name === name);
+        if (iso) push(iso);
+      }
+    }
+    for (const s of allowedCustomSizes ?? []) push(s);
+    return out.length > 0 ? out : undefined;
+  }, [allowedSizeNames, allowedCustomSizes]);
+
   // Session size-lock (declared early so it can be passed into useDocumentUpload).
   type SessionSizeLock = {
     size: PaperSize;
