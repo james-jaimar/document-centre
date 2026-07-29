@@ -168,26 +168,34 @@ export default function CanvasEditorModal({
   const handleFill = () => { setFitMode("fill"); setCrop({ x: 0, y: 0 }); setZoom(fillZoom); };
   const handleFit  = () => { setFitMode("fit");  setCrop({ x: 0, y: 0 }); setZoom(fitZoom); };
 
-  // Live 3D preview transform — derive pan/scale from the crop rect so the
-  // preview reflects the user's cropping decisions.
+  // Build a pre-cropped face bitmap that matches the cropper exactly. The
+  // 3D preview then treats this as a fit-cover face image (no pan/scale),
+  // so what's inside the crop box == what's on the front of the canvas.
+  const faceBitmap = useMemo<HTMLCanvasElement | null>(() => {
+    if (!imgEl || !orientedSize || !croppedAreaPixels) return null;
+    const targetLong = 900;
+    const aspectFace = orientedSize.frontWidthMm / orientedSize.frontHeightMm;
+    const outW = aspectFace >= 1 ? targetLong : Math.round(targetLong * aspectFace);
+    const outH = aspectFace >= 1 ? Math.round(targetLong / aspectFace) : targetLong;
+    const c = document.createElement("canvas");
+    c.width = outW; c.height = outH;
+    const ctx = c.getContext("2d")!;
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, outW, outH);
+    try {
+      ctx.drawImage(
+        imgEl,
+        croppedAreaPixels.x, croppedAreaPixels.y,
+        croppedAreaPixels.width, croppedAreaPixels.height,
+        0, 0, outW, outH,
+      );
+    } catch { /* ignore draw errors */ }
+    return c;
+  }, [imgEl, orientedSize, croppedAreaPixels]);
+
   const previewTransform: CanvasTransformState | null = useMemo(() => {
-    if (!canvas || !orientedSize || !imgEl) return null;
-    const scale = fillZoom > 0 ? zoom / fillZoom : 1;
-
-    // Convert crop offset (image px) into an approximate face-space pan.
-    let panX = 0, panY = 0;
-    if (croppedAreaPixels && orientedSize.frontWidthMm) {
-      const pxPerMmFace = 6; // approximate — preview render will normalise
-      const facePx = orientedSize.frontWidthMm * pxPerMmFace;
-      const srcW = imgEl.naturalWidth;
-      // Fraction of image offset from centre → face-pan.
-      const centreX = croppedAreaPixels.x + croppedAreaPixels.width / 2;
-      const centreY = croppedAreaPixels.y + croppedAreaPixels.height / 2;
-      panX = ((srcW / 2 - centreX) / srcW) * facePx;
-      panY = ((imgEl.naturalHeight / 2 - centreY) / imgEl.naturalHeight)
-        * (orientedSize.frontHeightMm * pxPerMmFace);
-    }
-
+    if (!canvas || !orientedSize || !faceBitmap) return null;
     return {
       presetId: orientedSize.slug,
       frontWidthMm: orientedSize.frontWidthMm,
@@ -197,14 +205,15 @@ export default function CanvasEditorModal({
       dpi: DEFAULT_DPI,
       wrapMode,
       wrapColorHex,
-      imageScale: scale,
-      imageX: panX,
-      imageY: panY,
-      imageRotation: rotation,
-      imageNaturalWidth: imgEl.naturalWidth,
-      imageNaturalHeight: imgEl.naturalHeight,
+      imageScale: 1,
+      imageX: 0,
+      imageY: 0,
+      imageRotation: 0,
+      imageNaturalWidth: faceBitmap.width,
+      imageNaturalHeight: faceBitmap.height,
     };
-  }, [canvas, orientedSize, imgEl, wrapMm, wrapMode, wrapColorHex, rotation, zoom, fillZoom, croppedAreaPixels]);
+  }, [canvas, orientedSize, faceBitmap, wrapMm, wrapMode, wrapColorHex]);
+
 
   const handleSave = () => {
     if (!orientedSize) return;
