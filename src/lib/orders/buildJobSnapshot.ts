@@ -568,6 +568,11 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       ...(isPhotoPrints && spec?.photo_prints
         ? { photo_prints: spec.photo_prints }
         : {}),
+      // Surface the full canvas_prints block so the print-ready assembler
+      // (and admin gallery) can render / render one CMYK PDF per canvas.
+      ...(isCanvasPrints && spec?.canvas_prints
+        ? { canvas_prints: spec.canvas_prints }
+        : {}),
       // Ordered instructions for the print-shop merge worker.
       // See `MergeDirective` for the contract.
       ...(mergeDirectives.length > 0 ? { merge_directives: mergeDirectives } : {}),
