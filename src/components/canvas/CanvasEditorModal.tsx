@@ -263,7 +263,23 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
       }
     } catch { /* ignore draw errors */ }
     return c;
-  }, [imgEl, orientedSize, croppedAreaPixels]);
+  }, [imgEl, orientedSize, croppedAreaPixels, cropWidthMm, cropHeightMm]);
+
+  // ── Auto-pick the wrap colour from the artwork edge and put it into the
+  // picker, so what the preview shows is exactly what gets saved (and printed).
+  // Stops re-sampling as soon as the customer chooses their own colour.
+  const colourWasManual = useRef(false);
+  useEffect(() => {
+    if (!open || !canvas) return;
+    colourWasManual.current = Boolean(canvas.wrapColorHex);
+  }, [open, canvas?.id]);
+
+  useEffect(() => {
+    if (!faceBitmap || colourWasManual.current) return;
+    const sampled = sampleEdgeColourFromBitmap(faceBitmap);
+    setWrapColorHex((prev) => (prev === sampled ? prev : sampled));
+  }, [faceBitmap]);
+
 
 
   const previewTransform: CanvasTransformState | null = useMemo(() => {
