@@ -1,47 +1,73 @@
-# Canvas Editor Modal Layout Refinement
-
 ## Goal
-Rebalance the Canvas editor modal so the cropper takes less horizontal space and the 3D preview + settings on the right get the majority of the room, while keeping the key controls visible without scrolling.
+Server-side print-ready PDF per canvas upload — CMYK, sized to real print geometry, ready for a large-format canvas printer.
 
-## What we will change
+## Output contract
+- **One canvas = one PDF.** Each `CanvasPrintEntry` produces its own single-page PDF at `order_jobs.print_ready_pdf_path` (array column) — no multi-page concatenation.
+- **CMYK** throughout. No RGB output.
+- **300 dpi target.** Never upscale beyond the source. Warn the customer at editor/checkout time if the effective front-face DPI falls below 150.
 
-### 1. Modal width
-- Keep the existing `90vw` width (already close to the requested 90 %).
-- No change needed here; the perceived narrowness comes from the 50/50 internal split, not the modal itself.
+## Page geometry
+Given finished front `W × H` (mm), wrap depth `D` mm (25/38/50), overwrap bleed `B = 5 mm`:
 
-### 2. Main split: 35 % cropper / 65 % settings
-- In `src/components/canvas/CanvasEditorModal.tsx`, change the inner two-column grid from `lg:grid-cols-2` to a custom split:
-  - Left column: `lg:w-[35%]` / `lg:max-w-[35%]` / `lg:flex-[0_0_35%]`
-  - Right column: `lg:w-[65%]` / `lg:max-w-[65%]` / `lg:flex-[0_0_65%]`
-- This gives the customer a still-large cropper while freeing up room for the preview.
+| Wrap mode        | Page size                              | Image placement |
+|------------------|----------------------------------------|-----------------|
+| No edge print    | `W × H`                                | Crop fills the page |
+| Gallery wrap     | `(W + 2D + 2B) × (H + 2D + 2B)`        | Whole image scaled to fill the full page; crop remains centred on the front face |
+| Colour wrap      | `(W + 2D + 2B) × (H + 2D + 2B)`        | Page filled with CMYK-converted `wrapColorHex`; cropped image placed at exact `W × H` in the centre |
 
-### 3. Right-column vertical split: 75 % preview / 25 % settings
-- Convert the right column from `flex` with `h-1/2` preview into a CSS grid:
-  - `grid-rows-[75%_25%]` on large screens
-  - Preview row: `min-h-0`, fills the 75 % cell
-  - Settings row: `min-h-0`, fills the 25 % cell, remains `overflow-y-auto`
-- The settings row will show the top controls (Canvas size, Orientation) plus a partial second control, making the scrollbar clearly visible.
+```text
+  ┌──────── B (5mm) ────────┐
+  │  ┌──── D (25/38/50) ──┐ │
+  │  │  ┌──────────────┐  │ │
+  │  │  │  W × H front │  │ │
+  │  │  └──────────────┘  │ │
+  │  └────────────────────┘ │
+  └─────────────────────────┘
+```
 
-### 4. Preview component sizing
-- Verify `Canvas3DPreview.tsx` has no remaining `min-h-*` or fixed-height wrappers that would fight the new 75 % row.
-- Ensure the `<Canvas>` container uses `w-full h-full` so it expands with the larger area.
+TrimBox = front `W × H`, MediaBox = full page (front + wrap + bleed).
 
-### 5. Responsive safety
-- Keep the single-column stack on small screens (`grid-cols-1` below `lg`).
-- On `lg` and up, apply the 35/65 horizontal split and the 75/25 vertical split.
-- Add `min-w-0` / `min-h-0` everywhere to prevent flex/grid blowouts.
+## Colour handling
+- **Front image**: flatten onto opaque white first (kills PNG/HEIC alpha), embed sRGB source profile, convert to CMYK using the family's configured ICC profile (default `fogra39` — same pipeline as the rest of production PDF).
+- **Wrap fill colour**: convert `wrapColorHex` from sRGB to the destination CMYK profile using the same intent as the family (default `relative_colorimetric`), and paint the wrap+bleed area with that CMYK value directly (no RGB round-trip in the PDF).
+- No transparent objects in output — everything flattened.
 
-## Files to edit
-- `src/components/canvas/CanvasEditorModal.tsx` — layout grid and right-column split.
-- `src/components/canvas/Canvas3DPreview.tsx` — confirm/adjust height-filling behaviour.
+## DPI warning (customer-facing, not a hard block)
+- Compute effective DPI = `croppedAreaPixels.width / (W_mm / 25.4)`.
+- Show an inline warning in `CanvasEditorModal` and on the cart summary when `< 150 dpi`.
+- Never warn about resolution above 150; never auto-scale; never refuse checkout.
 
-## Out of scope
-- No functional changes to crop math, wrap modes, pricing, or save logic.
-- No changes to the dialog header/footer.
+## Where the work runs
+Real render happens on the pdf-server (Cloud Run / Python), consistent with the rest of production PDF. Edge functions stay thin proxies.
 
-## Verification
-- Open the Canvas editor on a 720p/1080p laptop at 100 % zoom.
-- Confirm the modal fills ~90 % of viewport width and height.
-- Confirm left cropper is ~35 % and right panel ~65 %.
-- Confirm the 3D preview occupies the top ~75 % of the right panel and the settings the bottom ~25 %.
-- Confirm Canvas size + Orientation are visible without scrolling and a scrollbar hint is present for the rest.
+1. **pdf-server (Python)**
+   - New service module `pdf-server/app/services/canvas_prints_assembly.py` alongside `photo_prints_assembly.py`.
+   - New endpoint `POST /v1/operations/assemble-canvas-print-ready` accepting `{ job_id }`, returning an async `job_id` in the same shape as the other operations.
+   - For each `CanvasPrintEntry` on the job:
+     - Download the source from S3 (existing storage helpers).
+     - Flatten onto white.
+     - Build the front raster at `W × H` from the crop (using `croppedAreaPixels` + rotation) at ≥300 dpi (or source-native if lower).
+     - For gallery wrap: rescale the whole flattened image to the full page instead.
+     - Convert to CMYK via `icc_profiles.resolve_profile()`.
+     - Compose the page: CMYK wrap fill (colour wrap) or transparent (others), then paint the image at the correct offset.
+     - Emit a single-page PDF with the MediaBox/TrimBox above, embed the CMYK output profile, and upload to S3.
+   - Write the array of storage paths back to `order_jobs.print_ready_pdf_paths` (new jsonb column) and mirror the first path into the existing `print_ready_pdf_path` for backwards compatibility with the download UI.
+
+2. **Supabase side**
+   - Migration: add `print_ready_pdf_paths jsonb` to `order_jobs` (nullable). Grants/policies unchanged (already covered by existing job policies).
+   - `production-pdf` edge function: add a new `action = "assemble_canvas"` mapped to the new pdf-server endpoint.
+   - `enqueue-print-ready`: route jobs whose `product_category` is `canvas_wrap` (or family kind `canvas_wrap`) to `assemble_canvas` instead of the standard `assemble`. Remove canvas from the RGB skip list — it needs a proper CMYK assemble.
+
+3. **Frontend**
+   - `useProductionArtefacts`: surface `print_ready_pdf_paths` as an array so the operator UI shows one download link per canvas.
+   - `CanvasEditorModal` + cart tile: add the < 150 dpi warning banner using the formula above.
+
+## Non-goals
+- No changes to on-screen 3D preview, cropper, or pricing.
+- No imposition for canvas — each PDF is printed as its own sheet on the large-format device.
+- No print-shop-side proofing UI changes beyond exposing the download links.
+
+## Technical notes
+- CMYK conversion uses the same `icc_profiles` / `render_intent` config already used for the rest of production PDF (`FamilyPrintConfig` fields on the canvas product family). Default `fogra39` / `relative_colorimetric` if unset.
+- The 5 mm overwrap is included in the MediaBox as bleed — the printer's cutter/wrapping station uses it as the tuck-under.
+- `print_ready_pdf_paths` stays ordered to match `spec.canvas_prints.canvases[]` so operators can match a PDF back to a specific canvas in the item.
