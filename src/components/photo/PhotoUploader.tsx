@@ -86,7 +86,7 @@ export default function PhotoUploader({
             Drag photos here, or click to browse
           </p>
           <p className="text-xs text-muted-foreground">
-            JPG, PNG, WEBP or HEIC · up to 200 MB each
+            {helperText ?? "JPG, PNG, WEBP or HEIC · up to 200 MB each"}
           </p>
         </div>
         <div className="flex items-center gap-3">
