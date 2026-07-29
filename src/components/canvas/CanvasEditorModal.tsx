@@ -487,7 +487,13 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                   />
                 </div>
               )}
-            </div>
+              {dpiTooLow && (
+                <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+                  <strong>Low resolution.</strong> This image will print at
+                  ~{effectiveDpi} DPI at the chosen size. We recommend at least
+                  150 DPI for a sharp canvas (300 DPI is ideal).
+                </div>
+              )}
           </div>
 
           {/* RIGHT — 3D preview (fills column) */}
