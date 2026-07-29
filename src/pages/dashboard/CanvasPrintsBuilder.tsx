@@ -8,7 +8,6 @@ import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { resolveUrls } from "@/lib/thumbnailUtils";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { downloadFromS3 } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
@@ -215,28 +214,9 @@ export default function CanvasPrintsBuilder() {
     return () => { if (persistTimer.current) clearTimeout(persistTimer.current); };
   }, [spec, orderItem?.id, orderItem?.spec]);
 
-  // ── Signed-URL resolution for tile/editor previews
-  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  // ── Canvas-safe preview resolution: local blob cache first, Edge proxy for
+  // existing S3 objects. Canvas previews must not draw directly from S3 URLs.
   const [blobVersion, setBlobVersion] = useState(0);
-  useEffect(() => {
-    const wanted = new Set<string>();
-    for (const c of spec.canvases) {
-      if (c.original_storage_path) wanted.add(c.original_storage_path);
-      if (c.preview_path) wanted.add(c.preview_path);
-      if (c.thumb_path) wanted.add(c.thumb_path);
-    }
-    const paths = Array.from(wanted).filter((p) => !signedUrls[p]);
-    if (paths.length === 0) return;
-    let cancelled = false;
-    resolveUrls(paths).then((urls) => {
-      if (cancelled) return;
-      const next: Record<string, string> = {};
-      paths.forEach((p, i) => { if (urls[i]) next[p] = urls[i]; });
-      setSignedUrls((prev) => ({ ...prev, ...next }));
-    });
-    return () => { cancelled = true; };
-  }, [spec.canvases, signedUrls]);
-
   useEffect(() => {
     const wanted = new Set<string>();
     for (const c of spec.canvases) {
@@ -642,13 +622,9 @@ export default function CanvasPrintsBuilder() {
                 .in("id", fileIds);
               if (!docs?.length) return;
 
-              const { getDownloadUrls } = await import("@/lib/s3Storage");
-              const urlMap = await getDownloadUrls(docs.map((d: any) => d.file_path));
-
               const readDims = (url: string) =>
                 new Promise<{ w: number; h: number }>((resolve) => {
                   const img = new Image();
-                  img.crossOrigin = "anonymous";
                   img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
                   img.onerror = () => resolve({ w: 0, h: 0 });
                   img.src = url;
@@ -656,8 +632,14 @@ export default function CanvasPrintsBuilder() {
 
               const newEntries: CanvasPrintEntry[] = [];
               for (const d of docs as any[]) {
-                const url = urlMap[d.file_path];
-                const dims = url ? await readDims(url) : { w: 0, h: 0 };
+                let dims = { w: 0, h: 0 };
+                try {
+                  const blob = await downloadFromS3(d.file_path);
+                  const blobUrl = registerBlob(d.file_path, blob);
+                  dims = await readDims(blobUrl);
+                } catch (e) {
+                  console.warn("[canvas] QR preview proxy download failed", d.file_path, e);
+                }
                 newEntries.push({
                   id: crypto.randomUUID(),
                   document_id: d.id,
