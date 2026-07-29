@@ -268,6 +268,40 @@ export function sampleEdgeColourFromImage(image: HTMLImageElement): string {
   return sampleEdgeColour(ctx, 0, c.width, c.height);
 }
 
+/**
+ * Sample the dominant edge colour from an already-rendered face bitmap.
+ * Averages the outer border ring so a single odd corner can't skew it.
+ */
+export function sampleEdgeColourFromBitmap(bitmap: HTMLCanvasElement): string {
+  try {
+    const ctx = bitmap.getContext("2d");
+    if (!ctx) return "#ffffff";
+    const w = bitmap.width;
+    const h = bitmap.height;
+    if (w < 2 || h < 2) return "#ffffff";
+    const band = Math.max(2, Math.round(Math.min(w, h) * 0.04));
+    let r = 0, g = 0, b = 0, n = 0;
+    const accumulate = (x: number, y: number, sw: number, sh: number) => {
+      if (sw <= 0 || sh <= 0) return;
+      const data = ctx.getImageData(x, y, sw, sh).data;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+      }
+    };
+    accumulate(0, 0, w, band);                       // top
+    accumulate(0, h - band, w, band);                // bottom
+    accumulate(0, band, band, Math.max(0, h - band * 2));            // left
+    accumulate(w - band, band, band, Math.max(0, h - band * 2));     // right
+    if (n === 0) return "#ffffff";
+    const toHex = (v: number) => Math.round(v / n).toString(16).padStart(2, "0");
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  } catch {
+    return "#ffffff";
+  }
+}
+
+
 /** Face-boundary rects in the composed canvas coordinate system. */
 export function faceRect(state: CanvasTransformState, previewDpi: number) {
   const insetPx = mmToPx(state.wrapMm + state.bleedMm, previewDpi);
