@@ -96,19 +96,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 /* ── Queries ── */
 function useProductFamiliesActive() {
-  return useQuery({
-    queryKey: ["product_families_active"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("product_families")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-  });
+  const { families, isLoading } = useVisibleProductFamilies();
+  return { data: families, isLoading };
 }
+
 
 function useRecentDocuments(userId: string | undefined, tenantId: string | null) {
   return useQuery({
