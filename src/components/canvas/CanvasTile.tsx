@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pencil, Trash2, Copy, Minus, Plus, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,31 @@ interface CanvasTileProps {
   onQuantityChange: (q: number) => void;
 }
 
+const MAX_PREVIEW_CACHE_ENTRIES = 128;
+const previewCache = new Map<string, string>();
+
+function getCachedPreview(key: string): string | null {
+  const hit = previewCache.get(key);
+  if (!hit) return null;
+  previewCache.delete(key);
+  previewCache.set(key, hit);
+  return hit;
+}
+
+function cachePreview(key: string, url: string) {
+  if (previewCache.has(key)) previewCache.delete(key);
+  previewCache.set(key, url);
+  while (previewCache.size > MAX_PREVIEW_CACHE_ENTRIES) {
+    const oldest = previewCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    previewCache.delete(oldest);
+  }
+}
+
+function isRemoteUrl(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("https://");
+}
+
 /**
  * Renders a small proof of the finished canvas (front face of the composed
  * production canvas, at ~72 DPI) so the tile visually matches what the
@@ -30,14 +55,41 @@ export default function CanvasTile({
   onDuplicate,
   onQuantityChange,
 }: CanvasTileProps) {
-  const [thumb, setThumb] = useState<string | null>(null);
+  const cropSig = canvas.croppedAreaPixels
+    ? `${canvas.croppedAreaPixels.x},${canvas.croppedAreaPixels.y},${canvas.croppedAreaPixels.width},${canvas.croppedAreaPixels.height}`
+    : "none";
+  const pathKey = canvas.preview_path || canvas.thumb_path || canvas.original_storage_path || canvas.id;
+  const cacheKey = [
+    pathKey,
+    cropSig,
+    canvas.size_slug,
+    canvas.frontWidthMm,
+    canvas.frontHeightMm,
+    canvas.wrapMm,
+    canvas.bleedMm ?? DEFAULT_BLEED_MM,
+    canvas.dpi ?? DEFAULT_DPI,
+    canvas.wrapMode,
+    canvas.wrapColorHex ?? "",
+    canvas.rotation ?? 0,
+    40,
+  ].join("|");
+  const cachedNow = getCachedPreview(cacheKey);
+  const [thumb, setThumb] = useState<string | null>(cachedNow);
+  const lastKeyRef = useRef<string | null>(cachedNow ? cacheKey : null);
 
   useEffect(() => {
     if (!signedUrl) return;
+    if (lastKeyRef.current === cacheKey) return;
+    const cached = getCachedPreview(cacheKey);
+    if (cached) {
+      lastKeyRef.current = cacheKey;
+      setThumb(cached);
+      return;
+    }
+    lastKeyRef.current = cacheKey;
     let cancelled = false;
-    const corsSafeUrl = signedUrl + (signedUrl.includes("?") ? "&" : "?") + "cors=1";
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    if (isRemoteUrl(signedUrl)) img.crossOrigin = "anonymous";
     img.onload = () => {
       if (cancelled) return;
       const state: CanvasTransformState = {
@@ -62,14 +114,19 @@ export default function CanvasTile({
         const face = document.createElement("canvas");
         face.width = r.w; face.height = r.h;
         face.getContext("2d")!.drawImage(composed, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
-        setThumb(face.toDataURL("image/jpeg", 0.85));
+        const url = face.toDataURL("image/jpeg", 0.85);
+        cachePreview(cacheKey, url);
+        setThumb(url);
       } catch (e) {
         console.warn("[canvas-tile] preview render failed", e);
       }
     };
-    img.src = corsSafeUrl;
+    img.onerror = (e) => {
+      if (!cancelled) console.warn("[canvas-tile] image load failed", e);
+    };
+    img.src = signedUrl;
     return () => { cancelled = true; };
-  }, [signedUrl, canvas.size_slug, canvas.frontWidthMm, canvas.frontHeightMm,
+  }, [cacheKey, signedUrl, canvas.size_slug, canvas.frontWidthMm, canvas.frontHeightMm,
       canvas.wrapMm, canvas.bleedMm, canvas.dpi, canvas.wrapMode,
       canvas.wrapColorHex, canvas.rotation]);
 

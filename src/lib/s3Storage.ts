@@ -19,6 +19,8 @@ import { supabase } from "@/integrations/supabase/client";
 // ── Retry plumbing ──────────────────────────────────────────────────
 
 const DEFAULT_MAX_RETRIES = 6;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 /** ~600ms, 1.2s, 2.4s, 4.8s, capped at 6s, plus 0–250ms jitter. */
 function backoffDelay(attempt: number): number {
@@ -219,6 +221,42 @@ export async function getDownloadUrls(objectPaths: string[]): Promise<Record<str
       object_paths: objectPaths,
     });
     return data.signed_urls ?? {};
+  } catch (err) {
+    throw userFacingError("loading previews", err, ref);
+  }
+}
+
+/**
+ * Download an object through our Edge Function rather than directly from S3.
+ * This avoids browser S3 CORS when the caller needs to draw the image into a
+ * canvas/WebGL texture (canvas prints editor + proof renderer).
+ */
+export async function downloadFromS3(objectPath: string): Promise<Blob> {
+  const ref = newRefId();
+  try {
+    return await withRetry(
+      async () => {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error("No active session");
+
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_PUBLISHABLE_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "download", object_path: objectPath }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`download failed [${res.status}]: ${text}`);
+        }
+        return await res.blob();
+      },
+      { label: "download" },
+    );
   } catch (err) {
     throw userFacingError("loading previews", err, ref);
   }

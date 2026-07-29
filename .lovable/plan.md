@@ -1,27 +1,26 @@
-## Fix S3 CORS block on canvas preview
+Plan to fix canvas prints by copying the working photo prints image-loading pattern:
 
-The S3 bucket CORS rule already lists every relevant origin, so the config is not the problem. The failure is on our side: the image loader that feeds the cropper / 3D face-bitmap does not opt into CORS, so S3 returns the object without CORS headers, the browser caches that response, and every subsequent attempt to draw it into a canvas is rejected as a tainted / CORS-blocked read.
+1. **Stop mutating image URLs in canvas**
+   - Remove the `?cors=1` cache-buster from `CanvasEditorModal` and `CanvasTile`.
+   - Keep `blob:` URLs exactly as returned by `photoBlobCache`; appending query params to a `blob:` URL creates a different, non-existent resource and matches the `ERR_FILE_NOT_FOUND` screenshot.
 
-### Changes
+2. **Use the same source priority as photo prints**
+   - Continue resolving images as: cached local `blob:` URL first, then signed S3 URL fallback.
+   - Keep canvas editor using the preview derivative first, original fallback second, same as photo prints.
 
-1. **`src/components/canvas/CanvasEditorModal.tsx`** (and any sibling that instantiates `new Image()` for the canvas pipeline)
-   - Set `img.crossOrigin = "anonymous"` **before** assigning `img.src`.
-   - Append a stable cache-buster query param (e.g. `?cors=1`) the first time we load the signed URL for canvas use, so the browser can't reuse a previously cached no-CORS response.
+3. **Apply CORS only where it is valid**
+   - For real remote URLs (`http:` / `https:`), keep `crossOrigin="anonymous"` before loading into canvas.
+   - For `blob:` / `data:` URLs, load as-is without cache-busting or unnecessary CORS attributes.
 
-2. **`src/lib/canvasPrints/renderWrap.ts`**
-   - Where an `HTMLImageElement` is created internally, apply the same `crossOrigin = "anonymous"` before `src`.
+4. **Make tile rendering follow the photo tile pattern**
+   - Add a stable render cache key to `CanvasTile` so tiles do not flicker or re-render unnecessarily when signed URLs rotate.
+   - Ensure failed tile renders surface a fallback icon instead of poisoning the editor flow.
 
-3. **`src/components/canvas/CanvasTile.tsx`**
-   - If the tile renders the composed thumbnail through an `<img>` that later feeds a canvas, add `crossOrigin="anonymous"` on the JSX element.
+5. **Verify in browser**
+   - Open the canvas prints page, upload/edit a canvas, confirm:
+     - cropper shows the customer-uploaded image,
+     - 3D preview loads,
+     - no `ERR_FILE_NOT_FOUND`,
+     - no S3 CORS canvas draw error.
 
-4. **Signed URL side (verify only, no change expected)**
-   - Confirm the signer does not add `response-content-disposition` differences between the initial `<img>` load and the canvas load, since divergent query strings otherwise re-request without CORS headers.
-
-### Why this fixes it
-
-With `crossOrigin="anonymous"` the browser sends `Origin: https://document-centre.com`, S3 matches the existing rule, returns `Access-Control-Allow-Origin`, and the response is stored in a **separate CORS-tainted cache slot** — so canvas draws succeed and subsequent loads stay valid.
-
-### Out of scope
-
-- No changes to the S3 bucket CORS JSON (already correct).
-- No changes to the signed-URL edge function auth.
+Technical detail: the confirmed divergence is that photo prints pass the resolved URL directly into `Cropper`/`renderPhotoPreview`, while canvas currently creates `corsSafeUrl = signedUrl + '?cors=1'`. Because canvas often receives `blob:` URLs from the same photo blob cache, that mutation breaks local cached images.

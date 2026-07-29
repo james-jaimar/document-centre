@@ -222,6 +222,47 @@ Deno.serve(async (req) => {
       return json({ signed_urls: results, partial_failure: anyHardFailure });
     }
 
+    if (action === "download") {
+      const { object_path } = body;
+      if (!object_path || typeof object_path !== "string") {
+        return json({ error: "object_path required" }, 400);
+      }
+
+      const signRes = await resilientFetch(
+        `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=read`,
+        {
+          method: "POST",
+          headers: gatewayHeaders,
+          body: JSON.stringify({ object_path }),
+        },
+        { label: `download.sign(${object_path})` },
+      );
+      if (!signRes.ok) {
+        const txt = await signRes.text().catch(() => "");
+        console.error(`[s3-storage] download sign ${object_path} [${signRes.status}]: ${txt}`);
+        return json({ error: friendlyError("loading your preview", ref) }, 503);
+      }
+
+      const { url } = await signRes.json();
+      const fileRes = await resilientFetch(url, { method: "GET" }, {
+        label: `download.fetch(${object_path})`,
+      });
+      if (!fileRes.ok) {
+        const txt = await fileRes.text().catch(() => "");
+        console.error(`[s3-storage] download fetch ${object_path} [${fileRes.status}]: ${txt}`);
+        return json({ error: friendlyError("loading your preview", ref) }, 503);
+      }
+
+      return new Response(fileRes.body, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": fileRes.headers.get("Content-Type") || "application/octet-stream",
+          "Cache-Control": "private, max-age=600",
+        },
+      });
+    }
+
     if (action === "copy") {
       const { source_path, dest_path } = body;
       if (!source_path || !dest_path) {

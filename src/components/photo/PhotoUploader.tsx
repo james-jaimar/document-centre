@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { forwardRef, useCallback, useRef, useState } from "react";
 import { Upload, ImagePlus, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import QRUploadModal from "@/components/order/QRUploadModal";
@@ -20,7 +20,7 @@ interface PhotoUploaderProps {
 
 const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
 
-export default function PhotoUploader({
+const PhotoUploader = forwardRef<HTMLDivElement, PhotoUploaderProps>(function PhotoUploader({
   onFiles,
   disabled,
   className,
@@ -29,7 +29,7 @@ export default function PhotoUploader({
   onPhoneUpload,
   acceptPdf,
   helperText,
-}: PhotoUploaderProps) {
+}: PhotoUploaderProps, ref) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [qrOpen, setQrOpen] = useState(false);
 
@@ -61,6 +61,7 @@ export default function PhotoUploader({
   return (
     <>
       <div
+        ref={ref}
         role="button"
         tabIndex={0}
         onClick={() => !disabled && inputRef.current?.click()}
@@ -138,4 +139,6 @@ export default function PhotoUploader({
       )}
     </>
   );
-}
+});
+
+export default PhotoUploader;

@@ -1,6 +1,6 @@
 import { useBranch } from "@/contexts/BranchContext";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,8 +8,8 @@ import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { resolveUrls } from "@/lib/thumbnailUtils";
-import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
+import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
+import { downloadFromS3 } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import {
   useResolvedAllowedSizeLabels,
@@ -102,7 +102,7 @@ function useCanvasSizeChoices(
   }, [allowedLabels, customSizes]);
 }
 
-export default function CanvasPrintsBuilder() {
+const CanvasPrintsBuilder = forwardRef<HTMLDivElement>(function CanvasPrintsBuilder(_props, ref) {
   const { id: orderIdParam } = useParams<{ id?: string }>();
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
@@ -214,38 +214,45 @@ export default function CanvasPrintsBuilder() {
     return () => { if (persistTimer.current) clearTimeout(persistTimer.current); };
   }, [spec, orderItem?.id, orderItem?.spec]);
 
-  // ── Signed-URL resolution for tile/editor previews
-  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  // ── Canvas-safe preview resolution: local blob cache first, Edge proxy for
+  // existing S3 objects. Canvas previews must not draw directly from S3 URLs.
+  const [blobVersion, setBlobVersion] = useState(0);
   useEffect(() => {
     const wanted = new Set<string>();
     for (const c of spec.canvases) {
-      if (c.original_storage_path) wanted.add(c.original_storage_path);
-      if (c.preview_path) wanted.add(c.preview_path);
-      if (c.thumb_path) wanted.add(c.thumb_path);
+      const preferred = c.preview_path ?? c.original_storage_path;
+      if (preferred && !getCachedBlobUrl(preferred)) wanted.add(preferred);
+      if (c.thumb_path && !getCachedBlobUrl(c.thumb_path)) wanted.add(c.thumb_path);
     }
-    const paths = Array.from(wanted).filter((p) => !signedUrls[p]);
+    const paths = Array.from(wanted);
     if (paths.length === 0) return;
     let cancelled = false;
-    resolveUrls(paths).then((urls) => {
-      if (cancelled) return;
-      const next: Record<string, string> = {};
-      paths.forEach((p, i) => { if (urls[i]) next[p] = urls[i]; });
-      setSignedUrls((prev) => ({ ...prev, ...next }));
-      for (const c of spec.canvases) {
-        if (c.preview_path && next[c.preview_path] && !getCachedBlobUrl(c.preview_path)) {
-          void prefetchToCache(c.preview_path, next[c.preview_path]);
+    void Promise.all(
+      paths.map(async (path) => {
+        try {
+          const blob = await downloadFromS3(path);
+          registerBlob(path, blob);
+          return { path, ok: true };
+        } catch (e) {
+          console.warn("[canvas] preview proxy download failed", path, e);
+          return { path, ok: false };
         }
+      }),
+    ).then((items) => {
+      if (cancelled) return;
+      if (items.some((item) => item.ok)) {
+        setBlobVersion((v) => v + 1);
       }
     });
     return () => { cancelled = true; };
-  }, [spec.canvases, signedUrls]);
+  }, [spec.canvases]);
 
   const resolveUrl = useCallback((path: string | undefined | null): string | null => {
     if (!path) return null;
     const blob = getCachedBlobUrl(path);
     if (blob) return blob;
-    return signedUrls[path] ?? null;
-  }, [signedUrls]);
+    return null;
+  }, [blobVersion]);
 
   // ── QR upload
   const [qrOpen, setQrOpen] = useState(false);
@@ -469,7 +476,7 @@ export default function CanvasPrintsBuilder() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+    <div ref={ref} className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -615,13 +622,9 @@ export default function CanvasPrintsBuilder() {
                 .in("id", fileIds);
               if (!docs?.length) return;
 
-              const { getDownloadUrls } = await import("@/lib/s3Storage");
-              const urlMap = await getDownloadUrls(docs.map((d: any) => d.file_path));
-
               const readDims = (url: string) =>
                 new Promise<{ w: number; h: number }>((resolve) => {
                   const img = new Image();
-                  img.crossOrigin = "anonymous";
                   img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
                   img.onerror = () => resolve({ w: 0, h: 0 });
                   img.src = url;
@@ -629,8 +632,14 @@ export default function CanvasPrintsBuilder() {
 
               const newEntries: CanvasPrintEntry[] = [];
               for (const d of docs as any[]) {
-                const url = urlMap[d.file_path];
-                const dims = url ? await readDims(url) : { w: 0, h: 0 };
+                let dims = { w: 0, h: 0 };
+                try {
+                  const blob = await downloadFromS3(d.file_path);
+                  const blobUrl = registerBlob(d.file_path, blob);
+                  dims = await readDims(blobUrl);
+                } catch (e) {
+                  console.warn("[canvas] QR preview proxy download failed", d.file_path, e);
+                }
                 newEntries.push({
                   id: crypto.randomUUID(),
                   document_id: d.id,
@@ -672,4 +681,6 @@ export default function CanvasPrintsBuilder() {
       )}
     </div>
   );
-}
+});
+
+export default CanvasPrintsBuilder;
