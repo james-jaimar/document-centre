@@ -93,21 +93,33 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
     return { ...rawSize, frontWidthMm: w, frontHeightMm: h };
   }, [rawSize, orientation]);
 
-  const aspect = orientedSize ? orientedSize.frontWidthMm / orientedSize.frontHeightMm : 1;
+  // Gallery wrap prints the image right over the edges, so the crop the
+  // customer makes must cover the WHOLE extent (front + wrap + bleed) —
+  // otherwise the cropper shows more of the image than the front face does.
+  const bleedsOverEdge = wrapMode === "gallery_wrap";
+  const insetMm = bleedsOverEdge ? wrapMm + DEFAULT_BLEED_MM : 0;
+  const cropWidthMm = orientedSize ? orientedSize.frontWidthMm + insetMm * 2 : 0;
+  const cropHeightMm = orientedSize ? orientedSize.frontHeightMm + insetMm * 2 : 0;
+  const aspect = cropWidthMm > 0 && cropHeightMm > 0 ? cropWidthMm / cropHeightMm : 1;
+  /** Front-face inset as a fraction of the crop frame (0 when not wrapping). */
+  const insetFracX = cropWidthMm > 0 ? insetMm / cropWidthMm : 0;
+  const insetFracY = cropHeightMm > 0 ? insetMm / cropHeightMm : 0;
 
   // Effective print DPI of the front face at the selected finished size.
   // Warns the customer only when the image would fall below 150 DPI —
   // 300 DPI is ideal but we don't hard-block below that.
   const effectiveDpi = useMemo(() => {
-    if (!orientedSize || !croppedAreaPixels) return null;
+    if (!orientedSize || !croppedAreaPixels || cropWidthMm <= 0) return null;
     const wIn = orientedSize.frontWidthMm / 25.4;
     const hIn = orientedSize.frontHeightMm / 25.4;
     if (wIn <= 0 || hIn <= 0) return null;
-    return Math.floor(
-      Math.min(croppedAreaPixels.width / wIn, croppedAreaPixels.height / hIn),
-    );
-  }, [orientedSize, croppedAreaPixels]);
+    // Only the front-face slice of the crop lands on the visible face.
+    const facePxW = croppedAreaPixels.width * (orientedSize.frontWidthMm / cropWidthMm);
+    const facePxH = croppedAreaPixels.height * (orientedSize.frontHeightMm / cropHeightMm);
+    return Math.floor(Math.min(facePxW / wIn, facePxH / hIn));
+  }, [orientedSize, croppedAreaPixels, cropWidthMm, cropHeightMm]);
   const dpiTooLow = effectiveDpi !== null && effectiveDpi < 150;
+
 
   const {
     fillZoom,
