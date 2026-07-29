@@ -101,11 +101,12 @@ export function renderProductionCanvas(
  * Back is white (nothing prints on the back).
  */
 export function renderFaceBitmaps(
-  image: HTMLImageElement,
+  image: HTMLImageElement | HTMLCanvasElement,
   state: CanvasTransformState,
   previewDpi: number,
 ): {
   front: HTMLCanvasElement;
+
   back: HTMLCanvasElement;
   top: HTMLCanvasElement;
   bottom: HTMLCanvasElement;
