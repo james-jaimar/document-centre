@@ -95,6 +95,20 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
 
   const aspect = orientedSize ? orientedSize.frontWidthMm / orientedSize.frontHeightMm : 1;
 
+  // Effective print DPI of the front face at the selected finished size.
+  // Warns the customer only when the image would fall below 150 DPI —
+  // 300 DPI is ideal but we don't hard-block below that.
+  const effectiveDpi = useMemo(() => {
+    if (!orientedSize || !croppedAreaPixels) return null;
+    const wIn = orientedSize.frontWidthMm / 25.4;
+    const hIn = orientedSize.frontHeightMm / 25.4;
+    if (wIn <= 0 || hIn <= 0) return null;
+    return Math.floor(
+      Math.min(croppedAreaPixels.width / wIn, croppedAreaPixels.height / hIn),
+    );
+  }, [orientedSize, croppedAreaPixels]);
+  const dpiTooLow = effectiveDpi !== null && effectiveDpi < 150;
+
   const {
     fillZoom,
     fitZoom,
