@@ -59,7 +59,7 @@ export default function Canvas3DPreview({ image, state }: Props) {
 }
 
 /** The physical canvas box — six materials backed by CanvasTexture. */
-function CanvasBox({ image, state }: { image: HTMLImageElement; state: CanvasTransformState }) {
+function CanvasBox({ image, state }: { image: HTMLImageElement | HTMLCanvasElement; state: CanvasTransformState }) {
   const meshRef = useRef<THREE.Mesh>(null!);
 
   // Compute physical dimensions in world units. Longest edge normalised to 1.
