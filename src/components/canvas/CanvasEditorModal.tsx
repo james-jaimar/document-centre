@@ -307,8 +307,8 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
           </DialogDescription>
         </DialogHeader>
 
-        {/* Left: upload + scale/crop | Right: 3D preview + settings */}
-        <div className="grid grid-cols-1 lg:grid-cols-[35%_1fr] min-h-0 flex-1 overflow-hidden">
+        {/* Left: cropper | Middle: settings | Right: 3D preview */}
+        <div className="grid grid-cols-1 lg:grid-cols-[35%_25%_1fr] min-h-0 flex-1 overflow-hidden">
           {/* LEFT — cropper */}
           <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
             <div
@@ -380,114 +380,109 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
             </div>
           </div>
 
-          {/* RIGHT — live 3D preview + settings */}
-          <div className="min-w-0 min-h-0 flex flex-col lg:grid lg:grid-rows-[75%_25%] bg-muted/20 overflow-hidden h-full">
-            <div className="min-h-0 p-4 pb-2 flex flex-col overflow-hidden">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 shrink-0">
-                How it will look on the wall
-              </p>
-              <div className="w-full flex-1 min-h-0">
-                {previewTransform && faceBitmap ? (
-                  <Canvas3DPreview image={faceBitmap} state={previewTransform} />
-                ) : (
-                  <div className="w-full h-full rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200 border flex items-center justify-center text-sm text-muted-foreground">
-                    Loading preview…
-                  </div>
-                )}
+          {/* MIDDLE — settings (stacked, one line per option) */}
+          <div className="min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-y-auto border-r border-border bg-muted/10">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
+              <Select value={sizeSlug} onValueChange={setSizeSlug}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Choose size" /></SelectTrigger>
+                <SelectContent>
+                  {sizes.map((s) => (
+                    <SelectItem key={s.slug} value={s.slug}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold uppercase tracking-wide">Orientation</Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setOrientation("landscape")}
+                  className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "landscape" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                >
+                  Landscape
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrientation("portrait")}
+                  className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "portrait" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                >
+                  Portrait
+                </button>
               </div>
             </div>
 
-            <div className="min-h-0 border-t border-border p-4 space-y-3 overflow-y-auto">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold uppercase tracking-wide">Wrap depth</Label>
+              <RadioGroup
+                value={String(wrapMm)}
+                onValueChange={(v) => setWrapMm(Number(v))}
+                className="grid grid-cols-3 gap-1.5"
+              >
+                {depthOpts.map((d) => (
+                  <label
+                    key={d}
+                    className={`border rounded-md py-1.5 text-center cursor-pointer text-xs ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
+                  >
+                    <RadioGroupItem value={String(d)} className="sr-only" />
+                    {d} mm
+                  </label>
+                ))}
+              </RadioGroup>
+            </div>
 
-
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
-                  <Select value={sizeSlug} onValueChange={setSizeSlug}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="Choose size" /></SelectTrigger>
-                    <SelectContent>
-                      {sizes.map((s) => (
-                        <SelectItem key={s.slug} value={s.slug}>{s.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold uppercase tracking-wide">Orientation</Label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setOrientation("landscape")}
-                      className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "landscape" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
-                    >
-                      Landscape
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOrientation("portrait")}
-                      className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "portrait" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
-                    >
-                      Portrait
-                    </button>
-                  </div>
-                </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-semibold uppercase tracking-wide">Edge finish</Label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {WRAP_MODE_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`block border rounded-md p-2 cursor-pointer text-xs transition ${wrapMode === opt.value ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                    title={opt.help}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        className="accent-primary"
+                        checked={wrapMode === opt.value}
+                        onChange={() => setWrapMode(opt.value)}
+                      />
+                      <span className="font-medium">{opt.label}</span>
+                    </div>
+                  </label>
+                ))}
               </div>
-
-              <div className="space-y-1">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide">Wrap depth</Label>
-                <RadioGroup
-                  value={String(wrapMm)}
-                  onValueChange={(v) => setWrapMm(Number(v))}
-                  className="grid grid-cols-3 gap-2"
-                >
-                  {depthOpts.map((d) => (
-                    <label
-                      key={d}
-                      className={`border rounded-md py-1.5 text-center cursor-pointer text-xs ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
-                    >
-                      <RadioGroupItem value={String(d)} className="sr-only" />
-                      {d} mm
-                    </label>
-                  ))}
-                </RadioGroup>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide">Edge finish</Label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {WRAP_MODE_OPTIONS.map((opt) => (
-                    <label
-                      key={opt.value}
-                      className={`block border rounded-md p-2 cursor-pointer text-xs transition ${wrapMode === opt.value ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
-                      title={opt.help}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          className="accent-primary"
-                          checked={wrapMode === opt.value}
-                          onChange={() => setWrapMode(opt.value)}
-                        />
-                        <span className="font-medium">{opt.label}</span>
-                      </div>
-                    </label>
-                  ))}
+              {wrapMode === "colour_wrap" && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Label className="text-xs">Colour</Label>
+                  <DebouncedColorInput
+                    value={wrapColorHex ?? "#ffffff"}
+                    onChange={(v) => setWrapColorHex(v)}
+                  />
                 </div>
-                {wrapMode === "colour_wrap" && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <Label className="text-xs">Colour</Label>
-                    <DebouncedColorInput
-                      value={wrapColorHex ?? "#ffffff"}
-                      onChange={(v) => setWrapColorHex(v)}
-                    />
-                  </div>
-                )}
-              </div>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT — 3D preview (fills column) */}
+          <div className="min-w-0 min-h-0 flex flex-col p-4 bg-muted/20 overflow-hidden">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 shrink-0">
+              How it will look on the wall
+            </p>
+            <div className="w-full flex-1 min-h-0">
+              {previewTransform && faceBitmap ? (
+                <Canvas3DPreview image={faceBitmap} state={previewTransform} />
+              ) : (
+                <div className="w-full h-full rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200 border flex items-center justify-center text-sm text-muted-foreground">
+                  Loading preview…
+                </div>
+              )}
             </div>
           </div>
         </div>
+
 
         <DialogFooter className="px-6 py-4 border-t border-border bg-muted/30">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
