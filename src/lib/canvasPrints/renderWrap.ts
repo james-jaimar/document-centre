@@ -33,9 +33,12 @@ export function renderProductionCanvas(
   sctx.fillStyle = "#ffffff";
   sctx.fillRect(0, 0, totalWpx, totalHpx);
 
-  const src = { w: image.naturalWidth, h: image.naturalHeight };
+  const srcW = "naturalWidth" in image ? image.naturalWidth : image.width;
+  const srcH = "naturalHeight" in image ? image.naturalHeight : image.height;
+  const src = { w: srcW, h: srcH };
   const rot = ((state.imageRotation % 360) + 360) % 360;
   const srcAspect = rot === 90 || rot === 270 ? src.h / src.w : src.w / src.h;
+
   const frontAspect = frontWpx / frontHpx;
   let baseFrontW: number, baseFrontH: number;
   if (srcAspect > frontAspect) {
