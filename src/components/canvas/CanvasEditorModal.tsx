@@ -221,15 +221,16 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
   const handleFill = () => { setFitMode("fill"); setCrop({ x: 0, y: 0 }); setZoom(fillZoom); };
   const handleFit  = () => { setFitMode("fit");  setCrop({ x: 0, y: 0 }); setZoom(fitZoom); };
 
-  // Build a pre-cropped face bitmap that matches the cropper exactly. The
-  // 3D preview then treats this as a fit-cover face image (no pan/scale),
-  // so what's inside the crop box == what's on the front of the canvas.
+  // Build a pre-cropped bitmap that matches the cropper exactly. It covers the
+  // same physical extent as the crop frame (front face only, or front + wrap +
+  // bleed for gallery wrap) so what's inside the crop box == what's printed.
   const faceBitmap = useMemo<HTMLCanvasElement | null>(() => {
-    if (!imgEl || !orientedSize || !croppedAreaPixels) return null;
+    if (!imgEl || !orientedSize || !croppedAreaPixels || cropWidthMm <= 0) return null;
     const targetLong = 900;
-    const aspectFace = orientedSize.frontWidthMm / orientedSize.frontHeightMm;
+    const aspectFace = cropWidthMm / cropHeightMm;
     const outW = aspectFace >= 1 ? targetLong : Math.round(targetLong * aspectFace);
     const outH = aspectFace >= 1 ? Math.round(targetLong / aspectFace) : targetLong;
+
     const c = document.createElement("canvas");
     c.width = outW; c.height = outH;
     const ctx = c.getContext("2d")!;
