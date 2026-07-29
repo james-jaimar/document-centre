@@ -11,7 +11,7 @@ export type PageOrientation = "landscape" | "portrait";
 export const WRAP_MODE_OPTIONS: { value: WrapMode; label: string; help: string }[] = [
   {
     value: "no_edge_print",
-    label: "No edge print",
+    label: "No edge print (blank sides)",
     help: "Only the front prints. Wrapped sides are left blank white — the cleanest, most economical finish.",
   },
   {
@@ -34,12 +34,8 @@ export const WRAP_MODE_OPTIONS: { value: WrapMode; label: string; help: string }
     label: "Colour wrap",
     help: "The front stays intact. The sides are a solid colour (auto-picked from the image edge, or pick your own).",
   },
-  {
-    value: "face_only",
-    label: "Face only",
-    help: "Only the front prints. Sides are left blank white.",
-  },
 ];
+
 
 export interface CanvasTransformState {
   presetId: string;
