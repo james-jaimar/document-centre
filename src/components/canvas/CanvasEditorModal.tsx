@@ -287,9 +287,10 @@ export default function CanvasEditorModal({
               ref={containerRef}
               className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-0"
             >
-              {signedUrl ? (
+              {corsSafeUrl ? (
                 <Cropper
-                  image={signedUrl}
+                  image={corsSafeUrl}
+                  mediaProps={{ crossOrigin: "anonymous" }}
                   crop={crop}
                   zoom={zoom}
                   rotation={rotation}
