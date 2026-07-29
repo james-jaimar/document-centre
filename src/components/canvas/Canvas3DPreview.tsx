@@ -8,9 +8,10 @@ import { renderFaceBitmaps } from "@/lib/canvasPrints/renderWrap";
 const PREVIEW_DPI = 96;
 
 interface Props {
-  image: HTMLImageElement | null;
+  image: HTMLImageElement | HTMLCanvasElement | null;
   state: CanvasTransformState;
 }
+
 
 /**
  * Real 3D preview of a stretched canvas print — six textured faces of a box,
