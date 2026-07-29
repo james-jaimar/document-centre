@@ -9,6 +9,8 @@ import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
+import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
+
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
 import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
@@ -41,7 +43,9 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
     : fallbackPreview.pdfSources;
   const previewPageCount = Math.max(previewThumbs.length, previewPdfSources.length);
   const hasPreview = previewThumbs.some((t) => !!t) || previewPdfSources.length > 0;
+  const isCanvasJob = Boolean((config as any).canvas_prints) || job.product_category === "canvas-prints";
   const [previewOpen, setPreviewOpen] = useState(false);
+
 
   return (
     <div className="space-y-2">
@@ -86,11 +90,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
             <Eye className="h-3.5 w-3.5 mr-1.5" />
              View preview ({previewPageCount} pages)
           </Button>
-        ) : (
+        ) : isCanvasJob ? null : (
           <div className="text-[11px] text-muted-foreground italic text-center">
             No customer preview available
           </div>
         )}
+
 
         <Separator className="my-1" />
 
@@ -177,13 +182,17 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         </div>
       </div>
 
-      {/* Photo Prints — admin gallery (replaces both attached files + photo list) */}
-      {(config as any).photo_prints || job.product_category === "photo-prints" ? (
+      {/* Canvas Prints — admin proof gallery */}
+      {(config as any).canvas_prints || job.product_category === "canvas-prints" ? (
+        <CanvasPrintsAdminGallery canvasPrints={(config as any).canvas_prints} />
+      ) : /* Photo Prints — admin gallery (replaces both attached files + photo list) */
+      (config as any).photo_prints || job.product_category === "photo-prints" ? (
         <PhotoPrintsAdminGallery
           photoPrints={(config as any).photo_prints}
           orderItemId={(config as any).source_order_item_id ?? null}
         />
       ) : (
+
         /* Attached files — hidden for photo prints jobs (gallery shows them visually instead) */
         jobDocs.length > 0 && (
           <div className="rounded-lg border bg-card p-3">

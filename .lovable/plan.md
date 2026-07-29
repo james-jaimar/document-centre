@@ -1,39 +1,36 @@
-## 1. Auto-picked wrap colour must land in the colour picker
+## Goal
 
-**Current behaviour (verified):** `wrapColorHex` starts `undefined`. `renderProductionCanvas` (`src/lib/canvasPrints/renderWrap.ts:94`) falls back to `sampleEdgeColour(...)` at render time, so the *preview* shows a sampled colour — but the picker in `CanvasEditorModal.tsx:485` renders `wrapColorHex ?? "#ffffff"` (white), and `handleSave` persists `wrapColorHex: undefined`, so the production PDF has no colour to fill with.
+Canvas Prints jobs show "No customer preview available" in the store admin's order detail. Add a proper visual preview, matching the pattern already used for Photo Prints.
 
-**Fix:**
-- In `CanvasEditorModal`, when `faceBitmap` first becomes available and `wrapColorHex` is unset, sample the face edge (`sampleEdgeColour` against the face bitmap context) and `setWrapColorHex(sampled)`.
-- Re-sample when the source image or crop changes *only while the user hasn't manually picked* — track a `colourWasManual` flag set by the picker's `onChange`.
-- Remove the render-time fallback reliance: `wrapColorHex` is now always a concrete hex by the time the user sees it, so the picker, preview, and saved spec all agree.
-- Same seeding applies in `CanvasTile.tsx` so tile thumbnails match.
+## Why it's missing today (verified)
 
-Result: the auto-picked colour appears in the swatch, is editable, and is what the PDF engine fills with.
+- `JobDetailPanel.tsx` only branches on `config.photo_prints` (or `product_category === "photo-prints"`) to render `PhotoPrintsAdminGallery`. There is no canvas branch.
+- The generic preview path (`buildPreviewFallback` / `PreviewLightbox`) is PDF/page based, so it finds no thumbnails or PDF sources for a canvas job — hence the empty state.
+- The data is already there: `buildJobSnapshot.ts` copies the whole `spec.canvas_prints` block onto the job configuration, including per-canvas size, orientation, wrap depth, wrap mode, wrap colour, crop rect, rotation and the source image path.
 
-## 2. Colour picker sluggishness
+## What to build
 
-Every colour change currently rebuilds the full `previewTransform` → composed production canvas → all six face bitmaps in `renderFaceBitmaps`.
+**1. `CanvasPrintsAdminGallery` component** (new, sibling of `PhotoPrintsAdminGallery`)
 
-**Fix:**
-- Keep the debounce in `DebouncedColorInput` but raise it and commit on `change` (release) only, dropping the live `onInput` commit.
-- Stop re-rasterising for colour: in `Canvas3DPreview`, when `wrapMode === "colour_wrap"`, paint the four side faces with a flat three.js material colour driven by `wrapColorHex` instead of regenerating strip bitmaps. Front/back bitmaps then don't depend on colour at all, so dragging the picker is a material update, not a canvas re-render.
+For each canvas in `configuration.canvas_prints.canvases[]`:
 
-## 3. Cropper vs 3D preview mismatch
+- Render a true proof of the finished canvas by reusing `renderProductionCanvas()` from `src/lib/canvasPrints/renderWrap.ts` at low DPI (~40), the same call `CanvasTile` makes on the customer side — so the admin sees exactly what the customer approved, including gallery wrap bleed or the solid colour wrap edges.
+- Show the composed canvas (front + wrap edges) rather than only the front face, so the wrap treatment is visible at a glance.
+- Caption each tile: file name, finished size (e.g. `A2 — 594 × 420 mm`), orientation, wrap depth (`38 mm`), wrap mode label from `WRAP_MODE_OPTIONS`, a small colour swatch + hex when the mode is colour wrap, and a `×qty` badge.
+- Header line summarising: N canvases, total prints, and the common size/depth.
+- Click a tile to open a larger lightbox view of the same composed render.
 
-**Confirmed cause:** the cropper's frame aspect is the *front face* (`orientedSize.frontWidthMm / frontHeightMm`), and `faceBitmap` is built straight from `croppedAreaPixels`. But for `gallery_wrap`, `renderProductionCanvas` scales the image to the **total** extent (front + 2×wrap + 2×bleed) and the visible front face is the inner rect. So the front face in the 3D preview shows *less* of the image than the crop box — the crop looks "slightly enlarged".
+**2. Image loading / CORS**
 
-**Fix:**
-- Drive the cropper aspect from the total extent when the wrap mode bleeds image over the edges (`gallery_wrap`), i.e. `totalWidthMm / totalHeightMm`.
-- Overlay a non-interactive inset guide inside the crop frame marking the front-face boundary (wrap + bleed inset), labelled "wrapped edge — keep content inside".
-- Feed the 3D preview the whole cropped region as the production source in gallery mode (rather than treating the crop as the face), so the face rect it slices out is exactly the region inside the guide.
-- For `no_edge_print` and `colour_wrap` the crop box stays the front face — no guide, no change.
+The composed render reads pixels from a canvas, so the source image must be same-origin. Use the existing same-origin download proxy (`downloadFromS3` in `src/lib/s3Storage.ts`) to fetch the image as a blob and render from an object URL, rather than a signed S3 URL — this is the same fix already applied in the customer builder. Prefer `preview_path` → `thumb_path` → `original_storage_path` so admins aren't downloading 40 MB originals.
 
-## Files touched
-- `src/components/canvas/CanvasEditorModal.tsx` — colour seeding, cropper aspect + inset guide
-- `src/components/canvas/Canvas3DPreview.tsx` — flat material for colour wrap sides
-- `src/components/canvas/DebouncedColorInput.tsx` — commit on release
-- `src/components/canvas/CanvasTile.tsx` — same colour seeding for tiles
-- `src/lib/canvasPrints/renderWrap.ts` — expose a helper to sample from a face bitmap; keep the render fallback as a safety net
+Graceful fallbacks: skeleton while loading, and if the render fails, fall back to a plain `<img>` of the signed source with the spec text still shown.
 
-## Non-goals
-No pricing, no PDF-server changes — `canvas_prints_assembly.py` already reads `wrapColorHex`; it just needed a real value.
+**3. Wire it into `JobDetailPanel.tsx`**
+
+Extend the existing branch so a job with `config.canvas_prints` (or `product_category === "canvas-prints"`) renders `CanvasPrintsAdminGallery` instead of the empty preview block and generic attached-files list — mirroring how photo prints are handled today.
+
+## Notes
+
+- No database, pricing, or production-PDF changes; this is presentation only. The print-ready CMYK PDFs continue to come from the existing production panel.
+- Existing orders will work retroactively, since the render is computed from the stored spec rather than a baked thumbnail.
