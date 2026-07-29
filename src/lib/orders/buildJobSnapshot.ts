@@ -531,6 +531,8 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
 
   const resolved = resolveSelectedOptions(selected, productOptions);
   const isPhotoPrints = item.product_families?.slug === "photo-prints";
+  const isCanvasPrints = item.product_families?.slug === "canvas-prints";
+  const isRasterProduct = isPhotoPrints || isCanvasPrints;
 
   const totalPages = documents.reduce((s, d) => s + (d.page_count ?? 0), 0);
   const summary = buildSummary(resolved, spec, totalPages);
