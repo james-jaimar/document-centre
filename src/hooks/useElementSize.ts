@@ -23,26 +23,36 @@ export function useElementSize<T extends HTMLElement = HTMLDivElement>(
 
     let rafId: number | null = null;
     let ro: ResizeObserver | null = null;
+    let pending: ElementSize | null = null;
+
+    const flush = () => {
+      rafId = null;
+      if (pending) {
+        setSize((prev) =>
+          prev.width === pending!.width && prev.height === pending!.height ? prev : pending!,
+        );
+        pending = null;
+      }
+    };
+    const schedule = (next: ElementSize) => {
+      pending = next;
+      if (rafId == null) rafId = requestAnimationFrame(flush);
+    };
 
     const measure = () => {
       const el = ref.current;
       if (!el) {
-        // Element not in DOM yet (portal delay) — try next frame
         rafId = requestAnimationFrame(measure);
         return;
       }
-
-      // Immediate measurement
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        setSize({ width: rect.width, height: rect.height });
+        schedule({ width: Math.round(rect.width), height: Math.round(rect.height) });
       }
-
-      // Observe for future resizes
       ro = new ResizeObserver(([entry]) => {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
-          setSize({ width, height });
+          schedule({ width: Math.round(width), height: Math.round(height) });
         }
       });
       ro.observe(el);
@@ -54,6 +64,7 @@ export function useElementSize<T extends HTMLElement = HTMLDivElement>(
       if (rafId != null) cancelAnimationFrame(rafId);
       ro?.disconnect();
     };
+
   }, [enabled]);
 
   return [ref as React.RefObject<T>, size];
