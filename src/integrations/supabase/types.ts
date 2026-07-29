@@ -3528,6 +3528,7 @@ export type Database = {
           order_id: string
           print_ready_assembled_at: string | null
           print_ready_pdf_path: string | null
+          print_ready_pdf_paths: Json | null
           print_ready_spec_hash: string | null
           product_category: string | null
           product_name: string
@@ -3577,6 +3578,7 @@ export type Database = {
           order_id: string
           print_ready_assembled_at?: string | null
           print_ready_pdf_path?: string | null
+          print_ready_pdf_paths?: Json | null
           print_ready_spec_hash?: string | null
           product_category?: string | null
           product_name: string
@@ -3626,6 +3628,7 @@ export type Database = {
           order_id?: string
           print_ready_assembled_at?: string | null
           print_ready_pdf_path?: string | null
+          print_ready_pdf_paths?: Json | null
           print_ready_spec_hash?: string | null
           product_category?: string | null
           product_name?: string
