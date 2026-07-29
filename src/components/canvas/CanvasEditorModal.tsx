@@ -395,7 +395,34 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                   Loading image…
                 </div>
               )}
+
+              {/* Front-face guide — for gallery wrap the crop frame covers the
+                  whole printed extent, so mark where the visible face ends. */}
+              {imageUrl && bleedsOverEdge && cropSize.width > 0 && (
+                <div
+                  className="pointer-events-none absolute left-1/2 top-1/2"
+                  style={{
+                    width: cropSize.width,
+                    height: cropSize.height,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  <div
+                    className="absolute border-2 border-dashed border-amber-300/90"
+                    style={{
+                      left: `${insetFracX * 100}%`,
+                      top: `${insetFracY * 100}%`,
+                      right: `${insetFracX * 100}%`,
+                      bottom: `${insetFracY * 100}%`,
+                    }}
+                  />
+                  <span className="absolute left-1 bottom-1 text-[10px] font-medium text-amber-200 bg-black/50 px-1 rounded">
+                    Dashed line = visible front face · outside wraps the edges
+                  </span>
+                </div>
+              )}
             </div>
+
 
             <div className="flex items-center gap-3">
               <Label className="text-xs w-14 shrink-0">Zoom</Label>
