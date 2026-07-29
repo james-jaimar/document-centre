@@ -407,9 +407,6 @@ export default function CanvasPrintsBuilder() {
   }, [spec.canvases, canvasBaseRows, canvasSurcharges]);
 
   const anyUnpriced = pricedCanvases.some((p) => !p.matched);
-  const netUnitAvg = pricedCanvases.length
-    ? pricedCanvases.reduce((s, p) => s + p.unit, 0) / pricedCanvases.length
-    : 0;
   const netTotal = pricedCanvases.reduce((s, p) => s + p.line, 0);
 
   // ── Add to cart
