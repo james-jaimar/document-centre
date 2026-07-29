@@ -297,7 +297,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent ref={ref} className="w-[min(1200px,95vw)] max-w-[min(1200px,95vw)] h-[min(760px,92vh)] max-h-[min(760px,92vh)] sm:max-w-[min(1200px,95vw)] p-0 overflow-hidden flex flex-col">
+      <DialogContent ref={ref} className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] sm:max-w-[90vw] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
           <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
           <DialogDescription className="text-xs">
@@ -381,8 +381,8 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
           </div>
 
           {/* RIGHT — live 3D preview + settings */}
-          <div className="min-w-0 min-h-0 grid grid-rows-[minmax(0,1fr)_auto] bg-muted/20 overflow-hidden h-full">
-            <div className="min-h-0 overflow-hidden p-4 pb-2 flex flex-col">
+          <div className="min-w-0 min-h-0 flex flex-col bg-muted/20 overflow-hidden h-full">
+            <div className="h-1/2 shrink-0 p-4 pb-2 flex flex-col overflow-hidden">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 shrink-0">
                 How it will look on the wall
               </p>
@@ -397,7 +397,8 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
               </div>
             </div>
 
-            <div className="border-t border-border p-4 space-y-3 overflow-y-auto max-h-[45vh]">
+            <div className="flex-1 min-h-0 border-t border-border p-4 space-y-3 overflow-y-auto">
+
 
 
               <div className="grid grid-cols-2 gap-3">
