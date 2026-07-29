@@ -99,6 +99,10 @@ export default function NewOrder() {
       navigate(tenantPath("orders/new/photo-prints"));
       return;
     }
+    if (familySlug === "canvas-prints" || familySlug === "canvas-wrap") {
+      navigate(tenantPath("orders/new/canvas-prints"));
+      return;
+    }
     navigate(tenantPath(`orders/new/${familyId}`));
   };
 

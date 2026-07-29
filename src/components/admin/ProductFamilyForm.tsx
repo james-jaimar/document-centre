@@ -42,6 +42,9 @@ interface PrintingRules {
   force_sra3_when_edge_to_edge: boolean;
   binding_size_inherits_from: string | null;
   min_quantity: number;
+  /** Canvas wrap products only — which side-depth presets (mm) to expose. */
+  canvas_wrap_depths_mm?: number[];
+  canvas_default_wrap_mm?: number;
 }
 
 const DEFAULT_PRINTING_RULES: PrintingRules = {
@@ -51,7 +54,11 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
   force_sra3_when_edge_to_edge: true,
   binding_size_inherits_from: null,
   min_quantity: 1,
+  canvas_wrap_depths_mm: [25, 38, 50],
+  canvas_default_wrap_mm: 38,
 };
+
+const CANVAS_WRAP_DEPTH_OPTIONS = [25, 38, 50] as const;
 
 
 interface FormValues {
@@ -514,6 +521,70 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 )}
               />
             </div>
+
+            {form.watch("kind") === "canvas_wrap" && (
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                <div>
+                  <h4 className="text-sm font-semibold">Canvas wrap depths</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Which side-depth options the customer can pick. 38 mm is standard.
+                  </p>
+                </div>
+                <FormField
+                  control={form.control}
+                  name="printing_rules.canvas_wrap_depths_mm"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Available depths</FormLabel>
+                      <div className="flex gap-2">
+                        {CANVAS_WRAP_DEPTH_OPTIONS.map((d) => {
+                          const current = (field.value ?? []) as number[];
+                          const checked = current.includes(d);
+                          return (
+                            <button
+                              type="button"
+                              key={d}
+                              onClick={() => {
+                                const set = new Set(current);
+                                if (checked) set.delete(d); else set.add(d);
+                                field.onChange(Array.from(set).sort((a, b) => a - b));
+                              }}
+                              className={`px-3 py-1.5 rounded text-xs border transition ${
+                                checked
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-background text-muted-foreground border-border hover:border-primary/50"
+                              }`}
+                            >
+                              {d} mm
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="printing_rules.canvas_default_wrap_mm"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Default depth</FormLabel>
+                      <Select
+                        onValueChange={(v) => field.onChange(Number(v))}
+                        value={String(field.value ?? 38)}
+                      >
+                        <FormControl><SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {CANVAS_WRAP_DEPTH_OPTIONS.map((d) => (
+                            <SelectItem key={d} value={String(d)}>{d} mm</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

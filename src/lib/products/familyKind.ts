@@ -15,6 +15,7 @@ export type FamilyKind =
   | "business_card"
   | "large_format"
   | "photo_print"
+  | "canvas_wrap"
   | "custom";
 
 export const FAMILY_KIND_OPTIONS: { value: FamilyKind; label: string; description: string }[] = [
@@ -25,6 +26,7 @@ export const FAMILY_KIND_OPTIONS: { value: FamilyKind; label: string; descriptio
   { value: "business_card", label: "Business card", description: "Uses the Business Cards rate card and BC-specific imposition." },
   { value: "large_format", label: "Large format", description: "Pull-up banners, posters over A2, roll-fed output." },
   { value: "photo_print", label: "Photo print", description: "Uses the Photo Prints rate card (dye-sub / RGB output)." },
+  { value: "canvas_wrap", label: "Canvas wrap", description: "Stretched canvas prints with gallery / mirror / colour wrap around the sides." },
   { value: "custom", label: "Custom", description: "Doesn't fit a template — configure manually." },
 ];
 
@@ -38,13 +40,14 @@ function slugFallback(slug: string | null | undefined): FamilyKind {
   if (["pull-up-banners", "pull_up_banners", "banners", "banner", "large-format", "large_format"].includes(s)) return "large_format";
   if (["photo-prints", "photo_prints", "photos"].includes(s)) return "photo_print";
   if (["wire-bound", "wire_bound", "comb-bound", "comb_bound", "spiral-bound", "spiral_bound", "bound-documents", "bound_documents", "perfect-bound", "perfect_bound"].includes(s)) return "bound_document";
+  if (["canvas-prints", "canvas_prints", "canvas-wrap", "canvas_wrap"].includes(s)) return "canvas_wrap";
   return "custom";
 }
 
 /** Resolve a family's kind — DB column wins, slug fallback for un-backfilled rows. */
 export function getFamilyKind(family: { kind?: string | null; slug?: string | null } | null | undefined): FamilyKind {
   const k = (family?.kind ?? "").toLowerCase();
-  const valid: FamilyKind[] = ["flat_sheet", "bound_document", "folded_leaflet", "saddle_stitched", "business_card", "large_format", "photo_print", "custom"];
+  const valid: FamilyKind[] = ["flat_sheet", "bound_document", "folded_leaflet", "saddle_stitched", "business_card", "large_format", "photo_print", "canvas_wrap", "custom"];
   if (valid.includes(k as FamilyKind)) return k as FamilyKind;
   return slugFallback(family?.slug);
 }
