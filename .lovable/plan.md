@@ -1,38 +1,39 @@
+## Fixes for the Canvas Editor modal
 
-## Canvas editor + preview polish
+### 1. Tab re-focus wipes edits and re-fetches the preview
 
-Focused UI/UX pass on the Canvas Prints builder. No pricing or data-model changes.
+**Cause (confirmed in `CanvasEditorModal.tsx`)**
+- The seed effect (lines 115–133) depends on `[open, canvas, sizes, allowedWrapDepthsMm]`. `sizes` and `allowedWrapDepthsMm` are rebuilt each render by the parent, so any re-render (window focus, query refetch, parent state change) fires the effect again and resets `sizeSlug`, `orientation`, `wrapMm`, `wrapMode`, `crop`, `zoom`, `rotation`, `fitMode`, `croppedAreaPixels` back to the entry's saved values — throwing away in-modal edits.
+- The image-loader effect (lines 136–142) depends on `signedUrl`. If the parent re-signs the URL on focus, a new `Image()` is constructed, `imgEl` swaps, `faceBitmap` recomputes, and the 3D preview visibly reloads.
 
-### 1. Modal sizing & fit (issues 1, 5)
-`src/components/canvas/CanvasEditorModal.tsx`
-- Enlarge modal to a true 90vw × 90vh with a hard `max-w`/`max-h` big enough to not clip on 1080p laptops. Remove the inner `max-h-[45%]` on the settings panel so the right column uses proper flex sizing (cropper flexes, settings scroll only if needed).
-- Convert the right column to `flex-col` with `min-h-0` on both children so the 3D preview gets the top ~55% and the settings the bottom ~45% naturally — no clipping of the Save/Cancel bar at 100% zoom.
-- Compact the settings block: tighten `space-y-5` to `space-y-4`, reduce padding, and drop the redundant help paragraph under Edge finish (help still shown via `title` tooltip).
+**Fix**
+- Change the seed effect to run only on the open-edge for a given canvas: key off `open` + `canvas.id` only, and skip when `!open`. Capture `sizes[0]?.slug` and `allowedWrapDepthsMm[0]` inside the effect via refs so their identity changes don't retrigger it.
+- Memoise the loaded `HTMLImageElement` by the *stable* asset identity (e.g. `canvas.file_path` or the URL without query string) so a re-signed URL for the same underlying file doesn't rebuild `imgEl`. Only recreate the `Image` when the asset path actually changes.
 
-### 2. Flicker on resize (issue 2)
-`src/components/canvas/CanvasEditorModal.tsx` + `src/hooks/useElementSize.ts` (read-only check first)
-- Debounce/RAF-throttle the ResizeObserver in `useElementSize` so the cropper doesn't re-measure on every intermediate frame.
-- Only recompute the auto-snap zoom effect when `containerSize` is stable for a frame (compare rounded values), and guard against `containerSize.width === 0` transients that momentarily reset the cropper.
+### 2. Right-column pieces overlap
 
-### 3. Tile shows product picture, not upload (issue 3)
-`src/components/canvas/CanvasTile.tsx` (or its caller)
-- Investigate why some tiles render the product hero image instead of the composed thumbnail. Likely causes to check in order: (a) `signedUrl` is null on first render and the caller falls back to the product image, (b) the tile render throws so `thumb` stays null and a parent shows a placeholder. Add a short diagnostic log, then fix the actual fallback path (never render the product image inside a Canvas tile — show a neutral skeleton while `thumb` is loading).
+**Cause**
+- The right column (line 338) mixes `flex-1` on the preview with a settings block using `style={{ maxHeight: "45%" }}` (line 354). Percentages resolve against the column, not the visible viewport, so on shorter heights the preview `min-h-[240px]` + the 45% settings block + edge-finish radios can exceed available space, and the color picker/edge-finish rows visibly overflow into the preview (visible in screenshot 1: A0 dropdown sits on top of the wall preview).
 
-### 4. Edge finish: dedupe "No edge print" vs "Face only" (issue 4)
-`src/lib/canvasPrints/types.ts`
-- Remove `face_only` from `WRAP_MODE_OPTIONS` (keep the type value for backwards-compat with saved specs, but treat it as an alias of `no_edge_print` in `renderWrap.ts` — already true). Rename `no_edge_print` label to "No edge print (blank sides)" for clarity.
-- Migration-safe: any existing entry stored as `face_only` continues to render identically.
+**Fix**
+- Drop the `maxHeight: 45%` and `flex-1` mix. Give the right column a clean two-region layout: settings as a fixed-height (auto) block on top OR bottom with `shrink-0`, and the preview as the only `flex-1 min-h-0` region. Make the settings block scroll internally (`overflow-y-auto`) with a hard `max-h` in `rem`/`px`, not `%`.
+- Ensure the preview container has `min-h-0` on every ancestor so it never pushes siblings.
 
-### 5. 3D preview must mirror the crop exactly (issue 6)
-`src/components/canvas/CanvasEditorModal.tsx` + `src/lib/canvasPrints/renderWrap.ts`
-- Today the preview derives pan/zoom from an approximation (`pxPerMmFace = 6`, fillZoom ratio) so what you see on the wall doesn't match the cropper's framing.
-- Change: render the 3D face texture directly from `croppedAreaPixels` — draw `image` using the crop rect into a face-sized canvas, then hand that to `Canvas3DPreview` as a pre-cropped "face image" with `imageScale=1, imageX=0, imageY=0, rotation=0`. Wrap-mode strips still read from the same face bitmap, so Mirror/Blur/Gallery all match what the customer cropped.
-- Result: what's inside the cropper's crop box is exactly what appears on the front face of the 3D canvas.
+### 3. Modal shrinks the cropper when the user zooms the browser out
+
+**Cause**
+- `DialogContent` uses `w-[90vw] h-[90vh]` (line 255). Browser zoom scales CSS pixels, so 90vw at 67% zoom gives a larger *content* area but every child (cropper, controls, 3D preview) is also scaled down uniformly — the cropper feels tiny and the controls look cramped.
+- The real issue is that at 100% zoom the modal doesn't fit on a laptop, so the user zooms out to compensate, which then shrinks the working area.
+
+**Fix**
+- Replace `w-[90vw] h-[90vh]` with a bounded size that fits a 1280×720 laptop at 100% zoom: e.g. `w-[min(1200px,95vw)] h-[min(760px,92vh)]`. Cap max-width so ultra-wide displays don't stretch it.
+- Reduce chrome: tighter header padding, remove the redundant blank spacer between the grid and the footer, and let the cropper claim the full left column height (no forced `min-h-[380px]` when the column is already shorter).
+- Make the left column also `overflow-hidden` with the cropper as `flex-1 min-h-0`, so the zoom slider and Fill/Fit row stay pinned at the bottom without pushing the cropper off-screen.
+
+### Files touched
+
+- `src/components/canvas/CanvasEditorModal.tsx` — seed effect, image loader effect, DialogContent sizing, left+right column flex layout, remove `%` max-height, remove stray blank block.
 
 ### Out of scope
-- Pricing, cart, or DB changes.
-- Any change to non-canvas product flows.
 
-### Technical notes
-- `WRAP_MODE_OPTIONS` is consumed by `CanvasEditorModal` and `CanvasTile` labels — both keep working when `face_only` is dropped from the options list because the label lookup falls back gracefully.
-- The face-image approach for the 3D preview means `renderProductionCanvas` gets a pre-composed front and only needs to build the four wrap strips — a small branch in the existing function, not a rewrite.
+- No changes to `Canvas3DPreview`, `renderWrap`, pricing, or the parent `CanvasPrintsBuilder`.
