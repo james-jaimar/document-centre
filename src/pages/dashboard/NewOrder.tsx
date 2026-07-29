@@ -1,12 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, FileText, Layers, Printer, Presentation, Image, Newspaper } from "lucide-react";
-import { useBranch } from "@/contexts/BranchContext";
-import { useBranchCapabilities } from "@/hooks/useBranchCapabilities";
+import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 
 import boundDocumentsImg from "@/assets/products/bound-documents.jpg";
 import presentationsImg from "@/assets/products/presentations.jpg";
