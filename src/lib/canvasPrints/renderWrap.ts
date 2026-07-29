@@ -90,11 +90,7 @@ export function renderProductionCanvas(
     // Draw face first.
     ctx.drawImage(source, insetPx, insetPx, frontWpx, frontHpx, insetPx, insetPx, frontWpx, frontHpx);
 
-    if (wrapMode === "mirror_wrap") {
-      fillMirrorStrips(ctx, source, insetPx, frontWpx, frontHpx, outer, totalWpx, totalHpx);
-    } else if (wrapMode === "blur_wrap") {
-      fillBlurStrips(ctx, source, insetPx, frontWpx, frontHpx, outer, totalWpx, totalHpx);
-    } else if (wrapMode === "colour_wrap") {
+    if (wrapMode === "colour_wrap") {
       const colour = wrapColorHex || sampleEdgeColour(sctx, insetPx, frontWpx, frontHpx);
       fillColourStrips(ctx, insetPx, frontWpx, frontHpx, outer, totalWpx, totalHpx, colour);
     }
