@@ -142,12 +142,18 @@ export default function CanvasEditorModal({
   // path (not the signed URL, which rotates on refetch) so a re-sign doesn't
   // rebuild the bitmap and reset the preview.
   const assetKey = (canvas as any)?.file_path ?? (canvas as any)?.document_id ?? signedUrl;
+  // Cache-bust so the browser's HTTP cache can't hand us a previously stored
+  // response that was fetched without an Origin header (which would come back
+  // without Access-Control-Allow-Origin and taint every canvas draw).
+  const corsSafeUrl = signedUrl
+    ? signedUrl + (signedUrl.includes("?") ? "&" : "?") + "cors=1"
+    : null;
   useEffect(() => {
-    if (!signedUrl) { setImgEl(null); return; }
+    if (!corsSafeUrl) { setImgEl(null); return; }
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => setImgEl(img);
-    img.src = signedUrl;
+    img.src = corsSafeUrl;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetKey]);
 
@@ -281,9 +287,10 @@ export default function CanvasEditorModal({
               ref={containerRef}
               className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-0"
             >
-              {signedUrl ? (
+              {corsSafeUrl ? (
                 <Cropper
-                  image={signedUrl}
+                  image={corsSafeUrl}
+                  mediaProps={{ crossOrigin: "anonymous" }}
                   crop={crop}
                   zoom={zoom}
                   rotation={rotation}

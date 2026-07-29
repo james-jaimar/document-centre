@@ -1,39 +1,27 @@
-## Fixes for the Canvas Editor modal
+## Fix S3 CORS block on canvas preview
 
-### 1. Tab re-focus wipes edits and re-fetches the preview
+The S3 bucket CORS rule already lists every relevant origin, so the config is not the problem. The failure is on our side: the image loader that feeds the cropper / 3D face-bitmap does not opt into CORS, so S3 returns the object without CORS headers, the browser caches that response, and every subsequent attempt to draw it into a canvas is rejected as a tainted / CORS-blocked read.
 
-**Cause (confirmed in `CanvasEditorModal.tsx`)**
-- The seed effect (lines 115–133) depends on `[open, canvas, sizes, allowedWrapDepthsMm]`. `sizes` and `allowedWrapDepthsMm` are rebuilt each render by the parent, so any re-render (window focus, query refetch, parent state change) fires the effect again and resets `sizeSlug`, `orientation`, `wrapMm`, `wrapMode`, `crop`, `zoom`, `rotation`, `fitMode`, `croppedAreaPixels` back to the entry's saved values — throwing away in-modal edits.
-- The image-loader effect (lines 136–142) depends on `signedUrl`. If the parent re-signs the URL on focus, a new `Image()` is constructed, `imgEl` swaps, `faceBitmap` recomputes, and the 3D preview visibly reloads.
+### Changes
 
-**Fix**
-- Change the seed effect to run only on the open-edge for a given canvas: key off `open` + `canvas.id` only, and skip when `!open`. Capture `sizes[0]?.slug` and `allowedWrapDepthsMm[0]` inside the effect via refs so their identity changes don't retrigger it.
-- Memoise the loaded `HTMLImageElement` by the *stable* asset identity (e.g. `canvas.file_path` or the URL without query string) so a re-signed URL for the same underlying file doesn't rebuild `imgEl`. Only recreate the `Image` when the asset path actually changes.
+1. **`src/components/canvas/CanvasEditorModal.tsx`** (and any sibling that instantiates `new Image()` for the canvas pipeline)
+   - Set `img.crossOrigin = "anonymous"` **before** assigning `img.src`.
+   - Append a stable cache-buster query param (e.g. `?cors=1`) the first time we load the signed URL for canvas use, so the browser can't reuse a previously cached no-CORS response.
 
-### 2. Right-column pieces overlap
+2. **`src/lib/canvasPrints/renderWrap.ts`**
+   - Where an `HTMLImageElement` is created internally, apply the same `crossOrigin = "anonymous"` before `src`.
 
-**Cause**
-- The right column (line 338) mixes `flex-1` on the preview with a settings block using `style={{ maxHeight: "45%" }}` (line 354). Percentages resolve against the column, not the visible viewport, so on shorter heights the preview `min-h-[240px]` + the 45% settings block + edge-finish radios can exceed available space, and the color picker/edge-finish rows visibly overflow into the preview (visible in screenshot 1: A0 dropdown sits on top of the wall preview).
+3. **`src/components/canvas/CanvasTile.tsx`**
+   - If the tile renders the composed thumbnail through an `<img>` that later feeds a canvas, add `crossOrigin="anonymous"` on the JSX element.
 
-**Fix**
-- Drop the `maxHeight: 45%` and `flex-1` mix. Give the right column a clean two-region layout: settings as a fixed-height (auto) block on top OR bottom with `shrink-0`, and the preview as the only `flex-1 min-h-0` region. Make the settings block scroll internally (`overflow-y-auto`) with a hard `max-h` in `rem`/`px`, not `%`.
-- Ensure the preview container has `min-h-0` on every ancestor so it never pushes siblings.
+4. **Signed URL side (verify only, no change expected)**
+   - Confirm the signer does not add `response-content-disposition` differences between the initial `<img>` load and the canvas load, since divergent query strings otherwise re-request without CORS headers.
 
-### 3. Modal shrinks the cropper when the user zooms the browser out
+### Why this fixes it
 
-**Cause**
-- `DialogContent` uses `w-[90vw] h-[90vh]` (line 255). Browser zoom scales CSS pixels, so 90vw at 67% zoom gives a larger *content* area but every child (cropper, controls, 3D preview) is also scaled down uniformly — the cropper feels tiny and the controls look cramped.
-- The real issue is that at 100% zoom the modal doesn't fit on a laptop, so the user zooms out to compensate, which then shrinks the working area.
-
-**Fix**
-- Replace `w-[90vw] h-[90vh]` with a bounded size that fits a 1280×720 laptop at 100% zoom: e.g. `w-[min(1200px,95vw)] h-[min(760px,92vh)]`. Cap max-width so ultra-wide displays don't stretch it.
-- Reduce chrome: tighter header padding, remove the redundant blank spacer between the grid and the footer, and let the cropper claim the full left column height (no forced `min-h-[380px]` when the column is already shorter).
-- Make the left column also `overflow-hidden` with the cropper as `flex-1 min-h-0`, so the zoom slider and Fill/Fit row stay pinned at the bottom without pushing the cropper off-screen.
-
-### Files touched
-
-- `src/components/canvas/CanvasEditorModal.tsx` — seed effect, image loader effect, DialogContent sizing, left+right column flex layout, remove `%` max-height, remove stray blank block.
+With `crossOrigin="anonymous"` the browser sends `Origin: https://document-centre.com`, S3 matches the existing rule, returns `Access-Control-Allow-Origin`, and the response is stored in a **separate CORS-tainted cache slot** — so canvas draws succeed and subsequent loads stay valid.
 
 ### Out of scope
 
-- No changes to `Canvas3DPreview`, `renderWrap`, pricing, or the parent `CanvasPrintsBuilder`.
+- No changes to the S3 bucket CORS JSON (already correct).
+- No changes to the signed-URL edge function auth.
