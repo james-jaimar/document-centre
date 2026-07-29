@@ -47,49 +47,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export default function NewOrder() {
   const navigate = useNavigate();
   const { tenantPath } = useTenantSlug();
-  const { activeBranch } = useBranch();
-  const { data: capabilities } = useBranchCapabilities(activeBranch?.id ?? null);
-  const tenantId = activeBranch?.tenant_id ?? null;
+  const { families: filteredFamilies, isLoading } = useVisibleProductFamilies();
 
-  const { data: families, isLoading } = useQuery({
-    queryKey: ["product_families_active"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("product_families")
-        .select("*")
-        .is("tenant_id", null)
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: tenantToggles } = useQuery({
-    queryKey: ["tenant_product_toggles_public", tenantId],
-    enabled: !!tenantId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("tenant_product_toggles" as any)
-        .select("product_family_id,is_enabled")
-        .eq("tenant_id", tenantId);
-      if (error) throw error;
-      return (data ?? []) as unknown as { product_family_id: string; is_enabled: boolean }[];
-    },
-  });
-
-  const tenantDisabled = new Set(
-    (tenantToggles ?? []).filter((t) => !t.is_enabled).map((t) => t.product_family_id)
-  );
-
-  // Filter: tenant toggle (default ON) → branch capability
-  const filteredFamilies = families?.filter((family) => {
-    if (tenantDisabled.has(family.id)) return false;
-    if (!activeBranch || !capabilities || capabilities.length === 0) return true;
-    const cap = capabilities.find((c) => c.product_family_id === family.id);
-    if (!cap) return false;
-    return cap.is_enabled && !cap.temporary_outage;
-  });
 
   const handleSelect = (familyId: string, familySlug: string) => {
     if (familySlug === "photo-prints") {
