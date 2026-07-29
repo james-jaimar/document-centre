@@ -540,7 +540,7 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
 
   // Print/Per-section/Files blocks are not relevant for photo prints — the
   // dedicated PhotoPrintsAdminGallery replaces them with a visual tile grid.
-  if (!isPhotoPrints) {
+  if (!isRasterProduct) {
     const printColourSection = buildPrintColourSection(sections);
     if (printColourSection) groupedSections.push(printColourSection);
 
@@ -555,9 +555,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   }
 
   // Build merge directives for the eventual server-side PDF concatenation.
-  // Photo prints have their own merge path (PhotoPrintsAdminGallery) — skip.
-  const mergeDirectives = isPhotoPrints ? [] : buildMergeDirectives(sections, documents);
-  const sourceAssets = isPhotoPrints ? [] : buildSourceAssets(documents);
+  // Raster products (photo/canvas prints) have their own assembly path.
+  const mergeDirectives = isRasterProduct ? [] : buildMergeDirectives(sections, documents);
+  const sourceAssets = isRasterProduct ? [] : buildSourceAssets(documents);
 
   return {
     configuration: {
