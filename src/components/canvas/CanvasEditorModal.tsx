@@ -23,6 +23,7 @@ import { useElementSize } from "@/hooks/useElementSize";
 import Canvas3DPreview from "@/components/canvas/Canvas3DPreview";
 import DebouncedColorInput from "@/components/canvas/DebouncedColorInput";
 import type { CanvasTransformState } from "@/lib/canvasPrints/types";
+import { sampleEdgeColourFromBitmap } from "@/lib/canvasPrints/renderWrap";
 
 export interface CanvasSizeChoice {
   slug: string;
