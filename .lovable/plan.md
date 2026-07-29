@@ -1,30 +1,47 @@
-## Changes to Canvas editor
+# Canvas Editor Modal Layout Refinement
 
-### 1. Modal sizing — true 90 × 90
-`src/components/canvas/CanvasEditorModal.tsx`
-- `DialogContent`: change `w-[min(1200px,95vw)] h-[min(760px,92vh)]` → `w-[90vw] h-[90vh] max-w-none`.
+## Goal
+Rebalance the Canvas editor modal so the cropper takes less horizontal space and the 3D preview + settings on the right get the majority of the room, while keeping the key controls visible without scrolling.
 
-### 2. Right pane: preview ~50% of pane, settings scroll below
-`src/components/canvas/CanvasEditorModal.tsx`
-- Right column becomes `flex flex-col overflow-hidden h-full`.
-- Preview wrapper: fixed `h-1/2 shrink-0` (roughly half the pane's height after the modal header). Inside, keep the "How it will look on the wall" label plus `Canvas3DPreview` filling the rest with `w-full h-full min-h-0`.
-- Settings wrapper: `flex-1 min-h-0 overflow-y-auto border-t p-4 space-y-3`. Remove the `max-h-[300px]` cap. This guarantees the top row (Canvas Size / Orientation) is visible without scrolling, and everything else scrolls naturally.
+## What we will change
 
-### 3. Gallery wrap actually wraps the crop around the sides
-`src/lib/canvasPrints/renderWrap.ts`
-- Root cause: the `source` canvas draws the image sized to the **front face only** (`baseFrontW/H` derived from `frontWpx/frontHpx`), then `gallery_wrap` just copies `source` verbatim — so there is nothing to show in the wrap strips.
-- Fix: in `renderProductionCanvas`, when `wrapMode === "gallery_wrap"`, size the drawn image against the **total** canvas extent instead of the front face:
-  - Compute `baseTotalW/H` from `totalWpx/totalHpx` using the same aspect logic.
-  - `drawW/H = baseTotalW/H * imageScale`.
-  - Center on `(totalWpx/2 + imageX, totalHpx/2 + imageY)` so pan/zoom still track the same visual point on the face.
-- All other wrap modes keep the current front-face sizing (face renders identically to the cropper; strips are filled by mirror/blur/colour as today).
-- Result: with gallery wrap on, the crop content bleeds past the face into all four wrap strips; toggling to "No edge print" leaves white sides as before.
+### 1. Modal width
+- Keep the existing `90vw` width (already close to the requested 90 %).
+- No change needed here; the perceived narrowness comes from the 50/50 internal split, not the modal itself.
 
-### Out of scope
-- Cropper math, pricing, 3D lighting, colour picker.
+### 2. Main split: 35 % cropper / 65 % settings
+- In `src/components/canvas/CanvasEditorModal.tsx`, change the inner two-column grid from `lg:grid-cols-2` to a custom split:
+  - Left column: `lg:w-[35%]` / `lg:max-w-[35%]` / `lg:flex-[0_0_35%]`
+  - Right column: `lg:w-[65%]` / `lg:max-w-[65%]` / `lg:flex-[0_0_65%]`
+- This gives the customer a still-large cropper while freeing up room for the preview.
 
-### Verification
-- Modal fills 90% × 90% of viewport at 100% zoom.
-- Canvas Size / Orientation row visible without scrolling; scrolling reveals Wrap Depth and Edge Finish.
-- 3D preview occupies roughly half the right pane height and is clearly larger than before.
-- Switch Edge Finish through all five options; Gallery wrap now shows crop content continuing onto the sides.
+### 3. Right-column vertical split: 75 % preview / 25 % settings
+- Convert the right column from `flex` with `h-1/2` preview into a CSS grid:
+  - `grid-rows-[75%_25%]` on large screens
+  - Preview row: `min-h-0`, fills the 75 % cell
+  - Settings row: `min-h-0`, fills the 25 % cell, remains `overflow-y-auto`
+- The settings row will show the top controls (Canvas size, Orientation) plus a partial second control, making the scrollbar clearly visible.
+
+### 4. Preview component sizing
+- Verify `Canvas3DPreview.tsx` has no remaining `min-h-*` or fixed-height wrappers that would fight the new 75 % row.
+- Ensure the `<Canvas>` container uses `w-full h-full` so it expands with the larger area.
+
+### 5. Responsive safety
+- Keep the single-column stack on small screens (`grid-cols-1` below `lg`).
+- On `lg` and up, apply the 35/65 horizontal split and the 75/25 vertical split.
+- Add `min-w-0` / `min-h-0` everywhere to prevent flex/grid blowouts.
+
+## Files to edit
+- `src/components/canvas/CanvasEditorModal.tsx` — layout grid and right-column split.
+- `src/components/canvas/Canvas3DPreview.tsx` — confirm/adjust height-filling behaviour.
+
+## Out of scope
+- No functional changes to crop math, wrap modes, pricing, or save logic.
+- No changes to the dialog header/footer.
+
+## Verification
+- Open the Canvas editor on a 720p/1080p laptop at 100 % zoom.
+- Confirm the modal fills ~90 % of viewport width and height.
+- Confirm left cropper is ~35 % and right panel ~65 %.
+- Confirm the 3D preview occupies the top ~75 % of the right panel and the settings the bottom ~25 %.
+- Confirm Canvas size + Orientation are visible without scrolling and a scrollbar hint is present for the rest.
