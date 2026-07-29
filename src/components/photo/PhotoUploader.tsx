@@ -12,9 +12,13 @@ interface PhotoUploaderProps {
   onMobileFilesReceived?: (fileIds: string[]) => void;
   /** If provided, the "Upload from Phone" button always shows. Called when user clicks it — parent should ensure order exists then open QR modal. */
   onPhoneUpload?: () => void;
+  /** When true, PDFs are also accepted (used by Canvas Prints — parent rasterises page 1). */
+  acceptPdf?: boolean;
+  /** Override the helper copy — otherwise "JPG, PNG, WEBP or HEIC · up to 200 MB each". */
+  helperText?: string;
 }
 
-const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
 
 export default function PhotoUploader({
   onFiles,
