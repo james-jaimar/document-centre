@@ -42,7 +42,7 @@ import {
   useResolvedRateCardCanvasSurcharges,
   priceCanvasEntry,
 } from "@/hooks/useCanvasPrintsPricing";
-import { usePriceDisplay } from "@/hooks/usePriceDisplay";
+import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 import { formatPrice } from "@/lib/formatCurrency";
 
 const CANVAS_FAMILY_SLUG_DEFAULT = "canvas-prints";
