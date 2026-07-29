@@ -37,6 +37,13 @@ import {
 } from "@/lib/canvasPrints/presets";
 import type { CanvasPrintEntry, CanvasPrintsSpec } from "@/lib/canvasPrints/canvasSpecTypes";
 import { rasterisePdfPageOneToImage } from "@/lib/canvasPrints/pdfToImage";
+import {
+  useResolvedRateCardCanvasPrints,
+  useResolvedRateCardCanvasSurcharges,
+  priceCanvasEntry,
+} from "@/hooks/useCanvasPrintsPricing";
+import { usePriceDisplay } from "@/hooks/usePriceDisplay";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const CANVAS_FAMILY_SLUG_DEFAULT = "canvas-prints";
 
