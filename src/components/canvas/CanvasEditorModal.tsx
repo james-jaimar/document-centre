@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import {
   Dialog,
@@ -57,7 +57,7 @@ function orientedDims(
     : { w: shortEdge, h: longEdge };
 }
 
-export default function CanvasEditorModal({
+const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(function CanvasEditorModal({
   open,
   canvas,
   signedUrl,
@@ -66,7 +66,7 @@ export default function CanvasEditorModal({
   onClose,
   onSave,
   pixelScale = 1,
-}: CanvasEditorModalProps) {
+}: CanvasEditorModalProps, ref) {
   const [sizeSlug, setSizeSlug] = useState<string>("");
   const [orientation, setOrientation] = useState<PageOrientation>("landscape");
   const [wrapMm, setWrapMm] = useState<number>(38);
@@ -279,7 +279,7 @@ export default function CanvasEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[min(1200px,95vw)] max-w-[min(1200px,95vw)] h-[min(760px,92vh)] max-h-[min(760px,92vh)] sm:max-w-[min(1200px,95vw)] p-0 overflow-hidden flex flex-col">
+      <DialogContent ref={ref} className="w-[min(1200px,95vw)] max-w-[min(1200px,95vw)] h-[min(760px,92vh)] max-h-[min(760px,92vh)] sm:max-w-[min(1200px,95vw)] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
           <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
           <DialogDescription className="text-xs">
@@ -476,4 +476,6 @@ export default function CanvasEditorModal({
       </DialogContent>
     </Dialog>
   );
-}
+});
+
+export default CanvasEditorModal;

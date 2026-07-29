@@ -1,6 +1,6 @@
 import { useBranch } from "@/contexts/BranchContext";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -102,7 +102,7 @@ function useCanvasSizeChoices(
   }, [allowedLabels, customSizes]);
 }
 
-export default function CanvasPrintsBuilder() {
+const CanvasPrintsBuilder = forwardRef<HTMLDivElement>(function CanvasPrintsBuilder(_props, ref) {
   const { id: orderIdParam } = useParams<{ id?: string }>();
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
@@ -476,7 +476,7 @@ export default function CanvasPrintsBuilder() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+    <div ref={ref} className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -681,4 +681,6 @@ export default function CanvasPrintsBuilder() {
       )}
     </div>
   );
-}
+});
+
+export default CanvasPrintsBuilder;
