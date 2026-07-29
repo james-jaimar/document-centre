@@ -388,6 +388,30 @@ export default function CanvasPrintsBuilder() {
     });
   }, [sizeChoices]);
 
+  // ── Pricing (base by size × wrap depth + optional wrap-mode surcharge)
+  const { data: canvasBaseRows = [] } = useResolvedRateCardCanvasPrints({
+    tenantId: tenantId ?? null,
+    branchId: activeBranch?.id ?? null,
+  });
+  const { data: canvasSurcharges = [] } = useResolvedRateCardCanvasSurcharges({
+    tenantId: tenantId ?? null,
+    branchId: activeBranch?.id ?? null,
+  });
+  const priceDisplay = usePriceDisplay();
+
+  const pricedCanvases = useMemo(() => {
+    return spec.canvases.map((c) => {
+      const p = priceCanvasEntry(c, canvasBaseRows, canvasSurcharges);
+      return { canvas: c, ...p, line: p.unit * Math.max(c.quantity, 1) };
+    });
+  }, [spec.canvases, canvasBaseRows, canvasSurcharges]);
+
+  const anyUnpriced = pricedCanvases.some((p) => !p.matched);
+  const netUnitAvg = pricedCanvases.length
+    ? pricedCanvases.reduce((s, p) => s + p.unit, 0) / pricedCanvases.length
+    : 0;
+  const netTotal = pricedCanvases.reduce((s, p) => s + p.line, 0);
+
   // ── Add to cart
   const [submitting, setSubmitting] = useState(false);
   const totalQty = spec.canvases.reduce((s, c) => s + c.quantity, 0);
@@ -398,23 +422,41 @@ export default function CanvasPrintsBuilder() {
       toast.error("Add at least one canvas before checking out.");
       return;
     }
+    if (anyUnpriced) {
+      toast.error("Some canvases don't have a price set up yet. Please contact us.");
+      return;
+    }
     setSubmitting(true);
     try {
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
+      const safeQty = Math.max(totalQty, 1);
       await addItemToCart.mutateAsync({
         orderItemId: orderItem.id,
         draftOrderId: order.id,
         title: `Canvas Prints (${spec.canvases.length})`,
-        unitPrice: 0,
-        quantity: Math.max(totalQty, 1),
-        totalPrice: 0,
+        unitPrice: safeQty > 0 ? netTotal / safeQty : 0,
+        quantity: safeQty,
+        totalPrice: netTotal,
         spec: {
           page_count: spec.canvases.length,
-          quantity: Math.max(totalQty, 1),
+          quantity: safeQty,
           is_color: true,
           is_duplex: false,
           selected_options: {},
           canvas_prints: spec,
+          canvas_pricing: {
+            currency: "ZAR",
+            net_total: netTotal,
+            lines: pricedCanvases.map((p) => ({
+              canvas_id: p.canvas.id,
+              size_slug: p.canvas.size_slug,
+              wrap_mm: p.canvas.wrapMm,
+              wrap_mode: p.canvas.wrapMode,
+              quantity: p.canvas.quantity,
+              unit_price: p.unit,
+              line_total: p.line,
+            })),
+          },
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
       });
