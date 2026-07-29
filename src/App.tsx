@@ -166,10 +166,12 @@ function customerRoutes() {
       {/* Public routes */}
       <Route path="orders/new" element={<NewOrder />} />
       <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
+      <Route path="orders/new/canvas-prints" element={<CanvasPrintsBuilder />} />
       <Route path="orders/new/:familyId" element={<OrderFiles />} />
       <Route path="orders/:id/files" element={<OrderFiles />} />
       <Route path="orders/:id/build" element={<OrderBuild />} />
       <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
+      <Route path="orders/:id/canvas-prints" element={<CanvasPrintsBuilder />} />
       <Route path="cart" element={<Cart />} />
       <Route path="checkout" element={<Checkout />} />
       <Route path="terms" element={<PortalTerms />} />
