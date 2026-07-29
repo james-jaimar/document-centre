@@ -142,11 +142,11 @@ export default function OrderBuild() {
   useEffect(() => {
     if (!orderId || !productFamily?.kind) return;
     if (productFamily.kind === "canvas_wrap") {
-      navigate(`/t/${slug}/orders/${orderId}/canvas-prints`, { replace: true });
+      navigate(tenantPath(`orders/${orderId}/canvas-prints`), { replace: true });
     } else if (productFamily.kind === "photo_print") {
-      navigate(`/t/${slug}/orders/${orderId}/photo-prints`, { replace: true });
+      navigate(tenantPath(`orders/${orderId}/photo-prints`), { replace: true });
     }
-  }, [orderId, productFamily?.kind, navigate, slug]);
+  }, [orderId, productFamily?.kind, navigate, tenantPath]);
 
   // Derive preview type from binding option metadata or product family slug
   const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
