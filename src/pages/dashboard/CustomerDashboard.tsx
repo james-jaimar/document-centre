@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
