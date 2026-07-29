@@ -111,18 +111,23 @@ export default function CanvasEditorModal({
     containerHeight: containerSize.height,
   });
 
-  // Seed from entry on open.
+  // Seed from entry when the modal opens for a given canvas — key strictly on
+  // open + canvas.id so parent re-renders (which rebuild `sizes` /
+  // `allowedWrapDepthsMm` array identities) don't wipe in-progress edits.
+  const sizesRef = useRef(sizes);
+  const depthsRef = useRef(allowedWrapDepthsMm);
+  sizesRef.current = sizes;
+  depthsRef.current = allowedWrapDepthsMm;
   useEffect(() => {
     if (!open || !canvas) return;
-    setSizeSlug(canvas.size_slug || sizes[0]?.slug || "");
-    // Derive orientation from stored dims (landscape when w >= h).
+    setSizeSlug(canvas.size_slug || sizesRef.current[0]?.slug || "");
     const persisted: PageOrientation | undefined = (canvas as any).pageOrientation;
     if (persisted === "landscape" || persisted === "portrait") {
       setOrientation(persisted);
     } else {
       setOrientation(canvas.frontWidthMm >= canvas.frontHeightMm ? "landscape" : "landscape");
     }
-    setWrapMm(canvas.wrapMm || allowedWrapDepthsMm[0] || 38);
+    setWrapMm(canvas.wrapMm || depthsRef.current[0] || 38);
     setWrapMode(canvas.wrapMode || "gallery_wrap");
     setWrapColorHex(canvas.wrapColorHex);
     setCrop(canvas.crop ?? { x: 0, y: 0 });
@@ -130,16 +135,22 @@ export default function CanvasEditorModal({
     setRotation(canvas.rotation || 0);
     setFitMode(canvas.fit_mode || "fill");
     setCroppedAreaPixels(canvas.croppedAreaPixels ?? null);
-  }, [open, canvas, sizes, allowedWrapDepthsMm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, canvas?.id]);
 
-  // Load an <img> element for the live 3D preview.
+  // Load an <img> element for the live 3D preview. Key on the stable asset
+  // path (not the signed URL, which rotates on refetch) so a re-sign doesn't
+  // rebuild the bitmap and reset the preview.
+  const assetKey = (canvas as any)?.file_path ?? (canvas as any)?.document_id ?? signedUrl;
   useEffect(() => {
     if (!signedUrl) { setImgEl(null); return; }
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => setImgEl(img);
     img.src = signedUrl;
-  }, [signedUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetKey]);
+
 
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setCroppedAreaPixels(areaPixels);
@@ -252,7 +263,7 @@ export default function CanvasEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] sm:max-w-[90vw] p-0 overflow-hidden flex flex-col">
+      <DialogContent className="w-[min(1200px,95vw)] max-w-[min(1200px,95vw)] h-[min(760px,92vh)] max-h-[min(760px,92vh)] sm:max-w-[min(1200px,95vw)] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
           <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
           <DialogDescription className="text-xs">
@@ -265,10 +276,10 @@ export default function CanvasEditorModal({
         {/* Left: upload + scale/crop | Right: 3D preview + settings */}
         <div className="grid grid-cols-1 lg:grid-cols-2 min-h-0 flex-1 overflow-hidden">
           {/* LEFT — cropper */}
-          <div className="min-w-0 flex flex-col p-5 gap-3 overflow-y-auto border-r border-border">
+          <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
             <div
               ref={containerRef}
-              className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-[380px]"
+              className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-0"
             >
               {signedUrl ? (
                 <Cropper
@@ -335,8 +346,8 @@ export default function CanvasEditorModal({
           </div>
 
           {/* RIGHT — live 3D preview + settings */}
-          <div className="min-w-0 flex flex-col bg-muted/20 overflow-hidden min-h-0">
-            <div className="flex-1 min-h-[240px] p-4 pb-2 flex flex-col">
+          <div className="min-w-0 min-h-0 flex flex-col bg-muted/20 overflow-hidden">
+            <div className="flex-1 min-h-0 p-4 pb-2 flex flex-col">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 How it will look on the wall
               </p>
@@ -351,7 +362,8 @@ export default function CanvasEditorModal({
               </div>
             </div>
 
-            <div className="border-t border-border p-4 space-y-3 overflow-y-auto shrink-0" style={{ maxHeight: "45%" }}>
+            <div className="border-t border-border p-4 space-y-3 overflow-y-auto shrink-0 max-h-[300px]">
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
