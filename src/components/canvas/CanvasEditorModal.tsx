@@ -297,7 +297,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent ref={ref} className="w-[min(1200px,95vw)] max-w-[min(1200px,95vw)] h-[min(760px,92vh)] max-h-[min(760px,92vh)] sm:max-w-[min(1200px,95vw)] p-0 overflow-hidden flex flex-col">
+      <DialogContent ref={ref} className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] sm:max-w-[90vw] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
           <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
           <DialogDescription className="text-xs">
