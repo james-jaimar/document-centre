@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { ContactShadows, Environment } from "@react-three/drei";
+import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import type { CanvasTransformState } from "@/lib/canvasPrints/types";
 import { renderFaceBitmaps } from "@/lib/canvasPrints/renderWrap";
@@ -33,7 +33,8 @@ export default function Canvas3DPreview({ image, state }: Props) {
         camera={{ position: [1.2, 0.9, 1.8], fov: 32 }}
         gl={{ antialias: true, preserveDrawingBuffer: false }}
       >
-        <ambientLight intensity={0.55} />
+        <ambientLight intensity={0.75} />
+        <hemisphereLight args={["#fff4e6", "#2a3550", 0.55]} />
         <directionalLight
           position={[3, 4, 2]}
           intensity={1.1}
@@ -41,8 +42,8 @@ export default function Canvas3DPreview({ image, state }: Props) {
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
         />
-        <directionalLight position={[-2, 2, -1]} intensity={0.3} />
-        <Environment preset="apartment" />
+        <directionalLight position={[-2, 2, -1]} intensity={0.35} />
+
         <CanvasBox image={image} state={state} />
         <ContactShadows
           position={[0, -0.55, 0]}

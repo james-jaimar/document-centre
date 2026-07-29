@@ -1,39 +1,28 @@
-## Canvas Prints pricing
+## Problem
 
-Add a new **Canvas Prints** tab to the rate-card editor (next to Click Charges / Photo Prints / Business Cards), backed by its own rate-card table so master → tenant → branch cascade + "Pull missing from master" behaves like the other tabs.
+The Canvas 3D preview crashes the page. `Canvas3DPreview.tsx` uses drei's `<Environment preset="apartment" />`, which fetches an HDR from `raw.githack.com`. Our CSP `connect-src` does not allow that host, so the fetch is blocked, drei throws "Could not load lebombo_1k.hdr", the WebGL context is lost and the modal goes blank.
 
-### Data model
-New table `rate_card_canvas_prints` (mirrors `rate_card_photo_prints` shape):
-- `size_code` — one of the canvas presets (`a4`, `a3`, `a2`, `a1`, `a0`, `sq-300`…`sq-1000`)
-- `wrap_mm` — 25 / 38 / 50
-- `wrap_mode` — `no_edge_print` | `gallery_wrap` | `mirror_wrap` | `blur_wrap` | `colour_wrap` | `face_only`
-- `sell_price_minor`, `cost_price_minor`, `is_active`
-- `scope_type` (master/tenant/branch), `tenant_id`, `branch_id`, `currency_code`
-- unique index on `(scope_type, coalesce(tenant_id), coalesce(branch_id), size_code, wrap_mm, wrap_mode, currency_code)`
-- GRANTs + RLS matching the other rate-card tables
-- Extend `clone_tenant_catalog_to_branch` + master→tenant pull to include the new table so brand-new branches get seeded automatically
+A separate console warning (`Missing Description or aria-describedby for {DialogContent}`) comes from the Canvas editor modal not declaring a `DialogDescription`. Harmless but noisy — worth fixing in the same pass.
 
-### Editor UI (`RateCardEditor.tsx`)
-New tab **Canvas Prints** with a matrix:
-- Rows = size presets (uppercase labels — A4, A3…, 300×300 mm)
-- Grouped columns per wrap depth (25 / 38 / 50 mm), each column split by wrap mode
-- Simpler default: one row per size, with a nested table Size × Wrap depth, and a "Wrap-mode surcharge" section (e.g. Gallery/Mirror/Blur/Colour = +R x, No-edge/Face-only = base). Final price = base(size, depth) + surcharge(wrap_mode). This keeps the grid small.
-- Standard `TiersButton` for quantity price breaks
-- "Pull missing from master" button (same pattern as other tabs)
+## Fix
 
-### Pricing engine
-- New resolver hook `useResolvedRateCardCanvasPrints` following the photo-prints pattern
-- Extend `rateCard` bundle in `useItemPricing.ts` with `canvasPrints`
-- Add `calculateCanvasPrintsPrice` in `calculatePrice.ts` that iterates `spec.canvas_prints.canvases[]`, looks up `(size_code, wrap_mm, wrap_mode)` and multiplies by `quantity`
-- Wire into `PriceSummary` for `canvas_wrap` product kind
+1. `src/components/canvas/Canvas3DPreview.tsx`
+   - Remove `<Environment preset="apartment" />` and the `Environment` import.
+   - Compensate for the lost image-based lighting with cheap, local lights so the canvas still looks 3D:
+     - Bump `ambientLight` intensity slightly.
+     - Add a `hemisphereLight` (warm top / cool bottom) for soft fill.
+     - Keep the existing key + rim directional lights.
+   - No network calls, no CSP change needed.
 
-### Out of scope (this task)
-- No changes to the canvas builder UX itself
-- No per-variant / per-bleed pricing; bleed and DPI don't affect price
-- Colour-wrap uses same surcharge as gallery/mirror unless the matrix says otherwise
+2. `src/pages/dashboard/CanvasPrintsBuilder.tsx` (or wherever the Canvas editor `DialogContent` lives — will confirm on read)
+   - Add a visually-hidden `DialogDescription` (or `aria-describedby`) to silence the Radix a11y warning.
 
-### Deliverables
-1. Migration: `rate_card_canvas_prints` + GRANTs + RLS + seeding hooks
-2. `useResolvedRateCardCanvasPrints` hook + query invalidations
-3. New `CanvasPrintsTab` inside `RateCardEditor.tsx` (master + tenant + branch scopes)
-4. Pricing calc + wiring in `useItemPricing` and `PriceSummary`
+## Not doing
+
+- Not widening CSP to allow `raw.githack.com`. Third-party HDR hosting is fragile and unnecessary for this preview.
+- No pricing, wrap-mode, or geometry changes.
+
+## Verification
+
+- Reopen the Canvas editor: 3D preview renders with lights only, no console errors, no context loss.
+- Radix warning gone.
