@@ -56,11 +56,15 @@ export default function CanvasPrintsBuilder() {
   const { data: family } = useQuery({
     queryKey: ["canvas_family", tenantId],
     queryFn: async () => {
-      let q = supabase.from("product_families").select("*").eq("kind" as any, "canvas_wrap").limit(1);
-      if (tenantId) q = q.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
-      const { data, error } = await q;
+      const query: any = supabase
+        .from("product_families")
+        .select("*")
+        .eq("kind", "canvas_wrap");
+      const filtered = tenantId
+        ? query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        : query.is("tenant_id", null);
+      const { data, error } = await filtered;
       if (error) throw error;
-      // Prefer tenant-scoped row over master
       const rows = (data ?? []) as any[];
       return rows.find((r) => r.tenant_id === tenantId) ?? rows[0] ?? null;
     },
@@ -160,21 +164,41 @@ export default function CanvasPrintsBuilder() {
         const created = await createOrder.mutateAsync({
           productFamilyId: familyId,
           branchId: activeBranch?.id ?? null,
-        } as any);
-        orderId = created.id;
-        itemId = created.orderItemId;
-      }
-      if (itemId) {
-        await updateSpec.mutateAsync({
-          orderItemId: itemId,
-          spec: {
-            canvas_transform: state,
-            quantity: 1,
-            size_slug: state.presetId,
-          } as any,
         });
+        orderId = created.id;
+        // Look up the freshly-created order item.
+        const { data: newItem } = await supabase
+          .from("order_items")
+          .select("id")
+          .eq("order_id", orderId)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        itemId = newItem?.id;
       }
-      await addItemToCart.mutateAsync({ orderId: orderId! } as any);
+      if (!itemId) throw new Error("Could not locate order item");
+
+      const spec = {
+        page_count: 1,
+        quantity: 1,
+        is_color: true,
+        is_duplex: false,
+        selected_options: {},
+        canvas_transform: state,
+        size_slug: state.presetId,
+      } as any;
+
+      await updateSpec.mutateAsync({ id: itemId, spec });
+
+      await addItemToCart.mutateAsync({
+        orderItemId: itemId,
+        draftOrderId: orderId!,
+        title: `Canvas Print · ${state.frontWidthMm}×${state.frontHeightMm}mm`,
+        unitPrice: 0,
+        quantity: 1,
+        totalPrice: 0,
+        spec,
+      });
       toast.success("Added to cart");
       navigate(tenantPath("cart"));
     } catch (e: any) {
