@@ -109,13 +109,16 @@ export default function OrderFiles() {
   // never render in the generic sectioned uploader. If a customer lands on
   // /orders/:id/files for one of those, bounce them to the dedicated builder.
   useEffect(() => {
-    if (!effectiveOrderId || !productFamily?.kind) return;
-    if (productFamily.kind === "canvas_wrap") {
-      navigate(tenantPath(`orders/${effectiveOrderId}/canvas-prints`), { replace: true });
-    } else if (productFamily.kind === "photo_print") {
-      navigate(tenantPath(`orders/${effectiveOrderId}/photo-prints`), { replace: true });
+    if (!productFamily?.kind) return;
+    const kind = productFamily.kind;
+    if (kind !== "canvas_wrap" && kind !== "photo_print") return;
+    const builder = kind === "canvas_wrap" ? "canvas-prints" : "photo-prints";
+    if (effectiveOrderId) {
+      navigate(tenantPath(`orders/${effectiveOrderId}/${builder}`), { replace: true });
+    } else if (isNewMode) {
+      navigate(tenantPath(`orders/new/${builder}`), { replace: true });
     }
-  }, [effectiveOrderId, productFamily?.kind, navigate, tenantPath]);
+  }, [effectiveOrderId, isNewMode, productFamily?.kind, navigate, tenantPath]);
 
   // Branch-resolved product options → restrict the size advisory to sizes
   // this branch actually sells for the current product family.
