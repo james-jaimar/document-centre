@@ -313,7 +313,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
           <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
             <div
               ref={containerRef}
-              className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-0"
+              className="relative w-full bg-neutral-900 overflow-hidden flex-1 min-h-0"
             >
               {imageUrl ? (
                 <Cropper
@@ -335,6 +335,16 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                   maxZoom={4}
                   zoomSpeed={0.5}
                   restrictPosition={restrictPosition}
+                  style={{
+                    cropAreaStyle: {
+                      border: "2px solid rgba(255,255,255,0.95)",
+                      borderRadius: 0,
+                      boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
+                       color: "rgba(0,0,0,0)",
+                    },
+                    mediaStyle: { borderRadius: 0 },
+                    containerStyle: { borderRadius: 0, background: "#171717" },
+                  }}
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
