@@ -141,21 +141,31 @@ export default function CanvasEditorModal({
   // Load an <img> element for the live 3D preview. Key on the stable asset
   // path (not the signed URL, which rotates on refetch) so a re-sign doesn't
   // rebuild the bitmap and reset the preview.
-  const assetKey = (canvas as any)?.file_path ?? (canvas as any)?.document_id ?? signedUrl;
-  // Cache-bust so the browser's HTTP cache can't hand us a previously stored
-  // response that was fetched without an Origin header (which would come back
-  // without Access-Control-Allow-Origin and taint every canvas draw).
-  const corsSafeUrl = signedUrl
-    ? signedUrl + (signedUrl.includes("?") ? "&" : "?") + "cors=1"
-    : null;
+  const imageUrl = signedUrl;
+  const imageUrlKind = imageUrl?.startsWith("blob:")
+    ? "blob"
+    : imageUrl?.startsWith("data:")
+      ? "data"
+      : imageUrl
+        ? "remote"
+        : "none";
+  const assetKey =
+    canvas?.preview_path ??
+    canvas?.original_storage_path ??
+    (canvas as any)?.file_path ??
+    canvas?.document_id ??
+    imageUrl;
   useEffect(() => {
-    if (!corsSafeUrl) { setImgEl(null); return; }
+    if (!imageUrl) { setImgEl(null); return; }
+    let cancelled = false;
     const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => setImgEl(img);
-    img.src = corsSafeUrl;
+    if (imageUrlKind === "remote") img.crossOrigin = "anonymous";
+    img.onload = () => { if (!cancelled) setImgEl(img); };
+    img.onerror = () => { if (!cancelled) setImgEl(null); };
+    img.src = imageUrl;
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetKey]);
+  }, [assetKey, imageUrlKind, Boolean(imageUrl)]);
 
 
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
@@ -287,10 +297,10 @@ export default function CanvasEditorModal({
               ref={containerRef}
               className="relative w-full bg-black rounded-md overflow-hidden flex-1 min-h-0"
             >
-              {corsSafeUrl ? (
+              {imageUrl ? (
                 <Cropper
-                  image={corsSafeUrl}
-                  mediaProps={{ crossOrigin: "anonymous" }}
+                  image={imageUrl}
+                  mediaProps={imageUrlKind === "remote" ? { crossOrigin: "anonymous" } : undefined}
                   crop={crop}
                   zoom={zoom}
                   rotation={rotation}

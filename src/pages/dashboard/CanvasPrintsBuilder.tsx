@@ -9,7 +9,8 @@ import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
-import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
+import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
+import { downloadFromS3 } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import {
   useResolvedAllowedSizeLabels,
@@ -231,14 +232,39 @@ export default function CanvasPrintsBuilder() {
       const next: Record<string, string> = {};
       paths.forEach((p, i) => { if (urls[i]) next[p] = urls[i]; });
       setSignedUrls((prev) => ({ ...prev, ...next }));
-      for (const c of spec.canvases) {
-        if (c.preview_path && next[c.preview_path] && !getCachedBlobUrl(c.preview_path)) {
-          void prefetchToCache(c.preview_path, next[c.preview_path]);
-        }
-      }
     });
     return () => { cancelled = true; };
   }, [spec.canvases, signedUrls]);
+
+  useEffect(() => {
+    const wanted = new Set<string>();
+    for (const c of spec.canvases) {
+      const preferred = c.preview_path ?? c.original_storage_path;
+      if (preferred && !getCachedBlobUrl(preferred)) wanted.add(preferred);
+      if (c.thumb_path && !getCachedBlobUrl(c.thumb_path)) wanted.add(c.thumb_path);
+    }
+    const paths = Array.from(wanted);
+    if (paths.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      paths.map(async (path) => {
+        try {
+          const blob = await downloadFromS3(path);
+          registerBlob(path, blob);
+          return { path, ok: true };
+        } catch (e) {
+          console.warn("[canvas] preview proxy download failed", path, e);
+          return { path, ok: false };
+        }
+      }),
+    ).then((items) => {
+      if (cancelled) return;
+      if (items.some((item) => item.ok)) {
+        setSignedUrls((prev) => ({ ...prev }));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [spec.canvases]);
 
   const resolveUrl = useCallback((path: string | undefined | null): string | null => {
     if (!path) return null;
