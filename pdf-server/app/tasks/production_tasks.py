@@ -673,6 +673,15 @@ def _press_sheet_size_mm(bundle: JobBundle) -> tuple[float, float]:
     return 320.0, 450.0  # SRA3
 
 
+def _is_primary_component(bundle: JobBundle, component: str | None) -> bool:
+    """True when `component` is the first component of the job (the one whose
+    print-ready PDF is mirrored into `print_ready_pdf_path`)."""
+    comps = (bundle.job.get("assembly_report") or {}).get("components") or []
+    if not comps:
+        return True
+    return comps[0].get("component") == component
+
+
 def _resolve_component(bundle: JobBundle, component: str | None) -> tuple[str | None, dict | None]:
     """Return (source print-ready path, component report) for `component`.
 
