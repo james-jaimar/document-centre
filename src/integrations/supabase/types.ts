@@ -3516,9 +3516,11 @@ export type Database = {
           file_status: string
           gross_price: number
           id: string
+          imposed_components: Json
           imposed_pdf_path: string | null
           imposition_n_up: number | null
           imposition_template_id: string | null
+          imposition_templates_by_component: Json
           integration_payload: Json
           job_name: string | null
           job_number: string
@@ -3566,9 +3568,11 @@ export type Database = {
           file_status?: string
           gross_price?: number
           id?: string
+          imposed_components?: Json
           imposed_pdf_path?: string | null
           imposition_n_up?: number | null
           imposition_template_id?: string | null
+          imposition_templates_by_component?: Json
           integration_payload?: Json
           job_name?: string | null
           job_number: string
@@ -3616,9 +3620,11 @@ export type Database = {
           file_status?: string
           gross_price?: number
           id?: string
+          imposed_components?: Json
           imposed_pdf_path?: string | null
           imposition_n_up?: number | null
           imposition_template_id?: string | null
+          imposition_templates_by_component?: Json
           integration_payload?: Json
           job_name?: string | null
           job_number?: string

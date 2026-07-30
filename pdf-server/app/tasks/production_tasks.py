@@ -12,6 +12,7 @@ All three persist the resulting storage path back onto the matching
 """
 from __future__ import annotations
 
+import re
 import io
 import traceback
 from datetime import datetime
@@ -515,6 +516,13 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     # otherwise the customer-uploaded crop marks get scaled
                     # into the finished artwork.
                     source_has_trim = pdf_ops.detect_bleed(current)
+                    # Bleed-carrying sources are trimmed to the bleed box
+                    # (max 3 mm) and rebuilt at the exact target trim with a
+                    # fixed 3 mm bleed (e.g. A4 → 210×297 trim / 216×303
+                    # media). Sources without bleed just scale proportionally.
+                    out_bleed_mm = (
+                        min(float(target.bleed_mm or 3.0), 3.0) if source_has_trim else None
+                    )
                     pdf_ops.resize_pages(
                         current, resized,
                         width_mm=target.width_mm,
@@ -522,9 +530,13 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         fit_mode="fit",
                         dominant_orientation=target.orientation,
                         respect_trim_box=source_has_trim,
+                        target_bleed_mm=out_bleed_mm,
                     )
                     current = resized
-                    comp_steps.append(f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}")
+                    step = f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}"
+                    if out_bleed_mm:
+                        step += f"+{out_bleed_mm:.0f}mm bleed"
+                    comp_steps.append(step)
 
                 # ── Step 4: expand for bleed (only if missing) ──────────
                 if needs_bleed:
@@ -662,18 +674,71 @@ def _press_sheet_size_mm(bundle: JobBundle) -> tuple[float, float]:
     return 320.0, 450.0  # SRA3
 
 
+def _component_tag(component: str) -> str:
+    """Filename-safe token for a production component key."""
+    tag = re.sub(r"[^A-Za-z0-9._-]+", "-", str(component)).strip("-")
+    return tag or "component"
+
+
+def _is_primary_component(bundle: JobBundle, component: str | None) -> bool:
+    """True when `component` is the first component of the job (the one whose
+    print-ready PDF is mirrored into `print_ready_pdf_path`)."""
+    comps = (bundle.job.get("assembly_report") or {}).get("components") or []
+    if not comps:
+        return True
+    return comps[0].get("component") == component
+
+
+def _resolve_component(bundle: JobBundle, component: str | None) -> tuple[str | None, dict | None]:
+    """Return (source print-ready path, component report) for `component`.
+
+    Falls back to the job-level print-ready PDF when no component is given
+    (single-component jobs) or when the component cannot be matched.
+    """
+    report = bundle.job.get("assembly_report") or {}
+    comps = report.get("components") or []
+    if component:
+        for c in comps:
+            if c.get("component") == component or c.get("label") == component:
+                return c.get("storage_path"), c
+    return bundle.job.get("print_ready_pdf_path"), None
+
+
+def _record_imposed_component(job_id: str, bundle: JobBundle, component: str | None,
+                              comp_report: dict | None, storage_path: str,
+                              template_id, n_up) -> None:
+    """Upsert the imposed sheet for one component into `imposed_components`."""
+    from datetime import datetime, timezone
+
+    key = component or "body"
+    existing = bundle.job.get("imposed_components")
+    rows = [r for r in (existing or []) if isinstance(r, dict) and r.get("component") != key]
+    rows.append({
+        "component": key,
+        "label": (comp_report or {}).get("label") or key,
+        "template_id": str(template_id) if template_id else None,
+        "storage_path": storage_path,
+        "n_up": n_up,
+        "imposed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    write_job_field(job_id, "imposed_components", rows)
+
+
 @shared_task(bind=True, queue="imposition")
-def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
+def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component: str | None = None):
     db = _db()
     try:
         job_repo.mark_running(db, pdf_job_id)
         bundle = load_job_bundle(job_id)
 
-        source_path = bundle.job.get("print_ready_pdf_path")
+        source_path, comp_report = _resolve_component(bundle, component)
         if not source_path:
             raise ValueError("Print-ready PDF must be assembled before imposition.")
 
         template_id = bundle.job.get("imposition_template_id")
+        if component:
+            by_comp = bundle.job.get("imposition_templates_by_component") or {}
+            template_id = by_comp.get(component) or template_id
 
         with Workspace() as ws:
             src = ws.path("source.pdf")
@@ -724,15 +789,22 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
                     raise ValueError(f"Unknown template kind: {template.kind}")
 
                 job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-                storage_path = unique_name(f"production/imposed/{job_number}", ".pdf")
+                suffix = f"-{_component_tag(component)}" if component else ""
+                storage_path = unique_name(f"production/imposed/{job_number}{suffix}", ".pdf")
                 storage.upload(out_pdf, storage_path, "application/pdf")
 
-                write_artefact_path(job_id, "imposed_pdf_path", storage_path)
+                _record_imposed_component(
+                    job_id, bundle, component, comp_report, storage_path,
+                    template_id, template.n_up,
+                )
+                if not component or _is_primary_component(bundle, component):
+                    write_artefact_path(job_id, "imposed_pdf_path", storage_path)
                 write_job_field(job_id, "imposition_n_up", template.n_up)
 
                 result = {
                     "storage_path": storage_path,
                     "strategy": template.kind,
+                    "component": component,
                     "template_id": str(template_id),
                     "template_name": template.name,
                     "n_up": template.n_up,
@@ -746,8 +818,17 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
             if strategy == "none":
                 # No-op imposition: copy the print-ready PDF into the imposed slot
                 # so the workflow stays consistent for operators.
-                write_artefact_path(job_id, "imposed_pdf_path", source_path)
-                result = {"storage_path": source_path, "strategy": "none", "note": "1-up"}
+                _record_imposed_component(
+                    job_id, bundle, component, comp_report, source_path, None, 1
+                )
+                if not component or _is_primary_component(bundle, component):
+                    write_artefact_path(job_id, "imposed_pdf_path", source_path)
+                result = {
+                    "storage_path": source_path,
+                    "strategy": "none",
+                    "component": component,
+                    "note": "1-up",
+                }
                 job_repo.mark_done(db, pdf_job_id, result)
                 return result
 
@@ -784,13 +865,19 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
                 )
 
             job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-            storage_path = unique_name(f"production/imposed/{job_number}", ".pdf")
+            suffix = f"-{_component_tag(component)}" if component else ""
+            storage_path = unique_name(f"production/imposed/{job_number}{suffix}", ".pdf")
             storage.upload(out_pdf, storage_path, "application/pdf")
 
-        write_artefact_path(job_id, "imposed_pdf_path", storage_path)
+        _record_imposed_component(
+            job_id, bundle, component, comp_report, storage_path, None, None
+        )
+        if not component or _is_primary_component(bundle, component):
+            write_artefact_path(job_id, "imposed_pdf_path", storage_path)
         result = {
             "storage_path": storage_path,
             "strategy": strategy,
+            "component": component,
             "sheet_mm": [sheet_w, sheet_h],
             "stats": stats,
         }

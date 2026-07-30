@@ -2368,6 +2368,7 @@ class PdfOps:
         fit_mode: str = "fit",
         dominant_orientation: str | None = None,
         respect_trim_box: bool = False,
+        target_bleed_mm: float | None = None,
     ) -> Path:
         """Resize each page onto a target canvas of (width_mm × height_mm).
 
@@ -2522,6 +2523,48 @@ class PdfOps:
                     bleed_lly = max(float(media_box.bottom), trim_lly - SYNTH_BLEED_PT)
                     bleed_urx = min(float(media_box.right), trim_urx + SYNTH_BLEED_PT)
                     bleed_ury = min(float(media_box.top), trim_ury + SYNTH_BLEED_PT)
+
+            if has_real_trim and target_bleed_mm is not None:
+                # ── Fixed-bleed branch (press-accurate) ─────────────────
+                # The press expects an EXACT finished size with an EXACT
+                # bleed margin (e.g. A4 trim 210×297 with 3 mm bleed →
+                # 216×303 media). Scale the trim area anisotropically so
+                # the new TrimBox is exactly the target — for A5→A4 the two
+                # axis factors differ by ~0.3 %, which is invisible in
+                # print — then emit a uniform `target_bleed_mm` margin.
+                # Any source bleed / crop marks beyond that margin fall
+                # outside the new MediaBox and are clipped.
+                out_bleed_pt = max(0.0, float(target_bleed_mm)) * mm
+                sx = tw / trim_w
+                sy = th / trim_h
+
+                new_trim_w = tw
+                new_trim_h = th
+                new_media_w = new_trim_w + 2 * out_bleed_pt
+                new_media_h = new_trim_h + 2 * out_bleed_pt
+
+                new_page = writer.add_blank_page(width=new_media_w, height=new_media_h)
+
+                # Map source trim lower-left → (out_bleed_pt, out_bleed_pt).
+                tx = out_bleed_pt - trim_llx * sx
+                ty = out_bleed_pt - trim_lly * sy
+                new_page.merge_transformed_page(
+                    page,
+                    Transformation().scale(sx, sy).translate(tx, ty),
+                )
+
+                new_page.mediabox = RectangleObject([0, 0, new_media_w, new_media_h])
+                new_page.bleedbox = RectangleObject([0, 0, new_media_w, new_media_h])
+                new_page.cropbox = RectangleObject([0, 0, new_media_w, new_media_h])
+                new_page.trimbox = RectangleObject([
+                    out_bleed_pt,
+                    out_bleed_pt,
+                    out_bleed_pt + new_trim_w,
+                    out_bleed_pt + new_trim_h,
+                ])
+                new_page.artbox = new_page.trimbox
+
+                continue
 
             if has_real_trim:
                 # Uniform scale that makes the source trim fit the target

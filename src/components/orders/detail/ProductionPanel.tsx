@@ -50,6 +50,8 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     useTemplatesForProductFamily(productFamilyId);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  /** Per-component template overrides (multi-component jobs only). */
+  const [componentTemplates, setComponentTemplates] = useState<Record<string, string | null>>({});
 
   // Pull the actual job trim size (post-assembly) so we can pick a matching
   // template instead of always defaulting to the primary. Bus card jobs that
@@ -128,6 +130,20 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
   const noTemplatesAssigned = !loadingTemplates && templates.length === 0;
+
+  // ---- Multi-component imposition (printed cover vs body text) ----
+  const components = artefacts?.assembly_report?.components ?? [];
+  const multiComponent = components.length > 1;
+
+  const imposedByComponent = Object.fromEntries(
+    (artefacts?.imposed_components ?? []).map((r) => [r.component, r]),
+  );
+
+  /** Chosen template for a component: local edit → persisted → job default. */
+  const templateForComponent = (key: string): string | null =>
+    componentTemplates[key]
+    ?? artefacts?.imposition_templates_by_component?.[key]
+    ?? selectedTemplateId;
 
   const templateMatchesJob = (t: any) =>
     sizesMatch(jobW, jobH, Number(t?.input_width_mm) || 0, Number(t?.input_height_mm) || 0);
@@ -311,60 +327,141 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
               No imposition templates configured for this product. Ask an admin to assign one in
               <span className="font-medium"> Platform → Imposition → Assign to products</span>.
             </div>
-          ) : (
-            <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
-              <SelectTrigger className="h-11 text-sm font-semibold bg-muted/40 border-2">
-                <SelectValue placeholder={loadingTemplates ? "Loading…" : "Choose output sheet…"} />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((t) => (
-                  <SelectItem key={t.id} value={t.id} className="text-xs">
-                    <span>
-                      {t.name}
-                      {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
-                      {templateMatchesJob(t) && (
-                        <span className="ml-1 font-semibold text-success">· matches job size</span>
-                      )}
-                    </span>
-                    <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          ) : multiComponent ? (
+            /* One imposition setup per production component — the cover runs on
+               heavyweight stock and almost always needs a different sheet than
+               the body text. */
+            <div className="space-y-3">
+              {components.map((c) => {
+                const tplId = templateForComponent(c.component);
+                const tpl = templates.find((t) => t.id === tplId) ?? null;
+                const imposed = imposedByComponent[c.component] ?? null;
+                const mismatch =
+                  !!tpl && jobW > 0 && jobH > 0 &&
+                  (Number((tpl as any).input_width_mm) || 0) > 0 &&
+                  !templateMatchesJob(tpl);
+                return (
+                  <div key={c.component} className="rounded-lg border-2 border-border bg-muted/20 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-foreground truncate">
+                        {c.label ?? c.component}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">
+                        {c.file_count ?? 0} part{(c.file_count ?? 0) === 1 ? "" : "s"}
+                      </span>
+                    </div>
 
-          {sizeMismatch && (
-            <div className="flex items-start gap-2 rounded-lg border-2 border-warning/50 bg-warning/10 px-3 py-2 text-xs text-foreground">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-              <span>
-                <span className="font-bold">Size mismatch.</span> This template expects{" "}
-                <span className="font-semibold">{selTplW}×{selTplH}mm</span>, but this job is{" "}
-                <span className="font-semibold">{jobSizeLabel}</span>. Double-check before imposing.
-              </span>
+                    <Select
+                      value={tplId ?? ""}
+                      onValueChange={(v) =>
+                        setComponentTemplates((prev) => ({ ...prev, [c.component]: v || null }))
+                      }
+                    >
+                      <SelectTrigger className="h-10 text-sm font-semibold bg-background border-2">
+                        <SelectValue placeholder={loadingTemplates ? "Loading…" : "Choose output sheet…"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((t) => (
+                          <SelectItem key={t.id} value={t.id} className="text-xs">
+                            <span>
+                              {t.name}
+                              {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
+                              {templateMatchesJob(t) && (
+                                <span className="ml-1 font-semibold text-success">· matches job size</span>
+                              )}
+                            </span>
+                            <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {mismatch && (
+                      <div className="flex items-start gap-2 rounded-lg border-2 border-warning/50 bg-warning/10 px-3 py-2 text-xs text-foreground">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+                        <span>
+                          <span className="font-bold">Size mismatch.</span> This template expects{" "}
+                          <span className="font-semibold">
+                            {Number((tpl as any).input_width_mm)}×{Number((tpl as any).input_height_mm)}mm
+                          </span>
+                          , but this job is <span className="font-semibold">{jobSizeLabel}</span>.
+                        </span>
+                      </div>
+                    )}
+
+                    <Row
+                      tone="success"
+                      icon={<Layers className="h-5 w-5" />}
+                      label="Imposed sheet"
+                      path={imposed?.storage_path ?? null}
+                      loading={isLoading || generating === "impose"}
+                      opening={openingPath === imposed?.storage_path}
+                      onGenerate={() => generateImposition(tplId, c.component)}
+                      onOpen={() =>
+                        download(imposed?.storage_path ?? null, `imposed-${c.label ?? c.component}`)
+                      }
+                      generateLabel="Impose"
+                      disabledReason={!c.storage_path ? "Assemble print-ready first" : !tpl ? "Pick a template above" : undefined}
+                    />
+                  </div>
+                );
+              })}
             </div>
+          ) : (
+            <>
+              <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
+                <SelectTrigger className="h-11 text-sm font-semibold bg-muted/40 border-2">
+                  <SelectValue placeholder={loadingTemplates ? "Loading…" : "Choose output sheet…"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs">
+                      <span>
+                        {t.name}
+                        {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
+                        {templateMatchesJob(t) && (
+                          <span className="ml-1 font-semibold text-success">· matches job size</span>
+                        )}
+                      </span>
+                      <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {sizeMismatch && (
+                <div className="flex items-start gap-2 rounded-lg border-2 border-warning/50 bg-warning/10 px-3 py-2 text-xs text-foreground">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+                  <span>
+                    <span className="font-bold">Size mismatch.</span> This template expects{" "}
+                    <span className="font-semibold">{selTplW}×{selTplH}mm</span>, but this job is{" "}
+                    <span className="font-semibold">{jobSizeLabel}</span>. Double-check before imposing.
+                  </span>
+                </div>
+              )}
+
+              <Row
+                tone="success"
+                icon={<Layers className="h-5 w-5" />}
+                label="Imposed sheet"
+                path={artefacts?.imposed_pdf_path ?? null}
+                loading={isLoading || generating === "impose"}
+                opening={openingPath === artefacts?.imposed_pdf_path}
+                onGenerate={() => generateImposition(selectedTemplateId)}
+                onOpen={() => download(artefacts?.imposed_pdf_path ?? null, "imposed")}
+                generateLabel="Impose"
+                disabledReason={
+                  !artefacts?.print_ready_pdf_path
+                    ? "Assemble print-ready first"
+                    : noTemplatesAssigned
+                    ? "No templates assigned"
+                    : !selectedTemplate
+                    ? "Pick a template above"
+                    : undefined
+                }
+              />
+            </>
           )}
-
-
-          <Row
-            tone="success"
-            icon={<Layers className="h-5 w-5" />}
-            label="Imposed sheet"
-            path={artefacts?.imposed_pdf_path ?? null}
-            loading={isLoading || generating === "impose"}
-            opening={openingPath === artefacts?.imposed_pdf_path}
-            onGenerate={() => generateImposition(selectedTemplateId)}
-            onOpen={() => download(artefacts?.imposed_pdf_path ?? null, "imposed")}
-            generateLabel="Impose"
-            disabledReason={
-              !artefacts?.print_ready_pdf_path
-                ? "Assemble print-ready first"
-                : noTemplatesAssigned
-                ? "No templates assigned"
-                : !selectedTemplate
-                ? "Pick a template above"
-                : undefined
-            }
-          />
         </div>
 
         <Separator />

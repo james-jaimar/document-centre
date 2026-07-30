@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey);
 
     const body = await req.json();
-    const { action, job_id, imposition_template_id, force } = body ?? {};
+    const { action, job_id, imposition_template_id, force, component } = body ?? {};
     if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
     if (action === "impose" && !imposition_template_id) {
       return json({ error: "imposition_template_id is required for impose action" }, 400);
@@ -118,7 +118,10 @@ Deno.serve(async (req) => {
     if (!apiUrl) return json({ error: "PDF API not configured (DOCUMENT_CENTRE_API_URL missing)" }, 500);
 
     // Persist the chosen template on the job so the worker can read it.
-    if (action === "impose" && imposition_template_id) {
+    // For per-component imposition the pdf-server route persists the choice
+    // into imposition_templates_by_component, so only write the job-level
+    // column for whole-job (single component) runs.
+    if (action === "impose" && imposition_template_id && !component) {
       await admin
         .from("order_jobs")
         .update({ imposition_template_id })
@@ -134,6 +137,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         job_id,
         imposition_template_id: imposition_template_id ?? null,
+        component: component ?? null,
         force: !!force,
       }),
     });
@@ -169,12 +173,16 @@ Deno.serve(async (req) => {
     }
 
     // Defensive: ensure the column is updated even if the worker raced us.
-    await admin
-      .from("order_jobs")
-      .update({ [COLUMN[action]]: storagePath })
-      .eq("id", job_id);
+    // Per-component imposition writes into imposed_components (handled by the
+    // worker), so don't clobber the job-level column here.
+    if (!component) {
+      await admin
+        .from("order_jobs")
+        .update({ [COLUMN[action]]: storagePath })
+        .eq("id", job_id);
+    }
 
-    return json({ ok: true, path: storagePath, action });
+    return json({ ok: true, path: storagePath, action, component: component ?? null });
   } catch (e) {
     console.error("[production-pdf] error", e);
     return json({ error: (e as Error).message ?? "Internal error" }, 500);
