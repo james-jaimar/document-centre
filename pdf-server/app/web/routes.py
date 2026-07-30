@@ -735,7 +735,16 @@ def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends
     # off the worker, so the worker reads it from the bundle even if the
     # caller (edge function) raced us.
     if payload.imposition_template_id:
-        from app.services.production_orchestrator import write_job_field
+        from app.services.production_orchestrator import write_job_field, load_job_bundle
+
+        if payload.component:
+            # Per-component choice — merge into the map, keep the others.
+            bundle = load_job_bundle(str(payload.job_id))
+            by_comp = dict(bundle.job.get("imposition_templates_by_component") or {})
+            by_comp[payload.component] = str(payload.imposition_template_id)
+            write_job_field(
+                str(payload.job_id), "imposition_templates_by_component", by_comp
+            )
         write_job_field(
             str(payload.job_id),
             "imposition_template_id",
@@ -743,7 +752,13 @@ def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends
         )
 
     job_id = job_repo.create_job(db, None, "assemble_imposed_sheet", "imposition", body)
-    task_id = enqueue("assemble_imposed_sheet_for_job", str(payload.job_id), job_id, queue="imposition")
+    task_id = enqueue(
+        "assemble_imposed_sheet_for_job",
+        str(payload.job_id),
+        job_id,
+        payload.component,
+        queue="imposition",
+    )
     job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
