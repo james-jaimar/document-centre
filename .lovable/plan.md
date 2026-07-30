@@ -1,48 +1,36 @@
-## Goal
+## What's happening
 
-When a customer uploads ONE multi-page PDF and selects a printed heavyweight cover (e.g. 250gsm silk), the system silently treats the first 2 pages as the cover and the last 2 as the back cover, keeps the remaining pages as the body, and gives branch admin two separate production components — each with its own print-ready PDF and its own imposition setup.
+The R201 → R575 jump is not the cover option's "+R6,00/doc". It is a page-count bug introduced by the auto cover split.
 
-## What the customer sees
+Confirmed in `src/pages/dashboard/OrderBuild.tsx` (line ~1131), where the pricing spec is built:
 
-Nothing extra. They upload the file, choose "Printed Cover (250gsm Silk)", and the price/spec summary shows:
-
-```text
-Cover   4pp   250gsm Silk   double-sided colour
-Body   24pp    80gsm Bond   double-sided colour
+```
+page_count: docPages(s.document_id)
 ```
 
-No prompt, no extra step. If the file is too short to carve covers (< 5 pages), the whole file stays as body and the cover option is treated as body stock.
+Every printable section is given the **whole document's** page count, ignoring `page_range_start` / `page_range_end`.
 
-## Split rules
+Before selecting a printed cover there is one section (Body = 28 pages) → billed 28 pages.
+After the split there are three sections (Front Cover, Body, Back Cover) — all pointing at the same 28-page PDF — so the engine bills 28 + 28 + 28 = 84 pages of clicks and paper. That's roughly a 3× jump, matching R174,80 ex-VAT → R500,40 ex-VAT.
 
-- Front cover = pages 1–2 (duplex).
-- Back cover = last 2 pages (duplex); if what remains is odd/short, fall back to a 1-page simplex back cover.
-- Body = everything in between.
-- Splitting happens only when there is a single uploaded file. If the customer already uploaded separate cover files, nothing changes — the existing multi-section flow already handles it.
-- Cover sections inherit the gsm/finish from the chosen printed-cover option; body keeps the body stock.
+The split itself is correct in the database (front = pages 1–2, body = 3–26, back = 27–28); only the pricing projection is wrong.
 
-## Technical approach
+## Fix
 
-**Data model** — no new tables. `document_sections` already carries `document_id`, `n_start`/`n_end` (page slice), `paper_stock`, `paper_weight_gsm`, `is_color`, `is_duplex`. The split writes three sections pointing at the same document with different page ranges. The PDF worker already honours `n_start`/`n_end` slicing in its merge directives.
+1. **Respect page ranges in `pricingSpec`** (`OrderBuild.tsx`): compute each section's page count as
+   `min(page_range_end, docPages-1) - max(page_range_start, 0) + 1`, falling back to the full document page count only when both range fields are null (the pre-split / multi-file case). Post-split totals then come to 2 + 24 + 2 = 28.
 
-**Frontend**
-- New helper `src/lib/orders/autoCoverSplit.ts`: given the document page count and the selected printed-cover option metadata, return the three section descriptors (front_cover / body / back_cover) with page ranges and stock.
-- Wire it into the bound-document flow (`OrderFiles.tsx` + `useOrderBuilder.ts`): when the cover option changes to a "Printed Cover" value and exactly one document is attached, reconcile sections to the split; when it changes away, collapse back to a single body section. Idempotent — re-running produces the same three rows.
-- Spec/summary rendering shows the cover and body as separate lines with their stocks.
+2. **Bill the cover on its own stock.** Currently `calculatePriceFromRateCard` bills one paper line for all sheets at the body paper rate, so the 2 cover sheets are charged as 80gsm Bond and the cover uplift comes solely from the option's per-doc price impact. Split the paper line: sheets belonging to cover sections are billed against the cover stock rate (resolved from the section's `paper_stock` / `paper_weight_gsm`, e.g. `250gsm-silk`), and the remaining sheets against the body stock. Where the option's price impact already represents the full cover charge, the option impact stays as-is and only the paper allocation changes — I'll surface both lines in the breakdown so it's auditable.
 
-**Print-ready assembly (pdf-server)**
-- `assemble_print_ready_for_job` gains a component-grouping step: group merge directives by paper stock/weight into ordered components (`cover`, `body`). When more than one component exists, emit one print-ready PDF per component into the existing `print_ready_pdf_paths` JSON array (already used by canvas prints), mirroring the first into `print_ready_pdf_path` for backwards compatibility.
-- `assembly_report` gains a `components` array: `{ key, label, pages, paper, gsm, storage_path, width_mm, height_mm, duplex }`.
+3. **Carry the section stock through to pricing**: `pricingSpec` sections currently expose only `label / page_count / is_color / is_duplex`; add optional `paper_code` / `paper_weight_gsm`, and use it in step 2. Also handles the odd-page case (back cover = 1 page, simplex).
 
-**Imposition**
-- `assemble_imposed_sheet_for_job` accepts an optional `component` key and imposes just that component's print-ready PDF, storing results in a new `imposed_pdf_paths` JSON column on `order_jobs` keyed by component (migration adds the column; `imposed_pdf_path` still mirrors the first).
-- Default suggestion per component: covers → full-bleed n-up on SRA3 (A5 → 4-up), body → n-up on the next size up (A5 → 2-up A4). The existing `IMPOSITION_MAP`/template picker supplies the ups count.
+## Verification
 
-**Branch admin UI (`ProductionPanel.tsx`)**
-- Renders one card per component instead of a single print-ready row: component label, page count, stock/gsm, size chip (reusing the bold size treatment added earlier), its own download button, and its own imposition template selector + generate/download.
-- Single-component jobs render exactly as they do today.
+- 28-page A5 job, no cover: price unchanged (R201,02 incl VAT).
+- Same job with Printed Cover (250gsm Silk): expect roughly R201 + cover-stock delta on 2 sheets + the R6,00/doc option impact — order of R215–R225 incl VAT, not R575.
+- Multi-file uploads (separate cover file) and tab/insert jobs: unchanged, since those sections have null page ranges.
+- Add a unit test in `src/test/` covering the split spec so the triple-count cannot regress.
 
-## Out of scope for this round
+## Technical notes
 
-- Creep/spine allowance changes for the split body.
-- Automatic template creation — the imposition picker still chooses from existing templates, we only pre-select a sensible default.
+Files touched: `src/pages/dashboard/OrderBuild.tsx` (pricingSpec), `src/lib/calculatePrice.ts` (per-section paper allocation, `ItemSpecSection` type), plus a new test. The admin/branch quote builder shares `useItemPricing.ts` → `calculatePriceFromRateCard`, so it inherits the fix.

@@ -14,7 +14,16 @@ export interface ItemSpecSection {
   page_count: number;
   is_color: boolean;
   is_duplex: boolean;
+  /**
+   * Optional per-section paper (catalog_papers.code, e.g. "250gsm-silk").
+   * Set for auto-split printed covers so the cover sheets are billed on the
+   * heavyweight stock instead of the body stock. Falls back to the spec-level
+   * paper selection when absent.
+   */
+  paper_code?: string | null;
+  paper_weight_gsm?: number | null;
 }
+
 
 export interface ItemSpec {
   page_count: number;
@@ -703,7 +712,9 @@ export function calculatePriceFromRateCard(
 
   // 1) Clicks — per section
   let totalSheets = 0;
-  if (recipe.uses_click_charges !== false) {
+  // Sheets bucketed by the section's own paper code (null = body stock).
+  const sheetsByPaper = new Map<string | null, number>();
+  {
     for (const section of printableSections) {
       const sectionColour = section.is_color ? "colour" : "mono";
       const sectionSides = section.is_duplex ? "duplex" : "simplex";
@@ -713,6 +724,9 @@ export function calculatePriceFromRateCard(
         ? Math.ceil(section.page_count / 2)
         : section.page_count;
       totalSheets += clicks; // 1 sheet per click regardless of sides
+      const bucket = section.paper_code ? String(section.paper_code) : null;
+      sheetsByPaper.set(bucket, (sheetsByPaper.get(bucket) ?? 0) + clicks);
+      if (recipe.uses_click_charges === false) continue;
       const rate = resolveClickRate(size, sectionColour, sectionSides);
       if (!rate || clicks === 0) continue;
       // Tiered pricing — total billed parent clicks across the whole run for
@@ -744,9 +758,11 @@ export function calculatePriceFromRateCard(
     }
   }
 
-  // 2) Paper — sum sheets across sections, bill once. Accept both the
-  // canonical "paper" slot and the friendly option names the customer UI
-  // writes ("Paper Stock", "Paper", "Body Paper"). The customer's
+  // 2) Paper — billed per stock. Sections that declare their own
+  // `paper_code` (auto-split printed covers on heavyweight card) are billed
+  // against that stock; everything else uses the spec-level body paper.
+  // Accept both the canonical "paper" slot and the friendly option names the
+  // customer UI writes ("Paper Stock", "Paper", "Body Paper"). The customer's
   // Paper Stock picker now emits catalog_papers.code (e.g. "80gsm-bond"),
   // and resolvePaper() appends the current size before the rate-card lookup.
   const paperCode =
@@ -756,41 +772,56 @@ export function calculatePriceFromRateCard(
     (spec.selected_options["Body Paper"] as string | undefined) ||
     recipe.default_paper_code ||
     null;
-  if (paperCode && totalSheets > 0) {
-    const resolved = resolvePaper(paperCode, size);
-    if (resolved) {
-      // Tiered pricing — total parent sheets billed for the entire run.
-      const totalParentSheets = Math.max(
-        1,
-        Math.ceil((totalSheets * spec.quantity) / resolved.nUp),
-      );
-      const tieredParentUnit = tieredUnit(
-        rc.priceBreaks,
-        "papers",
-        resolved.paper.id,
-        totalParentSheets,
-        Number(resolved.paper.sell_price),
-      );
-      const unit = tieredParentUnit / resolved.nUp;
-      // Strip the trailing size token from the paper label so the imposition
-      // note we append reads cleanly ("80gsm Bond (4-up on A3, 5 sheets)").
-      const cleanLabel = String(resolved.paper.label).replace(
-        /\s+(A\d|DL|SRA3|LETTER|LEGAL|TABLOID)$/i,
-        "",
-      );
-      const impNote =
-        resolved.nUp > 1
-          ? ` (${resolved.nUp}-up on ${resolved.sourceSize}, ${totalParentSheets} parent sheet${totalParentSheets === 1 ? "" : "s"})`
-          : "";
-      lines.push({
-        label: `Paper: ${cleanLabel}${impNote}`,
-        type: "per_page",
-        unit_amount: unit,
-        multiplier: totalSheets,
-        total: unit * totalSheets,
-      });
+
+  const paperBuckets: Array<{ code: string; sheets: number }> = [];
+  if (sheetsByPaper.size > 0) {
+    for (const [bucketCode, sheets] of sheetsByPaper) {
+      if (sheets <= 0) continue;
+      const code = bucketCode ?? paperCode;
+      if (!code) continue;
+      const existing = paperBuckets.find((b) => b.code === code);
+      if (existing) existing.sheets += sheets;
+      else paperBuckets.push({ code, sheets });
     }
+  } else if (paperCode && totalSheets > 0) {
+    paperBuckets.push({ code: paperCode, sheets: totalSheets });
   }
+
+  for (const bucket of paperBuckets) {
+    const resolved = resolvePaper(bucket.code, size);
+    if (!resolved) continue;
+    // Tiered pricing — total parent sheets billed for the entire run.
+    const totalParentSheets = Math.max(
+      1,
+      Math.ceil((bucket.sheets * spec.quantity) / resolved.nUp),
+    );
+    const tieredParentUnit = tieredUnit(
+      rc.priceBreaks,
+      "papers",
+      resolved.paper.id,
+      totalParentSheets,
+      Number(resolved.paper.sell_price),
+    );
+    const unit = tieredParentUnit / resolved.nUp;
+    // Strip the trailing size token from the paper label so the imposition
+    // note we append reads cleanly ("80gsm Bond (4-up on A3, 5 sheets)").
+    const cleanLabel = String(resolved.paper.label).replace(
+      /\s+(A\d|DL|SRA3|LETTER|LEGAL|TABLOID)$/i,
+      "",
+    );
+    const impNote =
+      resolved.nUp > 1
+        ? ` (${resolved.nUp}-up on ${resolved.sourceSize}, ${totalParentSheets} parent sheet${totalParentSheets === 1 ? "" : "s"})`
+        : "";
+    lines.push({
+      label: `Paper: ${cleanLabel}${impNote}`,
+      type: "per_page",
+      unit_amount: unit,
+      multiplier: bucket.sheets,
+      total: unit * bucket.sheets,
+    });
+  }
+
 
   // 3) Finishing — required + customer-selected
   const customerSelected = new Set(
