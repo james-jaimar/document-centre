@@ -14,7 +14,16 @@ export interface ItemSpecSection {
   page_count: number;
   is_color: boolean;
   is_duplex: boolean;
+  /**
+   * Optional per-section paper (catalog_papers.code, e.g. "250gsm-silk").
+   * Set for auto-split printed covers so the cover sheets are billed on the
+   * heavyweight stock instead of the body stock. Falls back to the spec-level
+   * paper selection when absent.
+   */
+  paper_code?: string | null;
+  paper_weight_gsm?: number | null;
 }
+
 
 export interface ItemSpec {
   page_count: number;
