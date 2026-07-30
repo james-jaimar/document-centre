@@ -7,7 +7,7 @@ import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
 import { useProductVariantLinks } from "@/hooks/useCatalogVariants";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { ItemSpec } from "@/lib/calculatePrice";
+import type { ItemSpec, ItemSpecSection } from "@/lib/calculatePrice";
 import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import { isStructuredValues, isValueActive, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
