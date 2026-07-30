@@ -1167,19 +1167,20 @@ export default function OrderBuild() {
     // into ONE duplex section so the calculator bills 1 sheet, not 2.
     // Front face uses page 1 of its assigned doc, Back face uses page 1 of
     // its assigned doc — the physical sheet is one piece of paper either way.
-    let finalSections = specSections;
+    let finalSections: ItemSpecSection[] = specSections;
     if (isSingleSheetFamily && specSections.length > 0) {
       const front = specSections.find((s) => s.label === "Cover");
       const back = specSections.find((s) => s.label === "Back Cover");
       const hasBack = !!back;
-      const collapsed = {
-        label: undefined as string | undefined,
+      const collapsed: ItemSpecSection = {
+        label: undefined,
         page_count: hasBack ? 2 : 1,
         is_color: !!(front?.is_color || back?.is_color),
         is_duplex: hasBack,
       };
       finalSections = [collapsed];
     }
+
 
     const all = [...finalSections, ...tabSections];
     return all.length > 0 ? { ...spec, sections: all } : spec;
