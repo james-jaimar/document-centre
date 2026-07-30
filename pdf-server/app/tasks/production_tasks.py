@@ -802,8 +802,17 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component
             if strategy == "none":
                 # No-op imposition: copy the print-ready PDF into the imposed slot
                 # so the workflow stays consistent for operators.
-                write_artefact_path(job_id, "imposed_pdf_path", source_path)
-                result = {"storage_path": source_path, "strategy": "none", "note": "1-up"}
+                _record_imposed_component(
+                    job_id, bundle, component, comp_report, source_path, None, 1
+                )
+                if not component or _is_primary_component(bundle, component):
+                    write_artefact_path(job_id, "imposed_pdf_path", source_path)
+                result = {
+                    "storage_path": source_path,
+                    "strategy": "none",
+                    "component": component,
+                    "note": "1-up",
+                }
                 job_repo.mark_done(db, pdf_job_id, result)
                 return result
 
