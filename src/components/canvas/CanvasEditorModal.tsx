@@ -467,8 +467,12 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
           </div>
 
           {/* MIDDLE — settings (stacked, one line per option) */}
-          <div className="min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-y-auto border-r border-border bg-muted/10">
+          <div className="order-3 lg:order-none min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-visible lg:overflow-y-auto lg:border-r border-border bg-muted/10">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:hidden">
+              3 · Canvas options
+            </p>
             <div className="space-y-1">
+
               <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
               <Select value={sizeSlug} onValueChange={setSizeSlug}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Choose size" /></SelectTrigger>
