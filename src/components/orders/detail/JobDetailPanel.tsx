@@ -14,6 +14,7 @@ import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
 import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
+import { resolveJobSize, orientationOf, isSizeLabel } from "@/lib/orders/jobSize";
 
 interface Props {
   job: any;
@@ -80,6 +81,23 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
             <StatusBadge {...URGENCY_CONFIG[job.urgency as keyof typeof URGENCY_CONFIG]} />
           </div>
         </div>
+
+        {/* Document size — deliberately prominent so production staff can't miss it */}
+        {jobSize && (
+          <div className="rounded-md border-2 border-primary/40 bg-primary/5 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+              Document size
+            </div>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-xl font-extrabold leading-tight text-primary">{jobSize.label}</span>
+              {jobOrientation && (
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {jobOrientation}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Preview button */}
         {hasPreview ? (
