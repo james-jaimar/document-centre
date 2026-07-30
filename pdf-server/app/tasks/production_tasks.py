@@ -673,6 +673,12 @@ def _press_sheet_size_mm(bundle: JobBundle) -> tuple[float, float]:
     return 320.0, 450.0  # SRA3
 
 
+def _component_tag(component: str) -> str:
+    """Filename-safe token for a production component key."""
+    tag = re.sub(r"[^A-Za-z0-9._-]+", "-", str(component)).strip("-")
+    return tag or "component"
+
+
 def _is_primary_component(bundle: JobBundle, component: str | None) -> bool:
     """True when `component` is the first component of the job (the one whose
     print-ready PDF is mirrored into `print_ready_pdf_path`)."""
@@ -782,7 +788,7 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component
                     raise ValueError(f"Unknown template kind: {template.kind}")
 
                 job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-                suffix = f"-{_safe(component, '')}" if component else ""
+                suffix = f"-{_component_tag(component)}" if component else ""
                 storage_path = unique_name(f"production/imposed/{job_number}{suffix}", ".pdf")
                 storage.upload(out_pdf, storage_path, "application/pdf")
 
@@ -858,7 +864,7 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component
                 )
 
             job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-            suffix = f"-{_safe(component, '')}" if component else ""
+            suffix = f"-{_component_tag(component)}" if component else ""
             storage_path = unique_name(f"production/imposed/{job_number}{suffix}", ".pdf")
             storage.upload(out_pdf, storage_path, "application/pdf")
 
