@@ -605,13 +605,21 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
 
             "detected_size_mm": list(actual_size) if actual_size else None,
             "colour_check": colour_check,
+            "components": components_report,
         }
         write_artefact_path(job_id, "print_ready_pdf_path", storage_path)
+        write_job_field(job_id, "print_ready_pdf_paths", storage_paths)
         write_job_field(job_id, "assembly_report", report)
         write_job_field(job_id, "print_ready_spec_hash", new_hash)
         write_job_field(job_id, "print_ready_assembled_at", datetime.now(timezone.utc).isoformat())
 
-        result = {"storage_path": storage_path, **report, "spec_hash": new_hash}
+        result = {
+            "storage_path": storage_path,
+            "storage_paths": storage_paths,
+            **report,
+            "spec_hash": new_hash,
+        }
+
         job_repo.mark_done(db, pdf_job_id, result)
         return result
     except Exception as exc:
