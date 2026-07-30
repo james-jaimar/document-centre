@@ -773,15 +773,22 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component
                     raise ValueError(f"Unknown template kind: {template.kind}")
 
                 job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-                storage_path = unique_name(f"production/imposed/{job_number}", ".pdf")
+                suffix = f"-{_safe(component, '')}" if component else ""
+                storage_path = unique_name(f"production/imposed/{job_number}{suffix}", ".pdf")
                 storage.upload(out_pdf, storage_path, "application/pdf")
 
-                write_artefact_path(job_id, "imposed_pdf_path", storage_path)
+                _record_imposed_component(
+                    job_id, bundle, component, comp_report, storage_path,
+                    template_id, template.n_up,
+                )
+                if not component or _is_primary_component(bundle, component):
+                    write_artefact_path(job_id, "imposed_pdf_path", storage_path)
                 write_job_field(job_id, "imposition_n_up", template.n_up)
 
                 result = {
                     "storage_path": storage_path,
                     "strategy": template.kind,
+                    "component": component,
                     "template_id": str(template_id),
                     "template_name": template.name,
                     "n_up": template.n_up,
