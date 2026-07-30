@@ -266,8 +266,31 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     directives = raw
 
             files: list[Path] = []
+            # Parallel array to `files`: which physical production component
+            # each file belongs to. Heavyweight printed covers are printed on
+            # a different stock than the body text, so they must leave the
+            # press as their OWN print-ready PDF (and get their own
+            # imposition). Key is a stable label, e.g. "body" or
+            # "cover:300gsm silk".
+            file_components: list[str] = []
+            last_component = "body"
             section_used_any = False
             per_section_colour: list[dict] = []
+
+            def _component_key(d: dict) -> str:
+                st = d.get("section_type") or ""
+                if st not in ("front_cover", "back_cover"):
+                    return "body"
+                gsm = d.get("paper_weight_gsm")
+                stock = d.get("paper_stock")
+                if not gsm and not stock:
+                    return "body"
+                return f"cover:{stock or ''}{f' {gsm}gsm' if gsm else ''}".strip()
+
+            def _add_file(p: Path, key: str) -> None:
+                files.append(p)
+                file_components.append(key)
+
 
             # Pre-greyscale a single source file (used for mixed-colour jobs
             # so colour sections stay colour and B&W sections get the full
