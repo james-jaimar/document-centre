@@ -14,6 +14,7 @@ import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
 import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
+import { resolveJobSize, orientationOf, isSizeLabel } from "@/lib/orders/jobSize";
 
 interface Props {
   job: any;
@@ -44,6 +45,8 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const previewPageCount = Math.max(previewThumbs.length, previewPdfSources.length);
   const hasPreview = previewThumbs.some((t) => !!t) || previewPdfSources.length > 0;
   const isCanvasJob = Boolean((config as any).canvas_prints) || job.product_category === "canvas-prints";
+  const jobSize = resolveJobSize(job, config);
+  const jobOrientation = orientationOf(jobSize);
   const [previewOpen, setPreviewOpen] = useState(false);
 
 
@@ -78,6 +81,23 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
             <StatusBadge {...URGENCY_CONFIG[job.urgency as keyof typeof URGENCY_CONFIG]} />
           </div>
         </div>
+
+        {/* Document size — deliberately prominent so production staff can't miss it */}
+        {jobSize && (
+          <div className="rounded-md border-2 border-primary/40 bg-primary/5 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+              Document size
+            </div>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-xl font-extrabold leading-tight text-primary">{jobSize.label}</span>
+              {jobOrientation && (
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {jobOrientation}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Preview button */}
         {hasPreview ? (
@@ -124,24 +144,18 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         {/* Summary specs */}
         {(summary.primary_spec_1_label || summary.primary_spec_2_label || summary.primary_spec_3_label) && (
           <div className="grid grid-cols-[100px_1fr] gap-y-1 text-xs">
-            {summary.primary_spec_1_label && (
-              <>
-                <span className="text-muted-foreground">{summary.primary_spec_1_label}</span>
-                <span>{summary.primary_spec_1_value}</span>
-              </>
-            )}
-            {summary.primary_spec_2_label && (
-              <>
-                <span className="text-muted-foreground">{summary.primary_spec_2_label}</span>
-                <span>{summary.primary_spec_2_value}</span>
-              </>
-            )}
-            {summary.primary_spec_3_label && (
-              <>
-                <span className="text-muted-foreground">{summary.primary_spec_3_label}</span>
-                <span>{summary.primary_spec_3_value}</span>
-              </>
-            )}
+            {[1, 2, 3].map((n) => {
+              const label = (summary as any)[`primary_spec_${n}_label`];
+              const value = (summary as any)[`primary_spec_${n}_value`];
+              if (!label) return null;
+              const emphasise = isSizeLabel(label);
+              return (
+                <div key={n} className="contents">
+                  <span className={emphasise ? "text-primary font-semibold" : "text-muted-foreground"}>{label}</span>
+                  <span className={emphasise ? "text-sm font-bold text-primary" : undefined}>{value}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -153,13 +167,17 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
               {section.title}
             </h4>
             <div className="grid grid-cols-[100px_1fr] gap-y-0.5 text-xs">
-              {section.items.map((item, iIdx) => (
-                <div key={iIdx} className="contents">
-                  <span className="text-muted-foreground">{item.label}</span>
-                  <span>{item.value}</span>
-                </div>
-              ))}
+              {section.items.map((item, iIdx) => {
+                const emphasise = isSizeLabel(item.label);
+                return (
+                  <div key={iIdx} className="contents">
+                    <span className={emphasise ? "text-primary font-semibold" : "text-muted-foreground"}>{item.label}</span>
+                    <span className={emphasise ? "text-sm font-bold text-primary" : undefined}>{item.value}</span>
+                  </div>
+                );
+              })}
             </div>
+
           </div>
         ))}
 
@@ -224,7 +242,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
             ?? (job as any).product_snapshot?.family_id
             ?? null) as string | null
         }
-
+        jobSize={jobSize}
       />
 
       {previewOpen && (
