@@ -1,26 +1,35 @@
 ## Goal
-On a phone, the photo print editor's crop frame extends past the left and right edges, so you can't see the whole crop. Make the editor fully responsive.
 
-## Step 1 — Confirm the cause (not yet verified)
-I could not reproduce it in a headless browser (the page needs a signed-in tenant session), so the exact cause is unconfirmed. First action is to reproduce at a 394px viewport with a photo loaded and log the measured container width vs. the computed crop-frame size, so the fix targets the real cause rather than a guess.
+Make the Canvas Print editor usable on phones. Today the modal is a three-column grid inside a fixed `90vh` box with `overflow-hidden`. On mobile the grid collapses to one column, but the container still doesn't scroll as a whole, so the cropper section is pushed off the top and the Save/Cancel bar is hard to reach.
 
-Two candidates to check:
-- The dialog is `w-full max-w-3xl` with no viewport margin, so the panel spans edge to edge with no gutters.
-- `useCropperZoom` falls back to a hard-coded 600×420 crop-frame basis when the container measures 0; if the measurement lands late (or never on a portalled dialog), the crop frame stays 570px wide on a 394px screen — which matches the screenshot.
+## What changes (single file: `src/components/canvas/CanvasEditorModal.tsx`)
 
-## Step 2 — Fix (frontend only)
-In `src/components/photo/PhotoEditorModal.tsx`:
-- Constrain the dialog on small screens: full-width minus a small gutter, capped height, scrollable body, so header/controls/footer stay reachable.
-- Replace the fixed `height: 420` cropper area with a responsive height (viewport-based on mobile, 420 on desktop).
-- Clamp the crop frame to the measured container so it can never exceed the visible area.
+Verified current state: line 344 `DialogContent` is `w-[90vw] h-[90vh] overflow-hidden flex flex-col`; line 355 the body is `grid grid-cols-1 lg:grid-cols-[35%_25%_1fr] min-h-0 flex-1 overflow-hidden`. The three children each set their own `overflow-hidden` / `overflow-y-auto`, which only works in the desktop 3-column case.
 
-In `src/hooks/useCropperZoom.ts`:
-- Only compute a crop frame once real measurements exist (report `ready: false` otherwise) instead of using the 600×420 fallback, and re-snap zoom when the measurement arrives.
+### 1. Dialog shell
+- Mobile: near-full-screen sheet — `w-[calc(100vw-0.5rem)] max-w-none h-[100dvh] max-h-[100dvh] rounded-none`; desktop keeps the existing `90vw / 90vh` behaviour via `sm:`/`lg:` variants.
+- Tighter header padding on mobile (`px-4 pt-4 pb-2`), description wraps instead of truncating.
 
-Optionally tighten the controls row for narrow screens (buttons wrap cleanly, zoom slider full width).
+### 2. Body becomes one scroll container on mobile
+- Body: `flex flex-col overflow-y-auto` on mobile, switching to the existing `lg:grid lg:grid-cols-[35%_25%_1fr] lg:overflow-hidden` at `lg`.
+- Each column drops its own scrolling on mobile (`overflow-visible lg:overflow-hidden` / `lg:overflow-y-auto`) so there is exactly one scrollbar.
 
-## Step 3 — Verify
-Re-run the mobile-viewport check with a photo open and screenshot the editor to confirm the crop frame, its guides, and the border overlay sit fully inside the screen at 394px, and that desktop layout is unchanged.
+### 3. Section ordering and sizing on mobile
+Order top → bottom, as agreed (customer scrolls):
+1. **Crop your image** — cropper box gets a fixed mobile height (`h-[46vh] min-h-[260px]`, `lg:flex-1`) so the frame always fits on screen; zoom slider and Rotate/Fill/Fit/Reset buttons below it, wrapping.
+2. **Preview** — the 3D preview moves directly under the cropper on mobile (`order-2 lg:order-none`) with a fixed `h-[38vh] min-h-[220px]` so customers see the effect of their crop without scrolling to the bottom; stays in the right column on desktop.
+3. **Settings** — size, orientation, wrap depth, edge finish + colour picker, low-DPI warning; full width, larger tap targets (option buttons/radio rows `min-h-11`).
+- Each mobile section gets a small uppercase heading so the scroll makes sense; headings hidden at `lg` where the columns already read as sections.
 
-## Scope
-Presentation only — no changes to crop maths persisted to the order, `croppedAreaPixels` scaling, or backend rendering.
+### 4. Sticky footer
+- `DialogFooter` becomes `sticky bottom-0` on mobile with safe-area padding, Cancel/Save as equal-width full-width buttons (`flex-1`), so Save is always reachable.
+
+### 5. Landscape phones
+- Because the cropper/preview heights are `vh`-based with `min-h` floors, landscape stays workable; add `landscape:h-[70vh]`-style tightening only where the fixed heights would exceed the viewport.
+
+## Not changing
+- No crop maths, pricing, save payload, or 3D rendering logic. `useCropperZoom` already derives the crop frame from the measured container, so the new mobile heights flow through automatically.
+- No changes to `CanvasPrintsBuilder.tsx` (its grid already stacks correctly) unless testing shows a tile-grid issue.
+
+## Verification
+- Playwright at 390×844 (portrait) and 844×390 (landscape): open a canvas, screenshot, confirm the crop frame is fully within the viewport, the page scrolls as one, and Save is visible.
