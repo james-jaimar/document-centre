@@ -33,7 +33,19 @@ export interface AssemblyReport {
     print_to_edge?: boolean;
   };
   detected_size_mm?: number[] | null;
+  /**
+   * Multi-component jobs (e.g. heavyweight printed cover + body text) emit one
+   * print-ready PDF per component so each can be run on its own stock.
+   */
+  components?: Array<{
+    component: string;
+    label?: string;
+    storage_path: string;
+    file_count?: number;
+    steps?: string[];
+  }>;
 }
+
 
 /**
  * Reads + mutates the three production-PDF paths on `order_jobs`.
