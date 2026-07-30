@@ -445,105 +445,145 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     _add_file(local, "body")
 
 
-            # ── Step 1: merge (only when >1 doc) ────────────────────────
-            if len(files) > 1:
-                merged = ws.path("merged.pdf")
-                pdf_ops.merge(files, merged)
-                current = merged
-                steps.append(f"merge:{len(files)}")
-            elif len(files) == 1:
-                current = files[0]
-            else:
+            if not files:
                 raise ValueError("No source files resolved from merge directives or asset paths.")
 
-            # ── Step 2: detect what work the spec actually requires ─────
-            actual_size = pdf_ops.page_trim_size_mm(current)
-            needs_resize = False
-            if target.width_mm and target.height_mm and actual_size:
-                aw, ah = actual_size
-                tw, th = target.width_mm, target.height_mm
-                # Tolerance: 2mm in either dimension
-                if abs(aw - tw) > 2 or abs(ah - th) > 2:
-                    needs_resize = True
-                # Orientation mismatch: target is portrait but page is
-                # landscape (or vice-versa) even when dimensions transpose
-                # to the same paper — force a resize so resize_pages can
-                # rotate to the dominant orientation.
-                elif target.orientation:
-                    page_is_landscape = aw > ah
-                    target_is_landscape = target.orientation == "landscape"
-                    if page_is_landscape != target_is_landscape:
-                        needs_resize = True
+            # Distinct production components, in first-appearance order.
+            # Single-component jobs behave exactly as before; multi-component
+            # jobs (printed heavyweight cover + body text) emit one
+            # print-ready PDF each so the press can run them on their own
+            # stock with their own imposition.
+            ordered_components: list[str] = []
+            for k in file_components:
+                if k not in ordered_components:
+                    ordered_components.append(k)
+            multi = len(ordered_components) > 1
 
-            needs_bleed = target.print_to_edge and not pdf_ops.detect_bleed(current)
-            # Whole-doc greyscale only when *every* printable section is B&W.
-            # Mixed jobs are handled per-file above the merge.
-            needs_greyscale = target.colour_mode == "bw"
-
-            # ── Step 3: resize / re-orient ──────────────────────────────
-            if needs_resize and target.width_mm and target.height_mm:
-                resized = ws.path("resized.pdf")
-                # Honour TrimBox when the merged source has real bleed —
-                # otherwise the customer-uploaded crop marks get scaled
-                # into the finished artwork.
-                source_has_trim = pdf_ops.detect_bleed(current)
-                pdf_ops.resize_pages(
-                    current, resized,
-                    width_mm=target.width_mm,
-                    height_mm=target.height_mm,
-                    fit_mode="fit",
-                    dominant_orientation=target.orientation,
-                    respect_trim_box=source_has_trim,
-                )
-                current = resized
-                steps.append(f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}")
-
-            # ── Step 4: expand for bleed (only if missing) ──────────────
-            if needs_bleed:
-                bled = ws.path("bled.pdf")
-                pdf_ops.expand_for_bleed(current, bled, bleed_mm=target.bleed_mm)
-                current = bled
-                steps.append(f"bleed:{target.bleed_mm}mm")
-                warnings.append(
-                    "Bleed was auto-fabricated by scaling content up — edge content may clip."
-                )
-
-            # ── Step 5: greyscale (whole-doc B&W jobs) ──────────────────
+            job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
+            storage_paths: list[str] = []
+            components_report: list[dict] = []
+            actual_size = None
             colour_check: dict | None = None
-            if needs_greyscale:
-                grey = ws.path("grey.pdf")
-                pdf_ops.grayscale(current, grey)
-                current = grey
-                steps.append("greyscale")
-                # grayscale() runs the verifier-gated ladder and stashes its
-                # report (winning strategy + per-attempt metrics) on the
-                # PdfOps instance. Surface that to the operator.
-                colour_check = getattr(pdf_ops, "last_grayscale_report", None)
-                if colour_check is None:
-                    try:
-                        colour_check = {
-                            "black_text_check": pdf_ops.verify_pure_black_text(grey),
-                            "colour_leak_check": pdf_ops.verify_no_colour_leak(grey),
-                        }
-                    except Exception as exc:
-                        colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
-            elif per_section_colour:
-                # Mixed-colour job: report per-section greyscale outcomes.
-                colour_check = {"mode": "mixed", "sections": per_section_colour}
+            reused_source = False
 
+            for ci, comp in enumerate(ordered_components):
+                group = [f for f, k in zip(files, file_components) if k == comp]
+                if not group:
+                    continue
+                tag = comp.replace(":", "-").replace(" ", "_").replace("/", "-")
+                comp_steps: list[str] = []
 
+                # ── Step 1: merge (only when >1 doc) ────────────────────
+                if len(group) > 1:
+                    merged = ws.path(f"merged-{ci}.pdf")
+                    pdf_ops.merge(group, merged)
+                    current = merged
+                    comp_steps.append(f"merge:{len(group)}")
+                else:
+                    current = group[0]
 
+                # ── Step 2: detect what work the spec actually requires ─
+                comp_size = pdf_ops.page_trim_size_mm(current)
+                if ci == 0:
+                    actual_size = comp_size
+                needs_resize = False
+                if target.width_mm and target.height_mm and comp_size:
+                    aw, ah = comp_size
+                    tw, th = target.width_mm, target.height_mm
+                    # Tolerance: 2mm in either dimension
+                    if abs(aw - tw) > 2 or abs(ah - th) > 2:
+                        needs_resize = True
+                    # Orientation mismatch: target is portrait but page is
+                    # landscape (or vice-versa) even when dimensions transpose
+                    # to the same paper — force a resize so resize_pages can
+                    # rotate to the dominant orientation.
+                    elif target.orientation:
+                        page_is_landscape = aw > ah
+                        target_is_landscape = target.orientation == "landscape"
+                        if page_is_landscape != target_is_landscape:
+                            needs_resize = True
 
-            # ── Decide where the result lives ───────────────────────────
-            if not steps and len(files) == 1:
-                # Nothing changed — reuse the uploaded path verbatim, no upload.
-                storage_path = bundle.asset_paths[0][1]
-                reused_source = True
-            else:
-                job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-                storage_path = unique_name(f"production/print-ready/{job_number}", ".pdf")
-                storage.upload(current, storage_path, "application/pdf")
-                reused_source = False
+                needs_bleed = target.print_to_edge and not pdf_ops.detect_bleed(current)
+                # Whole-doc greyscale only when *every* printable section is B&W.
+                # Mixed jobs are handled per-file above the merge.
+                needs_greyscale = target.colour_mode == "bw"
+
+                # ── Step 3: resize / re-orient ──────────────────────────
+                if needs_resize and target.width_mm and target.height_mm:
+                    resized = ws.path(f"resized-{ci}.pdf")
+                    # Honour TrimBox when the merged source has real bleed —
+                    # otherwise the customer-uploaded crop marks get scaled
+                    # into the finished artwork.
+                    source_has_trim = pdf_ops.detect_bleed(current)
+                    pdf_ops.resize_pages(
+                        current, resized,
+                        width_mm=target.width_mm,
+                        height_mm=target.height_mm,
+                        fit_mode="fit",
+                        dominant_orientation=target.orientation,
+                        respect_trim_box=source_has_trim,
+                    )
+                    current = resized
+                    comp_steps.append(f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}")
+
+                # ── Step 4: expand for bleed (only if missing) ──────────
+                if needs_bleed:
+                    bled = ws.path(f"bled-{ci}.pdf")
+                    pdf_ops.expand_for_bleed(current, bled, bleed_mm=target.bleed_mm)
+                    current = bled
+                    comp_steps.append(f"bleed:{target.bleed_mm}mm")
+                    warnings.append(
+                        "Bleed was auto-fabricated by scaling content up — edge content may clip."
+                    )
+
+                # ── Step 5: greyscale (whole-doc B&W jobs) ──────────────
+                if needs_greyscale:
+                    grey = ws.path(f"grey-{ci}.pdf")
+                    pdf_ops.grayscale(current, grey)
+                    current = grey
+                    comp_steps.append("greyscale")
+                    # grayscale() runs the verifier-gated ladder and stashes its
+                    # report (winning strategy + per-attempt metrics) on the
+                    # PdfOps instance. Surface that to the operator.
+                    comp_colour = getattr(pdf_ops, "last_grayscale_report", None)
+                    if comp_colour is None:
+                        try:
+                            comp_colour = {
+                                "black_text_check": pdf_ops.verify_pure_black_text(grey),
+                                "colour_leak_check": pdf_ops.verify_no_colour_leak(grey),
+                            }
+                        except Exception as exc:
+                            comp_colour = {"checked": False, "reason": f"verify_raised: {exc}"}
+                    colour_check = comp_colour
+                elif per_section_colour:
+                    # Mixed-colour job: report per-section greyscale outcomes.
+                    colour_check = {"mode": "mixed", "sections": per_section_colour}
+
+                steps.extend(f"{comp}/{s}" if multi else s for s in comp_steps)
+
+                # ── Decide where the result lives ───────────────────────
+                if (not multi) and (not comp_steps) and not steps and len(group) == 1:
+                    # Nothing changed — reuse the uploaded path verbatim, no upload.
+                    comp_path = bundle.asset_paths[0][1]
+                    reused_source = True
+                else:
+                    suffix = f"-{tag}" if multi else ""
+                    comp_path = unique_name(
+                        f"production/print-ready/{job_number}{suffix}", ".pdf"
+                    )
+                    storage.upload(current, comp_path, "application/pdf")
+
+                storage_paths.append(comp_path)
+                components_report.append({
+                    "component": comp,
+                    "label": "Body" if comp == "body" else comp.split(":", 1)[-1].strip() + " cover",
+                    "storage_path": comp_path,
+                    "file_count": len(group),
+                    "steps": comp_steps,
+                })
+
+            storage_path = storage_paths[0]
+
 
         # ── Persist artefact + report ───────────────────────────────────
         from datetime import datetime, timezone
