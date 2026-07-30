@@ -47,6 +47,14 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import {
+  planCoverSplit,
+  printedCoverStock,
+  coverStockLabel,
+  matchesSplit,
+  isWholeDocumentBody,
+} from "@/lib/orders/autoCoverSplit";
+
 import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
