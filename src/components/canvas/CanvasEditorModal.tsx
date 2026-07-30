@@ -341,23 +341,28 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent ref={ref} className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] sm:max-w-[90vw] p-0 overflow-hidden flex flex-col">
-        <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
-          <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
-          <DialogDescription className="text-xs">
+      <DialogContent ref={ref} className="w-screen max-w-none h-[100dvh] max-h-[100dvh] rounded-none sm:w-[90vw] sm:max-w-[90vw] sm:h-[90vh] sm:max-h-[90vh] sm:rounded-lg p-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-4 pt-4 pb-2 sm:px-6 sm:pt-5 sm:pb-3 border-b border-border">
+          <DialogTitle className="text-base sm:text-lg">Edit Canvas</DialogTitle>
+          <DialogDescription className="text-xs break-words">
             {canvas.file_name}
             {orientedSize && ` · ${orientedSize.label}`}
             {` · ${orientation === "landscape" ? "Landscape" : "Portrait"} · ${wrapMm} mm wrap`}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Left: cropper | Middle: settings | Right: 3D preview */}
-        <div className="grid grid-cols-1 lg:grid-cols-[35%_25%_1fr] min-h-0 flex-1 overflow-hidden">
+        {/* Mobile: single scrolling column (crop → preview → settings).
+            Desktop: cropper | settings | 3D preview */}
+        <div className="flex flex-col overflow-y-auto lg:grid lg:grid-cols-[35%_25%_1fr] lg:overflow-hidden min-h-0 flex-1">
           {/* LEFT — cropper */}
-          <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
+          <div className="min-w-0 min-h-0 flex flex-col p-4 sm:p-5 gap-3 overflow-visible lg:overflow-hidden lg:border-r border-border">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:hidden">
+              1 · Crop your image
+            </p>
             <div
               ref={containerRef}
-              className="relative w-full bg-neutral-900 overflow-hidden flex-1 min-h-0"
+              className="relative w-full bg-neutral-900 overflow-hidden h-[46vh] min-h-[240px] landscape:h-[70vh] lg:h-auto lg:min-h-0 lg:landscape:h-auto lg:flex-1"
+
             >
               {imageUrl ? (
                 <Cropper
