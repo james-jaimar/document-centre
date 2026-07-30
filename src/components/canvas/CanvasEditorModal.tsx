@@ -341,23 +341,28 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent ref={ref} className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] sm:max-w-[90vw] p-0 overflow-hidden flex flex-col">
-        <DialogHeader className="px-6 pt-5 pb-3 border-b border-border">
-          <DialogTitle className="text-lg">Edit Canvas</DialogTitle>
-          <DialogDescription className="text-xs">
+      <DialogContent ref={ref} className="w-screen max-w-none h-[100dvh] max-h-[100dvh] rounded-none sm:w-[90vw] sm:max-w-[90vw] sm:h-[90vh] sm:max-h-[90vh] sm:rounded-lg p-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-4 pt-4 pb-2 sm:px-6 sm:pt-5 sm:pb-3 border-b border-border">
+          <DialogTitle className="text-base sm:text-lg">Edit Canvas</DialogTitle>
+          <DialogDescription className="text-xs break-words">
             {canvas.file_name}
             {orientedSize && ` · ${orientedSize.label}`}
             {` · ${orientation === "landscape" ? "Landscape" : "Portrait"} · ${wrapMm} mm wrap`}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Left: cropper | Middle: settings | Right: 3D preview */}
-        <div className="grid grid-cols-1 lg:grid-cols-[35%_25%_1fr] min-h-0 flex-1 overflow-hidden">
+        {/* Mobile: single scrolling column (crop → preview → settings).
+            Desktop: cropper | settings | 3D preview */}
+        <div className="flex flex-col overflow-y-auto lg:grid lg:grid-cols-[35%_25%_1fr] lg:overflow-hidden min-h-0 flex-1">
           {/* LEFT — cropper */}
-          <div className="min-w-0 min-h-0 flex flex-col p-5 gap-3 overflow-hidden border-r border-border">
+          <div className="min-w-0 min-h-0 flex flex-col p-4 sm:p-5 gap-3 overflow-visible lg:overflow-hidden lg:border-r border-border">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:hidden">
+              1 · Crop your image
+            </p>
             <div
               ref={containerRef}
-              className="relative w-full bg-neutral-900 overflow-hidden flex-1 min-h-0"
+              className="relative w-full bg-neutral-900 overflow-hidden h-[46vh] min-h-[240px] landscape:h-[70vh] lg:h-auto lg:min-h-0 lg:landscape:h-auto lg:flex-1"
+
             >
               {imageUrl ? (
                 <Cropper
@@ -462,8 +467,12 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
           </div>
 
           {/* MIDDLE — settings (stacked, one line per option) */}
-          <div className="min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-y-auto border-r border-border bg-muted/10">
+          <div className="order-3 lg:order-none min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-visible lg:overflow-y-auto lg:border-r border-border bg-muted/10">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:hidden">
+              3 · Canvas options
+            </p>
             <div className="space-y-1">
+
               <Label className="text-[11px] font-semibold uppercase tracking-wide">Canvas size</Label>
               <Select value={sizeSlug} onValueChange={setSizeSlug}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Choose size" /></SelectTrigger>
@@ -481,14 +490,14 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                 <button
                   type="button"
                   onClick={() => setOrientation("landscape")}
-                  className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "landscape" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                  className={`border rounded-md py-2.5 lg:py-1.5 min-h-11 lg:min-h-0 text-xs font-medium transition ${orientation === "landscape" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
                 >
                   Landscape
                 </button>
                 <button
                   type="button"
                   onClick={() => setOrientation("portrait")}
-                  className={`border rounded-md py-1.5 text-xs font-medium transition ${orientation === "portrait" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                  className={`border rounded-md py-2.5 lg:py-1.5 min-h-11 lg:min-h-0 text-xs font-medium transition ${orientation === "portrait" ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
                 >
                   Portrait
                 </button>
@@ -505,7 +514,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                 {depthOpts.map((d) => (
                   <label
                     key={d}
-                    className={`border rounded-md py-1.5 text-center cursor-pointer text-xs ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
+                    className={`border rounded-md py-2.5 lg:py-1.5 min-h-11 lg:min-h-0 flex items-center justify-center text-center cursor-pointer text-xs ${wrapMm === d ? "border-primary bg-primary/10 font-medium" : "hover:border-primary/40"}`}
                   >
                     <RadioGroupItem value={String(d)} className="sr-only" />
                     {d} mm
@@ -520,7 +529,7 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
                 {WRAP_MODE_OPTIONS.map((opt) => (
                   <label
                     key={opt.value}
-                    className={`block border rounded-md p-2 cursor-pointer text-xs transition ${wrapMode === opt.value ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
+                    className={`block border rounded-md p-3 lg:p-2 cursor-pointer text-xs transition ${wrapMode === opt.value ? "border-primary bg-primary/10" : "hover:border-primary/40"}`}
                     title={opt.help}
                   >
                     <div className="flex items-center gap-2">
@@ -562,12 +571,12 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
             </div>
           </div>
 
-          {/* RIGHT — 3D preview (fills column) */}
-          <div className="min-w-0 min-h-0 flex flex-col p-4 bg-muted/20 overflow-hidden">
+          {/* RIGHT — 3D preview (fills column; sits under the cropper on mobile) */}
+          <div className="order-2 lg:order-none min-w-0 min-h-0 flex flex-col p-4 bg-muted/20 overflow-hidden">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 shrink-0">
-              How it will look on the wall
+              <span className="lg:hidden">2 · </span>How it will look on the wall
             </p>
-            <div className="w-full flex-1 min-h-0">
+            <div className="w-full h-[38vh] min-h-[200px] landscape:h-[60vh] lg:h-auto lg:min-h-0 lg:landscape:h-auto lg:flex-1">
               {previewTransform && faceBitmap ? (
                 <Canvas3DPreview image={faceBitmap} state={previewTransform} />
               ) : (
@@ -580,9 +589,9 @@ const CanvasEditorModal = forwardRef<HTMLDivElement, CanvasEditorModalProps>(fun
         </div>
 
 
-        <DialogFooter className="px-6 py-4 border-t border-border bg-muted/30">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save</Button>
+        <DialogFooter className="shrink-0 flex-row gap-2 px-4 py-3 sm:px-6 sm:py-4 border-t border-border bg-muted/30 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-4">
+          <Button variant="outline" onClick={onClose} className="flex-1 sm:flex-none">Cancel</Button>
+          <Button onClick={handleSave} className="flex-1 sm:flex-none">Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
