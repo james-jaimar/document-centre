@@ -12,6 +12,7 @@ All three persist the resulting storage path back onto the matching
 """
 from __future__ import annotations
 
+import re
 import io
 import traceback
 from datetime import datetime
