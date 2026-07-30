@@ -1119,6 +1119,25 @@ export default function OrderBuild() {
     const PRINTABLE = new Set(["body", "front_cover", "back_cover"]);
     const docPages = (id: string | null | undefined) =>
       documents.find((d) => d.id === id)?.page_count ?? 0;
+    // Pages actually consumed by a section. When the section carries an
+    // explicit page range (auto cover split slices ONE document into
+    // cover/body/cover) we must bill only that slice — otherwise the same
+    // 28-page PDF is billed three times over.
+    const sectionPages = (s: (typeof sections)[number]) => {
+      const total = docPages(s.document_id);
+      const start = (s as any).page_range_start as number | null | undefined;
+      const end = (s as any).page_range_end as number | null | undefined;
+      if (start == null && end == null) return total;
+      const from = Math.max(0, start ?? 0);
+      const to = Math.min(total - 1, end ?? total - 1);
+      return Math.max(0, to - from + 1);
+    };
+    // "250gsm Silk" → "250gsm-silk" (catalog_papers.code)
+    const paperCodeOf = (s: (typeof sections)[number]) => {
+      const raw = (s as any).paper_stock as string | null | undefined;
+      if (!raw) return null;
+      return String(raw).trim().toLowerCase().replace(/\s+/g, "-");
+    };
     const specSections = sections
       .filter((s) => PRINTABLE.has(s.section_type as string))
       .map((s) => ({
@@ -1128,11 +1147,14 @@ export default function OrderBuild() {
             : s.section_type === "back_cover"
             ? "Back Cover"
             : "Body",
-        page_count: docPages(s.document_id),
+        page_count: sectionPages(s),
         is_color: !!s.is_color,
         is_duplex: !!s.is_duplex,
+        paper_code: paperCodeOf(s),
+        paper_weight_gsm: ((s as any).paper_weight_gsm ?? null) as number | null,
       }))
       .filter((s) => s.page_count > 0);
+
     // Append tab dividers as zero-page sections labelled "Tab" so the
     // pricing engine can count them toward binding spine selection
     // (each tab is treated as ~2 sheets of bulk) without affecting
