@@ -262,12 +262,13 @@ export default function PhotoEditorModal({
           </div>
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t border-border bg-muted/30">
-          <Button variant="outline" onClick={onClose}>
+        <DialogFooter className="px-4 sm:px-6 py-3 sm:py-4 border-t border-border bg-muted/30 flex-row justify-end gap-2">
+          <Button variant="outline" onClick={onClose} className="flex-1 sm:flex-none">
             Cancel
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave} className="flex-1 sm:flex-none">Save</Button>
         </DialogFooter>
+
       </DialogContent>
     </Dialog>
   );
