@@ -297,7 +297,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           )}
 
           {sizeMismatch && (
-            <div className="flex items-start gap-2 rounded-lg border-2 border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+            <div className="flex items-start gap-2 rounded-lg border-2 border-warning/50 bg-warning/10 px-3 py-2 text-xs text-foreground">
               <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
               <span>
                 <span className="font-bold">Size mismatch.</span> This template expects{" "}
