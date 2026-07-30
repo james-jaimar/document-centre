@@ -1,35 +1,26 @@
 ## Goal
 
-Make the Canvas Print editor usable on phones. Today the modal is a three-column grid inside a fixed `90vh` box with `overflow-hidden`. On mobile the grid collapses to one column, but the container still doesn't scroll as a whole, so the cropper section is pushed off the top and the Save/Cancel bar is hard to reach.
+Make the document size impossible to miss on an admin job, and warn when the chosen imposition template doesn't match that size.
 
-## What changes (single file: `src/components/canvas/CanvasEditorModal.tsx`)
+## Changes
 
-Verified current state: line 344 `DialogContent` is `w-[90vw] h-[90vh] overflow-hidden flex flex-col`; line 355 the body is `grid grid-cols-1 lg:grid-cols-[35%_25%_1fr] min-h-0 flex-1 overflow-hidden`. The three children each set their own `overflow-hidden` / `overflow-y-auto`, which only works in the desktop 3-column case.
+### 1. Size banner at the top of Job Details (`src/components/orders/detail/JobDetailPanel.tsx`)
+- Add a prominent size strip directly under the Job ID / status badges, above the preview button:
+  - Large bold size text (e.g. `A5 · 148 × 210 mm`), plus an orientation label (Portrait/Landscape) when width/height are known.
+  - High-contrast semantic styling (primary/accent tinted panel with border), not a small grey label.
+- Source of the value, in priority order: the existing `summary.primary_spec_*` entry labelled "Size"/"Document Size", then the configuration section item labelled "Document Size", then the job snapshot trim dimensions. No new data fetching.
 
-### 1. Dialog shell
-- Mobile: near-full-screen sheet — `w-[calc(100vw-0.5rem)] max-w-none h-[100dvh] max-h-[100dvh] rounded-none`; desktop keeps the existing `90vw / 90vh` behaviour via `sm:`/`lg:` variants.
-- Tighter header padding on mobile (`px-4 pt-4 pb-2`), description wraps instead of truncating.
+### 2. Emphasise the inline size rows
+- In the summary specs grid and in each configuration section, when a row's label is Size / Document Size / Finished Size, render the value in bold with a slightly larger type size and a subtle highlight so it reads differently from surrounding spec rows.
 
-### 2. Body becomes one scroll container on mobile
-- Body: `flex flex-col overflow-y-auto` on mobile, switching to the existing `lg:grid lg:grid-cols-[35%_25%_1fr] lg:overflow-hidden` at `lg`.
-- Each column drops its own scrolling on mobile (`overflow-visible lg:overflow-hidden` / `lg:overflow-y-auto`) so there is exactly one scrollbar.
+### 3. Size indicator in Imposition setup (`src/components/orders/detail/ProductionPanel.tsx`)
+- Accept a new optional prop for the job's trim size (label + width/height mm), passed down from `JobDetailPanel`.
+- Render a bold "Job size: A5 (148×210 mm)" chip on the Imposition setup header row, right next to the section title, so it's visible at the moment the template is picked.
+- Add a mismatch warning: when a template is selected whose `input_width_mm`/`input_height_mm` differ from the job size (±1 mm, either orientation), show an amber inline warning under the select — e.g. "This template expects A4 (210×297 mm) but the job is A5 (148×210 mm)." The template stays selectable; this is advisory only.
+- Templates in the dropdown that match the job size get a small "matches job size" marker so the right one is easy to spot.
 
-### 3. Section ordering and sizing on mobile
-Order top → bottom, as agreed (customer scrolls):
-1. **Crop your image** — cropper box gets a fixed mobile height (`h-[46vh] min-h-[260px]`, `lg:flex-1`) so the frame always fits on screen; zoom slider and Rotate/Fill/Fit/Reset buttons below it, wrapping.
-2. **Preview** — the 3D preview moves directly under the cropper on mobile (`order-2 lg:order-none`) with a fixed `h-[38vh] min-h-[220px]` so customers see the effect of their crop without scrolling to the bottom; stays in the right column on desktop.
-3. **Settings** — size, orientation, wrap depth, edge finish + colour picker, low-DPI warning; full width, larger tap targets (option buttons/radio rows `min-h-11`).
-- Each mobile section gets a small uppercase heading so the scroll makes sense; headings hidden at `lg` where the columns already read as sections.
-
-### 4. Sticky footer
-- `DialogFooter` becomes `sticky bottom-0` on mobile with safe-area padding, Cancel/Save as equal-width full-width buttons (`flex-1`), so Save is always reachable.
-
-### 5. Landscape phones
-- Because the cropper/preview heights are `vh`-based with `min-h` floors, landscape stays workable; add `landscape:h-[70vh]`-style tightening only where the fixed heights would exceed the viewport.
-
-## Not changing
-- No crop maths, pricing, save payload, or 3D rendering logic. `useCropperZoom` already derives the crop frame from the measured container, so the new mobile heights flow through automatically.
-- No changes to `CanvasPrintsBuilder.tsx` (its grid already stacks correctly) unless testing shows a tile-grid issue.
-
-## Verification
-- Playwright at 390×844 (portrait) and 844×390 (landscape): open a canvas, screenshot, confirm the crop frame is fully within the viewport, the page scrolls as one, and Save is visible.
+## Technical notes
+- Purely presentational; no schema, pricing, or generation-logic changes.
+- Size comparison reuses the existing ±1 mm, orientation-agnostic tolerance already implemented in `ProductionPanel`'s auto-select effect.
+- Job trim size comes from `artefacts.assembly_report.target` when available, falling back to the snapshot size passed from `JobDetailPanel` (so the chip still shows before assembly runs).
+- Colours use existing semantic tokens (`primary`, `warning`) — no hardcoded colour utilities.
