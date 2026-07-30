@@ -410,7 +410,9 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                             section_file = _greyscale_file(idx, section_file, label)
                             steps.append(f"greyscale_section:{label}")
 
-                        files.append(section_file)
+                        comp_key = _component_key(d)
+                        last_component = comp_key
+                        _add_file(section_file, comp_key)
 
                         # Simplex section with odd page count → insert real
                         # blank back page so the press doesn't print on the
@@ -425,21 +427,23 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                                 except Exception:
                                     pc = d.get("page_count") or 0
                                 if pc and pc % 2 == 1:
-                                    files.append(_make_blank(idx))
+                                    _add_file(_make_blank(idx), comp_key)
                                     steps.append(f"blank:simplex_back:{section_type or 'section'}")
 
                         section_used_any = True
                     elif kind == "blank_page":
-                        files.append(_make_blank(idx))
+                        _add_file(_make_blank(idx), last_component)
                         steps.append(f"blank:{d.get('reason') or 'unknown'}")
 
             if not section_used_any:
                 # ── Fallback: download all sources in document order ─────
                 files = []
+                file_components = []
                 for idx, (fname, path) in enumerate(bundle.asset_paths):
                     local = ws.path(f"{idx:03d}-{Path(fname).stem}.pdf")
                     storage.download(path, local)
-                    files.append(local)
+                    _add_file(local, "body")
+
 
             # ── Step 1: merge (only when >1 doc) ────────────────────────
             if len(files) > 1:
