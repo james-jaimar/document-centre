@@ -153,17 +153,20 @@ export default function PhotoEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-2">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-3xl sm:w-full p-0 overflow-hidden max-h-[95vh] grid-rows-[auto_auto_auto_auto] overflow-y-auto">
+        <DialogHeader className="px-4 sm:px-6 pt-5 sm:pt-6 pb-2">
           <DialogTitle className="text-lg">Edit Photo</DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogDescription className="text-xs break-words">
             {photo.file_name} · Print size {size.label}
             {borderFraction > 0 && " · White border (3 mm)"}
           </DialogDescription>
         </DialogHeader>
 
         {/* Cropper area — mount Cropper as soon as we have a URL */}
-        <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
+        <div
+          ref={containerRef}
+          className="relative w-full bg-black h-[45vh] min-h-[240px] sm:h-[420px]"
+        >
           {signedUrl ? (
             <Cropper
               image={signedUrl}
@@ -171,7 +174,7 @@ export default function PhotoEditorModal({
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
-              cropSize={cropSize}
+              cropSize={cropSize.width > 0 ? cropSize : undefined}
               objectFit="contain"
               showGrid={true}
               onCropChange={setCrop}
@@ -191,7 +194,7 @@ export default function PhotoEditorModal({
           )}
 
           {/* White-border overlay */}
-          {borderFraction > 0 && (
+          {borderFraction > 0 && cropSize.width > 0 && (
             <div
               className="pointer-events-none absolute inset-0 flex items-center justify-center"
               aria-hidden
@@ -207,6 +210,7 @@ export default function PhotoEditorModal({
             </div>
           )}
         </div>
+
 
         {/* Controls */}
         <div className="px-6 py-4 space-y-4 bg-card">
