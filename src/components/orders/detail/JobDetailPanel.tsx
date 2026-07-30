@@ -242,7 +242,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
             ?? (job as any).product_snapshot?.family_id
             ?? null) as string | null
         }
-
+        jobSize={jobSize}
       />
 
       {previewOpen && (
