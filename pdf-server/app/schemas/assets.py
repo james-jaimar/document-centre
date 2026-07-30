@@ -220,6 +220,10 @@ class JobArtefactRequest(BaseModel):
     """
     job_id: UUID
     imposition_template_id: UUID | None = None
+    # Multi-component jobs (heavyweight printed cover + body text) emit one
+    # print-ready PDF per component. When set, imposition runs against that
+    # component's PDF and stores its own imposed sheet.
+    component: str | None = None
     force: bool = False
 
 
