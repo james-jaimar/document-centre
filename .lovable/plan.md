@@ -1,26 +1,48 @@
 ## Goal
 
-Make the document size impossible to miss on an admin job, and warn when the chosen imposition template doesn't match that size.
+When a customer uploads ONE multi-page PDF and selects a printed heavyweight cover (e.g. 250gsm silk), the system silently treats the first 2 pages as the cover and the last 2 as the back cover, keeps the remaining pages as the body, and gives branch admin two separate production components — each with its own print-ready PDF and its own imposition setup.
 
-## Changes
+## What the customer sees
 
-### 1. Size banner at the top of Job Details (`src/components/orders/detail/JobDetailPanel.tsx`)
-- Add a prominent size strip directly under the Job ID / status badges, above the preview button:
-  - Large bold size text (e.g. `A5 · 148 × 210 mm`), plus an orientation label (Portrait/Landscape) when width/height are known.
-  - High-contrast semantic styling (primary/accent tinted panel with border), not a small grey label.
-- Source of the value, in priority order: the existing `summary.primary_spec_*` entry labelled "Size"/"Document Size", then the configuration section item labelled "Document Size", then the job snapshot trim dimensions. No new data fetching.
+Nothing extra. They upload the file, choose "Printed Cover (250gsm Silk)", and the price/spec summary shows:
 
-### 2. Emphasise the inline size rows
-- In the summary specs grid and in each configuration section, when a row's label is Size / Document Size / Finished Size, render the value in bold with a slightly larger type size and a subtle highlight so it reads differently from surrounding spec rows.
+```text
+Cover   4pp   250gsm Silk   double-sided colour
+Body   24pp    80gsm Bond   double-sided colour
+```
 
-### 3. Size indicator in Imposition setup (`src/components/orders/detail/ProductionPanel.tsx`)
-- Accept a new optional prop for the job's trim size (label + width/height mm), passed down from `JobDetailPanel`.
-- Render a bold "Job size: A5 (148×210 mm)" chip on the Imposition setup header row, right next to the section title, so it's visible at the moment the template is picked.
-- Add a mismatch warning: when a template is selected whose `input_width_mm`/`input_height_mm` differ from the job size (±1 mm, either orientation), show an amber inline warning under the select — e.g. "This template expects A4 (210×297 mm) but the job is A5 (148×210 mm)." The template stays selectable; this is advisory only.
-- Templates in the dropdown that match the job size get a small "matches job size" marker so the right one is easy to spot.
+No prompt, no extra step. If the file is too short to carve covers (< 5 pages), the whole file stays as body and the cover option is treated as body stock.
 
-## Technical notes
-- Purely presentational; no schema, pricing, or generation-logic changes.
-- Size comparison reuses the existing ±1 mm, orientation-agnostic tolerance already implemented in `ProductionPanel`'s auto-select effect.
-- Job trim size comes from `artefacts.assembly_report.target` when available, falling back to the snapshot size passed from `JobDetailPanel` (so the chip still shows before assembly runs).
-- Colours use existing semantic tokens (`primary`, `warning`) — no hardcoded colour utilities.
+## Split rules
+
+- Front cover = pages 1–2 (duplex).
+- Back cover = last 2 pages (duplex); if what remains is odd/short, fall back to a 1-page simplex back cover.
+- Body = everything in between.
+- Splitting happens only when there is a single uploaded file. If the customer already uploaded separate cover files, nothing changes — the existing multi-section flow already handles it.
+- Cover sections inherit the gsm/finish from the chosen printed-cover option; body keeps the body stock.
+
+## Technical approach
+
+**Data model** — no new tables. `document_sections` already carries `document_id`, `n_start`/`n_end` (page slice), `paper_stock`, `paper_weight_gsm`, `is_color`, `is_duplex`. The split writes three sections pointing at the same document with different page ranges. The PDF worker already honours `n_start`/`n_end` slicing in its merge directives.
+
+**Frontend**
+- New helper `src/lib/orders/autoCoverSplit.ts`: given the document page count and the selected printed-cover option metadata, return the three section descriptors (front_cover / body / back_cover) with page ranges and stock.
+- Wire it into the bound-document flow (`OrderFiles.tsx` + `useOrderBuilder.ts`): when the cover option changes to a "Printed Cover" value and exactly one document is attached, reconcile sections to the split; when it changes away, collapse back to a single body section. Idempotent — re-running produces the same three rows.
+- Spec/summary rendering shows the cover and body as separate lines with their stocks.
+
+**Print-ready assembly (pdf-server)**
+- `assemble_print_ready_for_job` gains a component-grouping step: group merge directives by paper stock/weight into ordered components (`cover`, `body`). When more than one component exists, emit one print-ready PDF per component into the existing `print_ready_pdf_paths` JSON array (already used by canvas prints), mirroring the first into `print_ready_pdf_path` for backwards compatibility.
+- `assembly_report` gains a `components` array: `{ key, label, pages, paper, gsm, storage_path, width_mm, height_mm, duplex }`.
+
+**Imposition**
+- `assemble_imposed_sheet_for_job` accepts an optional `component` key and imposes just that component's print-ready PDF, storing results in a new `imposed_pdf_paths` JSON column on `order_jobs` keyed by component (migration adds the column; `imposed_pdf_path` still mirrors the first).
+- Default suggestion per component: covers → full-bleed n-up on SRA3 (A5 → 4-up), body → n-up on the next size up (A5 → 2-up A4). The existing `IMPOSITION_MAP`/template picker supplies the ups count.
+
+**Branch admin UI (`ProductionPanel.tsx`)**
+- Renders one card per component instead of a single print-ready row: component label, page count, stock/gsm, size chip (reusing the bold size treatment added earlier), its own download button, and its own imposition template selector + generate/download.
+- Single-component jobs render exactly as they do today.
+
+## Out of scope for this round
+
+- Creep/spine allowance changes for the split body.
+- Automatic template creation — the imposition picker still chooses from existing templates, we only pre-select a sensible default.
