@@ -213,7 +213,7 @@ export default function PhotoEditorModal({
 
 
         {/* Controls */}
-        <div className="px-6 py-4 space-y-4 bg-card">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 space-y-4 bg-card">
           {/* Zoom slider */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
