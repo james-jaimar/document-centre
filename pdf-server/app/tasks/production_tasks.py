@@ -849,13 +849,19 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component
                 )
 
             job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-            storage_path = unique_name(f"production/imposed/{job_number}", ".pdf")
+            suffix = f"-{_safe(component, '')}" if component else ""
+            storage_path = unique_name(f"production/imposed/{job_number}{suffix}", ".pdf")
             storage.upload(out_pdf, storage_path, "application/pdf")
 
-        write_artefact_path(job_id, "imposed_pdf_path", storage_path)
+        _record_imposed_component(
+            job_id, bundle, component, comp_report, storage_path, None, None
+        )
+        if not component or _is_primary_component(bundle, component):
+            write_artefact_path(job_id, "imposed_pdf_path", storage_path)
         result = {
             "storage_path": storage_path,
             "strategy": strategy,
+            "component": component,
             "sheet_mm": [sheet_w, sheet_h],
             "stats": stats,
         }
