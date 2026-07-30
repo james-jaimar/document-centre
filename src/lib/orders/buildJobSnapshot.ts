@@ -447,6 +447,12 @@ export type MergeDirective =
       // decisions per-file without joining back to the snapshot sections[].
       is_color?: boolean | null;
       is_duplex?: boolean | null;
+      // Stock, so the worker can group directives into physical components
+      // (e.g. heavyweight printed covers vs body text) and emit one
+      // print-ready PDF per component.
+      paper_stock?: string | null;
+      paper_weight_gsm?: number | null;
+
     }
   | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" };
 
