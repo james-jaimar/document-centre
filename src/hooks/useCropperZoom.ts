@@ -65,20 +65,22 @@ export function useCropperZoom({
     setMediaSize(ms);
   }, []);
 
+  const measured = containerWidth > 0 && containerHeight > 0;
+
   // ─── Fixed crop frame from container + aspect ───────────────────────
   const cropSize = useMemo<CropperCropSize>(() => {
-    const cw = containerWidth > 0 ? containerWidth : 600;
-    const ch = containerHeight > 0 ? containerHeight : 420;
+    if (!measured) return { width: 0, height: 0 };
+    const cw = containerWidth;
+    const ch = containerHeight;
     const safeAspect = aspect > 0 ? aspect : 1;
 
-    const containerAspect = cw / ch;
-    if (safeAspect >= containerAspect) {
-      const w = cw * 0.95;
-      return { width: Math.round(w), height: Math.round(w / safeAspect) };
-    }
-    const h = ch * 0.95;
-    return { width: Math.round(h * safeAspect), height: Math.round(h) };
-  }, [containerWidth, containerHeight, aspect]);
+    // Fit the frame inside the measured container on BOTH axes.
+    const maxW = cw * 0.95;
+    const maxH = ch * 0.95;
+    const w = Math.min(maxW, maxH * safeAspect);
+    return { width: Math.round(w), height: Math.round(w / safeAspect) };
+  }, [measured, containerWidth, containerHeight, aspect]);
+
 
   // ─── Fill / Fit from the cropper's own rendered media dimensions ────
   const { fillZoom, fitZoom } = useMemo(() => {
