@@ -35,7 +35,7 @@ const TONE_ICON_BG: Record<Tone, string> = {
   warning: "bg-warning/15 text-warning",
 };
 
-export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, orderNumber }: Props) {
+export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, orderNumber, jobSize = null }: Props) {
   const {
     artefacts,
     isLoading,
@@ -55,8 +55,9 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   // template instead of always defaulting to the primary. Bus card jobs that
   // print 90×55mm should not silently fall back to a 90×50mm sheet.
   const jobTarget = (artefacts?.assembly_report as { target?: { width_mm?: number; height_mm?: number } } | undefined)?.target;
-  const jobW = Number(jobTarget?.width_mm) || 0;
-  const jobH = Number(jobTarget?.height_mm) || 0;
+  const jobW = Number(jobTarget?.width_mm) || Number(jobSize?.width_mm) || 0;
+  const jobH = Number(jobTarget?.height_mm) || Number(jobSize?.height_mm) || 0;
+
 
   useEffect(() => {
     if (artefacts?.imposition_template_id) {
