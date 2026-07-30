@@ -487,7 +487,10 @@ function buildMergeDirectives(
       page_range_end: s.page_range_end,
       is_color: s.is_color ?? null,
       is_duplex: s.is_duplex ?? null,
+      paper_stock: s.paper_stock ?? null,
+      paper_weight_gsm: s.paper_weight_gsm ?? null,
     });
+
 
 
     if (isSimplexCover && s.section_type === "front_cover") {
