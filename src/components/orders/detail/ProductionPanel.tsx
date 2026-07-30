@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
 import { useTemplatesForProductFamily } from "@/hooks/useImpositionTemplates";
 import { format } from "date-fns";
+import { sizesMatch, type ResolvedJobSize } from "@/lib/orders/jobSize";
 
 interface Props {
   jobId: string;
@@ -16,6 +17,8 @@ interface Props {
   /** Used to build a meaningful download filename. */
   jobNumber?: string | null;
   orderNumber?: string | null;
+  /** Finished/trim size of the job, surfaced next to the imposition picker. */
+  jobSize?: ResolvedJobSize | null;
 }
 
 /** Sanitise a string for use in a download filename. */
