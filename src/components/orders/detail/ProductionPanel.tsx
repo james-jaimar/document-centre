@@ -129,6 +129,17 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
   const noTemplatesAssigned = !loadingTemplates && templates.length === 0;
 
+  const templateMatchesJob = (t: any) =>
+    sizesMatch(jobW, jobH, Number(t?.input_width_mm) || 0, Number(t?.input_height_mm) || 0);
+
+  const selTplW = Number((selectedTemplate as any)?.input_width_mm) || 0;
+  const selTplH = Number((selectedTemplate as any)?.input_height_mm) || 0;
+  const sizeMismatch =
+    !!selectedTemplate && jobW > 0 && jobH > 0 && selTplW > 0 && selTplH > 0 && !templateMatchesJob(selectedTemplate);
+
+  const jobSizeLabel = jobSize?.label
+    ?? (jobW > 0 && jobH > 0 ? `${jobW}×${jobH}mm` : null);
+
   const describeTemplate = (t: typeof templates[number]) => {
     const kind = (t as any).kind ?? "template_pdf";
     if (kind === "parametric_nup") {
