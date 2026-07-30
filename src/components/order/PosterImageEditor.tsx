@@ -254,7 +254,7 @@ export default function PosterImageEditor({
               zoom={zoom}
               rotation={rotation}
               aspect={aspect}
-              cropSize={cropSize}
+              cropSize={cropSize.width > 0 ? cropSize : undefined}
               objectFit="contain"
               showGrid
               onCropChange={setCrop}

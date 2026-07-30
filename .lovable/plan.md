@@ -1,36 +1,26 @@
 ## Goal
+On a phone, the photo print editor's crop frame extends past the left and right edges, so you can't see the whole crop. Make the editor fully responsive.
 
-Canvas Prints jobs show "No customer preview available" in the store admin's order detail. Add a proper visual preview, matching the pattern already used for Photo Prints.
+## Step 1 — Confirm the cause (not yet verified)
+I could not reproduce it in a headless browser (the page needs a signed-in tenant session), so the exact cause is unconfirmed. First action is to reproduce at a 394px viewport with a photo loaded and log the measured container width vs. the computed crop-frame size, so the fix targets the real cause rather than a guess.
 
-## Why it's missing today (verified)
+Two candidates to check:
+- The dialog is `w-full max-w-3xl` with no viewport margin, so the panel spans edge to edge with no gutters.
+- `useCropperZoom` falls back to a hard-coded 600×420 crop-frame basis when the container measures 0; if the measurement lands late (or never on a portalled dialog), the crop frame stays 570px wide on a 394px screen — which matches the screenshot.
 
-- `JobDetailPanel.tsx` only branches on `config.photo_prints` (or `product_category === "photo-prints"`) to render `PhotoPrintsAdminGallery`. There is no canvas branch.
-- The generic preview path (`buildPreviewFallback` / `PreviewLightbox`) is PDF/page based, so it finds no thumbnails or PDF sources for a canvas job — hence the empty state.
-- The data is already there: `buildJobSnapshot.ts` copies the whole `spec.canvas_prints` block onto the job configuration, including per-canvas size, orientation, wrap depth, wrap mode, wrap colour, crop rect, rotation and the source image path.
+## Step 2 — Fix (frontend only)
+In `src/components/photo/PhotoEditorModal.tsx`:
+- Constrain the dialog on small screens: full-width minus a small gutter, capped height, scrollable body, so header/controls/footer stay reachable.
+- Replace the fixed `height: 420` cropper area with a responsive height (viewport-based on mobile, 420 on desktop).
+- Clamp the crop frame to the measured container so it can never exceed the visible area.
 
-## What to build
+In `src/hooks/useCropperZoom.ts`:
+- Only compute a crop frame once real measurements exist (report `ready: false` otherwise) instead of using the 600×420 fallback, and re-snap zoom when the measurement arrives.
 
-**1. `CanvasPrintsAdminGallery` component** (new, sibling of `PhotoPrintsAdminGallery`)
+Optionally tighten the controls row for narrow screens (buttons wrap cleanly, zoom slider full width).
 
-For each canvas in `configuration.canvas_prints.canvases[]`:
+## Step 3 — Verify
+Re-run the mobile-viewport check with a photo open and screenshot the editor to confirm the crop frame, its guides, and the border overlay sit fully inside the screen at 394px, and that desktop layout is unchanged.
 
-- Render a true proof of the finished canvas by reusing `renderProductionCanvas()` from `src/lib/canvasPrints/renderWrap.ts` at low DPI (~40), the same call `CanvasTile` makes on the customer side — so the admin sees exactly what the customer approved, including gallery wrap bleed or the solid colour wrap edges.
-- Show the composed canvas (front + wrap edges) rather than only the front face, so the wrap treatment is visible at a glance.
-- Caption each tile: file name, finished size (e.g. `A2 — 594 × 420 mm`), orientation, wrap depth (`38 mm`), wrap mode label from `WRAP_MODE_OPTIONS`, a small colour swatch + hex when the mode is colour wrap, and a `×qty` badge.
-- Header line summarising: N canvases, total prints, and the common size/depth.
-- Click a tile to open a larger lightbox view of the same composed render.
-
-**2. Image loading / CORS**
-
-The composed render reads pixels from a canvas, so the source image must be same-origin. Use the existing same-origin download proxy (`downloadFromS3` in `src/lib/s3Storage.ts`) to fetch the image as a blob and render from an object URL, rather than a signed S3 URL — this is the same fix already applied in the customer builder. Prefer `preview_path` → `thumb_path` → `original_storage_path` so admins aren't downloading 40 MB originals.
-
-Graceful fallbacks: skeleton while loading, and if the render fails, fall back to a plain `<img>` of the signed source with the spec text still shown.
-
-**3. Wire it into `JobDetailPanel.tsx`**
-
-Extend the existing branch so a job with `config.canvas_prints` (or `product_category === "canvas-prints"`) renders `CanvasPrintsAdminGallery` instead of the empty preview block and generic attached-files list — mirroring how photo prints are handled today.
-
-## Notes
-
-- No database, pricing, or production-PDF changes; this is presentation only. The print-ready CMYK PDFs continue to come from the existing production panel.
-- Existing orders will work retroactively, since the render is computed from the stored spec rather than a baked thumbnail.
+## Scope
+Presentation only — no changes to crop maths persisted to the order, `croppedAreaPixels` scaling, or backend rendering.
