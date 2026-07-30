@@ -673,18 +673,56 @@ def _press_sheet_size_mm(bundle: JobBundle) -> tuple[float, float]:
     return 320.0, 450.0  # SRA3
 
 
+def _resolve_component(bundle: JobBundle, component: str | None) -> tuple[str | None, dict | None]:
+    """Return (source print-ready path, component report) for `component`.
+
+    Falls back to the job-level print-ready PDF when no component is given
+    (single-component jobs) or when the component cannot be matched.
+    """
+    report = bundle.job.get("assembly_report") or {}
+    comps = report.get("components") or []
+    if component:
+        for c in comps:
+            if c.get("component") == component or c.get("label") == component:
+                return c.get("storage_path"), c
+    return bundle.job.get("print_ready_pdf_path"), None
+
+
+def _record_imposed_component(job_id: str, bundle: JobBundle, component: str | None,
+                              comp_report: dict | None, storage_path: str,
+                              template_id, n_up) -> None:
+    """Upsert the imposed sheet for one component into `imposed_components`."""
+    from datetime import datetime, timezone
+
+    key = component or "body"
+    existing = bundle.job.get("imposed_components")
+    rows = [r for r in (existing or []) if isinstance(r, dict) and r.get("component") != key]
+    rows.append({
+        "component": key,
+        "label": (comp_report or {}).get("label") or key,
+        "template_id": str(template_id) if template_id else None,
+        "storage_path": storage_path,
+        "n_up": n_up,
+        "imposed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    write_job_field(job_id, "imposed_components", rows)
+
+
 @shared_task(bind=True, queue="imposition")
-def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
+def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str, component: str | None = None):
     db = _db()
     try:
         job_repo.mark_running(db, pdf_job_id)
         bundle = load_job_bundle(job_id)
 
-        source_path = bundle.job.get("print_ready_pdf_path")
+        source_path, comp_report = _resolve_component(bundle, component)
         if not source_path:
             raise ValueError("Print-ready PDF must be assembled before imposition.")
 
         template_id = bundle.job.get("imposition_template_id")
+        if component:
+            by_comp = bundle.job.get("imposition_templates_by_component") or {}
+            template_id = by_comp.get(component) or template_id
 
         with Workspace() as ws:
             src = ws.path("source.pdf")
