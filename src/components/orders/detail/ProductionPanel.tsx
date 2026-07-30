@@ -129,6 +129,20 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
   const noTemplatesAssigned = !loadingTemplates && templates.length === 0;
 
+  // ---- Multi-component imposition (printed cover vs body text) ----
+  const components = artefacts?.assembly_report?.components ?? [];
+  const multiComponent = components.length > 1;
+
+  const imposedByComponent = Object.fromEntries(
+    (artefacts?.imposed_components ?? []).map((r) => [r.component, r]),
+  );
+
+  /** Chosen template for a component: local edit → persisted → job default. */
+  const templateForComponent = (key: string): string | null =>
+    componentTemplates[key]
+    ?? artefacts?.imposition_templates_by_component?.[key]
+    ?? selectedTemplateId;
+
   const templateMatchesJob = (t: any) =>
     sizesMatch(jobW, jobH, Number(t?.input_width_mm) || 0, Number(t?.input_height_mm) || 0);
 
