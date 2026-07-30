@@ -50,6 +50,8 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     useTemplatesForProductFamily(productFamilyId);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  /** Per-component template overrides (multi-component jobs only). */
+  const [componentTemplates, setComponentTemplates] = useState<Record<string, string | null>>({});
 
   // Pull the actual job trim size (post-assembly) so we can pick a matching
   // template instead of always defaulting to the primary. Bus card jobs that
