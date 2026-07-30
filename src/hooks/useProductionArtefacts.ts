@@ -75,7 +75,7 @@ export function useProductionArtefacts(jobId: string | null) {
       const { data, error } = await supabase
         .from("order_jobs")
         .select(
-          "print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category, assembly_report, print_ready_assembled_at, print_ready_spec_hash, auto_assemble_error, auto_assemble_failed_at, order_id",
+          "print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, imposed_components, imposition_templates_by_component, product_category, assembly_report, print_ready_assembled_at, print_ready_spec_hash, auto_assemble_error, auto_assemble_failed_at, order_id",
         )
         .eq("id", jobId!)
         .single();
@@ -132,12 +132,20 @@ export function useProductionArtefacts(jobId: string | null) {
     }
   }, [jobId, qc, toast]);
 
-  const generateImposition = useCallback(async (impositionTemplateId?: string | null) => {
+  const generateImposition = useCallback(async (
+    impositionTemplateId?: string | null,
+    component?: string | null,
+  ) => {
     if (!jobId) return;
     setGenerating("impose");
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "impose", job_id: jobId, imposition_template_id: impositionTemplateId ?? null },
+        body: {
+          action: "impose",
+          job_id: jobId,
+          imposition_template_id: impositionTemplateId ?? null,
+          component: component ?? null,
+        },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
