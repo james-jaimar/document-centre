@@ -745,11 +745,12 @@ def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends
             write_job_field(
                 str(payload.job_id), "imposition_templates_by_component", by_comp
             )
-        write_job_field(
-            str(payload.job_id),
-            "imposition_template_id",
-            str(payload.imposition_template_id),
-        )
+        else:
+            write_job_field(
+                str(payload.job_id),
+                "imposition_template_id",
+                str(payload.imposition_template_id),
+            )
 
     job_id = job_repo.create_job(db, None, "assemble_imposed_sheet", "imposition", body)
     task_id = enqueue(
