@@ -515,6 +515,13 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     # otherwise the customer-uploaded crop marks get scaled
                     # into the finished artwork.
                     source_has_trim = pdf_ops.detect_bleed(current)
+                    # Bleed-carrying sources are trimmed to the bleed box
+                    # (max 3 mm) and rebuilt at the exact target trim with a
+                    # fixed 3 mm bleed (e.g. A4 → 210×297 trim / 216×303
+                    # media). Sources without bleed just scale proportionally.
+                    out_bleed_mm = (
+                        min(float(target.bleed_mm or 3.0), 3.0) if source_has_trim else None
+                    )
                     pdf_ops.resize_pages(
                         current, resized,
                         width_mm=target.width_mm,
@@ -522,9 +529,13 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         fit_mode="fit",
                         dominant_orientation=target.orientation,
                         respect_trim_box=source_has_trim,
+                        target_bleed_mm=out_bleed_mm,
                     )
                     current = resized
-                    comp_steps.append(f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}")
+                    step = f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}"
+                    if out_bleed_mm:
+                        step += f"+{out_bleed_mm:.0f}mm bleed"
+                    comp_steps.append(step)
 
                 # ── Step 4: expand for bleed (only if missing) ──────────
                 if needs_bleed:
