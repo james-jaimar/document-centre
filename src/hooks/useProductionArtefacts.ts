@@ -5,11 +5,22 @@ import { useToast } from "@/hooks/use-toast";
 import { getDownloadUrls } from "@/lib/s3Storage";
 
 
+export interface ImposedComponent {
+  component: string;
+  label?: string | null;
+  template_id?: string | null;
+  storage_path: string;
+  n_up?: number | null;
+  imposed_at?: string | null;
+}
+
 export interface ProductionArtefacts {
   print_ready_pdf_path: string | null;
   imposed_pdf_path: string | null;
   job_ticket_pdf_path: string | null;
   imposition_template_id: string | null;
+  imposed_components: ImposedComponent[] | null;
+  imposition_templates_by_component: Record<string, string> | null;
   product_category: string | null;
   assembly_report: AssemblyReport | null;
   print_ready_assembled_at: string | null;
