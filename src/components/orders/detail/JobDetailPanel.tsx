@@ -44,6 +44,8 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const previewPageCount = Math.max(previewThumbs.length, previewPdfSources.length);
   const hasPreview = previewThumbs.some((t) => !!t) || previewPdfSources.length > 0;
   const isCanvasJob = Boolean((config as any).canvas_prints) || job.product_category === "canvas-prints";
+  const jobSize = resolveJobSize(job, config);
+  const jobOrientation = orientationOf(jobSize);
   const [previewOpen, setPreviewOpen] = useState(false);
 
 
