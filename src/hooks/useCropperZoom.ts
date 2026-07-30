@@ -123,6 +123,6 @@ export function useCropperZoom({
     cropSize,
     onMediaLoaded,
     restrictPosition,
-    ready: !!mediaSize,
+    ready: !!mediaSize && measured,
   };
 }
