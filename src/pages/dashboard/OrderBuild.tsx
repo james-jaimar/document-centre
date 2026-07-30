@@ -47,6 +47,14 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import {
+  planCoverSplit,
+  printedCoverStock,
+  coverStockLabel,
+  matchesSplit,
+  isWholeDocumentBody,
+} from "@/lib/orders/autoCoverSplit";
+
 import { blockMatchesField, type QuantityBlock } from "@/hooks/useProductFamilies";
 import { usePackPricingOverridesForFamily } from "@/hooks/useProductPackPricingOverrides";
 import { resolvePackPricing } from "@/lib/pricing/resolvePackPricing";
@@ -529,6 +537,118 @@ export default function OrderBuild() {
     spec.selected_options["Print Sides"],
     sections.length,
   ]);
+
+  // ── Auto-split a single multi-page upload into Cover / Body / Cover ──────
+  // When the customer picks a *printed* cover for a single uploaded PDF, the
+  // print shop needs the first two and last two pages as their own components
+  // (heavyweight stock, imposed separately). Fully automatic and silent — the
+  // customer never has to slice the file themselves. Reverting to a non-printed
+  // cover collapses the sections back to one whole-document body.
+  const coverSplitBusyRef = useRef(false);
+  useEffect(() => {
+    if (!orderItemId) return;
+    if (documents.length !== 1) return;
+    if (coverSplitBusyRef.current) return;
+    const doc = documents[0];
+    const pages = doc.page_count ?? 0;
+    if (pages <= 0) return;
+
+    const coverOpt = options.find(
+      (o) => /cover/i.test(o.name) && !/lamination/i.test(o.name),
+    );
+    const selectedSlug = coverOpt ? spec.selected_options[coverOpt.name] : undefined;
+    const selectedValue =
+      coverOpt && isStructuredValues(coverOpt.values)
+        ? coverOpt.values.find((v) => v.slug === selectedSlug)
+        : undefined;
+    const stock = printedCoverStock(selectedValue?.metadata);
+    const plan = planCoverSplit(pages);
+    if (!plan) return;
+
+    const bodySection = sections.find(
+      (s) => s.document_id === doc.id && s.section_type === "body",
+    );
+
+    const run = async (fn: () => Promise<void>) => {
+      coverSplitBusyRef.current = true;
+      try {
+        await fn();
+      } catch (err) {
+        console.error("auto_cover_split_failed", err);
+      } finally {
+        coverSplitBusyRef.current = false;
+      }
+    };
+
+    if (stock) {
+      if (matchesSplit(sections, doc.id, plan)) return;
+      if (!isWholeDocumentBody(sections, doc.id, pages)) return;
+      if (!bodySection) return;
+      const paperStock = coverStockLabel(stock);
+      const coverColour = bodySection.is_color ?? true;
+      void run(async () => {
+        await updateSectionMut.mutateAsync({
+          id: bodySection.id,
+          page_range_start: plan.body.start,
+          page_range_end: plan.body.end,
+          sort_order: 1,
+          label: "Body",
+        } as any);
+        await addSectionMut.mutateAsync({
+          order_item_id: orderItemId,
+          document_id: doc.id,
+          section_type: "front_cover",
+          sort_order: 0,
+          page_range_start: plan.front.start,
+          page_range_end: plan.front.end,
+          is_duplex: true,
+          is_color: coverColour,
+          label: "Front Cover",
+          ...(paperStock ? { paper_stock: paperStock } : {}),
+          ...(stock.weight_gsm ? { paper_weight_gsm: stock.weight_gsm } : {}),
+        } as any);
+        await addSectionMut.mutateAsync({
+          order_item_id: orderItemId,
+          document_id: doc.id,
+          section_type: "back_cover",
+          sort_order: 2,
+          page_range_start: plan.back.start,
+          page_range_end: plan.back.end,
+          is_duplex: !plan.backIsSimplex,
+          is_color: coverColour,
+          label: "Back Cover",
+          ...(paperStock ? { paper_stock: paperStock } : {}),
+          ...(stock.weight_gsm ? { paper_weight_gsm: stock.weight_gsm } : {}),
+        } as any);
+      });
+      return;
+    }
+
+    // Non-printed cover selected — undo a previous auto split.
+    if (!matchesSplit(sections, doc.id, plan)) return;
+    const covers = sections.filter(
+      (s) =>
+        s.document_id === doc.id &&
+        (s.section_type === "front_cover" || s.section_type === "back_cover"),
+    );
+    if (!bodySection) return;
+    void run(async () => {
+      for (const c of covers) {
+        await deleteSectionMut.mutateAsync({ id: c.id, orderItemId });
+      }
+      await updateSectionMut.mutateAsync({
+        id: bodySection.id,
+        page_range_start: 0,
+        page_range_end: pages - 1,
+        sort_order: 0,
+        label: null,
+      } as any);
+    });
+    // Reacts to the cover picker + the uploaded file only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderItemId, documents, sections, options, spec.selected_options]);
+
+
 
 
   // Auto-match Document Size from uploaded document dimensions
