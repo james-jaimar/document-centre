@@ -256,9 +256,17 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
 
         {/* Imposition setup */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Layers className="h-4 w-4" />
-            <span className="text-xs font-bold uppercase tracking-wide">Imposition setup</span>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Layers className="h-4 w-4" />
+              <span className="text-xs font-bold uppercase tracking-wide">Imposition setup</span>
+            </div>
+            {jobSizeLabel && (
+              <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-primary/40 bg-primary/5 px-2 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">Job size</span>
+                <span className="text-sm font-extrabold text-primary">{jobSizeLabel}</span>
+              </span>
+            )}
           </div>
 
           {noTemplatesAssigned ? (
@@ -277,6 +285,9 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
                     <span>
                       {t.name}
                       {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
+                      {templateMatchesJob(t) && (
+                        <span className="ml-1 font-semibold text-success">· matches job size</span>
+                      )}
                     </span>
                     <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
                   </SelectItem>
@@ -284,6 +295,18 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
               </SelectContent>
             </Select>
           )}
+
+          {sizeMismatch && (
+            <div className="flex items-start gap-2 rounded-lg border-2 border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+              <span>
+                <span className="font-bold">Size mismatch.</span> This template expects{" "}
+                <span className="font-semibold">{selTplW}×{selTplH}mm</span>, but this job is{" "}
+                <span className="font-semibold">{jobSizeLabel}</span>. Double-check before imposing.
+              </span>
+            </div>
+          )}
+
 
           <Row
             tone="success"
