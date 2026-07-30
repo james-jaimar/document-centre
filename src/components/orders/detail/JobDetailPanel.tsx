@@ -144,24 +144,18 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         {/* Summary specs */}
         {(summary.primary_spec_1_label || summary.primary_spec_2_label || summary.primary_spec_3_label) && (
           <div className="grid grid-cols-[100px_1fr] gap-y-1 text-xs">
-            {summary.primary_spec_1_label && (
-              <>
-                <span className="text-muted-foreground">{summary.primary_spec_1_label}</span>
-                <span>{summary.primary_spec_1_value}</span>
-              </>
-            )}
-            {summary.primary_spec_2_label && (
-              <>
-                <span className="text-muted-foreground">{summary.primary_spec_2_label}</span>
-                <span>{summary.primary_spec_2_value}</span>
-              </>
-            )}
-            {summary.primary_spec_3_label && (
-              <>
-                <span className="text-muted-foreground">{summary.primary_spec_3_label}</span>
-                <span>{summary.primary_spec_3_value}</span>
-              </>
-            )}
+            {[1, 2, 3].map((n) => {
+              const label = (summary as any)[`primary_spec_${n}_label`];
+              const value = (summary as any)[`primary_spec_${n}_value`];
+              if (!label) return null;
+              const emphasise = isSizeLabel(label);
+              return (
+                <div key={n} className="contents">
+                  <span className={emphasise ? "text-primary font-semibold" : "text-muted-foreground"}>{label}</span>
+                  <span className={emphasise ? "text-sm font-bold text-primary" : undefined}>{value}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -173,13 +167,17 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
               {section.title}
             </h4>
             <div className="grid grid-cols-[100px_1fr] gap-y-0.5 text-xs">
-              {section.items.map((item, iIdx) => (
-                <div key={iIdx} className="contents">
-                  <span className="text-muted-foreground">{item.label}</span>
-                  <span>{item.value}</span>
-                </div>
-              ))}
+              {section.items.map((item, iIdx) => {
+                const emphasise = isSizeLabel(item.label);
+                return (
+                  <div key={iIdx} className="contents">
+                    <span className={emphasise ? "text-primary font-semibold" : "text-muted-foreground"}>{item.label}</span>
+                    <span className={emphasise ? "text-sm font-bold text-primary" : undefined}>{item.value}</span>
+                  </div>
+                );
+              })}
             </div>
+
           </div>
         ))}
 
