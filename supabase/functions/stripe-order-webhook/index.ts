@@ -128,6 +128,9 @@ Deno.serve(async (req) => {
           .eq("id", (existing as any).id);
       }
     }
+
+    // Issue the tax invoice + payment_received email (best-effort).
+    await issueTaxInvoiceAndNotify(sb, orderId);
   } else if (event.type === "checkout.session.expired" || event.type === "payment_intent.payment_failed") {
     const s = event.data.object as any;
     const attemptId = s?.metadata?.attempt_id;
