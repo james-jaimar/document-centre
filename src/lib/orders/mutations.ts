@@ -233,6 +233,20 @@ export async function refundPayment(payload: {
   return invokeOrderEngine<{ success: boolean; payment_id: string }>("refundPayment", payload);
 }
 
+export async function raiseRefund(payload: {
+  order_id: string;
+  amount: number;
+  reason?: string;
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    adjustment_id: string;
+    status: string;
+    manual_required: boolean;
+    provider: string | null;
+  }>("raiseRefund", payload);
+}
+
 export async function cancelOrder(payload: { order_id: string; reason: string }) {
   return invokeOrderEngine<{ success: boolean; refund_pending: boolean }>("cancelOrder", payload);
 }
@@ -377,6 +391,32 @@ export async function customerChangeQuantities(payload: {
 }) {
   return invokeOrderEngine<CustomerEditResult>("customerChangeQuantities", payload);
 }
+
+// ── Staff order amendment ───────────────────────────────────
+
+export type AdminChangeQuantitiesResult = {
+  success: boolean;
+  unchanged?: boolean;
+  requires_override?: boolean;
+  error?: string;
+  changes?: string[];
+  requires_payment?: boolean;
+  balance_due?: number;
+  credit_amount?: number;
+  price_estimated?: boolean;
+};
+
+export async function adminChangeQuantities(payload: {
+  order_id: string;
+  reason: string;
+  override_production?: boolean;
+  notify_customer?: boolean;
+  job_overrides: Array<{ job_id: string; quantity?: number; net_price?: number; remove?: boolean }>;
+}) {
+  return invokeOrderEngine<AdminChangeQuantitiesResult>("adminChangeQuantities", payload);
+}
+
+
 
 export async function customerChangeFulfillment(payload: {
   order_id: string;

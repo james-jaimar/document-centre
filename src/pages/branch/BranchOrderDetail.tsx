@@ -5,7 +5,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useLinkedBranches } from "@/hooks/useLinkedBranches";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Receipt, Undo2, Send, Building2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PencilLine, Receipt, Undo2, Send, Building2 } from "lucide-react";
 import { OrderSummaryTab } from "@/components/orders/detail/OrderSummaryTab";
 import { OrderPricingTab } from "@/components/orders/detail/OrderPricingTab";
 import { OrderDeliveryTab } from "@/components/orders/detail/OrderDeliveryTab";
@@ -14,6 +14,7 @@ import { JobDetailPanel } from "@/components/orders/detail/JobDetailPanel";
 import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
 import { RecordPaymentDialog } from "@/components/orders/RecordPaymentDialog";
 import { RefundDialog } from "@/components/orders/RefundDialog";
+import { ChangeQuantitiesDialog } from "@/components/orders/ChangeQuantitiesDialog";
 import { TransferProductionDialog } from "@/components/orders/TransferProductionDialog";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
@@ -41,6 +42,7 @@ export default function BranchOrderDetail() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [changeQtyOpen, setChangeQtyOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
@@ -178,6 +180,11 @@ export default function BranchOrderDetail() {
               {order.production_branch_id ? "Change production branch" : "Send for production"}
             </Button>
           )}
+          {!["dispatched", "completed", "cancelled"].includes(order.admin_status) && (
+            <Button size="sm" variant="outline" onClick={() => setChangeQtyOpen(true)}>
+              <PencilLine className="mr-2 h-4 w-4" /> Change quantities
+            </Button>
+          )}
           {Number(order.amount_paid) > 0 && (
             <Button size="sm" variant="outline" onClick={() => setRefundDialogOpen(true)}>
               <Undo2 className="mr-2 h-4 w-4" /> Refund
@@ -203,6 +210,15 @@ export default function BranchOrderDetail() {
         orderId={order.id}
         amountDue={Number(order.amount_due)}
         currency={order.currency}
+      />
+      <ChangeQuantitiesDialog
+        open={changeQtyOpen}
+        onOpenChange={setChangeQtyOpen}
+        orderId={order.id}
+        jobs={jobs}
+        currency={order.currency}
+        amountPaid={Number(order.amount_paid)}
+        totalAmount={Number(order.total_amount)}
       />
       <RefundDialog
         open={refundDialogOpen}
