@@ -26,11 +26,12 @@ const KIND_LABEL: Record<string, string> = {
   receipt: "Receipt",
 };
 
-export function OrderInvoicesList({ orderId }: { orderId: string }) {
+export function OrderInvoicesList({ orderId, staff = false }: { orderId: string; staff?: boolean }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [issuing, setIssuing] = useState(false);
   const [showSuperseded, setShowSuperseded] = useState(false);
   const [payment, setPayment] = useState<{
     payment_status: string | null;
