@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Download, Eye, FileText, Send, Loader2, ChevronDown, ChevronRight } from "lucide-react";
-import { downloadInvoice, viewInvoice, sendInvoiceEmail } from "@/lib/orders/mutations";
+import { downloadInvoice, viewInvoice, sendInvoiceEmail, generateInvoice } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
