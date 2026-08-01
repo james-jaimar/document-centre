@@ -57,9 +57,11 @@ export function useDemoUnlock(tenantId: string | null) {
     setUnlocked(tenantId ? getDemoUnlock(tenantId) : false);
   }, [tenantId]);
 
+  /** Accept the disclaimer. `cookieDays` controls how long the unlock lasts. */
   const unlock = useCallback(
-    (expires_at: number) => {
+    (cookieDays = 30) => {
       if (!tenantId) return;
+      const expires_at = Date.now() + Math.max(1, cookieDays) * 86400_000;
       setDemoUnlock(tenantId, expires_at);
       setUnlocked(true);
     },

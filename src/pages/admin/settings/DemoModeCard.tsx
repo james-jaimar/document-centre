@@ -43,9 +43,7 @@ export function DemoModeCard() {
   const [headline, setHeadline] = useState("Concept Demo");
   const [disclaimer, setDisclaimer] = useState("");
   const [cookieDays, setCookieDays] = useState(30);
-  const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
-  const [savingPwd, setSavingPwd] = useState(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -55,14 +53,8 @@ export function DemoModeCard() {
     setCookieDays(data?.cookie_days ?? 30);
   }, [isLoading, data]);
 
-  const hasPassword = !!data?.password_hash;
-
   const saveSettings = async () => {
     if (!tenantId) return;
-    if (enabled && !hasPassword && !newPassword) {
-      toast.error("Set a password before enabling the gate.");
-      return;
-    }
     setSaving(true);
     try {
       const { error } = await supabase
@@ -92,29 +84,8 @@ export function DemoModeCard() {
     }
   };
 
-  const savePassword = async () => {
-    if (!tenantId || !newPassword) return;
-    if (newPassword.length < 4) {
-      toast.error("Password must be at least 4 characters.");
-      return;
-    }
-    setSavingPwd(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("demo-gate-set-password", {
-        body: { tenant_id: tenantId, password: newPassword },
-      });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error ?? "Failed");
-      setNewPassword("");
-      toast.success("Password updated");
-      qc.invalidateQueries({ queryKey: ["demo-gate-admin", tenantId] });
-      qc.invalidateQueries({ queryKey: ["demo-gate-config", tenantId] });
-    } catch (e: any) {
-      toast.error("Could not update password", { description: e.message });
-    } finally {
-      setSavingPwd(false);
-    }
-  };
+
+
 
   return (
     <Card>
@@ -124,9 +95,9 @@ export function DemoModeCard() {
             <Lock className="h-4 w-4" /> Demo Mode (private preview gate)
           </CardTitle>
           <CardDescription>
-            Hide this tenant's storefront and customer portal behind a shared
-            password and a legal disclaimer. Platform admins and your own staff
-            always bypass.
+            Show a blocking disclaimer modal over this tenant's storefront and
+            customer portal until the visitor acknowledges it. Platform admins
+            and your own staff always bypass.
           </CardDescription>
         </div>
         <Badge variant={enabled ? "default" : "secondary"} className="shrink-0">
@@ -138,7 +109,8 @@ export function DemoModeCard() {
           <div>
             <div className="text-sm font-medium">Enable demo gate</div>
             <div className="text-xs text-muted-foreground">
-              When on, visitors hit a password screen before any /t/{"<slug>"} route.
+              When on, visitors must accept the disclaimer modal before using any
+              /t/{"<slug>"} route. No password required.
             </div>
           </div>
           <Switch checked={enabled} onCheckedChange={setEnabled} />
@@ -155,7 +127,7 @@ export function DemoModeCard() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cookieDays">Remember unlock for (days)</Label>
+            <Label htmlFor="cookieDays">Remember acceptance for (days)</Label>
             <Input
               id="cookieDays"
               type="number"
@@ -168,7 +140,7 @@ export function DemoModeCard() {
         </div>
 
         <div className="space-y-2">
-          <Label>Disclaimer copy (shown above the password field)</Label>
+          <Label>Disclaimer copy (shown in the modal)</Label>
           <RichTextEditor value={disclaimer} onChange={setDisclaimer} />
         </div>
 
@@ -178,31 +150,6 @@ export function DemoModeCard() {
           </Button>
         </div>
 
-        <div className="rounded-md border p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Access password</div>
-              <div className="text-xs text-muted-foreground">
-                {hasPassword
-                  ? "A password is set. Enter a new one below to replace it."
-                  : "No password set yet — set one before enabling the gate."}
-              </div>
-            </div>
-            {hasPassword && <Badge variant="secondary">Set</Badge>}
-          </div>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder={hasPassword ? "New password" : "Set a password"}
-              autoComplete="new-password"
-            />
-            <Button onClick={savePassword} disabled={!newPassword || savingPwd}>
-              {savingPwd ? "Saving…" : hasPassword ? "Replace" : "Set password"}
-            </Button>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );

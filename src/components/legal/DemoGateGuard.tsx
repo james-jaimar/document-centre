@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useSubdomainTenant } from "@/components/SubdomainRouter";
 import { useDemoGateConfig, useDemoUnlock } from "@/hooks/useDemoGate";
-import DemoGatePage from "./DemoGatePage";
+import DemoGateModal from "./DemoGateModal";
 
 /**
  * Wraps the tenant-facing routes. If the tenant has Demo Mode enabled,
@@ -78,12 +78,14 @@ export default function DemoGateGuard({ children }: { children: ReactNode }) {
   if (unlocked) return <>{children}</>;
 
   return (
-    <DemoGatePage
-      tenantId={tenantId}
-      tenantName={tenantName}
-      config={config}
-      onUnlock={unlock}
-    />
+    <>
+      {children}
+      <DemoGateModal
+        tenantName={tenantName}
+        config={config}
+        onAccept={() => unlock(config.cookie_days)}
+      />
+    </>
   );
 }
 
