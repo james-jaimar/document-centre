@@ -132,6 +132,24 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
     }
   };
 
+  const handleIssueTaxInvoice = async () => {
+    setIssuing(true);
+    try {
+      await generateInvoice({ order_id: orderId, kind: "invoice" });
+      toast.success("Tax invoice issued");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message || "Could not issue tax invoice");
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  // Paid order that never got its tax invoice (e.g. legacy online payments).
+  const needsTaxInvoice =
+    staff && !loading && !hasTaxInvoice && payment?.payment_status === "paid" && invoices.length > 0;
+
+
   const renderRow = (inv: Invoice, muted = false) => {
     const badge = paidBadge(inv.kind);
     return (
