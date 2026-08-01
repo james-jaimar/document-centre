@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Receipt, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PencilLine, Receipt, XCircle } from "lucide-react";
 import { OrderSummaryTab } from "@/components/orders/detail/OrderSummaryTab";
 import { OrderPricingTab } from "@/components/orders/detail/OrderPricingTab";
 import { OrderDeliveryTab } from "@/components/orders/detail/OrderDeliveryTab";
@@ -14,6 +14,7 @@ import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
 import { RecordPaymentDialog } from "@/components/orders/RecordPaymentDialog";
 import { RefundDialog } from "@/components/orders/RefundDialog";
 import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
+import { ChangeQuantitiesDialog } from "@/components/orders/ChangeQuantitiesDialog";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ export default function AdminOrderDetail() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [changeQtyOpen, setChangeQtyOpen] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
 
@@ -115,6 +117,11 @@ export default function AdminOrderDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {!isCancelled && !["dispatched", "completed"].includes(order.admin_status) && (
+            <Button size="sm" variant="outline" onClick={() => setChangeQtyOpen(true)}>
+              <PencilLine className="mr-2 h-4 w-4" /> Change quantities
+            </Button>
+          )}
           {!isCancelled && Number(order.amount_paid) > 0 && (
             <Button size="sm" variant="outline" onClick={() => setRefundDialogOpen(true)}>
               <Undo2 className="mr-2 h-4 w-4" /> Refund
@@ -150,6 +157,15 @@ export default function AdminOrderDetail() {
         orderId={order.id}
         amountDue={Number(order.amount_due)}
         currency={order.currency}
+      />
+      <ChangeQuantitiesDialog
+        open={changeQtyOpen}
+        onOpenChange={setChangeQtyOpen}
+        orderId={order.id}
+        jobs={jobs}
+        currency={order.currency}
+        amountPaid={Number(order.amount_paid)}
+        totalAmount={Number(order.total_amount)}
       />
       <RefundDialog
         open={refundDialogOpen}
