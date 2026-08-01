@@ -84,29 +84,8 @@ export function DemoModeCard() {
     }
   };
 
-  const savePassword = async () => {
-    if (!tenantId || !newPassword) return;
-    if (newPassword.length < 4) {
-      toast.error("Password must be at least 4 characters.");
-      return;
-    }
-    setSavingPwd(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("demo-gate-set-password", {
-        body: { tenant_id: tenantId, password: newPassword },
-      });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error ?? "Failed");
-      setNewPassword("");
-      toast.success("Password updated");
-      qc.invalidateQueries({ queryKey: ["demo-gate-admin", tenantId] });
-      qc.invalidateQueries({ queryKey: ["demo-gate-config", tenantId] });
-    } catch (e: any) {
-      toast.error("Could not update password", { description: e.message });
-    } finally {
-      setSavingPwd(false);
-    }
-  };
+
+
 
   return (
     <Card>
