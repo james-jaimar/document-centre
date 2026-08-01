@@ -1842,7 +1842,7 @@ async function adminChangeQuantities(
 
   const inProduction = touched.some((j) => !ADMIN_QTY_JOB_SAFE.has(j.job_status));
   if (inProduction && !override_production) {
-    return json({ success: false, requires_override: true, error: "Production has already started on at least one item" }, 409);
+    return json({ success: false, requires_override: true, message: "Production has already started on at least one item" });
   }
 
   const remaining = jobList.filter((j) => !byId.get(j.id)?.remove);
