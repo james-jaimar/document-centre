@@ -1760,9 +1760,18 @@ async function customerChangeQuantities(
     visibility: "both",
     actor_type: "customer",
     actor_profile_id: userId,
-    description: `Customer changed items: ${changes.join("; ")}`,
-    metadata: { changes, refund_flagged: refundFlagged },
+    description: `Customer changed items: ${changes.join("; ")} — prices scaled linearly, branch to confirm`,
+    metadata: { changes, refund_flagged: refundFlagged, price_estimated: true },
   });
+
+  // Flag the order so staff re-check the line prices against the rate card
+  // (linear scaling is wrong for pack / break pricing).
+  await admin
+    .from("orders")
+    .update({
+      metadata: { ...(((order as any).metadata as any) ?? {}), price_review_required: true },
+    })
+    .eq("id", order_id);
 
   return json({
     success: true,
@@ -1771,6 +1780,204 @@ async function customerChangeQuantities(
     credit_amount: refundFlagged ? Math.abs(delta) : 0,
   });
 }
+
+/** Statuses where staff may still amend quantities without an override. */
+const ADMIN_QTY_BLOCKED = new Set(["dispatched", "completed", "cancelled"]);
+const ADMIN_QTY_JOB_SAFE = new Set(["new", "awaiting_payment", "proof_pending", "on_hold", "approved"]);
+
+/**
+ * Staff-side order amendment. Mirrors `customerChangeQuantities` but is
+ * authorised through staff membership, requires a reason, and accepts an
+ * explicit `net_price` per line so operators can price pack / break
+ * products correctly instead of relying on linear scaling.
+ */
+async function adminChangeQuantities(
+  admin: ReturnType<typeof createClient>,
+  authHeader: string,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, job_overrides, reason, override_production, notify_customer } = payload ?? {};
+  if (!order_id || !Array.isArray(job_overrides) || !job_overrides.length) {
+    return err("order_id and job_overrides[] required");
+  }
+  if (typeof reason !== "string" || reason.trim().length < 3) {
+    return err("A reason for the change is required");
+  }
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id, { adminOnly: false });
+  if (denied || !order) return err(denied || "Order not found", 403);
+  const o = order as any;
+
+  const { data: statusRow } = await admin
+    .from("orders")
+    .select("admin_status, order_status")
+    .eq("id", order_id)
+    .maybeSingle();
+  const adminStatus = (statusRow as any)?.admin_status ?? "";
+  if (ADMIN_QTY_BLOCKED.has(adminStatus) || (statusRow as any)?.order_status === "cancelled") {
+    return err(`Cannot amend an order that is ${adminStatus || "cancelled"}`, 409);
+  }
+
+  const { data: jobs } = await admin
+    .from("order_jobs")
+    .select("id, sequence_no, job_number, job_status, product_name, quantity, net_price, cost_price, gross_price, print_ready_pdf_path, imposed_pdf_path")
+    .eq("order_id", order_id)
+    .order("sequence_no");
+  const jobList = (jobs ?? []) as any[];
+  if (!jobList.length) return err("Order has no items");
+
+  const byId = new Map<string, { quantity?: number; net_price?: number; remove?: boolean }>();
+  for (const ov of job_overrides) {
+    if (typeof ov?.job_id === "string") {
+      byId.set(ov.job_id, {
+        quantity: ov.quantity,
+        net_price: typeof ov.net_price === "number" ? ov.net_price : undefined,
+        remove: !!ov.remove,
+      });
+    }
+  }
+  const touched = jobList.filter((j) => byId.has(j.id));
+  if (!touched.length) return err("No matching items to change");
+
+  const inProduction = touched.some((j) => !ADMIN_QTY_JOB_SAFE.has(j.job_status));
+  if (inProduction && !override_production) {
+    return json({ success: false, requires_override: true, error: "Production has already started on at least one item" }, 409);
+  }
+
+  const remaining = jobList.filter((j) => !byId.get(j.id)?.remove);
+  if (!remaining.length) return err("Cannot remove the last item — cancel the order instead");
+
+  const changes: string[] = [];
+  let estimated = false;
+  const clearArtefacts: string[] = [];
+
+  for (const j of touched) {
+    const ov = byId.get(j.id)!;
+    if (ov.remove) {
+      await admin.from("order_jobs").update({ job_status: "cancelled" }).eq("id", j.id);
+      changes.push(`removed ${j.job_number} (${j.product_name})`);
+      if (j.print_ready_pdf_path || j.imposed_pdf_path) clearArtefacts.push(j.id);
+      continue;
+    }
+    const oldQty = Number(j.quantity || 1) || 1;
+    const newQty = ov.quantity && ov.quantity > 0 ? Math.floor(ov.quantity) : oldQty;
+    const hasPriceOverride = ov.net_price !== undefined && ov.net_price >= 0;
+    if (newQty === oldQty && !hasPriceOverride) continue;
+
+    const scale = newQty / oldQty;
+    const newNet = hasPriceOverride
+      ? Math.round(Number(ov.net_price) * 100) / 100
+      : Math.round(Number(j.net_price || 0) * scale * 100) / 100;
+    if (!hasPriceOverride && newQty !== oldQty) estimated = true;
+
+    await admin
+      .from("order_jobs")
+      .update({
+        quantity: newQty,
+        net_price: newNet,
+        cost_price: Math.round(Number(j.cost_price || 0) * scale * 100) / 100,
+        gross_price: Math.round(Number(j.gross_price || 0) * scale * 100) / 100,
+      })
+      .eq("id", j.id);
+
+    changes.push(
+      `${j.job_number}: ${oldQty} → ${newQty}` +
+        (hasPriceOverride ? ` @ ${newNet.toFixed(2)}` : ""),
+    );
+    if (j.print_ready_pdf_path || j.imposed_pdf_path) clearArtefacts.push(j.id);
+  }
+
+  if (!changes.length) return json({ success: true, unchanged: true });
+
+  // Stale production files must not be printed at the old quantity/spec.
+  if (clearArtefacts.length) {
+    await admin
+      .from("order_jobs")
+      .update({
+        print_ready_pdf_path: null,
+        imposed_pdf_path: null,
+        imposed_components: null,
+        print_ready_assembled_at: null,
+        print_ready_spec_hash: null,
+      })
+      .in("id", clearArtefacts);
+  }
+
+  const prevPaymentStatus = String(o.payment_status || "");
+  const paid = Number(o.amount_paid || 0);
+  const after = await syncOrderTotals(admin, order_id);
+  const delta = Math.round((after.total - paid) * 100) / 100;
+
+  let refundFlagged = false;
+  let creditAmount = 0;
+  if (delta < 0 && paid > 0) {
+    creditAmount = Math.abs(delta);
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      creditAmount,
+      "Credit owed after order amendment",
+      reason.trim(),
+      userId,
+    );
+    refundFlagged = true;
+    await syncOrderTotals(admin, order_id);
+  }
+
+  // Clear the "customer amended, price unchecked" flag — staff have now
+  // reviewed the lines.
+  const meta = { ...((o.metadata as any) ?? {}) };
+  delete meta.price_review_required;
+  const history = Array.isArray(meta.amendment_history) ? meta.amendment_history : [];
+  history.push({ at: new Date().toISOString(), by: userId, reason: reason.trim(), changes });
+  meta.amendment_history = history;
+  await admin.from("orders").update({ metadata: meta }).eq("id", order_id);
+
+  await logTimeline(
+    admin,
+    o,
+    userId,
+    "order_amended",
+    `Order amended: ${changes.join("; ")} — ${reason.trim()}`,
+    { changes, reason: reason.trim(), refund_flagged: refundFlagged, price_estimated: estimated, override_production: !!override_production },
+    "both",
+  );
+
+  await admin.from("status_history").insert({
+    app_id: o.app_id,
+    tenant_id: o.tenant_id,
+    order_id,
+    entity_type: "order",
+    entity_id: order_id,
+    from_status: adminStatus,
+    to_status: adminStatus,
+    changed_by: userId,
+    note: `Amended: ${changes.join("; ")} — ${reason.trim()}`,
+  }).then(undefined, () => {/* status_history shape is advisory */});
+
+  // Settle the delta: reissue the proforma, and ask for the balance when the
+  // amendment pushed the total above what has already been paid.
+  const balanceDue = Math.max(Math.round((after.total - paid) * 100) / 100, 0);
+  const requiresPayment = delta > 0.005;
+  if (notify_customer !== false) {
+    await triggerInvoice(authHeader, order_id, "proforma");
+    if (requiresPayment && paid > 0) {
+      await triggerEmail(authHeader, order_id, "payment_request", { force: true });
+    }
+  }
+
+  return json({
+    success: true,
+    changes,
+    requires_payment: requiresPayment,
+    balance_due: requiresPayment ? balanceDue : 0,
+    credit_amount: creditAmount,
+    price_estimated: estimated,
+    prev_payment_status: prevPaymentStatus,
+  });
+}
+
 
 async function customerChangeFulfillment(
   admin: ReturnType<typeof createClient>,
