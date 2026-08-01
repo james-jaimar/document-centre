@@ -233,6 +233,20 @@ export async function refundPayment(payload: {
   return invokeOrderEngine<{ success: boolean; payment_id: string }>("refundPayment", payload);
 }
 
+export async function raiseRefund(payload: {
+  order_id: string;
+  amount: number;
+  reason?: string;
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    adjustment_id: string;
+    status: string;
+    manual_required: boolean;
+    provider: string | null;
+  }>("raiseRefund", payload);
+}
+
 export async function cancelOrder(payload: { order_id: string; reason: string }) {
   return invokeOrderEngine<{ success: boolean; refund_pending: boolean }>("cancelOrder", payload);
 }
