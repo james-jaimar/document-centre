@@ -131,6 +131,60 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
     }
   };
 
+  const renderRow = (inv: Invoice, muted = false) => {
+    const badge = paidBadge(inv.kind);
+    return (
+      <div key={inv.id} className="px-3 py-1.5 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className={cn("text-xs font-medium truncate", muted && "text-muted-foreground")}>
+              {inv.invoice_number}
+            </p>
+            {badge && (
+              <span
+                className={cn(
+                  "shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] font-semibold tracking-wide",
+                  badge.tone
+                )}
+              >
+                {badge.label}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {KIND_LABEL[inv.kind] || inv.kind} · {format(new Date(inv.issued_at), "dd MMM yyyy")}
+            {muted ? " · superseded" : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleSend(inv)} disabled={sendingId === inv.id}>
+                {sendingId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Send to customer</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)} disabled={busyId === inv.id}>
+                {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{busyId === inv.id ? "Refreshing…" : "View PDF"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(inv)} disabled={busyId === inv.id}>
+                {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{busyId === inv.id ? "Refreshing…" : "Download PDF"}</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="rounded-lg border bg-card">
@@ -147,44 +201,33 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
             No invoices yet
           </div>
         ) : (
-          invoices.map((inv) => (
-            <div key={inv.id} className="px-3 py-1.5 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-xs font-medium truncate">{inv.invoice_number}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {KIND_LABEL[inv.kind] || inv.kind} · {format(new Date(inv.issued_at), "dd MMM yyyy")}
-                </p>
+          <>
+            {primary.map((inv) => renderRow(inv))}
+            {superseded.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowSuperseded((v) => !v)}
+                  className="w-full px-3 py-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showSuperseded ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                  {showSuperseded ? "Hide" : "Show"} earlier documents ({superseded.length})
+                </button>
+                {showSuperseded && (
+                  <div className="divide-y border-t">
+                    {superseded.map((inv) => renderRow(inv, true))}
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-0.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleSend(inv)} disabled={sendingId === inv.id}>
-                      {sendingId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Send to customer</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)} disabled={busyId === inv.id}>
-                      {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{busyId === inv.id ? "Refreshing…" : "View PDF"}</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(inv)} disabled={busyId === inv.id}>
-                      {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{busyId === inv.id ? "Refreshing…" : "Download PDF"}</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-          ))
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
+
