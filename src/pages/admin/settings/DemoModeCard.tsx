@@ -43,9 +43,7 @@ export function DemoModeCard() {
   const [headline, setHeadline] = useState("Concept Demo");
   const [disclaimer, setDisclaimer] = useState("");
   const [cookieDays, setCookieDays] = useState(30);
-  const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
-  const [savingPwd, setSavingPwd] = useState(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -55,14 +53,8 @@ export function DemoModeCard() {
     setCookieDays(data?.cookie_days ?? 30);
   }, [isLoading, data]);
 
-  const hasPassword = !!data?.password_hash;
-
   const saveSettings = async () => {
     if (!tenantId) return;
-    if (enabled && !hasPassword && !newPassword) {
-      toast.error("Set a password before enabling the gate.");
-      return;
-    }
     setSaving(true);
     try {
       const { error } = await supabase
