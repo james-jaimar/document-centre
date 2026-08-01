@@ -179,6 +179,13 @@ export function OrderPricingTab({ order, jobs, payments, addresses = [], adjustm
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4 text-sm">
+      {editable && order?.metadata?.price_review_required && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+          The customer amended this order — line prices were scaled proportionally. Check them against the rate card
+          (pack and break pricing is not linear) and correct them here or via “Change quantities”.
+        </div>
+      )}
+
       {fulfilmentLine && (
         <div className="flex justify-between items-center text-xs border-b pb-2">
           <span className="text-muted-foreground">Fulfilment</span>
