@@ -701,6 +701,49 @@ async function recordPaymentEvent(
   return json({ success: true, payment_id: payment?.id });
 }
 
+/** Provider-aware refund: raise a refund_pending credit adjustment and
+ *  immediately attempt to push it back through Stripe / PayFast. Falls back
+ *  to "manual_required" when no online charge can be matched. */
+async function raiseRefund(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, amount, reason } = payload ?? {};
+  if (!order_id || amount == null) return err("Missing order_id or amount");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id, { adminOnly: false });
+  if (denied || !order) return err(denied || "Order not found", 403);
+
+  const refundAmt = Math.round(Number(amount) * 100) / 100;
+  if (!(refundAmt > 0)) return err("Refund amount must be positive");
+  if (refundAmt > Number((order as any).amount_paid || 0)) return err("Refund exceeds amount paid");
+
+  const adjustmentId = await createRefundPendingAdjustment(
+    admin,
+    order_id,
+    refundAmt,
+    reason?.trim() ? `Refund: ${reason.trim()}` : "Refund",
+    reason?.trim() || "Staff-initiated refund",
+    userId,
+  );
+
+  const { data: adj } = await admin
+    .from("order_adjustments")
+    .select("status, metadata")
+    .eq("id", adjustmentId)
+    .maybeSingle();
+  const status = (adj as any)?.status ?? "refund_pending";
+
+  return json({
+    success: true,
+    adjustment_id: adjustmentId,
+    status,
+    manual_required: status === "refund_pending",
+    provider: ((adj as any)?.metadata as any)?.provider ?? null,
+  });
+}
+
 async function refundPayment(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -2445,6 +2488,11 @@ Deno.serve(async (req) => {
             );
           };
         }
+        break;
+      }
+
+      case "raiseRefund": {
+        response = await raiseRefund(admin, userId, payload);
         break;
       }
 
