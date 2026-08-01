@@ -2580,6 +2580,10 @@ Deno.serve(async (req) => {
       case "customerChangeQuantities":
         response = await customerChangeQuantities(admin, userId, payload);
         break;
+      case "adminChangeQuantities":
+        response = await adminChangeQuantities(admin, authHeader, userId, payload);
+        break;
+
       case "customerChangeFulfillment":
         response = await customerChangeFulfillment(admin, userId, payload);
         break;
