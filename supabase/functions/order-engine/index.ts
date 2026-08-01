@@ -2629,7 +2629,7 @@ Deno.serve(async (req) => {
         response = await customerChangeQuantities(admin, userId, payload);
         break;
       case "adminChangeQuantities":
-        response = await adminChangeQuantities(admin, authHeader, userId, payload);
+        response = await adminChangeQuantities(admin, authHeader!, userId, payload);
         break;
 
       case "customerChangeFulfillment":
