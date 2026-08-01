@@ -8,6 +8,7 @@
 //      and require "VALID" before marking the order paid.
 //   4. Re-verify amount, merchant_id, currency.
 import { adminClient, readSecret } from "../_shared/payments.ts";
+import { issueTaxInvoiceAndNotify } from "../_shared/payment-invoice.ts";
 import {
   payfastSignITN,
   payfastValidateUrl,
