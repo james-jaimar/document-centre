@@ -185,6 +185,9 @@ Deno.serve(async (req) => {
         });
       }
     }
+
+    // Issue the tax invoice + payment_received email (best-effort).
+    await issueTaxInvoiceAndNotify(sb, attempt.order_id);
   } else if (status === "FAILED") {
     await sb.from("order_payment_attempts").update({
       status: "failed", raw_payload: data,
