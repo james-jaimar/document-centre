@@ -1,5 +1,6 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { adminClient, readSecret } from "../_shared/payments.ts";
+import { issueTaxInvoiceAndNotify } from "../_shared/payment-invoice.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -127,6 +128,9 @@ Deno.serve(async (req) => {
           .eq("id", (existing as any).id);
       }
     }
+
+    // Issue the tax invoice + payment_received email (best-effort).
+    await issueTaxInvoiceAndNotify(sb, orderId);
   } else if (event.type === "checkout.session.expired" || event.type === "payment_intent.payment_failed") {
     const s = event.data.object as any;
     const attemptId = s?.metadata?.attempt_id;

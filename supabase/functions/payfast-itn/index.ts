@@ -8,6 +8,7 @@
 //      and require "VALID" before marking the order paid.
 //   4. Re-verify amount, merchant_id, currency.
 import { adminClient, readSecret } from "../_shared/payments.ts";
+import { issueTaxInvoiceAndNotify } from "../_shared/payment-invoice.ts";
 import {
   payfastSignITN,
   payfastValidateUrl,
@@ -184,6 +185,9 @@ Deno.serve(async (req) => {
         });
       }
     }
+
+    // Issue the tax invoice + payment_received email (best-effort).
+    await issueTaxInvoiceAndNotify(sb, attempt.order_id);
   } else if (status === "FAILED") {
     await sb.from("order_payment_attempts").update({
       status: "failed", raw_payload: data,
