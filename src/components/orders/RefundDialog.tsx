@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { refundPayment } from "@/lib/orders/mutations";
+import { refundPayment, raiseRefund } from "@/lib/orders/mutations";
 import { formatPrice } from "@/lib/formatCurrency";
 
 interface RefundDialogProps {
@@ -20,6 +21,7 @@ interface RefundDialogProps {
 export function RefundDialog({ open, onOpenChange, orderId, amountPaid, currency }: RefundDialogProps) {
   const [amount, setAmount] = useState(String(amountPaid));
   const [reason, setReason] = useState("");
+  const [mode, setMode] = useState<"online" | "manual">("online");
   const [submitting, setSubmitting] = useState(false);
   const qc = useQueryClient();
 
@@ -29,13 +31,24 @@ export function RefundDialog({ open, onOpenChange, orderId, amountPaid, currency
     if (amt > amountPaid) return toast.error("Refund cannot exceed amount paid");
     setSubmitting(true);
     try {
-      await refundPayment({ order_id: orderId, amount: amt, reason });
-      toast.success("Refund recorded");
+      if (mode === "online") {
+        const res = await raiseRefund({ order_id: orderId, amount: amt, reason });
+        if (res.manual_required) {
+          toast.warning(
+            "No online charge could be matched — a refund-pending credit was raised. Pay the customer manually, then mark it refunded in the Pricing tab.",
+          );
+        } else {
+          toast.success(`Refund sent to ${res.provider ?? "the payment provider"}`);
+        }
+      } else {
+        await refundPayment({ order_id: orderId, amount: amt, reason });
+        toast.success("Manual refund recorded");
+      }
       qc.invalidateQueries({ queryKey: ["order-detail", orderId] });
       qc.invalidateQueries({ queryKey: ["admin-orders"] });
       onOpenChange(false);
     } catch (e: any) {
-      toast.error(e.message || "Failed to record refund");
+      toast.error(e.message || "Failed to process refund");
     } finally {
       setSubmitting(false);
     }
@@ -47,7 +60,7 @@ export function RefundDialog({ open, onOpenChange, orderId, amountPaid, currency
         <DialogHeader>
           <DialogTitle>Refund Payment</DialogTitle>
           <DialogDescription>
-            Record a refund. A credit note will be generated and the customer notified by email.
+            A credit note is generated and the customer notified by email.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -56,6 +69,31 @@ export function RefundDialog({ open, onOpenChange, orderId, amountPaid, currency
             <Input type="number" step="0.01" max={amountPaid} value={amount} onChange={(e) => setAmount(e.target.value)} />
             <p className="text-xs text-muted-foreground">Maximum: {formatPrice(amountPaid, currency)}</p>
           </div>
+
+          <div className="space-y-2">
+            <Label>How should this refund be made?</Label>
+            <RadioGroup value={mode} onValueChange={(v) => setMode(v as "online" | "manual")} className="gap-2">
+              <label className="flex items-start gap-3 rounded-md border p-3 cursor-pointer">
+                <RadioGroupItem value="online" className="mt-0.5" />
+                <span className="text-sm">
+                  <span className="font-medium">Refund to original payment method</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Sends the refund back through Stripe / PayFast. Falls back to a manual credit if no online charge is found.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-md border p-3 cursor-pointer">
+                <RadioGroupItem value="manual" className="mt-0.5" />
+                <span className="text-sm">
+                  <span className="font-medium">Record a manual refund</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Ledger only — use when you have already paid the customer by EFT or cash.
+                  </span>
+                </span>
+              </label>
+            </RadioGroup>
+          </div>
+
           <div className="space-y-2">
             <Label>Reason (optional)</Label>
             <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Reason for refund..." />
@@ -64,7 +102,7 @@ export function RefundDialog({ open, onOpenChange, orderId, amountPaid, currency
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={submitting} variant="destructive">
-            {submitting ? "Processing..." : "Process Refund"}
+            {submitting ? "Processing..." : mode === "online" ? "Refund to card" : "Record Refund"}
           </Button>
         </DialogFooter>
       </DialogContent>
