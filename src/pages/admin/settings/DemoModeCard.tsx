@@ -178,31 +178,6 @@ export function DemoModeCard() {
           </Button>
         </div>
 
-        <div className="rounded-md border p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Access password</div>
-              <div className="text-xs text-muted-foreground">
-                {hasPassword
-                  ? "A password is set. Enter a new one below to replace it."
-                  : "No password set yet — set one before enabling the gate."}
-              </div>
-            </div>
-            {hasPassword && <Badge variant="secondary">Set</Badge>}
-          </div>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder={hasPassword ? "New password" : "Set a password"}
-              autoComplete="new-password"
-            />
-            <Button onClick={savePassword} disabled={!newPassword || savingPwd}>
-              {savingPwd ? "Saving…" : hasPassword ? "Replace" : "Set password"}
-            </Button>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
