@@ -95,9 +95,9 @@ export function DemoModeCard() {
             <Lock className="h-4 w-4" /> Demo Mode (private preview gate)
           </CardTitle>
           <CardDescription>
-            Hide this tenant's storefront and customer portal behind a shared
-            password and a legal disclaimer. Platform admins and your own staff
-            always bypass.
+            Show a blocking disclaimer modal over this tenant's storefront and
+            customer portal until the visitor acknowledges it. Platform admins
+            and your own staff always bypass.
           </CardDescription>
         </div>
         <Badge variant={enabled ? "default" : "secondary"} className="shrink-0">
