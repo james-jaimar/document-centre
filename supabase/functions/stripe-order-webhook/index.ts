@@ -1,5 +1,6 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { adminClient, readSecret } from "../_shared/payments.ts";
+import { issueTaxInvoiceAndNotify } from "../_shared/payment-invoice.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
