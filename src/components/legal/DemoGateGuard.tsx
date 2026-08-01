@@ -78,12 +78,14 @@ export default function DemoGateGuard({ children }: { children: ReactNode }) {
   if (unlocked) return <>{children}</>;
 
   return (
-    <DemoGatePage
-      tenantId={tenantId}
-      tenantName={tenantName}
-      config={config}
-      onUnlock={unlock}
-    />
+    <>
+      {children}
+      <DemoGateModal
+        tenantName={tenantName}
+        config={config}
+        onAccept={() => unlock(config.cookie_days)}
+      />
+    </>
   );
 }
 
