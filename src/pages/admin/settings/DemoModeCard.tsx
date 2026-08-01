@@ -109,7 +109,8 @@ export function DemoModeCard() {
           <div>
             <div className="text-sm font-medium">Enable demo gate</div>
             <div className="text-xs text-muted-foreground">
-              When on, visitors hit a password screen before any /t/{"<slug>"} route.
+              When on, visitors must accept the disclaimer modal before using any
+              /t/{"<slug>"} route. No password required.
             </div>
           </div>
           <Switch checked={enabled} onCheckedChange={setEnabled} />
