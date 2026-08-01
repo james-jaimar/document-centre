@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Download, Eye, FileText, Send, Loader2 } from "lucide-react";
+import { Download, Eye, FileText, Send, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { downloadInvoice, viewInvoice, sendInvoiceEmail } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface Invoice {
   id: string;
@@ -30,21 +31,68 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showSuperseded, setShowSuperseded] = useState(false);
+  const [payment, setPayment] = useState<{
+    payment_status: string | null;
+    amount_paid: number;
+    total_amount: number;
+  } | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("order_invoices")
-      .select("*")
-      .eq("order_id", orderId)
-      .order("issued_at", { ascending: false });
+    const [{ data }, { data: order }] = await Promise.all([
+      supabase
+        .from("order_invoices")
+        .select("*")
+        .eq("order_id", orderId)
+        .order("issued_at", { ascending: false }),
+      supabase
+        .from("orders")
+        .select("payment_status, amount_paid, total_amount")
+        .eq("id", orderId)
+        .maybeSingle(),
+    ]);
     setInvoices((data || []) as Invoice[]);
+    setPayment(
+      order
+        ? {
+            payment_status: (order as any).payment_status ?? null,
+            amount_paid: Number((order as any).amount_paid ?? 0),
+            total_amount: Number((order as any).total_amount ?? 0),
+          }
+        : null
+    );
     setLoading(false);
   };
 
   useEffect(() => {
     load();
   }, [orderId]);
+
+  // Once a tax invoice exists, the proforma is superseded — keep it available
+  // for audit, but tuck it away behind a toggle.
+  const hasTaxInvoice = invoices.some((i) => i.kind === "invoice");
+  const { primary, superseded } = useMemo(() => {
+    if (!hasTaxInvoice) return { primary: invoices, superseded: [] as Invoice[] };
+    return {
+      primary: invoices.filter((i) => i.kind !== "proforma"),
+      superseded: invoices.filter((i) => i.kind === "proforma"),
+    };
+  }, [invoices, hasTaxInvoice]);
+
+  const paidBadge = (kind: string) => {
+    if (kind !== "invoice" || !payment) return null;
+    const paid = payment.amount_paid;
+    const total = payment.total_amount;
+    if (payment.payment_status === "paid" || (total > 0 && paid >= total - 0.01)) {
+      return { label: "PAID", tone: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" };
+    }
+    if (paid > 0) {
+      return { label: "PART PAID", tone: "bg-amber-500/15 text-amber-600 border-amber-500/30" };
+    }
+    return null;
+  };
+
 
   const handleDownload = async (inv: Invoice) => {
     setBusyId(inv.id);
