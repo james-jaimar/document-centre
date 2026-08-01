@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useSubdomainTenant } from "@/components/SubdomainRouter";
 import { useDemoGateConfig, useDemoUnlock } from "@/hooks/useDemoGate";
-import DemoGatePage from "./DemoGatePage";
+import DemoGateModal from "./DemoGateModal";
 
 /**
  * Wraps the tenant-facing routes. If the tenant has Demo Mode enabled,
