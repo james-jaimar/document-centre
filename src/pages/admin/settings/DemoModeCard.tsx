@@ -127,7 +127,7 @@ export function DemoModeCard() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cookieDays">Remember unlock for (days)</Label>
+            <Label htmlFor="cookieDays">Remember acceptance for (days)</Label>
             <Input
               id="cookieDays"
               type="number"
@@ -140,7 +140,7 @@ export function DemoModeCard() {
         </div>
 
         <div className="space-y-2">
-          <Label>Disclaimer copy (shown above the password field)</Label>
+          <Label>Disclaimer copy (shown in the modal)</Label>
           <RichTextEditor value={disclaimer} onChange={setDisclaimer} />
         </div>
 
