@@ -245,6 +245,16 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
             )}
           </>
         )}
+        {needsTaxInvoice && (
+          <div className="px-3 py-2 flex items-center justify-between gap-2">
+            <p className="text-[11px] text-muted-foreground">
+              Order is paid but no tax invoice exists yet.
+            </p>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleIssueTaxInvoice} disabled={issuing}>
+              {issuing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Issue tax invoice"}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
