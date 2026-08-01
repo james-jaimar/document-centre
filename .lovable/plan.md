@@ -1,32 +1,49 @@
-## What's actually happening (verified)
+## What's actually in the system today (verified)
 
-- Order `INV-00131` (paid, R84.80) has **only one** `order_invoices` row: `PPC-INV-2026-01133`, kind `proforma`. No tax invoice exists, so the customer area correctly shows what's there — a proforma.
-- Older paid orders (INV-00110, INV-00098, INV-00097…) do have both a proforma and an `invoice` row, because those were marked paid **manually by staff**: `order-engine`'s `recordPaymentEvent` action generates a tax invoice and sends the "payment_received" email when status is `paid`.
-- The **online payment webhooks do not do this**. `supabase/functions/payfast-itn/index.ts` sets `orders.payment_status = 'paid'`, `amount_paid`, and the payment/attempt rows, then stops — it never calls `generate-invoice-pdf` and never triggers the payment email. `supabase/functions/stripe-order-webhook/index.ts` has the same gap (no outbound calls at all).
-- The customer/admin/branch invoice list (`src/components/orders/OrderInvoicesList.tsx`) is a flat list of every invoice row with no paid indicator and no notion of a proforma being superseded.
+- **Customer self-service amend exists.** `ManageOrderPanel` → `order-engine.customerChangeQuantities` lets the ordering customer change or remove item quantities. It's gated to `admin_status` in (`new_order`, `under_review`) and every job in (`new`, `awaiting_payment`, `proof_pending`, `on_hold`) — i.e. before production starts. Prices scale linearly with quantity, totals resync, and if the new total drops below what was paid it auto-raises a `refund_pending` adjustment.
+- **Real provider refunds already work** — but only from one place. `_shared/refunds.ts` refunds through the original Stripe/PayFast credentials (idempotent, async-confirmed by webhook). It is reached from the **Pricing tab → "Refund now"** button on a `refund_pending` adjustment, or "Mark manual" for EFT/cash.
+- **Gap 1 — the header "Refund" button is ledger-only.** `RefundDialog` calls `order-engine.refundPayment`, which just inserts a negative `payments` row and adjusts `amount_paid`. It never touches Stripe/PayFast, so a staff member using the obvious top-bar button believes they refunded the customer when no money moved.
+- **Gap 2 — admin cannot amend quantities.** Staff can change fulfilment, edit a job's net price, add adjustment lines, or cancel. There is no admin equivalent of `customerChangeQuantities`, so a phoned-in "make it 200 not 100" has no clean path.
+- **Gap 3 — no upward-amendment payment path.** If an amendment increases the total on a paid order, nothing prompts the customer for the balance.
 
-So it's two separate issues: the tax invoice was never generated, and the UI has no paid state.
+## Recommended model (industry norm)
+
+Cancel-and-reorder is the wrong default: it loses the order number, the timeline, the uploaded artwork, the invoice chain and the production position. Best practice in print MIS is **amend in place, settle the delta**:
+
+```text
+Change request
+  ├─ before production, unpaid   → amend qty; proforma reissued; nothing to settle
+  ├─ before production, paid, total ↓ → amend; auto refund_pending; refund via original provider
+  ├─ before production, paid, total ↑ → amend; balance due; payment link to customer
+  └─ production started / dispatched → no amend. Either accept as-is, or cancel
+                                       remaining items + charge work-in-progress
+```
+
+Cancel stays the escape hatch only for "we don't want it at all".
 
 ## Plan
 
-### 1. Issue the tax invoice when an online payment succeeds
-In `payfast-itn` (and the same block in `stripe-order-webhook`), after the order is successfully marked paid, fire the same side effects staff-initiated payments already get:
-- call `generate-invoice-pdf` with `kind: "invoice"` (service-role auth, best-effort/non-fatal, wrapped in try/catch so a PDF failure never fails the webhook ack),
-- then trigger the `payment_received` order email with the new `invoice_id` attached.
+**1. Make the header Refund button honest**
+Route `RefundDialog` through the adjustment + provider path: create a `refund_pending` adjustment for the entered amount, then immediately call `payments-refund`. If the outcome is `manual_required` (EFT/cash order, no online charge), fall back to today's ledger-only behaviour and say so in the dialog. Show the provider and outcome in the toast.
 
-Guard against duplicates: skip if an `invoice`-kind row already exists for the order, and skip when the ITN is a refund/cancel notification.
+**2. Add an admin "Change request" action**
+New `adminChangeQuantities` action in `order-engine`, mirroring `customerChangeQuantities` but authorised via staff membership instead of `ordered_by_profile_id`, with a mandatory reason. Same production-status guard, plus an explicit staff override checkbox for `in_production` that records who overrode it.
 
-### 2. Show paid state in the invoice list (customer, branch, admin)
-In `OrderInvoicesList.tsx`:
-- Fetch the order's `payment_status` / `amount_paid` / `total_amount` alongside the invoices.
-- Once a `kind = 'invoice'` row exists, present it as the primary document ("Tax Invoice") with a green **PAID** badge (or "Part paid" when `amount_paid < total_amount`), plus the paid date from the payment record.
-- Collapse the superseded proforma behind a small "Show earlier documents" toggle rather than deleting it — proformas stay retrievable for audit, but the customer sees the paid tax invoice first.
-- Keep the same component for admin/branch so all three surfaces stay consistent.
+New `ChangeQuantitiesDialog` on the admin order page (next to Cancel): lists jobs with editable quantity, shows old total → new total → delta live, and states what happens on save (refund pending / balance due / nothing).
 
-### 3. Backfill
-Generate the missing tax invoice for `INV-00131` (and any other paid order that has a proforma but no `invoice` row) by invoking the existing generation action once, so current orders show correctly.
+**3. Settle the delta automatically**
+- Delta negative on a paid order → existing `refund_pending` flow (already built).
+- Delta positive on a paid order → set `payment_status` to `part_paid`, raise a balance-due amount, reissue the proforma for the difference and email the customer a pay link. Reuse the existing checkout/handoff route rather than inventing a new one.
+- Delta on an unpaid order → just reissue the proforma.
+
+**4. Paper trail**
+Every amendment writes a timeline event ("Quantity changed 100 → 200 by <staff>, reason: …", customer-visible) and a `status_history` row. Invoice documents follow the existing rule: proforma is superseded, tax invoice only issues on payment.
+
+**5. Production safety**
+If any job has print-ready or imposed artefacts already generated, the dialog warns that files must be regenerated, and the amendment clears the affected job's production artefacts so nobody prints the old quantity.
 
 ## Technical notes
 
-- Files touched: `supabase/functions/payfast-itn/index.ts`, `supabase/functions/stripe-order-webhook/index.ts`, `src/components/orders/OrderInvoicesList.tsx`. No schema change — `order_invoices.kind` already supports `invoice`, and `generate-invoice-pdf` already renders "TAX INVOICE" with the paid amount block.
-- Invoice numbering continues to use the existing per-branch sequence, so the tax invoice gets its own number distinct from the proforma.
+- `syncOrderTotals` already recomputes correctly from jobs + adjustments, so both directions of delta fall out of it.
+- Linear price scaling is wrong for pack-priced and rate-card products (a 100→200 flyer change is not 2× on a pack matrix). Step 2 should reprice through the same engine the configurator uses rather than reusing the linear `scale` shortcut in `customerChangeQuantities` — and that shortcut on the customer path should be fixed at the same time, otherwise customers can self-serve their way to a wrong price.
+- Refunds remain idempotent per adjustment (`idempotencyKey: refund-<adjustment_id>`), so retries are safe.
