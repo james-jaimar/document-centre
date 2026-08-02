@@ -90,21 +90,33 @@ export function useRegionalPricing(): RegionalPricingResult {
     }
     setTenantLockLoaded(false);
     (async () => {
-      const { data } = await supabase
-        .from("tenant_settings")
-        .select("setting_key, setting_value")
-        .eq("tenant_id", tenantId)
-        .eq("category", "financial")
-        .in("setting_key", [
-          "default_currency_code",
-          "lock_currency",
-          "multi_currency_enabled",
-          "accepted_currencies",
-        ]);
+      // Read through the SECURITY DEFINER RPC: storefront visitors (anonymous
+      // or plain customers) have no SELECT rights on `tenant_settings`, so a
+      // direct query silently returns nothing and the storefront gets stuck on
+      // the fallback currency.
+      const keys = [
+        "default_currency_code",
+        "lock_currency",
+        "multi_currency_enabled",
+        "accepted_currencies",
+      ] as const;
+      const results = await Promise.all(
+        keys.map((key) =>
+          supabase.rpc("resolve_tenant_setting", {
+            p_tenant_id: tenantId,
+            p_category: "financial",
+            p_key: key,
+          }),
+        ),
+      );
       if (cancelled) return;
       const map: Record<string, unknown> = {};
-      for (const r of data ?? []) map[(r as any).setting_key] = (r as any).setting_value;
-      const currency = String(map.default_currency_code ?? "ZAR").toUpperCase();
+      keys.forEach((key, i) => {
+        map[key] = results[i]?.data ?? null;
+      });
+      const currency = String(map.default_currency_code ?? "ZAR")
+        .replace(/^"|"$/g, "")
+        .toUpperCase();
       const multiCurrency = map.multi_currency_enabled === true;
       // Default: locked on for safety — tenants opt out explicitly. Turning on
       // multi-currency implies unlocked.
