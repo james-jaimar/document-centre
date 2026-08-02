@@ -22,6 +22,7 @@ import {
 import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck, TicketPercent, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 import PriceTotals from "@/components/order/PriceTotals";
@@ -45,10 +46,13 @@ export default function Checkout() {
   const placeOrder = usePlaceOrder();
   const queryClient = useQueryClient();
   const invalidateCart = () => queryClient.invalidateQueries({ queryKey: ["cart"] });
-  const { region } = useRegionalPricing();
+  const { region, baseCurrency } = useRegionalPricing();
   // Currency is locked at the cart level (set when items are added). Fall back
   // to the active region for empty-cart edge cases.
   const currency = ((cart as { currency?: string } | null)?.currency) ?? region?.currency_code ?? "ZAR";
+  // Delivery rates may only be authored in the base currency; convert the
+  // fallback rate so shipping is quoted in the currency being charged.
+  const { convert: convertFromBase } = useCurrencyConverter(currency, baseCurrency);
   const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
@@ -186,6 +190,7 @@ export default function Checkout() {
           },
           items,
           currency,
+          convertFromBase,
         });
         setShippingOptions(res.options);
         // Auto-select cheapest if nothing selected or current selection no longer available.
@@ -226,6 +231,7 @@ export default function Checkout() {
           items,
           methodId: selectedMethodId,
           currency,
+          convertFromBase,
         });
         setShippingQuote(q);
       } catch (err) {
