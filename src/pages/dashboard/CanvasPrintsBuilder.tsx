@@ -407,9 +407,9 @@ const CanvasPrintsBuilder = forwardRef<HTMLDivElement>(function CanvasPrintsBuil
     branchId: activeBranch?.id ?? null,
   });
   const priceDisplay = usePriceDisplay();
-  const { region, baseCurrency } = useRegionalPricing();
-  const activeCurrency = region?.currency_code ?? baseCurrency ?? "ZAR";
-  // Canvas rate cards are authored in the tenant's base currency.
+  const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
+  const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
+  // Canvas rate cards are authored in the ZAR pivot currency.
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   const pricedCanvases = useMemo(() => {
