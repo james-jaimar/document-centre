@@ -14,6 +14,7 @@ interface PricingRegion {
   country_codes: string[];
   tax_note: string | null;
   is_default: boolean;
+  is_rest_of_world?: boolean;
   sort_order: number;
 }
 
@@ -31,6 +32,10 @@ interface RegionalPricingResult {
   plans: PricingPlan[];
   loading: boolean;
   detected: boolean;
+  /** True when the tenant sells in more than one currency (picker is live). */
+  multiCurrency: boolean;
+  /** The currency the tenant's rate cards are authored in. */
+  baseCurrency: string;
   setRegion: (regionCode: string) => void;
 }
 
@@ -60,18 +65,26 @@ export function useRegionalPricing(): RegionalPricingResult {
   const [loading, setLoading] = useState(true);
   const [detected, setDetected] = useState(false);
 
-  // Tenant currency lock — when a tenant has locked their default currency
-  // we ignore any geo detection / manual override and force their currency.
-  // This prevents a UK visitor on a ZAR-only tenant from getting GBP prices
-  // and a GBP stamp on their cart/order/invoice.
+  // Tenant currency policy.
+  //  - lock_currency (default ON): ignore geo + manual override, force the
+  //    tenant's default currency. This stops a UK visitor on a ZAR-only tenant
+  //    getting GBP prices and a GBP stamp on their cart/order/invoice.
+  //  - multi_currency_enabled: the tenant opts in to selling in several
+  //    currencies. Geo detection and the header picker come alive, restricted
+  //    to the currencies they accept.
   const { tenantId } = useTenantContext();
-  const [tenantLock, setTenantLock] = useState<{ currency: string; locked: boolean } | null>(null);
+  const [tenantPolicy, setTenantPolicy] = useState<{
+    currency: string;
+    locked: boolean;
+    multiCurrency: boolean;
+    accepted: string[];
+  } | null>(null);
   const [tenantLockLoaded, setTenantLockLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     if (!tenantId) {
-      setTenantLock(null);
+      setTenantPolicy(null);
       setTenantLockLoaded(true);
       return;
     }
@@ -82,16 +95,31 @@ export function useRegionalPricing(): RegionalPricingResult {
         .select("setting_key, setting_value")
         .eq("tenant_id", tenantId)
         .eq("category", "financial")
-        .in("setting_key", ["default_currency_code", "lock_currency"]);
+        .in("setting_key", [
+          "default_currency_code",
+          "lock_currency",
+          "multi_currency_enabled",
+          "accepted_currencies",
+        ]);
       if (cancelled) return;
       const map: Record<string, unknown> = {};
       for (const r of data ?? []) map[(r as any).setting_key] = (r as any).setting_value;
       const currency = String(map.default_currency_code ?? "ZAR").toUpperCase();
-      // Default: locked on for safety — tenants opt out explicitly.
-      const locked = map.lock_currency === undefined || map.lock_currency === null
-        ? true
-        : map.lock_currency === true;
-      setTenantLock({ currency, locked });
+      const multiCurrency = map.multi_currency_enabled === true;
+      // Default: locked on for safety — tenants opt out explicitly. Turning on
+      // multi-currency implies unlocked.
+      const locked = multiCurrency
+        ? false
+        : map.lock_currency === undefined || map.lock_currency === null
+          ? true
+          : map.lock_currency === true;
+      const acceptedRaw = Array.isArray(map.accepted_currencies)
+        ? (map.accepted_currencies as unknown[])
+        : [];
+      const accepted = acceptedRaw.map((c) => String(c).toUpperCase());
+      // The base currency is always sellable.
+      if (multiCurrency && !accepted.includes(currency)) accepted.push(currency);
+      setTenantPolicy({ currency, locked, multiCurrency, accepted });
       setTenantLockLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -109,16 +137,27 @@ export function useRegionalPricing(): RegionalPricingResult {
         .order("sort_order");
 
       if (cancelled || !regionsData) return;
-      setRegions(regionsData as PricingRegion[]);
 
-      const defaultRegion = regionsData.find((r: any) => r.is_default) || regionsData[0];
+      const all = regionsData as PricingRegion[];
+      // When the tenant opts into multi-currency, only the currencies they
+      // accept are selectable. Otherwise the list is informational only.
+      const accepted = tenantPolicy?.accepted ?? [];
+      const selectable =
+        tenantPolicy?.multiCurrency && accepted.length > 0
+          ? all.filter((r) => accepted.includes((r.currency_code ?? "").toUpperCase()))
+          : all;
+      setRegions(selectable);
 
-      // Tenant lock wins over geo and manual override.
-      if (tenantLock?.locked) {
-        const forced = regionsData.find(
-          (r: any) => (r.currency_code ?? "").toUpperCase() === tenantLock.currency,
-        );
-        setRegionState((forced ?? defaultRegion) as PricingRegion);
+      const baseRegion =
+        all.find(
+          (r) => (r.currency_code ?? "").toUpperCase() === (tenantPolicy?.currency ?? "ZAR"),
+        ) ?? null;
+      const defaultRegion =
+        baseRegion ?? selectable.find((r) => r.is_default) ?? all.find((r) => r.is_default) ?? all[0];
+
+      // Single-currency tenant: forced to their default currency.
+      if (!tenantPolicy?.multiCurrency && tenantPolicy?.locked) {
+        setRegionState(defaultRegion);
         setDetected(false);
         setLoading(false);
         return;
@@ -127,9 +166,9 @@ export function useRegionalPricing(): RegionalPricingResult {
       // Check for manual override
       const override = localStorage.getItem(OVERRIDE_KEY);
       if (override) {
-        const found = regionsData.find((r: any) => r.region_code === override);
+        const found = selectable.find((r) => r.region_code === override);
         if (found) {
-          setRegionState(found as PricingRegion);
+          setRegionState(found);
           setDetected(false);
           setLoading(false);
           return;
@@ -140,18 +179,21 @@ export function useRegionalPricing(): RegionalPricingResult {
       const countryCode = await detectCountry();
       if (cancelled) return;
 
-      const matched = countryCode
-        ? matchRegion(countryCode, regionsData as PricingRegion[])
-        : null;
+      const matched = countryCode ? matchRegion(countryCode, selectable) : null;
 
       if (matched) {
-        // Genuine, successful detection that mapped to a known region.
+        // Genuine, successful detection that mapped to a sellable region.
         setRegionState(matched);
         setDetected(true);
+      } else if (tenantPolicy?.multiCurrency && countryCode) {
+        // Detection worked but the country isn't covered by a specific region:
+        // fall back to the rest-of-world region (USD) when the tenant sells it.
+        const row = selectable.find((r) => r.is_rest_of_world) ?? defaultRegion;
+        setRegionState(row);
+        setDetected(!!selectable.find((r) => r.is_rest_of_world));
       } else {
-        // Either detection failed, or the country isn't in our region list.
-        // Fall back to the default region but DO NOT claim it was detected.
-        setRegionState(defaultRegion as PricingRegion);
+        // Detection failed entirely — don't claim otherwise.
+        setRegionState(defaultRegion);
         setDetected(false);
       }
       setLoading(false);
@@ -159,7 +201,13 @@ export function useRegionalPricing(): RegionalPricingResult {
 
     load();
     return () => { cancelled = true; };
-  }, [tenantLockLoaded, tenantLock?.locked, tenantLock?.currency]);
+  }, [
+    tenantLockLoaded,
+    tenantPolicy?.locked,
+    tenantPolicy?.currency,
+    tenantPolicy?.multiCurrency,
+    tenantPolicy?.accepted?.join(","),
+  ]);
 
 
   // Fetch plans when region changes
@@ -185,8 +233,8 @@ export function useRegionalPricing(): RegionalPricingResult {
 
   const setRegion = useCallback(
     (regionCode: string) => {
-      // When the tenant has locked currency, manual region switching is disabled.
-      if (tenantLock?.locked) return;
+      // When the tenant sells in one locked currency, switching is disabled.
+      if (!tenantPolicy?.multiCurrency && tenantPolicy?.locked) return;
       const found = regions.find((r) => r.region_code === regionCode);
       if (found) {
         localStorage.setItem(OVERRIDE_KEY, regionCode);
@@ -194,8 +242,17 @@ export function useRegionalPricing(): RegionalPricingResult {
         setDetected(false);
       }
     },
-    [regions, tenantLock?.locked]
+    [regions, tenantPolicy?.locked, tenantPolicy?.multiCurrency]
   );
 
-  return { region, regions, plans, loading, detected, setRegion };
+  return {
+    region,
+    regions,
+    plans,
+    loading,
+    detected,
+    multiCurrency: !!tenantPolicy?.multiCurrency && regions.length > 1,
+    baseCurrency: tenantPolicy?.currency ?? "ZAR",
+    setRegion,
+  };
 }
