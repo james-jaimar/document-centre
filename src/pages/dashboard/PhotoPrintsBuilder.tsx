@@ -413,8 +413,13 @@ export default function PhotoPrintsBuilder() {
     if (availableSizes.length === 0) return;
     if (availableSizes.some((s) => s.slug === photoSpec.print_size_slug)) return;
     const fallback = availableSizes[0].slug;
-    toast.info(`Print size updated — previous size is no longer available`);
+    // Only tell the customer when they actually lost a size they had chosen —
+    // not on first load, where the slug is still empty/unseeded.
+    if (photoSpec.print_size_slug && photoSpec.photos.length > 0) {
+      toast.info(`Print size updated — previous size is no longer available`);
+    }
     handlePrintSizeChange(fallback);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableSizes, photoSpec.print_size_slug]);
 
