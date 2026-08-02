@@ -34,8 +34,13 @@ interface RegionalPricingResult {
   detected: boolean;
   /** True when the tenant sells in more than one currency (picker is live). */
   multiCurrency: boolean;
-  /** The currency the tenant's rate cards are authored in. */
+  /**
+   * The currency rate cards are authored in — always the ZAR pivot. This is
+   * NOT the tenant's default display currency (`displayDefaultCurrency`).
+   */
   baseCurrency: string;
+  /** The tenant's default *display* currency when no region is picked. */
+  displayDefaultCurrency: string;
   setRegion: (regionCode: string) => void;
 }
 
