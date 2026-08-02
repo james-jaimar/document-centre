@@ -405,13 +405,16 @@ const CanvasPrintsBuilder = forwardRef<HTMLDivElement>(function CanvasPrintsBuil
     branchId: activeBranch?.id ?? null,
   });
   const priceDisplay = usePriceDisplay();
+  // Canvas rate cards are authored in the tenant's base currency.
+  const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   const pricedCanvases = useMemo(() => {
     return spec.canvases.map((c) => {
       const p = priceCanvasEntry(c, canvasBaseRows, canvasSurcharges);
-      return { canvas: c, ...p, line: p.unit * Math.max(c.quantity, 1) };
+      const unit = convert(p.unit);
+      return { canvas: c, ...p, unit, line: unit * Math.max(c.quantity, 1) };
     });
-  }, [spec.canvases, canvasBaseRows, canvasSurcharges]);
+  }, [spec.canvases, canvasBaseRows, canvasSurcharges, convert]);
 
   const anyUnpriced = pricedCanvases.some((p) => !p.matched);
   const netTotal = pricedCanvases.reduce((s, p) => s + p.line, 0);

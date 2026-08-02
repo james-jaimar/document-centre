@@ -78,8 +78,10 @@ export default function PhotoPrintsBuilder() {
 
   const createOrder = useCreateOrder();
   const addItemToCart = useAddItemToCart();
-  const { region } = useRegionalPricing();
+  const { region, baseCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
+  // Photo-print rate cards are authored in the tenant's base currency.
+  const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   const { data: family } = useQuery<ProductFamilyRow | null>({
     queryKey: ["product_family_by_slug", PHOTO_FAMILY_SLUG],
@@ -432,7 +434,7 @@ export default function PhotoPrintsBuilder() {
     const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
     const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
     const rcSizeSlug = bridgedSize?.rcSizeSlug ?? photoSpec.print_size_slug.replace(/^photo-/, "");
-    const unitPrice = resolveBridgedPhotoPrice(
+    const unitPrice = convert(resolveBridgedPhotoPrice(
       photoRateCard,
       { rcSizeSlug, rcFinish, border_mm: borderMm, quantity: totalPrints },
       rcPriceBreaks,
