@@ -33,6 +33,8 @@ export default function CustomerHeader() {
   const queryClient = useQueryClient();
   const isAnon = isAnonymousUser(user);
   const { activeBranch, isMultiBranch, openPicker, loading: branchesLoading } = useBranch();
+  const { multiCurrency } = useRegionalPricing();
+
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
