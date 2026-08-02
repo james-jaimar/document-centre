@@ -4831,6 +4831,7 @@ export type Database = {
           currency_symbol: string
           id: string
           is_default: boolean
+          is_rest_of_world: boolean
           region_code: string
           region_label: string
           sort_order: number
@@ -4844,6 +4845,7 @@ export type Database = {
           currency_symbol: string
           id?: string
           is_default?: boolean
+          is_rest_of_world?: boolean
           region_code: string
           region_label: string
           sort_order?: number
@@ -4857,6 +4859,7 @@ export type Database = {
           currency_symbol?: string
           id?: string
           is_default?: boolean
+          is_rest_of_world?: boolean
           region_code?: string
           region_label?: string
           sort_order?: number
