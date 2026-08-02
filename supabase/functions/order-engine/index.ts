@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { processAutoRefund } from "../_shared/refunds.ts";
+import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
