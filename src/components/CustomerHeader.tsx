@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import MessagesBell from "@/components/customer/MessagesBell";
 import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 
 
 export default function CustomerHeader() {
@@ -213,7 +214,7 @@ export default function CustomerHeader() {
         </div>
       ) : null}
 
-      {tenant?.show_country_selector && <CountryFlagBadge countryCode={tenant?.country_code} />}
+      {(tenant?.show_country_selector || multiCurrency) && <CountryFlagBadge countryCode={tenant?.country_code} />}
 
 
 

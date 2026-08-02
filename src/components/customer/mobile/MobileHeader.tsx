@@ -11,6 +11,7 @@ import { isAnonymousUser } from "@/lib/tenantSignOut";
 import { useBranch } from "@/contexts/BranchContext";
 import MobileNavSheet from "./MobileNavSheet";
 import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 
 
 export default function MobileHeader() {
@@ -24,6 +25,7 @@ export default function MobileHeader() {
   const cartCount = useCartItemCount();
   const isAuthenticated = !!user && !isAnonymousUser(user);
   const { activeBranch, isMultiBranch, openPicker } = useBranch();
+  const { multiCurrency } = useRegionalPricing();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
   let logoUrl = branding?.logo_url || tenant?.logo_url || "";
@@ -83,7 +85,7 @@ export default function MobileHeader() {
           </div>
         ) : null}
 
-        {(tenant as any)?.show_country_selector && <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />}
+        {((tenant as any)?.show_country_selector || multiCurrency) && <CountryFlagBadge countryCode={(tenant as any)?.country_code} compact />}
 
 
 
