@@ -269,7 +269,8 @@ export function useRegionalPricing(): RegionalPricingResult {
     loading,
     detected,
     multiCurrency: !!tenantPolicy?.multiCurrency && regions.length > 1,
-    baseCurrency: tenantPolicy?.currency ?? "ZAR",
+    baseCurrency: PIVOT_CURRENCY,
+    displayDefaultCurrency: tenantPolicy?.currency ?? PIVOT_CURRENCY,
     setRegion,
   };
 }
