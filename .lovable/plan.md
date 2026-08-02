@@ -1,24 +1,45 @@
-## What's happening (verified in code)
+## What happens today (verified)
 
-In `src/pages/dashboard/PhotoPrintsBuilder.tsx`:
+At checkout, `handlePlaceOrder` (`src/pages/dashboard/Checkout.tsx:303`) runs `placeOrder` **before** any payment handoff. That mutation (`src/hooks/useCart.ts:382-831`) calls `order-engine → createOrderWithJobs`, which inserts the order with `admin_status: 'new_order'`, `customer_status: 'awaiting_payment'`, `submitted_at: now()` (`supabase/functions/order-engine/index.ts:230-260`), and the engine's side-effects then generate a **proforma invoice** and send the **order_received** email (`index.ts:2413-2429`). Immediately afterwards the mutation **deletes the cart order and all its items** (`useCart.ts:812-820`) — which is why the "Nothing to checkout / cart is empty" screen flashes before the PayFast redirect.
 
-1. `const [photoSpec, setPhotoSpec] = useState(initialSpec)` (line 181) captures `initialSpec` on the **first render**, before the catalogue options query has resolved. At that moment `availableSizes` / `availableFinishes` are empty, so the state is seeded with the hardcoded fallbacks: `print_size_slug: ""`, `finish_slug: "gloss"`, `border_slug: "none"`.
-2. When the catalogue loads, `initialSpec` recomputes but nothing re-syncs the state (the hydration effect at line 184 only runs for an existing saved order item). So:
-   - **Finish** stays `"gloss"`, which is not one of the catalogue value slugs (the bridge builds finishes from the "Finish" product option's own slugs), so the Select renders empty even though a default exists.
-   - **Print size** stays `""`, which then trips the stale-size auto-correct effect (lines 371-379) → the `Print size updated — previous size is no longer available` toast on every fresh visit.
+So the order is not literally "complete" (it is `unpaid`), but it *is* fully submitted: it lands in the branch's New Orders queue and count (`useNewOrdersCount.ts:25`), the customer gets a proforma + confirmation email, and the cart is gone — even if PayFast then fails or the customer abandons.
 
-So it isn't a bad default stored anywhere in admin — it's a client-side initialisation race.
+## Goal
 
-## Fix
+For online payment (PayFast / Stripe), the order is created but **held** until the gateway confirms. Nothing is announced, nothing is emailed, and the cart stays intact so the customer can come back, retry, or switch to EFT.
 
-Single file: `src/pages/dashboard/PhotoPrintsBuilder.tsx`.
+## Plan
 
-1. **Seed defaults once the catalogue arrives.** Add a `defaultsAppliedRef`; in an effect that runs when `availableSizes` / `availableFinishes` / `availableBorders` become non-empty and no saved order item has been hydrated, set `print_size_slug`, `finish_slug`, `border_slug` from the resolved defaults (catalogue `is_default`, else first entry). Only for fields that are currently empty or not present in the resolved list, so a user's explicit choice is never overwritten.
-2. **Self-heal Finish and Border the same way size already is** — if the current slug isn't in the available list, fall back to the default silently (no toast) rather than leaving the Select blank.
-3. **Only toast for a genuinely stale size.** Suppress the "Print size updated" info toast when the previous slug was empty/never chosen (initial load) or when no photos have been added yet; keep it for the real case where an admin removed a size the customer had already selected.
-4. Keep the existing hydration path for saved order items unchanged; make sure the new default-seeding effect defers to it (don't overwrite a hydrated spec).
+### 1. Held order state (order-engine)
+- `createOrderWithJobs` accepts `hold_for_payment: true`. When set:
+  - `admin_status: 'pending_payment'`, `customer_status: 'pending_payment'`, `payment_status: 'unpaid'`, `submitted_at: null`
+  - metadata records `cart_order_id` and `held_at`
+  - **skip** the proforma + `order_received` side effects entirely.
+- New engine action `activateHeldOrder(order_id, reason: 'paid' | 'eft')`, idempotent:
+  - flips to `admin_status: 'new_order'`, `customer_status: 'awaiting_payment'`, stamps `submitted_at`
+  - fires the proforma + `order_received` email exactly once (guarded on `submitted_at` already being set)
+  - deletes the linked cart order/items (the cleanup currently in `useCart.ts`).
+
+### 2. Checkout flow
+- EFT / pay-later: unchanged behaviour — place the order and activate immediately in the same call.
+- PayFast / Stripe: place with `hold_for_payment`, keep the cart, then hand off. Guard the "Nothing to checkout" empty-state behind a `redirecting` flag so the flash disappears; show "Redirecting to PayFast…" instead.
+- On the cancel/return-with-failure path, the cart is still there and the held order is reachable so they can retry or choose EFT.
+
+### 3. Settlement paths activate the order
+- `payfast-itn`: on `COMPLETE`, after marking paid, call `activateHeldOrder(..., 'paid')` before issuing the tax invoice.
+- `stripe-webhook`: same on `checkout.session.completed`.
+- Customer switching to EFT on a held order (checkout or order page) calls `activateHeldOrder(..., 'eft')`.
+- ITN `FAILED` / `CANCELLED` leave the order held — no notification, cart untouched.
+
+### 4. Keep held orders invisible everywhere
+- Branch/admin order lists, the New Orders badge (`useNewOrdersCount`), and the customer's order history filter out `admin_status = 'pending_payment'`.
+- The customer's confirmation page for a held order shows "Awaiting payment — complete payment or pay by EFT" with retry/EFT buttons, not a success screen.
+- Reuse: if the same customer re-checks-out while a held order exists for the same cart, void the previous held order instead of stacking duplicates.
+
+### 5. Expiry
+- Held orders older than 24h are cancelled (`admin_status: 'cancelled'`, metadata `hold_expired`) by a sweep in the existing scheduled cleanup path. Carts are never touched by expiry.
 
 ## Technical notes
-
-- Prefer resolving defaults via a small `useMemo` that returns `{ sizeSlug, finishSlug, borderSlug }` from the bridged lists, and reuse it in both the seeding effect and the self-heal checks — no duplicated fallback logic.
-- No database or admin-config changes are needed; the catalogue defaults are already correct.
+- No schema migration needed if `admin_status` / `customer_status` are text columns; will confirm and add an enum value via migration if they are enums.
+- `activateHeldOrder` runs with the service-role client so webhooks (no user JWT) can call it; the customer-facing route goes through the normal authed `order-engine` invoke with an ownership check.
+- Files touched: `supabase/functions/order-engine/index.ts`, `supabase/functions/payfast-itn/index.ts`, `supabase/functions/stripe-webhook/index.ts`, `src/hooks/useCart.ts`, `src/pages/dashboard/Checkout.tsx`, `src/pages/dashboard/OrderConfirmation.tsx`, `src/hooks/useNewOrdersCount.ts`, `src/hooks/useOrders.ts`.
