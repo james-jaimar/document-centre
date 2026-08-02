@@ -78,6 +78,29 @@ Deno.serve(async (req) => {
     deletedOrders = orderIds.length;
   }
 
+  // ---------- 1b. Expired held orders (online payment never completed) ----------
+  // Orders parked in `pending_payment` are never announced to anyone. If the
+  // customer never came back within 24h, quietly cancel them. Carts are left
+  // untouched — the customer keeps their basket either way.
+  const holdCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  let expiredHolds = 0;
+  {
+    const { data: held } = await admin
+      .from("orders")
+      .select("id, metadata")
+      .eq("admin_status", "pending_payment")
+      .lt("created_at", holdCutoff);
+    for (const h of held ?? []) {
+      const meta = { ...(((h as any).metadata ?? {}) as Record<string, unknown>), hold_expired: true };
+      const { error } = await admin
+        .from("orders")
+        .update({ admin_status: "cancelled", customer_status: "cancelled", metadata: meta })
+        .eq("id", (h as any).id);
+      if (!error) expiredHolds++;
+    }
+    if (expiredHolds) console.log(`[cleanup] expired held orders: ${expiredHolds}`);
+  }
+
   // ---------- 2. Orphan documents (parent order_item already deleted) ----------
   // Two-pass: list documents, fetch order_items they reference, find dangling ones.
   const { data: oldDocs } = await admin
@@ -116,6 +139,7 @@ Deno.serve(async (req) => {
   return json({
     ok: true,
     deleted_orders: deletedOrders,
+    expired_held_orders: expiredHolds,
     deleted_orphan_documents: deletedOrphanDocs,
     deleted_files: s3Result.deleted,
     failed_files: s3Result.failed.slice(0, 20),

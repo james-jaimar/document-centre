@@ -387,6 +387,14 @@ export function usePlaceOrder() {
   return useMutation({
     mutationFn: async (input: {
       cartOrderId: string;
+      /**
+       * Online payment (PayFast/Stripe): create the order in a HELD state and
+       * KEEP the cart. Nothing is announced, no proforma, no email — the order
+       * only becomes real once the gateway confirms (webhook/ITN) or the
+       * customer falls back to EFT. Abandoned payments therefore cost the
+       * customer nothing: their basket is still there when they come back.
+       */
+      holdForPayment?: boolean;
       deliveryMethod: "collection" | "delivery";
       notes?: string;
       branchId?: string;
@@ -743,6 +751,7 @@ export function usePlaceOrder() {
       const { data, error } = await supabase.functions.invoke("order-engine", {
         body: {
           action: "createOrderWithJobs",
+          hold_for_payment: input.holdForPayment === true,
           app_slug: app.slug,
           tenant_id: orderTenantId,
           branch_id: orderBranchId,
@@ -807,6 +816,12 @@ export function usePlaceOrder() {
         throw new Error(detail || (error as any)?.message || "Place order failed");
       }
       if (data?.error) throw new Error(data.error);
+
+      // Held-for-payment orders keep the cart intact until the gateway
+      // confirms — the ITN/webhook (or the EFT fallback) clears it server-side.
+      if (input.holdForPayment) {
+        return data.order_id;
+      }
 
       // Clean up the cart synchronously so the refetched cart is empty.
       const itemIdsToDelete = items.map((i: any) => i.id);

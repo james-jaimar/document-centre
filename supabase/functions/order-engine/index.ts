@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { processAutoRefund } from "../_shared/refunds.ts";
+import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -185,10 +186,15 @@ async function createOrderWithJobs(
   payload: any
 ) {
   const { app_slug, tenant_id, branch_id, customer, order, billing_address, delivery_address, fulfillment_type, pricing, jobs } = payload;
+  // Online payments create the order in a HELD state: not submitted, not
+  // announced, no proforma, no email, and the customer's cart is left intact
+  // until the gateway confirms (or the customer falls back to EFT).
+  const holdForPayment = payload.hold_for_payment === true;
 
   if (!app_slug || !tenant_id || !customer?.profile_id || !customer?.email || !jobs?.length) {
     return err("Missing required fields: app_slug, tenant_id, customer (profile_id, email), jobs[]");
   }
+
 
   // Branch subscription gate
   const gateMsg = await checkBranchGate(admin, userId, branch_id);
@@ -216,6 +222,23 @@ async function createOrderWithJobs(
     return err(`generate_order_number failed: ${numErr?.message ?? "no number returned"}`);
   }
 
+
+  // If this cart already produced a held order (customer bounced off the
+  // gateway and came back), cancel it so we don't stack duplicates.
+  const cartOrderId = order?.metadata?.cart_order_id ?? null;
+  if (holdForPayment && cartOrderId) {
+    try {
+      await admin
+        .from("orders")
+        .update({ admin_status: "cancelled", customer_status: "cancelled" })
+        .eq("admin_status", "pending_payment")
+        .eq("ordered_by_profile_id", customer.profile_id)
+        .contains("metadata", { cart_order_id: cartOrderId });
+    } catch (e) {
+      console.warn("[order-engine] superseding previous held order failed (non-fatal):", e);
+    }
+  }
+
   // Insert order
   const { data: newOrder, error: orderErr } = await admin
     .from("orders")
@@ -232,8 +255,8 @@ async function createOrderWithJobs(
       customer_name: customer.name || null,
       company_name: customer.company_name || null,
       user_id: customer.profile_id,
-      admin_status: "new_order",
-      customer_status: "awaiting_payment",
+      admin_status: holdForPayment ? "pending_payment" : "new_order",
+      customer_status: holdForPayment ? "pending_payment" : "awaiting_payment",
       payment_status: "unpaid",
       fulfilment_status: "pending",
       currency: pricing?.currency || order?.currency || "ZAR",
@@ -251,10 +274,14 @@ async function createOrderWithJobs(
       notes_customer: order?.notes_customer || null,
       po_number: order?.po_number || null,
       cost_centre: order?.cost_centre || null,
-      metadata: order?.metadata || {},
-      submitted_at: new Date().toISOString(),
+      metadata: {
+        ...(order?.metadata || {}),
+        ...(holdForPayment ? { payment_hold: true, held_at: new Date().toISOString() } : {}),
+      },
+      submitted_at: holdForPayment ? null : new Date().toISOString(),
       is_demo: payload.is_demo === true,
     })
+
     .select("id, order_number, is_demo")
     .single();
 
@@ -422,9 +449,47 @@ async function createOrderWithJobs(
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
+    held_for_payment: holdForPayment,
     jobs: newJobs,
   }, 201);
+
 }
+
+/**
+ * Promote a held (awaiting online payment) order into a real order.
+ * Customer-facing entry point — used when they abandon the gateway and choose
+ * EFT instead. Gateways call the shared helper directly from their webhooks.
+ */
+async function activateHeldOrderAction(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, reason } = payload;
+  if (!order_id) return err("Missing order_id");
+
+  const { data: o } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, ordered_by_profile_id, user_id, admin_status")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (!o) return err("Order not found", 404);
+
+  const isOwner = o.ordered_by_profile_id === userId || o.user_id === userId;
+  if (!isOwner) {
+    const denied = await assertOrderStaffAccess(admin, userId, o as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const result = await activateHeldOrderShared(
+    admin as any,
+    order_id,
+    reason === "paid" ? "paid" : "eft",
+  );
+  return json({ success: true, ...result });
+}
+
+
 
 async function updateJobStatus(
   admin: ReturnType<typeof createClient>,
@@ -2414,7 +2479,9 @@ Deno.serve(async (req) => {
         response = await createOrderWithJobs(admin, userId, payload);
         if (response.status === 201) {
           const data = await response.clone().json();
-          if (data?.order_id) {
+          // Held orders (online payment handoff) announce nothing until the
+          // gateway confirms — no proforma, no confirmation email.
+          if (data?.order_id && !data?.held_for_payment) {
             sideEffects = async () => {
               // Generate the proforma first so we can attach it to the confirmation email.
               const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
@@ -2426,7 +2493,12 @@ Deno.serve(async (req) => {
               );
             };
           }
+
         }
+        break;
+      }
+      case "activateHeldOrder": {
+        response = await activateHeldOrderAction(admin, userId, payload);
         break;
       }
       case "updateJobStatus": {

@@ -1,0 +1,4 @@
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_admin_status_check;
+ALTER TABLE public.orders ADD CONSTRAINT orders_admin_status_check CHECK (admin_status = ANY (ARRAY['pending_payment'::text,'new_order'::text,'under_review'::text,'approved'::text,'in_production'::text,'qa'::text,'ready_for_dispatch'::text,'completed'::text,'on_hold'::text,'cancelled'::text]));
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_customer_status_check;
+ALTER TABLE public.orders ADD CONSTRAINT orders_customer_status_check CHECK (customer_status = ANY (ARRAY['pending_payment'::text,'awaiting_payment'::text,'in_production'::text,'on_hold'::text,'proof_pending'::text,'ready'::text,'completed'::text,'cancelled'::text,'dispatched'::text]));

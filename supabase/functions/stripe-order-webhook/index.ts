@@ -1,6 +1,7 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { adminClient, readSecret } from "../_shared/payments.ts";
 import { issueTaxInvoiceAndNotify } from "../_shared/payment-invoice.ts";
+import { activateHeldOrder } from "../_shared/activate-held-order.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -128,6 +129,10 @@ Deno.serve(async (req) => {
           .eq("id", (existing as any).id);
       }
     }
+
+    // Promote the held order (created only for this payment handoff) into a
+    // real, submitted order — proforma + confirmation + cart cleanup.
+    await activateHeldOrder(sb as any, orderId, "paid");
 
     // Issue the tax invoice + payment_received email (best-effort).
     await issueTaxInvoiceAndNotify(sb, orderId);

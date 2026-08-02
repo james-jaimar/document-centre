@@ -54,6 +54,7 @@ export default function Checkout() {
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
@@ -326,8 +327,12 @@ export default function Checkout() {
 
     setIsSubmitting(true);
     try {
+      const payingOnline = paymentMethod === "stripe" || paymentMethod === "payfast";
+      if (payingOnline) setRedirecting(true);
+
       const newOrderId = await placeOrder.mutateAsync({
         cartOrderId: cart.id,
+        holdForPayment: payingOnline,
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
@@ -392,7 +397,7 @@ export default function Checkout() {
       }
 
       // Online payment selected — create payment session and redirect
-      if (paymentMethod === "stripe" || paymentMethod === "payfast") {
+      if (payingOnline) {
         const origin = window.location.origin;
         const returnUrl = `${origin}${tenantPath(`orders/${newOrderId}/confirmation`)}`;
         const cancelUrl = `${origin}${tenantPath("checkout")}?payment=cancelled`;
@@ -409,6 +414,7 @@ export default function Checkout() {
 
       navigate(tenantPath(`orders/${newOrderId}/confirmation`));
     } catch (err: any) {
+      setRedirecting(false);
       toast.error("Failed to place order", { description: err.message });
     } finally {
       setIsSubmitting(false);
@@ -420,6 +426,21 @@ export default function Checkout() {
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  // While handing off to the gateway we deliberately keep the cart — but the
+  // page is navigating away, so show a redirect notice rather than any
+  // transient empty state.
+  if (redirecting) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <h2 className="text-xl font-semibold text-foreground">Redirecting to secure payment…</h2>
+        <p className="text-muted-foreground text-sm">
+          Your basket is kept until the payment is confirmed.
+        </p>
       </div>
     );
   }
