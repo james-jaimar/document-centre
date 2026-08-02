@@ -222,6 +222,23 @@ async function createOrderWithJobs(
     return err(`generate_order_number failed: ${numErr?.message ?? "no number returned"}`);
   }
 
+
+  // If this cart already produced a held order (customer bounced off the
+  // gateway and came back), cancel it so we don't stack duplicates.
+  const cartOrderId = order?.metadata?.cart_order_id ?? null;
+  if (holdForPayment && cartOrderId) {
+    try {
+      await admin
+        .from("orders")
+        .update({ admin_status: "cancelled", customer_status: "cancelled" })
+        .eq("admin_status", "pending_payment")
+        .eq("ordered_by_profile_id", customer.profile_id)
+        .contains("metadata", { cart_order_id: cartOrderId });
+    } catch (e) {
+      console.warn("[order-engine] superseding previous held order failed (non-fatal):", e);
+    }
+  }
+
   // Insert order
   const { data: newOrder, error: orderErr } = await admin
     .from("orders")
@@ -238,8 +255,8 @@ async function createOrderWithJobs(
       customer_name: customer.name || null,
       company_name: customer.company_name || null,
       user_id: customer.profile_id,
-      admin_status: "new_order",
-      customer_status: "awaiting_payment",
+      admin_status: holdForPayment ? "pending_payment" : "new_order",
+      customer_status: holdForPayment ? "pending_payment" : "awaiting_payment",
       payment_status: "unpaid",
       fulfilment_status: "pending",
       currency: pricing?.currency || order?.currency || "ZAR",
@@ -257,10 +274,14 @@ async function createOrderWithJobs(
       notes_customer: order?.notes_customer || null,
       po_number: order?.po_number || null,
       cost_centre: order?.cost_centre || null,
-      metadata: order?.metadata || {},
-      submitted_at: new Date().toISOString(),
+      metadata: {
+        ...(order?.metadata || {}),
+        ...(holdForPayment ? { payment_hold: true, held_at: new Date().toISOString() } : {}),
+      },
+      submitted_at: holdForPayment ? null : new Date().toISOString(),
       is_demo: payload.is_demo === true,
     })
+
     .select("id, order_number, is_demo")
     .single();
 
