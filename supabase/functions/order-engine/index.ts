@@ -449,8 +449,10 @@ async function createOrderWithJobs(
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
+    held_for_payment: holdForPayment,
     jobs: newJobs,
   }, 201);
+
 }
 
 async function updateJobStatus(
