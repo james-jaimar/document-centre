@@ -57,6 +57,7 @@ import { Input } from "@/components/ui/input";
 import { ArrowLeft, Camera, ImagePlus, Loader2, ShoppingCart, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 
 const PHOTO_FAMILY_SLUG = "photo-prints";
@@ -438,10 +439,10 @@ export default function PhotoPrintsBuilder() {
       photoRateCard,
       { rcSizeSlug, rcFinish, border_mm: borderMm, quantity: totalPrints },
       rcPriceBreaks,
-    );
+    ));
     const totalPrice = totalPrints * unitPrice;
     return { size, bridgedSize, totalPhotos, totalPrints, totalPrice, unitPrice };
-  }, [photoSpec, photoRateCard, rcPriceBreaks, availableSizes, availableFinishes, availableBorders]);
+  }, [photoSpec, photoRateCard, rcPriceBreaks, availableSizes, availableFinishes, availableBorders, convert]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
