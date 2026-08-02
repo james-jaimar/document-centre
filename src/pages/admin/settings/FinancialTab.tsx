@@ -85,34 +85,91 @@ export function FinancialTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Coins className="h-5 w-5" /> Currency</CardTitle>
           <CardDescription>
-            Lock the display and order currency so visitor location can't switch your customers to a different currency.
+            Your default currency is the one your rate cards are priced in. Lock it, or opt in to
+            selling in several currencies with prices converted automatically.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 max-w-2xl">
-          <div className="space-y-2">
-            <Label>Default currency</Label>
-            <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCY_CHOICES.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-start gap-3 pt-6">
-            <Switch checked={lockCurrency} onCheckedChange={setLockCurrency} />
-            <div className="space-y-0.5">
-              <Label>Lock to this currency</Label>
-              <p className="text-xs text-muted-foreground">
-                Recommended. When on, geo-detection and manual region switching are ignored — every order, quote and invoice uses your default currency.
-              </p>
+        <CardContent className="space-y-6 max-w-2xl">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Default currency</Label>
+              <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="flex items-start gap-3 pt-6">
+              <Switch checked={lockCurrency} onCheckedChange={setLockCurrency} disabled={multiCurrency} />
+              <div className="space-y-0.5">
+                <Label>Lock to this currency</Label>
+                <p className="text-xs text-muted-foreground">
+                  Recommended. When on, geo-detection and manual region switching are ignored — every order, quote and invoice uses your default currency.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <Switch
+                checked={multiCurrency}
+                onCheckedChange={(v) => {
+                  setMultiCurrency(v);
+                  if (v) setLockCurrency(false);
+                }}
+              />
+              <div className="space-y-0.5">
+                <Label>Sell in multiple currencies</Label>
+                <p className="text-xs text-muted-foreground">
+                  Visitors are shown prices in their local currency (detected from their location, and
+                  changeable from the storefront header). Prices are converted from your rate cards
+                  using the platform exchange rates, and the order, invoice and payment are all taken
+                  in the currency the customer chose.
+                </p>
+              </div>
+            </div>
+
+            {multiCurrency && (
+              <div className="space-y-3 pl-11">
+                <Label>Currencies you accept</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SUPPORTED_CURRENCIES.map((c) => {
+                    const isBase = c.code === defaultCurrency;
+                    const checked = isBase || acceptedCurrencies.includes(c.code);
+                    return (
+                      <label key={c.code} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={checked}
+                          disabled={isBase}
+                          onCheckedChange={(v) =>
+                            setAcceptedCurrencies((prev) =>
+                              v === true
+                                ? Array.from(new Set([...prev, c.code]))
+                                : prev.filter((x) => x !== c.code),
+                            )
+                          }
+                        />
+                        <span>{c.label}{isBase ? " — base" : ""}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Re-check your canvas, photo and business-card rate cards after switching this on —
+                  those prices are converted from your base currency, not authored per currency.
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader>
