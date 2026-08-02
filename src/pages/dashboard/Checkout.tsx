@@ -54,6 +54,7 @@ export default function Checkout() {
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
