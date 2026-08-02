@@ -2479,7 +2479,9 @@ Deno.serve(async (req) => {
         response = await createOrderWithJobs(admin, userId, payload);
         if (response.status === 201) {
           const data = await response.clone().json();
-          if (data?.order_id) {
+          // Held orders (online payment handoff) announce nothing until the
+          // gateway confirms — no proforma, no confirmation email.
+          if (data?.order_id && !data?.held_for_payment) {
             sideEffects = async () => {
               // Generate the proforma first so we can attach it to the confirmation email.
               const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
@@ -2491,6 +2493,7 @@ Deno.serve(async (req) => {
               );
             };
           }
+
         }
         break;
       }
