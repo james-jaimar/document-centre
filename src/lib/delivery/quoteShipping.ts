@@ -38,6 +38,12 @@ export interface ShippingQuoteRequest {
   items: CartItemLike[];
   methodId?: string | null;
   currency?: string;
+  /**
+   * Converts a base-currency (ZAR) amount into `currency`. Used when a zone
+   * only has rates authored in the base currency but the customer is
+   * shopping in another currency.
+   */
+  convertFromBase?: (amount: number) => number;
 }
 
 export interface ShippingQuoteResult {
@@ -207,8 +213,12 @@ export async function quoteShipping(req: ShippingQuoteRequest): Promise<Shipping
     zoneCode: zoneRow?.code ?? null,
     methodId: rate.method_id,
     methodLabel,
-    price: Number(rate.price),
-    currency: rate.currency_code,
+    price:
+      rate.currency_code !== currency && req.convertFromBase
+        ? req.convertFromBase(Number(rate.price))
+        : Number(rate.price),
+    currency:
+      rate.currency_code !== currency && req.convertFromBase ? currency : rate.currency_code,
     ...weights,
     billableKg: chargeableKg,
   };
@@ -312,8 +322,12 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
       methodId: m.id,
       label: m.label,
       description: (m as any).description ?? null,
-      price: Number(rate.price),
-      currency: rate.currency_code,
+      price:
+        rate.currency_code !== currency && req.convertFromBase
+          ? req.convertFromBase(Number(rate.price))
+          : Number(rate.price),
+      currency:
+        rate.currency_code !== currency && req.convertFromBase ? currency : rate.currency_code,
     });
   }
 
