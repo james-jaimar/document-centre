@@ -1,9 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { PIVOT_CURRENCY } from "@/lib/pricing/convertCurrency";
 
 const OVERRIDE_KEY = "dc_region_override";
 const SESSION_COUNTRY_KEY = "dc_detected_country";
+
+/**
+ * Every component calling this hook keeps its own copy of the selected region,
+ * so a switch in the header would otherwise leave every price on the page
+ * showing the old currency. A tiny module-level broadcast keeps all live
+ * instances in sync.
+ */
+const regionListeners = new Set<(code: string) => void>();
+function broadcastRegion(code: string) {
+  regionListeners.forEach((fn) => fn(code));
+}
 
 interface PricingRegion {
   id: string;
@@ -34,8 +46,13 @@ interface RegionalPricingResult {
   detected: boolean;
   /** True when the tenant sells in more than one currency (picker is live). */
   multiCurrency: boolean;
-  /** The currency the tenant's rate cards are authored in. */
+  /**
+   * The currency rate cards are authored in — always the ZAR pivot. This is
+   * NOT the tenant's default display currency (`displayDefaultCurrency`).
+   */
   baseCurrency: string;
+  /** The tenant's default *display* currency when no region is picked. */
+  displayDefaultCurrency: string;
   setRegion: (regionCode: string) => void;
 }
 
@@ -90,21 +107,33 @@ export function useRegionalPricing(): RegionalPricingResult {
     }
     setTenantLockLoaded(false);
     (async () => {
-      const { data } = await supabase
-        .from("tenant_settings")
-        .select("setting_key, setting_value")
-        .eq("tenant_id", tenantId)
-        .eq("category", "financial")
-        .in("setting_key", [
-          "default_currency_code",
-          "lock_currency",
-          "multi_currency_enabled",
-          "accepted_currencies",
-        ]);
+      // Read through the SECURITY DEFINER RPC: storefront visitors (anonymous
+      // or plain customers) have no SELECT rights on `tenant_settings`, so a
+      // direct query silently returns nothing and the storefront gets stuck on
+      // the fallback currency.
+      const keys = [
+        "default_currency_code",
+        "lock_currency",
+        "multi_currency_enabled",
+        "accepted_currencies",
+      ] as const;
+      const results = await Promise.all(
+        keys.map((key) =>
+          supabase.rpc("resolve_tenant_setting", {
+            p_tenant_id: tenantId,
+            p_category: "financial",
+            p_key: key,
+          }),
+        ),
+      );
       if (cancelled) return;
       const map: Record<string, unknown> = {};
-      for (const r of data ?? []) map[(r as any).setting_key] = (r as any).setting_value;
-      const currency = String(map.default_currency_code ?? "ZAR").toUpperCase();
+      keys.forEach((key, i) => {
+        map[key] = results[i]?.data ?? null;
+      });
+      const currency = String(map.default_currency_code ?? "ZAR")
+        .replace(/^"|"$/g, "")
+        .toUpperCase();
       const multiCurrency = map.multi_currency_enabled === true;
       // Default: locked on for safety — tenants opt out explicitly. Turning on
       // multi-currency implies unlocked.
@@ -231,6 +260,19 @@ export function useRegionalPricing(): RegionalPricingResult {
     return () => { cancelled = true; };
   }, [region?.id]);
 
+  // Keep this instance in step with a switch made anywhere else on the page.
+  useEffect(() => {
+    const onChange = (code: string) => {
+      setRegionState((prev) => {
+        const found = regions.find((r) => r.region_code === code);
+        return found ?? prev;
+      });
+      setDetected(false);
+    };
+    regionListeners.add(onChange);
+    return () => { regionListeners.delete(onChange); };
+  }, [regions]);
+
   const setRegion = useCallback(
     (regionCode: string) => {
       // When the tenant sells in one locked currency, switching is disabled.
@@ -240,6 +282,7 @@ export function useRegionalPricing(): RegionalPricingResult {
         localStorage.setItem(OVERRIDE_KEY, regionCode);
         setRegionState(found);
         setDetected(false);
+        broadcastRegion(regionCode);
       }
     },
     [regions, tenantPolicy?.locked, tenantPolicy?.multiCurrency]
@@ -252,7 +295,8 @@ export function useRegionalPricing(): RegionalPricingResult {
     loading,
     detected,
     multiCurrency: !!tenantPolicy?.multiCurrency && regions.length > 1,
-    baseCurrency: tenantPolicy?.currency ?? "ZAR",
+    baseCurrency: PIVOT_CURRENCY,
+    displayDefaultCurrency: tenantPolicy?.currency ?? PIVOT_CURRENCY,
     setRegion,
   };
 }

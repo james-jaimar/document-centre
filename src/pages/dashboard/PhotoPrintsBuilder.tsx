@@ -567,7 +567,7 @@ export default function PhotoPrintsBuilder() {
               {availableSizes.map((s) => {
                 const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
                 const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
-                const price = resolveBridgedPhotoPrice(
+                const price = convert(resolveBridgedPhotoPrice(
                   photoRateCard,
                   {
                     rcSizeSlug: s.rcSizeSlug,
@@ -576,7 +576,7 @@ export default function PhotoPrintsBuilder() {
                     quantity: totals.totalPrints,
                   },
                   rcPriceBreaks,
-                );
+                ));
                 return (
                   <SelectItem key={s.slug} value={s.slug}>
                     {s.label} — {formatPrice(price, activeCurrency)}
