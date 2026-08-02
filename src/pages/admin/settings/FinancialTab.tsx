@@ -11,17 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
+import { SUPPORTED_CURRENCIES } from "@/lib/countries";
 import { toast } from "sonner";
 import { Save, Receipt, Coins } from "lucide-react";
-
-const CURRENCY_CHOICES = [
-  { code: "ZAR", label: "ZAR — South African Rand (R)" },
-  { code: "GBP", label: "GBP — Pound Sterling (£)" },
-  { code: "EUR", label: "EUR — Euro (€)" },
-  { code: "USD", label: "USD — US Dollar ($)" },
-  { code: "AUD", label: "AUD — Australian Dollar (A$)" },
-];
 
 export function FinancialTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("financial");
@@ -35,6 +29,8 @@ export function FinancialTab() {
   const [invoiceNextNumber, setInvoiceNextNumber] = useState("1001");
   const [defaultCurrency, setDefaultCurrency] = useState("ZAR");
   const [lockCurrency, setLockCurrency] = useState(true);
+  const [multiCurrency, setMultiCurrency] = useState(false);
+  const [acceptedCurrencies, setAcceptedCurrencies] = useState<string[]>([]);
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
@@ -56,6 +52,12 @@ export function FinancialTab() {
           ? true
           : settingsMap.lock_currency === true,
       );
+      setMultiCurrency(settingsMap.multi_currency_enabled === true);
+      setAcceptedCurrencies(
+        Array.isArray(settingsMap.accepted_currencies)
+          ? (settingsMap.accepted_currencies as unknown[]).map((c) => String(c).toUpperCase())
+          : [],
+      );
     }
   }, [isLoading, settingsMap]);
 
@@ -69,7 +71,16 @@ export function FinancialTab() {
         { category: "financial", setting_key: "invoice_prefix", setting_value: invoicePrefix, value_type: "string" },
         { category: "financial", setting_key: "invoice_next_number", setting_value: parseInt(invoiceNextNumber), value_type: "number" },
         { category: "financial", setting_key: "default_currency_code", setting_value: defaultCurrency, value_type: "string" },
-        { category: "financial", setting_key: "lock_currency", setting_value: lockCurrency, value_type: "boolean" },
+        { category: "financial", setting_key: "lock_currency", setting_value: multiCurrency ? false : lockCurrency, value_type: "boolean" },
+        { category: "financial", setting_key: "multi_currency_enabled", setting_value: multiCurrency, value_type: "boolean" },
+        {
+          category: "financial",
+          setting_key: "accepted_currencies",
+          setting_value: multiCurrency
+            ? Array.from(new Set([defaultCurrency, ...acceptedCurrencies]))
+            : [],
+          value_type: "json",
+        },
       ]);
       toast.success("Financial settings saved");
     } catch (e: any) {
