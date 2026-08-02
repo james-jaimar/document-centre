@@ -260,6 +260,19 @@ export function useRegionalPricing(): RegionalPricingResult {
     return () => { cancelled = true; };
   }, [region?.id]);
 
+  // Keep this instance in step with a switch made anywhere else on the page.
+  useEffect(() => {
+    const onChange = (code: string) => {
+      setRegionState((prev) => {
+        const found = regions.find((r) => r.region_code === code);
+        return found ?? prev;
+      });
+      setDetected(false);
+    };
+    regionListeners.add(onChange);
+    return () => { regionListeners.delete(onChange); };
+  }, [regions]);
+
   const setRegion = useCallback(
     (regionCode: string) => {
       // When the tenant sells in one locked currency, switching is disabled.
@@ -269,6 +282,7 @@ export function useRegionalPricing(): RegionalPricingResult {
         localStorage.setItem(OVERRIDE_KEY, regionCode);
         setRegionState(found);
         setDetected(false);
+        broadcastRegion(regionCode);
       }
     },
     [regions, tenantPolicy?.locked, tenantPolicy?.multiCurrency]
