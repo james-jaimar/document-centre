@@ -186,10 +186,15 @@ async function createOrderWithJobs(
   payload: any
 ) {
   const { app_slug, tenant_id, branch_id, customer, order, billing_address, delivery_address, fulfillment_type, pricing, jobs } = payload;
+  // Online payments create the order in a HELD state: not submitted, not
+  // announced, no proforma, no email, and the customer's cart is left intact
+  // until the gateway confirms (or the customer falls back to EFT).
+  const holdForPayment = payload.hold_for_payment === true;
 
   if (!app_slug || !tenant_id || !customer?.profile_id || !customer?.email || !jobs?.length) {
     return err("Missing required fields: app_slug, tenant_id, customer (profile_id, email), jobs[]");
   }
+
 
   // Branch subscription gate
   const gateMsg = await checkBranchGate(admin, userId, branch_id);
