@@ -13,8 +13,10 @@ const LOCALE_BY_CURRENCY: Record<string, string> = {
   GBP: "en-GB",
   EUR: "en-IE", // Irish English keeps the symbol prefix and "." decimal
   USD: "en-US",
+  CAD: "en-CA",
   AUD: "en-AU",
 };
+
 
 /**
  * Format a numeric amount as a localised currency string.
