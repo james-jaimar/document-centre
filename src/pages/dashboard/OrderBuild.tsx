@@ -194,6 +194,7 @@ export default function OrderBuild() {
   // Active region currency (geo-detected, with manual override support).
   const { region, baseCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
+  const { convert: convertPrice } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   // tenantId / effectiveBranchId already computed above (needed by useResolvedProductOptions).
 
@@ -1230,7 +1231,7 @@ export default function OrderBuild() {
       };
     }
     return engine;
-  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides, blocksActive, quantityBlocks]);
+  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides, blocksActive, quantityBlocks, convertPrice]);
 
 
   const handleAddToCartClick = useCallback(() => {
