@@ -32,6 +32,7 @@ import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
 import { useDerivedProductRecipe } from "@/hooks/useDerivedProductRecipe";
@@ -191,8 +192,9 @@ export default function OrderBuild() {
 
 
   // Active region currency (geo-detected, with manual override support).
-  const { region } = useRegionalPricing();
+  const { region, baseCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
+  const { convert: convertPrice } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   // tenantId / effectiveBranchId already computed above (needed by useResolvedProductOptions).
 
@@ -1189,14 +1191,29 @@ export default function OrderBuild() {
 
 
   const computeBreakdown = useCallback(() => {
-    const engine = useNewEngine && recipe && rateCard
+    const rawEngine = useNewEngine && recipe && rateCard
       ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard, options)
+      : null;
+    // Rate-card prices are authored in the base currency and carry no
+    // currency of their own — convert them for the active currency. Rules
+    // based prices already exist per currency.
+    const engine = rawEngine
+      ? {
+          ...rawEngine,
+          lines: rawEngine.lines.map((l) => ({
+            ...l,
+            unit_amount: convertPrice(l.unit_amount),
+            total: convertPrice(l.total),
+          })),
+          subtotal_per_unit: convertPrice(rawEngine.subtotal_per_unit),
+          total: convertPrice(rawEngine.total),
+        }
       : calculateItemPrice(pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides);
     if (blocksActive) {
       const block =
         quantityBlocks.find((b) => b.qty === pricingSpec.quantity) ??
         quantityBlocks[0];
-      const total = block.price_minor / 100;
+      const total = convertPrice(block.price_minor / 100);
       const perUnit = total / Math.max(1, block.qty);
       return {
         ...engine,
@@ -1214,7 +1231,7 @@ export default function OrderBuild() {
       };
     }
     return engine;
-  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides, blocksActive, quantityBlocks]);
+  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides, blocksActive, quantityBlocks, convertPrice]);
 
 
   const handleAddToCartClick = useCallback(() => {

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import MessagesBell from "@/components/customer/MessagesBell";
 import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 
 
 export default function CustomerHeader() {
@@ -32,6 +33,8 @@ export default function CustomerHeader() {
   const queryClient = useQueryClient();
   const isAnon = isAnonymousUser(user);
   const { activeBranch, isMultiBranch, openPicker, loading: branchesLoading } = useBranch();
+  const { multiCurrency } = useRegionalPricing();
+
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
@@ -213,7 +216,7 @@ export default function CustomerHeader() {
         </div>
       ) : null}
 
-      {tenant?.show_country_selector && <CountryFlagBadge countryCode={tenant?.country_code} />}
+      {(tenant?.show_country_selector || multiCurrency) && <CountryFlagBadge countryCode={tenant?.country_code} />}
 
 
 

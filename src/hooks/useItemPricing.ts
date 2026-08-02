@@ -26,6 +26,7 @@ import {
   useResolvedRateCardPriceBreaksBundle,
 } from "@/hooks/useResolvedRateCard";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import type { Tables } from "@/integrations/supabase/types";
 
 type ProductOption = Tables<"product_options">;
@@ -37,6 +38,12 @@ interface Args {
   currency: string;
   spec: ItemSpec;
   options: ProductOption[];
+  /**
+   * Currency the rate cards are authored in. Rate-card prices carry no
+   * currency of their own, so when the storefront is displaying a different
+   * currency they are converted with the platform FX + buying-power profile.
+   */
+  baseCurrency?: string;
 }
 
 export interface ItemPricingResult {
@@ -54,6 +61,7 @@ export function useItemPricing({
   currency,
   spec,
   options,
+  baseCurrency = "ZAR",
 }: Args): ItemPricingResult {
   const effectiveBranchId = branchId ?? null;
 
@@ -145,11 +153,26 @@ export function useItemPricing({
     enabled: !!productFamilyId,
   });
 
+  // Rate-card tables are single-currency; convert their output when the
+  // storefront is showing something other than the base currency.
+  const { convert } = useCurrencyConverter(currency, baseCurrency);
+
   const breakdown = useMemo<PriceBreakdown | null>(() => {
     if (!productFamilyId) return null;
     try {
       if (useNewEngine && recipe) {
-        return calculatePriceFromRateCard(spec, recipe, rateCard, options);
+        const raw = calculatePriceFromRateCard(spec, recipe, rateCard, options);
+        if (!raw) return raw;
+        return {
+          ...raw,
+          lines: raw.lines.map((l) => ({
+            ...l,
+            unit_amount: convert(l.unit_amount),
+            total: convert(l.total),
+          })),
+          subtotal_per_unit: convert(raw.subtotal_per_unit),
+          total: convert(raw.total),
+        };
       }
       return calculateItemPrice(
         spec,
@@ -171,6 +194,7 @@ export function useItemPricing({
     pricingRules,
     currency,
     cascadedOverrides,
+    convert,
   ]);
 
   return {

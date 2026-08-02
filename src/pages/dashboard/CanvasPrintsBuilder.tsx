@@ -43,6 +43,8 @@ import {
   priceCanvasEntry,
 } from "@/hooks/useCanvasPrintsPricing";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 
 const CANVAS_FAMILY_SLUG_DEFAULT = "canvas-prints";
@@ -405,13 +407,18 @@ const CanvasPrintsBuilder = forwardRef<HTMLDivElement>(function CanvasPrintsBuil
     branchId: activeBranch?.id ?? null,
   });
   const priceDisplay = usePriceDisplay();
+  const { region, baseCurrency } = useRegionalPricing();
+  const activeCurrency = region?.currency_code ?? baseCurrency ?? "ZAR";
+  // Canvas rate cards are authored in the tenant's base currency.
+  const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   const pricedCanvases = useMemo(() => {
     return spec.canvases.map((c) => {
       const p = priceCanvasEntry(c, canvasBaseRows, canvasSurcharges);
-      return { canvas: c, ...p, line: p.unit * Math.max(c.quantity, 1) };
+      const unit = convert(p.unit);
+      return { canvas: c, ...p, unit, line: unit * Math.max(c.quantity, 1) };
     });
-  }, [spec.canvases, canvasBaseRows, canvasSurcharges]);
+  }, [spec.canvases, canvasBaseRows, canvasSurcharges, convert]);
 
   const anyUnpriced = pricedCanvases.some((p) => !p.matched);
   const netTotal = pricedCanvases.reduce((s, p) => s + p.line, 0);
@@ -449,7 +456,7 @@ const CanvasPrintsBuilder = forwardRef<HTMLDivElement>(function CanvasPrintsBuil
           selected_options: {},
           canvas_prints: spec,
           canvas_pricing: {
-            currency: "ZAR",
+            currency: activeCurrency,
             net_total: netTotal,
             lines: pricedCanvases.map((p) => ({
               canvas_id: p.canvas.id,

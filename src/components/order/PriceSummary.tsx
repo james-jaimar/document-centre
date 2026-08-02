@@ -21,6 +21,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 
@@ -65,8 +66,12 @@ export default function PriceSummary({
   disabled,
   isSubmitting,
 }: PriceSummaryProps) {
-  const { region } = useRegionalPricing();
+  const { region, baseCurrency } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
+  // Rate-card and pack prices are authored in the tenant's base currency and
+  // carry no currency of their own — convert them for the display currency.
+  // Rules-based prices already exist per currency, so they are left alone.
+  const { convert } = useCurrencyConverter(currency, baseCurrency);
   const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
 
   // Filter the raw block ladder down to entries matching the current spec's
@@ -112,18 +117,27 @@ export default function PriceSummary({
     );
   }, [blocksActive, sortedBlocks, spec.quantity]);
 
-  const engineBreakdown: PriceBreakdown = useMemo(
-    () =>
-      recipe && rateCard
-        ? calculatePriceFromRateCard(spec, recipe, rateCard, options)
-        : calculateItemPrice(spec, options, rules, currency, overrides),
-    [spec, options, rules, currency, overrides, recipe, rateCard],
-  );
+  const engineBreakdown: PriceBreakdown = useMemo(() => {
+    if (recipe && rateCard) {
+      const raw = calculatePriceFromRateCard(spec, recipe, rateCard, options);
+      return {
+        ...raw,
+        lines: raw.lines.map((l) => ({
+          ...l,
+          unit_amount: convert(l.unit_amount),
+          total: convert(l.total),
+        })),
+        subtotal_per_unit: convert(raw.subtotal_per_unit),
+        total: convert(raw.total),
+      };
+    }
+    return calculateItemPrice(spec, options, rules, currency, overrides);
+  }, [spec, options, rules, currency, overrides, recipe, rateCard, convert]);
 
   // When blocks are active, the pack price replaces the engine total.
   const breakdown: PriceBreakdown = useMemo(() => {
     if (!blocksActive || !activeBlock) return engineBreakdown;
-    const total = activeBlock.price_minor / 100;
+    const total = convert(activeBlock.price_minor / 100);
     const perUnit = total / Math.max(1, activeBlock.qty);
     return {
       ...engineBreakdown,

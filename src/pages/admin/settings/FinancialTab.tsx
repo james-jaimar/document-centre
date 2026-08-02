@@ -11,17 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
+import { SUPPORTED_CURRENCIES } from "@/lib/countries";
 import { toast } from "sonner";
 import { Save, Receipt, Coins } from "lucide-react";
-
-const CURRENCY_CHOICES = [
-  { code: "ZAR", label: "ZAR — South African Rand (R)" },
-  { code: "GBP", label: "GBP — Pound Sterling (£)" },
-  { code: "EUR", label: "EUR — Euro (€)" },
-  { code: "USD", label: "USD — US Dollar ($)" },
-  { code: "AUD", label: "AUD — Australian Dollar (A$)" },
-];
 
 export function FinancialTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("financial");
@@ -35,6 +29,8 @@ export function FinancialTab() {
   const [invoiceNextNumber, setInvoiceNextNumber] = useState("1001");
   const [defaultCurrency, setDefaultCurrency] = useState("ZAR");
   const [lockCurrency, setLockCurrency] = useState(true);
+  const [multiCurrency, setMultiCurrency] = useState(false);
+  const [acceptedCurrencies, setAcceptedCurrencies] = useState<string[]>([]);
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
@@ -56,6 +52,12 @@ export function FinancialTab() {
           ? true
           : settingsMap.lock_currency === true,
       );
+      setMultiCurrency(settingsMap.multi_currency_enabled === true);
+      setAcceptedCurrencies(
+        Array.isArray(settingsMap.accepted_currencies)
+          ? (settingsMap.accepted_currencies as unknown[]).map((c) => String(c).toUpperCase())
+          : [],
+      );
     }
   }, [isLoading, settingsMap]);
 
@@ -69,7 +71,16 @@ export function FinancialTab() {
         { category: "financial", setting_key: "invoice_prefix", setting_value: invoicePrefix, value_type: "string" },
         { category: "financial", setting_key: "invoice_next_number", setting_value: parseInt(invoiceNextNumber), value_type: "number" },
         { category: "financial", setting_key: "default_currency_code", setting_value: defaultCurrency, value_type: "string" },
-        { category: "financial", setting_key: "lock_currency", setting_value: lockCurrency, value_type: "boolean" },
+        { category: "financial", setting_key: "lock_currency", setting_value: multiCurrency ? false : lockCurrency, value_type: "boolean" },
+        { category: "financial", setting_key: "multi_currency_enabled", setting_value: multiCurrency, value_type: "boolean" },
+        {
+          category: "financial",
+          setting_key: "accepted_currencies",
+          setting_value: multiCurrency
+            ? Array.from(new Set([defaultCurrency, ...acceptedCurrencies]))
+            : [],
+          value_type: "json",
+        },
       ]);
       toast.success("Financial settings saved");
     } catch (e: any) {
@@ -85,34 +96,91 @@ export function FinancialTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Coins className="h-5 w-5" /> Currency</CardTitle>
           <CardDescription>
-            Lock the display and order currency so visitor location can't switch your customers to a different currency.
+            Your default currency is the one your rate cards are priced in. Lock it, or opt in to
+            selling in several currencies with prices converted automatically.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 max-w-2xl">
-          <div className="space-y-2">
-            <Label>Default currency</Label>
-            <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCY_CHOICES.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-start gap-3 pt-6">
-            <Switch checked={lockCurrency} onCheckedChange={setLockCurrency} />
-            <div className="space-y-0.5">
-              <Label>Lock to this currency</Label>
-              <p className="text-xs text-muted-foreground">
-                Recommended. When on, geo-detection and manual region switching are ignored — every order, quote and invoice uses your default currency.
-              </p>
+        <CardContent className="space-y-6 max-w-2xl">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Default currency</Label>
+              <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="flex items-start gap-3 pt-6">
+              <Switch checked={lockCurrency} onCheckedChange={setLockCurrency} disabled={multiCurrency} />
+              <div className="space-y-0.5">
+                <Label>Lock to this currency</Label>
+                <p className="text-xs text-muted-foreground">
+                  Recommended. When on, geo-detection and manual region switching are ignored — every order, quote and invoice uses your default currency.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <Switch
+                checked={multiCurrency}
+                onCheckedChange={(v) => {
+                  setMultiCurrency(v);
+                  if (v) setLockCurrency(false);
+                }}
+              />
+              <div className="space-y-0.5">
+                <Label>Sell in multiple currencies</Label>
+                <p className="text-xs text-muted-foreground">
+                  Visitors are shown prices in their local currency (detected from their location, and
+                  changeable from the storefront header). Prices are converted from your rate cards
+                  using the platform exchange rates, and the order, invoice and payment are all taken
+                  in the currency the customer chose.
+                </p>
+              </div>
+            </div>
+
+            {multiCurrency && (
+              <div className="space-y-3 pl-11">
+                <Label>Currencies you accept</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SUPPORTED_CURRENCIES.map((c) => {
+                    const isBase = c.code === defaultCurrency;
+                    const checked = isBase || acceptedCurrencies.includes(c.code);
+                    return (
+                      <label key={c.code} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={checked}
+                          disabled={isBase}
+                          onCheckedChange={(v) =>
+                            setAcceptedCurrencies((prev) =>
+                              v === true
+                                ? Array.from(new Set([...prev, c.code]))
+                                : prev.filter((x) => x !== c.code),
+                            )
+                          }
+                        />
+                        <span>{c.label}{isBase ? " — base" : ""}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Re-check your canvas, photo and business-card rate cards after switching this on —
+                  those prices are converted from your base currency, not authored per currency.
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader>

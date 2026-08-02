@@ -57,6 +57,7 @@ import { Input } from "@/components/ui/input";
 import { ArrowLeft, Camera, ImagePlus, Loader2, ShoppingCart, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 
 const PHOTO_FAMILY_SLUG = "photo-prints";
@@ -78,8 +79,10 @@ export default function PhotoPrintsBuilder() {
 
   const createOrder = useCreateOrder();
   const addItemToCart = useAddItemToCart();
-  const { region } = useRegionalPricing();
+  const { region, baseCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
+  // Photo-print rate cards are authored in the tenant's base currency.
+  const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
 
   const { data: family } = useQuery<ProductFamilyRow | null>({
     queryKey: ["product_family_by_slug", PHOTO_FAMILY_SLUG],
@@ -432,14 +435,14 @@ export default function PhotoPrintsBuilder() {
     const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
     const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
     const rcSizeSlug = bridgedSize?.rcSizeSlug ?? photoSpec.print_size_slug.replace(/^photo-/, "");
-    const unitPrice = resolveBridgedPhotoPrice(
+    const unitPrice = convert(resolveBridgedPhotoPrice(
       photoRateCard,
       { rcSizeSlug, rcFinish, border_mm: borderMm, quantity: totalPrints },
       rcPriceBreaks,
-    );
+    ));
     const totalPrice = totalPrints * unitPrice;
     return { size, bridgedSize, totalPhotos, totalPrints, totalPrice, unitPrice };
-  }, [photoSpec, photoRateCard, rcPriceBreaks, availableSizes, availableFinishes, availableBorders]);
+  }, [photoSpec, photoRateCard, rcPriceBreaks, availableSizes, availableFinishes, availableBorders, convert]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
