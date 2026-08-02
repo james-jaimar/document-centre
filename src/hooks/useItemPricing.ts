@@ -167,9 +167,9 @@ export function useItemPricing({
           ...raw,
           lines: raw.lines.map((l) => ({
             ...l,
-            unit_price: typeof (l as any).unit_price === "number" ? convert((l as any).unit_price) : (l as any).unit_price,
-            amount: typeof (l as any).amount === "number" ? convert((l as any).amount) : (l as any).amount,
-          })) as typeof raw.lines,
+            unit_amount: convert(l.unit_amount),
+            total: convert(l.total),
+          })),
           subtotal_per_unit: convert(raw.subtotal_per_unit),
           total: convert(raw.total),
         };
