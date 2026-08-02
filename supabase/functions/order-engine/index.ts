@@ -2497,6 +2497,10 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      case "activateHeldOrder": {
+        response = await activateHeldOrderAction(admin, userId, payload);
+        break;
+      }
       case "updateJobStatus": {
         response = await updateJobStatus(admin, userId, payload);
         if (response.ok) {
