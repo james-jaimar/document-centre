@@ -160,11 +160,10 @@ export default function PhotoPrintsBuilder() {
     [catalogOptions],
   );
 
-  const defaultSizeSlug =
-    availableSizes.find((s) => s.slug === availableSizes[0]?.slug)?.slug ?? "";
+  const defaultSizeSlug = availableSizes[0]?.slug ?? "";
   const defaultFinishSlug =
     availableFinishes.find((f) => f.is_default)?.slug ??
-    availableFinishes[0]?.slug ?? "gloss";
+    availableFinishes[0]?.slug ?? "";
   const defaultBorderSlug =
     availableBorders.find((b) => b.is_default)?.slug ??
     availableBorders[0]?.slug ?? "none";
@@ -194,6 +193,47 @@ export default function PhotoPrintsBuilder() {
       hydratedRef.current = true;
     }
   }, [orderItem?.spec, initialSpec.finish_slug, initialSpec.border_slug]);
+
+  // The catalogue options resolve asynchronously, so the initial state above is
+  // seeded from empty lists. Once the real options arrive, fill in (or repair)
+  // any slug that isn't a valid choice — without clobbering user selections.
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    setPhotoSpec((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      if (
+        availableSizes.length > 0 &&
+        !availableSizes.some((s) => s.slug === prev.print_size_slug)
+      ) {
+        next.print_size_slug = defaultSizeSlug;
+        changed = true;
+      }
+      if (
+        availableFinishes.length > 0 &&
+        !availableFinishes.some((f) => f.slug === prev.finish_slug)
+      ) {
+        next.finish_slug = defaultFinishSlug;
+        changed = true;
+      }
+      if (
+        availableBorders.length > 0 &&
+        !availableBorders.some((b) => b.slug === prev.border_slug)
+      ) {
+        next.border_slug = defaultBorderSlug;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [
+    availableSizes,
+    availableFinishes,
+    availableBorders,
+    defaultSizeSlug,
+    defaultFinishSlug,
+    defaultBorderSlug,
+  ]);
+
 
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -373,8 +413,13 @@ export default function PhotoPrintsBuilder() {
     if (availableSizes.length === 0) return;
     if (availableSizes.some((s) => s.slug === photoSpec.print_size_slug)) return;
     const fallback = availableSizes[0].slug;
-    toast.info(`Print size updated — previous size is no longer available`);
+    // Only tell the customer when they actually lost a size they had chosen —
+    // not on first load, where the slug is still empty/unseeded.
+    if (photoSpec.print_size_slug && photoSpec.photos.length > 0) {
+      toast.info(`Print size updated — previous size is no longer available`);
+    }
     handlePrintSizeChange(fallback);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableSizes, photoSpec.print_size_slug]);
 
