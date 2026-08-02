@@ -9,6 +9,7 @@
 //   4. Re-verify amount, merchant_id, currency.
 import { adminClient, readSecret } from "../_shared/payments.ts";
 import { issueTaxInvoiceAndNotify } from "../_shared/payment-invoice.ts";
+import { activateHeldOrder } from "../_shared/activate-held-order.ts";
 import {
   payfastSignITN,
   payfastValidateUrl,
@@ -185,6 +186,10 @@ Deno.serve(async (req) => {
         });
       }
     }
+
+    // Promote the held order (created only for this payment handoff) into a
+    // real, submitted order — proforma + confirmation + cart cleanup.
+    await activateHeldOrder(sb as any, attempt.order_id, "paid");
 
     // Issue the tax invoice + payment_received email (best-effort).
     await issueTaxInvoiceAndNotify(sb, attempt.order_id);
