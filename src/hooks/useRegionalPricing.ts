@@ -6,6 +6,17 @@ import { PIVOT_CURRENCY } from "@/lib/pricing/convertCurrency";
 const OVERRIDE_KEY = "dc_region_override";
 const SESSION_COUNTRY_KEY = "dc_detected_country";
 
+/**
+ * Every component calling this hook keeps its own copy of the selected region,
+ * so a switch in the header would otherwise leave every price on the page
+ * showing the old currency. A tiny module-level broadcast keeps all live
+ * instances in sync.
+ */
+const regionListeners = new Set<(code: string) => void>();
+function broadcastRegion(code: string) {
+  regionListeners.forEach((fn) => fn(code));
+}
+
 interface PricingRegion {
   id: string;
   region_code: string;
