@@ -455,6 +455,42 @@ async function createOrderWithJobs(
 
 }
 
+/**
+ * Promote a held (awaiting online payment) order into a real order.
+ * Customer-facing entry point — used when they abandon the gateway and choose
+ * EFT instead. Gateways call the shared helper directly from their webhooks.
+ */
+async function activateHeldOrderAction(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, reason } = payload;
+  if (!order_id) return err("Missing order_id");
+
+  const { data: o } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, ordered_by_profile_id, user_id, admin_status")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (!o) return err("Order not found", 404);
+
+  const isOwner = o.ordered_by_profile_id === userId || o.user_id === userId;
+  if (!isOwner) {
+    const denied = await assertOrderStaffAccess(admin, userId, o as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const result = await activateHeldOrderShared(
+    admin as any,
+    order_id,
+    reason === "paid" ? "paid" : "eft",
+  );
+  return json({ success: true, ...result });
+}
+
+
+
 async function updateJobStatus(
   admin: ReturnType<typeof createClient>,
   userId: string,
