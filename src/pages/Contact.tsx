@@ -217,6 +217,24 @@ export default function Contact() {
                   <div className="text-right text-[11px] dc-muted mt-1">{form.message.length}/4000</div>
                 </Field>
 
+                {/* Honeypot — hidden from humans, irresistible to bots. */}
+                <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
+                  <label htmlFor="website">Website</label>
+                  <input
+                    id="website"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                  />
+                </div>
+
+                <TurnstileWidget onToken={setTurnstileToken} />
+
+
+
                 <button
                   type="submit"
                   disabled={submitting}
