@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Phone, MapPin, ArrowRight, Linkedin, Youtube, MessageSquare, Sparkles } from "lucide-react";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
 import ChatWidget from "@/components/ChatWidget";
+import TurnstileWidget from "@/components/marketing/TurnstileWidget";
+import { TURNSTILE_ENABLED } from "@/lib/turnstile";
 
 const Logo = ({ height = 56 }: { height?: number }) => (
   <img src={docCentreLogo} alt="Document Centre" style={{ height }} className="w-auto" />
@@ -14,6 +16,11 @@ export default function Contact() {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // Honeypot: a hidden field bots fill in and humans never see.
+  const [website, setWebsite] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // Timing trap: forms completed in under 3s are bots.
+  const renderedAt = useRef<number>(Date.now());
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -43,11 +50,21 @@ export default function Contact() {
       toast({ title: "Please share a few details about your enquiry", variant: "destructive" });
       return;
     }
+    if (TURNSTILE_ENABLED && !turnstileToken) {
+      toast({ title: "Just a moment", description: "Please wait for the security check to finish.", variant: "destructive" });
+      return;
+    }
 
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke("submit-contact", {
-        body: { ...form, source: "marketing_landing" },
+        body: {
+          ...form,
+          source: "marketing_landing",
+          website,
+          elapsed_ms: Date.now() - renderedAt.current,
+          turnstile_token: turnstileToken,
+        },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
@@ -63,6 +80,7 @@ export default function Contact() {
       setSubmitting(false);
     }
   };
+
 
   return (
     <div className="dc-marketing min-h-screen bg-white" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
@@ -198,6 +216,24 @@ export default function Contact() {
                   />
                   <div className="text-right text-[11px] dc-muted mt-1">{form.message.length}/4000</div>
                 </Field>
+
+                {/* Honeypot — hidden from humans, irresistible to bots. */}
+                <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
+                  <label htmlFor="website">Website</label>
+                  <input
+                    id="website"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                  />
+                </div>
+
+                <TurnstileWidget onToken={setTurnstileToken} />
+
+
 
                 <button
                   type="submit"
