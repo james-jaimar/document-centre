@@ -19,9 +19,9 @@ export const DC_BRAND = {
   border: "#e6ecf3",
   textBody: "#374151",
   textMuted: "#6b7280",
-  siteUrl: "https://document-centre.jaimar.dev",
-  privacyUrl: "https://document-centre.jaimar.dev/privacy",
-  termsUrl: "https://document-centre.jaimar.dev/terms",
+  siteUrl: "https://document-centre.com",
+  privacyUrl: "https://document-centre.com/privacy",
+  termsUrl: "https://document-centre.com/terms",
 } as const;
 
 export function escapeHtml(s: string): string {
