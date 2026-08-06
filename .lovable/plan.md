@@ -1,38 +1,44 @@
-## What I verified
+# Stop the contact-form bot spam (and the bounce-backs)
 
-- Demo tenant settings are already correct: `default_currency_code = GBP`, `lock_currency = false`, `multi_currency_enabled = true`, `accepted_currencies = [GBP, ZAR, USD, AUD, CAD, EUR]`.
-- All six regions exist (US/rest-of-world, UK, EU, AU, ZA, CA) and all six currency profiles exist with FX + buying-power multipliers.
-- `tenant_settings` has **no read policy for shoppers**. SELECT is limited to tenant admins and platform admins (plus a public read for `category = 'branding'` only). `useRegionalPricing` reads `tenant_settings` directly, so on the storefront it gets **zero rows** → it falls back to the hardcoded `"ZAR"` default with `locked = true`, which also hides the picker (`multiCurrency` is false). That is exactly the "stuck on ZAR, changing settings does nothing" symptom.
-- `pricing_currency_profiles` has SELECT for `authenticated` only, so the FX table is empty for a truly anonymous visitor — conversion silently returns the base amount.
-- Secondary bug: `useRegionalPricing` returns `baseCurrency = default_currency_code` (GBP for demo), but rate cards are authored in ZAR. Conversion would run GBP→ZAR→target and produce wrong prices.
-- Minor: the Canada region's `region_code` is stored lowercase `ca` while others are uppercase.
+## What is actually happening
 
-## Plan
+Confirmed from the live data, not a guess:
 
-**1. Make currency policy readable on the storefront**
+- Your contact form (`/contact` → `submit-contact`) is being hit by a spam bot. The last 25 submissions are all machine-generated: random-letter names and subjects, 10-digit numbers as the "message", fake `Xyzabc LLC` companies, and real-looking but **harvested/forged** email addresses (aol, comcast, yahoo, gmail addresses that don't belong to the sender).
+- The source IPs are Tor exit nodes and bulletproof hosts (185.220.101.x, 171.25.193.78, 109.70.100.8, 45.84.107.x), all with an identical spoofed Mac Safari user-agent.
+- **Yes — we do send an auto-reply.** The function sends two emails per submission: an internal notification to hello@document-centre.com, and a branded "Thanks for contacting Document Centre" auto-reply to whatever address was typed in the form. Because those addresses are fake or unwilling third parties, the auto-replies bounce, and the bounce (`Undeliverable: Thanks for contacting Document Centre`) lands in your inbox.
 
-Read the four financial settings through the existing `SECURITY DEFINER` RPC `resolve_tenant_setting` (the same pattern `useLegalDocument` uses) instead of selecting from `tenant_settings`. Four RPC calls in parallel: `default_currency_code`, `lock_currency`, `multi_currency_enabled`, `accepted_currencies`, all under `category = 'financial'`.
+So the "undeliverable" emails are our own auto-replies coming back. Worse, we're currently emailing innocent third parties on behalf of a spammer, which will damage the sending reputation of document-centre.com if left running.
 
-**2. Grant anon read on the FX table**
+There are currently **no** protections on the form: no honeypot, no captcha, no rate limit, no content filtering.
 
-Migration: `GRANT SELECT ON public.pricing_currency_profiles TO anon` plus an anon SELECT policy (FX rates are non-sensitive public pricing data). Same check for `platform_pricing_regions` (already anon-readable).
+## The fix
 
-**3. Fix the FX base currency**
+### 1. Stop the backscatter immediately (highest priority)
+Only send the visitor auto-reply once the submission passes the spam checks below. Anything scored as spam gets stored (flagged) or dropped, and no email is sent to the typed address. This alone stops the bounce-backs and protects the domain reputation.
 
-Rate cards are authored in **ZAR**. Stop using the tenant's display default as the conversion base — use ZAR (the pivot) as the rate-card base everywhere the converter is built (`useRegionalPricing.baseCurrency`, `PriceSummary`, `useItemPricing`, canvas/photo builders, `quoteShipping`). The tenant's `default_currency_code` keeps its real job: the default *display* currency when geo detection fails or is not applicable.
+### 2. Honeypot + timing trap (invisible, no user friction)
+- Add a hidden field to the form that real users never fill; bots almost always do. Any submission with it filled is silently accepted (returns success) but discarded.
+- Record when the form was rendered; a submission completed in under ~3 seconds is a bot.
 
-**4. Detection + picker behaviour on the demo storefront**
+### 3. Cloudflare Turnstile (invisible captcha)
+Add Turnstile to the contact form and verify the token server-side in `submit-contact`. It's free, privacy-friendly, and invisible for genuine visitors. This is the real wall — honeypots alone get beaten eventually. Requires a Turnstile site key + secret key from your Cloudflare account (you already use Cloudflare for DNS).
 
-- With multi-currency on, `detect-region` runs, the country maps to a region, and unmatched countries fall through to the rest-of-world USD region (already coded, just never reached because of the RLS block).
-- Manual choice persists in `localStorage` and wins over geo.
-- Normalise the Canada `region_code` to uppercase `CA` so overrides and flags match the other regions.
+### 4. Server-side rate limiting and content heuristics
+- Cap submissions per IP (e.g. 3/hour, 10/day) and per email address, using the existing `contact_submissions` table.
+- Score obvious spam patterns already visible in your data: message that is only digits, no spaces in the message, subject with no dictionary-like words, random-consonant names, links in a short message. Flagged rows are saved with `status = 'spam'` so nothing is lost and you can review.
 
-**5. Verify end to end**
-
-Drive the demo storefront headlessly: confirm the picker appears, confirm the default currency, switch US → GBP → EUR and check a product price and the cart/checkout total change by the expected FX + buying-power factor (not just the symbol).
+### 5. Clean up and visibility
+- Bulk-mark the existing bot rows as spam so the admin list is usable.
+- Add a "Spam" filter to the contact submissions admin view so you can eyeball what's being blocked.
 
 ## Technical notes
 
-- No changes to how prices are stored. `pricing_rules`, `product_price_overrides` and `delivery_rates` stay native-per-currency and are never converted; only rate-card style tables (clicks, papers, finishing, pack, photo, canvas, business cards) go through `convertAmount`.
-- Rounding stays "round up to the currency's step", so a conversion never undercuts the ZAR base.
-- Locked single-currency tenants (e.g. PostNet, ZAR-locked) are unaffected — they keep no picker and no conversion.
+- `supabase/functions/submit-contact/index.ts`: reorder to validate → spam-score → insert → only then enqueue emails; internal notification only for non-spam (or a daily digest of spam counts instead).
+- Migration: add `spam_score numeric`, `spam_reasons text[]`, and an index on `(ip_address, created_at)` to `contact_submissions`; extend the `status` values with `spam`.
+- `src/pages/Contact.tsx`: hidden honeypot input, render timestamp, Turnstile widget, pass `turnstile_token` in the request body.
+- Turnstile secret stored as an edge function secret (`TURNSTILE_SECRET_KEY`); the site key is publishable and can live in code.
+
+## What I need from you
+
+To wire up Turnstile I'll need a Cloudflare Turnstile site key and secret key (Cloudflare dashboard → Turnstile → Add site → domain `document-centre.com`). If you'd rather not use Turnstile yet, I can ship steps 1, 2, 4 and 5 first — that will stop the bounce-backs today — and add Turnstile after.
