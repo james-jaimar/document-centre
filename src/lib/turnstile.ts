@@ -7,7 +7,9 @@
  * scoring in the `submit-contact` edge function.
  */
 export const TURNSTILE_SITE_KEY: string =
-  (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) ?? "";
+  (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) ??
+  "0x4AAAAAAEHsKgbhPAPt2ztL";
+
 
 export const TURNSTILE_ENABLED = TURNSTILE_SITE_KEY.length > 0;
 
