@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,8 +19,12 @@ export default function Contact() {
   // Honeypot: a hidden field bots fill in and humans never see.
   const [website, setWebsite] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // Set when Turnstile fails to load/errors, or takes too long — the form then
+  // submits without a token and relies on the server-side spam defences.
+  const [turnstileUnavailable, setTurnstileUnavailable] = useState(false);
   // Timing trap: forms completed in under 3s are bots.
   const renderedAt = useRef<number>(Date.now());
+
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -29,6 +33,20 @@ export default function Contact() {
     subject: "",
     message: "",
   });
+
+  // Safety net: if no token has arrived within 8s, stop waiting on Turnstile.
+  useEffect(() => {
+    if (!TURNSTILE_ENABLED) return;
+    const t = window.setTimeout(() => {
+      setTurnstileToken((tok) => {
+        if (!tok) setTurnstileUnavailable(true);
+        return tok;
+      });
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const verifying = TURNSTILE_ENABLED && !turnstileToken && !turnstileUnavailable;
 
   const update = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -50,10 +68,7 @@ export default function Contact() {
       toast({ title: "Please share a few details about your enquiry", variant: "destructive" });
       return;
     }
-    if (TURNSTILE_ENABLED && !turnstileToken) {
-      toast({ title: "Just a moment", description: "Please wait for the security check to finish.", variant: "destructive" });
-      return;
-    }
+
 
     setSubmitting(true);
     try {
@@ -231,18 +246,24 @@ export default function Contact() {
                   />
                 </div>
 
-                <TurnstileWidget onToken={setTurnstileToken} />
-
-
+                <TurnstileWidget
+                  onToken={setTurnstileToken}
+                  onUnavailable={() => setTurnstileUnavailable(true)}
+                />
 
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="dc-btn dc-btn-blue w-full sm:w-auto"
+                  disabled={submitting || verifying}
+                  className="dc-btn dc-btn-blue w-full sm:w-auto disabled:opacity-70"
                   style={{ padding: "0.85rem 1.6rem", fontSize: "0.95rem" }}
                 >
-                  {submitting ? "Sending…" : <>Send message <ArrowRight className="h-4 w-4" /></>}
+                  {submitting
+                    ? "Sending…"
+                    : verifying
+                      ? "Verifying…"
+                      : <>Send message <ArrowRight className="h-4 w-4" /></>}
                 </button>
+
 
                 <p className="text-[12px] dc-muted">
                   By submitting this form, you agree to our{" "}
