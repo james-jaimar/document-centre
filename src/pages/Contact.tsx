@@ -34,6 +34,20 @@ export default function Contact() {
     message: "",
   });
 
+  // Safety net: if no token has arrived within 8s, stop waiting on Turnstile.
+  useEffect(() => {
+    if (!TURNSTILE_ENABLED) return;
+    const t = window.setTimeout(() => {
+      setTurnstileToken((tok) => {
+        if (!tok) setTurnstileUnavailable(true);
+        return tok;
+      });
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const verifying = TURNSTILE_ENABLED && !turnstileToken && !turnstileUnavailable;
+
   const update = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -54,10 +68,7 @@ export default function Contact() {
       toast({ title: "Please share a few details about your enquiry", variant: "destructive" });
       return;
     }
-    if (TURNSTILE_ENABLED && !turnstileToken) {
-      toast({ title: "Just a moment", description: "Please wait for the security check to finish.", variant: "destructive" });
-      return;
-    }
+
 
     setSubmitting(true);
     try {
