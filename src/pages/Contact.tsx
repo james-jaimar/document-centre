@@ -19,8 +19,12 @@ export default function Contact() {
   // Honeypot: a hidden field bots fill in and humans never see.
   const [website, setWebsite] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // Set when Turnstile fails to load/errors, or takes too long — the form then
+  // submits without a token and relies on the server-side spam defences.
+  const [turnstileUnavailable, setTurnstileUnavailable] = useState(false);
   // Timing trap: forms completed in under 3s are bots.
   const renderedAt = useRef<number>(Date.now());
+
   const [form, setForm] = useState({
     name: "",
     email: "",
