@@ -1,20 +1,29 @@
 // Public contact-form submission endpoint.
 // - Accepts an unauthenticated POST from the marketing site.
-// - Validates input.
-// - Stores the submission in public.contact_submissions.
-// - Enqueues two emails:
+// - Validates input, then runs bot/spam defences:
+//     honeypot -> timing trap -> Turnstile -> IP/email rate limits -> heuristics
+// - Stores every submission in public.contact_submissions (spam rows flagged).
+// - Emails are ONLY sent for clean submissions:
 //     1. Internal notification → hello@document-centre.com
 //     2. Branded auto-reply    → the visitor
+//   Spam never triggers the auto-reply, which is what stopped the bounce-back
+//   backscatter from forged sender addresses.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { enqueueEmail } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
 import { DC_BRAND, escapeHtml, renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.ts";
+import { scoreSubmission, verifyTurnstile } from "../_shared/contact-spam.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+// Rate limits, per source.
+const IP_LIMIT_HOUR = 3;
+const IP_LIMIT_DAY = 10;
+const EMAIL_LIMIT_DAY = 3;
 
 interface ContactBody {
   name?: string;
@@ -24,6 +33,11 @@ interface ContactBody {
   subject?: string;
   message?: string;
   source?: string;
+  /** Hidden honeypot field — humans leave it empty. */
+  website?: string;
+  /** ms between form render and submit. */
+  elapsed_ms?: number;
+  turnstile_token?: string;
 }
 
 function clean(v: unknown, max = 500): string {
@@ -38,14 +52,21 @@ function nl2br(s: string): string {
   return escapeHtml(s).replace(/\n/g, "<br/>");
 }
 
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// Bots get the same success shape a human gets — never tell them why they failed.
+const SILENT_OK = { success: true, id: null as string | null };
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: "Method not allowed" }, 405);
   }
 
   try {
@@ -58,22 +79,18 @@ Deno.serve(async (req) => {
     const subject = clean(body.subject, 200);
     const message = clean(body.message, 4000);
     const source = clean(body.source ?? "marketing_landing", 80);
+    const honeypot = clean(body.website, 200);
+    const elapsedMs = typeof body.elapsed_ms === "number" ? body.elapsed_ms : null;
 
     // Required field validation
     if (!name || name.length < 2) {
-      return new Response(JSON.stringify({ error: "Please enter your name" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Please enter your name" }, 400);
     }
     if (!email || !isEmail(email)) {
-      return new Response(JSON.stringify({ error: "Please enter a valid email address" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Please enter a valid email address" }, 400);
     }
     if (!message || message.length < 10) {
-      return new Response(JSON.stringify({ error: "Please share a few details about your enquiry" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Please share a few details about your enquiry" }, 400);
     }
 
     const url = Deno.env.get("SUPABASE_URL")!;
@@ -87,6 +104,50 @@ Deno.serve(async (req) => {
       null;
     const userAgent = req.headers.get("user-agent") ?? null;
 
+    // ---- Bot defences -----------------------------------------------------
+    const verdict = scoreSubmission({
+      name, email, company, phone, subject, message, honeypot, elapsedMs,
+    });
+    const reasons = [...verdict.reasons];
+    let score = verdict.score;
+
+    // Honeypot filled: discard entirely, don't even store. Nothing of value.
+    if (honeypot) {
+      console.log("submit-contact: honeypot triggered, discarding");
+      return json(SILENT_OK);
+    }
+
+    // Cloudflare Turnstile (skipped when TURNSTILE_SECRET_KEY isn't set).
+    const turnstileOk = await verifyTurnstile(body.turnstile_token, ipHeader);
+    if (turnstileOk === false) {
+      score += 6;
+      reasons.push("turnstile_failed");
+    }
+
+    // Rate limits, per IP and per email address.
+    const nowMs = Date.now();
+    const hourAgo = new Date(nowMs - 60 * 60 * 1000).toISOString();
+    const dayAgo = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+
+    if (ipHeader) {
+      const [{ count: ipHour }, { count: ipDay }] = await Promise.all([
+        admin.from("contact_submissions").select("id", { count: "exact", head: true })
+          .eq("ip_address", ipHeader).gte("created_at", hourAgo),
+        admin.from("contact_submissions").select("id", { count: "exact", head: true })
+          .eq("ip_address", ipHeader).gte("created_at", dayAgo),
+      ]);
+      if ((ipHour ?? 0) >= IP_LIMIT_HOUR) { score += 5; reasons.push("rate_limit_ip_hour"); }
+      else if ((ipDay ?? 0) >= IP_LIMIT_DAY) { score += 5; reasons.push("rate_limit_ip_day"); }
+    }
+
+    const { count: emailDay } = await admin
+      .from("contact_submissions").select("id", { count: "exact", head: true })
+      .eq("email", email).gte("created_at", dayAgo);
+    if ((emailDay ?? 0) >= EMAIL_LIMIT_DAY) { score += 5; reasons.push("rate_limit_email_day"); }
+
+    const isSpam = score >= 3;
+    // -----------------------------------------------------------------------
+
     const { data: inserted, error: insertErr } = await admin
       .from("contact_submissions")
       .insert({
@@ -99,19 +160,28 @@ Deno.serve(async (req) => {
         source,
         ip_address: ipHeader,
         user_agent: userAgent,
-        status: "new",
+        status: isSpam ? "spam" : "new",
+        spam_score: score,
+        spam_reasons: reasons,
       })
       .select("id")
       .single();
 
     if (insertErr) {
       console.error("submit-contact insert error:", insertErr.message);
-      return new Response(JSON.stringify({ error: "Could not save your message. Please try again." }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Could not save your message. Please try again." }, 500);
     }
 
     const submissionId = inserted.id as string;
+
+    if (isSpam) {
+      // Stored and flagged, but NO email leaves the system — this is what
+      // prevents auto-replies bouncing off forged third-party addresses.
+      console.log(
+        `submit-contact: flagged as spam (score ${score}) [${reasons.join(",")}] id=${submissionId}`,
+      );
+      return json({ success: true, id: submissionId });
+    }
 
     // 1. Internal notification → hello@
     const internalBodyHtml = `
@@ -201,14 +271,9 @@ Deno.serve(async (req) => {
     // Kick the Cloud Run email worker for prompt delivery.
     kickEmailWorker();
 
-
-    return new Response(JSON.stringify({ success: true, id: submissionId }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ success: true, id: submissionId });
   } catch (e) {
     console.error("submit-contact error:", e);
-    return new Response(JSON.stringify({ error: (e as Error).message ?? "Unexpected error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: (e as Error).message ?? "Unexpected error" }, 500);
   }
 });
