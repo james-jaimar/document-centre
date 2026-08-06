@@ -1352,6 +1352,8 @@ export type Database = {
           notes: string | null
           phone: string | null
           source: string | null
+          spam_reasons: string[]
+          spam_score: number
           status: string
           subject: string | null
           updated_at: string
@@ -1371,6 +1373,8 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           source?: string | null
+          spam_reasons?: string[]
+          spam_score?: number
           status?: string
           subject?: string | null
           updated_at?: string
@@ -1390,6 +1394,8 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           source?: string | null
+          spam_reasons?: string[]
+          spam_score?: number
           status?: string
           subject?: string | null
           updated_at?: string
