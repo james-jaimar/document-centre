@@ -246,18 +246,24 @@ export default function Contact() {
                   />
                 </div>
 
-                <TurnstileWidget onToken={setTurnstileToken} />
-
-
+                <TurnstileWidget
+                  onToken={setTurnstileToken}
+                  onUnavailable={() => setTurnstileUnavailable(true)}
+                />
 
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="dc-btn dc-btn-blue w-full sm:w-auto"
+                  disabled={submitting || verifying}
+                  className="dc-btn dc-btn-blue w-full sm:w-auto disabled:opacity-70"
                   style={{ padding: "0.85rem 1.6rem", fontSize: "0.95rem" }}
                 >
-                  {submitting ? "Sending…" : <>Send message <ArrowRight className="h-4 w-4" /></>}
+                  {submitting
+                    ? "Sending…"
+                    : verifying
+                      ? "Verifying…"
+                      : <>Send message <ArrowRight className="h-4 w-4" /></>}
                 </button>
+
 
                 <p className="text-[12px] dc-muted">
                   By submitting this form, you agree to our{" "}
