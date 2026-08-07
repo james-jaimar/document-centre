@@ -1,47 +1,56 @@
-# Blocking the abusive traffic
+# PDF server handover for the two other projects
 
-## What the data actually shows
+## What exists today (verified in this repo)
 
-Two separate things are going on — worth separating them before we block anything.
+**Where it runs** — Google Cloud Run, project `project-59a14b18-b4df-4c6b-b09`, compute region `africa-south1`, Cloud Tasks/Scheduler in `europe-west1`. Four services from one image (`ROLE` env var dispatches):
 
-**1. The contact-form spam is not Tehran.** The 16 bot submissions stored between 4 and 6 August came from Tor exit nodes and bulletproof hosts spread across several countries: `185.220.101.x`, `185.220.100.241`, `171.25.193.78` (all well-known Tor exits), `45.84.107.x`, `109.70.100.8`, `193.189.100.204`, `179.60.149.108`, `80.67.172.162`, `185.181.61.203`. Every one used the identical spoofed Mac Chrome user-agent, a random-letter name and subject, and a 10-digit number as the message. No single IP repeats more than twice — blocking individual IPs would achieve nothing, they rotate every submission.
+| Service | CPU/RAM | Conc. | min/max | Purpose |
+|---|---|---|---|---|
+| `pdf-api` | 1 / 1Gi | 80 | 0 / 10 | FastAPI, the only public one |
+| `pdf-worker-heavy` | 2 / 4Gi | 2 | 0 / 5 | LibreOffice, imposition |
+| `pdf-worker-light` | 4 / 4Gi | 4 | 0 / 32 | preview/render fan-out |
+| `pdf-worker-emails` | 1 / 512Mi | 8 | 1 / 10 | SMTP/Graph/Gmail outbound |
 
-**2. The defences we added yesterday are working.** The edge function log at 03:30 this morning shows `submit-contact: honeypot triggered, discarding` — a bot hit the form and was silently dropped, nothing stored, no auto-reply sent, no bounce-back. That is the whole backscatter problem solved. The 16 spam rows still sitting at `status = 'new'` with `spam_score = 0` are pre-deployment rows; they predate the scoring.
+Workers are `--no-allow-unauthenticated` and only reachable by the `cloud-tasks-invoker` service account. Queues: `documents-heavy`, `documents-light`, `emails-default`, `emails-control`. Cloud Scheduler replaces Celery beat (storage snapshot, tmp cleanup, email outbox scan, stuck-email release).
 
-**3. The Tehran visitor in Google Analytics is a different signal.** GA Realtime shows 1 active user, 23 page views, source "(not set)". That is a browsing session, not a form submission — none of the stored spam IPs are Iranian. It could be a scraper, a curious person, or a VPN exit. Right now there is no evidence it has done anything harmful; we have no server access log tying it to any attack. I'd rather confirm what it's doing than block on a country flag alone.
+**Public entry point** — `https://api.document-centre.com` (global external HTTPS LB → serverless NEG → `pdf-api`; Cloud Run domain mapping is unavailable in africa-south1). Health/version facts at `GET /health`.
 
-## Proposed work
+**API surface** — everything under `/v1`:
+- Assets: `POST /v1/assets` (registers a storage path, runs an inline pikepdf probe returning page_count / width_pt / height_pt / boxes / mixed_orientation), `GET /v1/assets/{id}`, `/derived-files`, `/events`, `POST /v1/assets/{id}/inspect`, `/render-pages`, `/cancel-jobs`
+- Jobs: `GET /v1/jobs`, `GET /v1/jobs/{id}`, `POST /v1/jobs/{id}/cancel`
+- Operations: `rotate`, `grayscale`, `cmyk`, `resize`, `nup`, `impose-sheet`, `booklet`, `merge`, `crop-rasterize`, `generate-previews`, `convert-office`, `normalize-orientation`, `print-ready`, `prepare-for-product`, `pad-pages`, `assemble-print-ready`, `assemble-imposed-sheet`, `render-job-ticket`
+- Ops/admin: `/v1/ops/*`, `/admin` (basic-auth console), `/diagnostics`
 
-### 1. Clean up the existing spam rows
-Mark the 16 known-bot submissions as `status = 'spam'` with a retro reason, so the admin contact list only shows real enquiries (there are 3: James Hawkins x2 from April, and one genuine "demo request" from 6 Aug).
+**Toolchain in the image** — LibreOffice (office → PDF), Ghostscript, qpdf, pdfcpu, MuPDF/mutool, pikepdf, Pillow, ICC profiles for CMYK.
 
-### 2. Tor / known-abuse IP blocking at the edge function
-Add an IP reputation check to `submit-contact` before anything is stored:
-- Maintain a small blocklist table (`abuse_ip_blocks`: CIDR, reason, added_at) seeded with the Tor exit ranges already observed.
-- Any submission from a blocked range is silently accepted-and-dropped, same as the honeypot.
-- Admin UI: a simple list under the contact submissions page to add/remove ranges, and a one-click "block this IP" on any spam row.
+**Storage model** — the client uploads the file itself, then hands the server a `source_storage_path`. Server reads/writes via one shared S3 bucket (`AWS_S3_BUCKET`, `af-south-1`, `STORAGE_MODE=s3`); Supabase Storage is also supported. Job/asset metadata lives in one Postgres DB (`DATABASE_URL`).
 
-This is the right layer for form abuse because it rotates IPs but stays inside a small set of known networks.
+## Two gaps that block the requested setup
 
-### 3. Real blocking belongs at Cloudflare, not in the app
-The app can only refuse a request after it has already reached Supabase/Amplify. To actually stop someone hitting the site, the rules go in Cloudflare — but only if the DNS records for `document-centre.com` are **proxied** (orange cloud), not DNS-only. I'll confirm that first. Once proxied, I'll give you the exact rules to paste:
-- WAF custom rule: block `cf.threat_score > 20` on `/contact`.
-- WAF custom rule: managed challenge for `ip.geoip.country in {"IR" "KP" "RU"}` (or block, your call) — a challenge is safer than a block, it lets a genuine visitor through.
-- WAF custom rule: block requests where `cf.client.bot` is true and the path is `/contact`.
-- Rate limiting rule: 5 requests per minute per IP to `/contact`.
+1. **`/v1/*` has no authentication.** `pdf-api` is deployed `--allow-unauthenticated` and no route depends on `API_AUTH_TOKEN` (only the Cloudprinter webhook checks a bearer). Today anything on the internet can POST to it. A shared server-to-server token must be added before other projects use it.
+2. **No storage isolation.** Any caller can name any S3 key, so project A could read project B's artefacts.
 
-Turnstile is already live and already stopping this class of bot; the Cloudflare rules stop the traffic ever reaching your origin.
+## Plan
 
-### 4. Watch before you swing at Tehran
-Add the visitor's country and IP to the contact submission admin view and, if you want it, a lightweight page-hit log so we can see what that session is actually requesting. If it turns out to be scraping product pages or probing admin routes, we block the ASN at Cloudflare with evidence rather than guessing.
+### 1. Shared-token auth on `pdf-api`
+- Add a FastAPI dependency on the `/v1` router that requires `Authorization: Bearer <token>`.
+- Tokens are multi-tenant: a `CLIENT_TOKENS` secret holding `{"document-centre": "...", "project-b": "...", "project-c": "..."}` (JSON in Secret Manager), resolved to a `client_id` on each request.
+- Exempt `/health`, `/admin`, Cloud Tasks and beat routes (already SA-protected).
+- Rotate by editing the secret + redeploying `pdf-api`.
+
+### 2. Storage isolation by client prefix
+- Each client gets a mandatory S3 key prefix (`clients/{client_id}/...`), stored alongside the token.
+- Reject any request whose `source_storage_path` / output paths fall outside the caller's prefix (403).
+- Derived files and previews are written under the same prefix.
+- Persist `client_id` on `assets` and `jobs`, and scope `GET /v1/assets/{id}`, `/jobs` to the caller's `client_id`.
+
+### 3. Generate the two client tokens
+- Mint two tokens, add them to Secret Manager, and note them for the other projects.
+
+### 4. Integration notes to hand over
+Short reference for the other teams: base URL, bearer header, upload-then-register flow, the operation list, polling `GET /v1/jobs/{id}` until `status=done`, cold-start expectations (~8–12s on `pdf-api` at min-instances=0), 200MB practical file cap, and the fact that they must write uploads into their own prefix.
 
 ## Technical notes
-
-- Migration: new `public.abuse_ip_blocks` table (cidr, reason, created_by, created_at) with GRANTs, RLS restricted to platform admins, read by the edge function via service role; plus a one-off UPDATE marking the 16 known bot rows as spam.
-- `supabase/functions/submit-contact/index.ts`: load the blocklist (cached in memory per isolate, short TTL), compare the resolved client IP with `inet` containment via an RPC, drop silently on match.
-- `src/pages/admin/...` contact submissions view: spam filter, IP column, "block IP" action.
-- No Cloudflare changes can be made from here — those are steps you apply in the dashboard; I'll write them out exactly.
-
-## What I need from you
-
-Are the `document-centre.com` DNS records in Cloudflare set to **Proxied** (orange cloud) or **DNS only** (grey cloud)? WAF, rate limiting and country rules only work when proxied. If they're grey, step 3 becomes "switch to proxied first" and I'll note the Amplify certificate implications.
+- Code touched: `pdf-server/app/main.py`, `pdf-server/app/web/routes.py`, a new `pdf-server/app/core/auth.py`, `pdf-server/app/core/config.py`, plus a small migration adding `client_id` to assets/jobs.
+- Deploy: `.github/workflows/pdf-server-deploy.yml` runs on push to `main`; the new secret is wired via `pdf-server/docker/secrets-bootstrap.sh`.
+- This project's own calls go through the `pdf-api` Supabase edge function, which will need the same bearer header added — no frontend change.
