@@ -137,6 +137,7 @@ import PlatformDocumentCentreConfig from "@/pages/platform/PlatformDocumentCentr
 import PlatformDocumentCentreAudit from "@/pages/platform/PlatformDocumentCentreAudit";
 import PlatformSentMail from "@/pages/platform/PlatformSentMail";
 import PlatformCommunications from "@/pages/platform/PlatformCommunications";
+import PlatformEnquiries from "@/pages/platform/PlatformEnquiries";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -438,6 +439,11 @@ function AppRoutes() {
         <Route path="/platform/communications" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformCommunications />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/enquiries" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformEnquiries />
           </ProtectedRoute>
         } />
         <Route path="/platform/demo" element={

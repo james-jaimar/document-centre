@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   History,
   Truck,
+  Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -30,6 +31,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import type { Database } from "@/integrations/supabase/types";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { useNewEnquiriesCount } from "@/hooks/useContactSubmissions";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type MembershipRole =
@@ -90,6 +92,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform/document-centre", icon: <Activity size={20} />, label: "Document Centre" },
       { to: "/platform/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
       { to: "/platform/communications", icon: <Mail size={20} />, label: "Communications" },
+      { to: "/platform/enquiries", icon: <Inbox size={20} />, label: "Enquiries" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },
@@ -170,6 +173,7 @@ export default function AppSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?
   const [collapsed, setCollapsed] = useState(false);
 
   const isPlatformArea = location.pathname.startsWith("/platform");
+  const newEnquiries = useNewEnquiriesCount(isPlatformArea && roles.includes("platform_admin"));
 
   const sections = isPlatformArea ? PLATFORM_SECTIONS : ADMIN_SECTIONS;
 
@@ -291,7 +295,11 @@ export default function AppSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?
                 const href = item.to.startsWith("/admin")
                   ? buildAdminPath(item.to, tenantId)
                   : item.to;
-                const showBadge = item.to === "/admin/orders" && unreadOrderCount > 0;
+                const badgeCount =
+                  item.to === "/admin/orders" ? unreadOrderCount
+                  : item.to === "/platform/enquiries" ? newEnquiries
+                  : 0;
+                const showBadge = badgeCount > 0;
 
                 return (
                 <Link
@@ -314,7 +322,7 @@ export default function AppSidebar({ unreadOrderCount = 0 }: { unreadOrderCount?
                   {!collapsed && <span className="flex-1">{item.label}</span>}
                   {!collapsed && showBadge && (
                     <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                      {unreadOrderCount > 99 ? "99+" : unreadOrderCount}
+                      {badgeCount > 99 ? "99+" : badgeCount}
                     </span>
                   )}
                 </Link>
