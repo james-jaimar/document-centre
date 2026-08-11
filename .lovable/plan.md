@@ -1,56 +1,46 @@
-# PDF server handover for the two other projects
+# Blocking the persistent Iranian visitor
 
-## What exists today (verified in this repo)
+## What the data actually shows
 
-**Where it runs** — Google Cloud Run, project `project-59a14b18-b4df-4c6b-b09`, compute region `africa-south1`, Cloud Tasks/Scheduler in `europe-west1`. Four services from one image (`ROLE` env var dispatches):
+No contact-form submissions have landed since 6 Aug — the honeypot, timing trap and Turnstile added last week are holding. The stored spam IPs were Tor exit nodes (185.220.101.x, 171.25.193.x), not the Tehran address Google Analytics shows. So right now the Tehran session is browsing pages, not submitting forms. It is annoying, not (yet) damaging.
 
-| Service | CPU/RAM | Conc. | min/max | Purpose |
-|---|---|---|---|---|
-| `pdf-api` | 1 / 1Gi | 80 | 0 / 10 | FastAPI, the only public one |
-| `pdf-worker-heavy` | 2 / 4Gi | 2 | 0 / 5 | LibreOffice, imposition |
-| `pdf-worker-light` | 4 / 4Gi | 4 | 0 / 32 | preview/render fan-out |
-| `pdf-worker-emails` | 1 / 512Mi | 8 | 1 / 10 | SMTP/Graph/Gmail outbound |
+There are two levels of response. Level 1 is the real fix; level 2 is what I can build inside the app.
 
-Workers are `--no-allow-unauthenticated` and only reachable by the `cloud-tasks-invoker` service account. Queues: `documents-heavy`, `documents-light`, `emails-default`, `emails-control`. Cloud Scheduler replaces Celery beat (storage snapshot, tmp cleanup, email outbox scan, stuck-email release).
+## Level 1 — Cloudflare WAF (recommended, no code)
 
-**Public entry point** — `https://api.document-centre.com` (global external HTTPS LB → serverless NEG → `pdf-api`; Cloud Run domain mapping is unavailable in africa-south1). Health/version facts at `GET /health`.
+This stops the traffic before it ever reaches Amplify, and is the only approach that also blocks page-view scraping.
 
-**API surface** — everything under `/v1`:
-- Assets: `POST /v1/assets` (registers a storage path, runs an inline pikepdf probe returning page_count / width_pt / height_pt / boxes / mixed_orientation), `GET /v1/assets/{id}`, `/derived-files`, `/events`, `POST /v1/assets/{id}/inspect`, `/render-pages`, `/cancel-jobs`
-- Jobs: `GET /v1/jobs`, `GET /v1/jobs/{id}`, `POST /v1/jobs/{id}/cancel`
-- Operations: `rotate`, `grayscale`, `cmyk`, `resize`, `nup`, `impose-sheet`, `booklet`, `merge`, `crop-rasterize`, `generate-previews`, `convert-office`, `normalize-orientation`, `print-ready`, `prepare-for-product`, `pad-pages`, `assemble-print-ready`, `assemble-imposed-sheet`, `render-job-ticket`
-- Ops/admin: `/v1/ops/*`, `/admin` (basic-auth console), `/diagnostics`
+Requires the domain's DNS records in Cloudflare to be **Proxied** (orange cloud). If they are grey (DNS-only), Cloudflare sees nothing and no rule will fire.
 
-**Toolchain in the image** — LibreOffice (office → PDF), Ghostscript, qpdf, pdfcpu, MuPDF/mutool, pikepdf, Pillow, ICC profiles for CMYK.
+Rules to add under Security > WAF > Custom rules:
 
-**Storage model** — the client uploads the file itself, then hands the server a `source_storage_path`. Server reads/writes via one shared S3 bucket (`AWS_S3_BUCKET`, `af-south-1`, `STORAGE_MODE=s3`); Supabase Storage is also supported. Job/asset metadata lives in one Postgres DB (`DATABASE_URL`).
+1. **Block high-risk countries on the form only**
+   `http.request.uri.path contains "/contact"` and `ip.geoip.country in {"IR" "KP" "RU" "CN"}` -> Managed Challenge
+2. **Threat-score gate sitewide**
+   `cf.threat_score > 20` -> Managed Challenge
+3. **Block Tor**
+   `ip.geoip.country eq "T1"` -> Block
+4. **Rate limit** the contact endpoint: 5 requests / 10 minutes per IP -> Block for 1 hour.
 
-## Two gaps that block the requested setup
+Start with Managed Challenge rather than Block so a genuine visitor can still get through.
 
-1. **`/v1/*` has no authentication.** `pdf-api` is deployed `--allow-unauthenticated` and no route depends on `API_AUTH_TOKEN` (only the Cloudprinter webhook checks a bearer). Today anything on the internet can POST to it. A shared server-to-server token must be added before other projects use it.
-2. **No storage isolation.** Any caller can name any S3 key, so project A could read project B's artefacts.
+## Level 2 — App-side blocklist (if Cloudflare isn't proxied, or as belt-and-braces)
 
-## Plan
+Server-side only, inside the Supabase edge functions — nothing in the browser can be bypassed.
 
-### 1. Shared-token auth on `pdf-api`
-- Add a FastAPI dependency on the `/v1` router that requires `Authorization: Bearer <token>`.
-- Tokens are multi-tenant: a `CLIENT_TOKENS` secret holding `{"document-centre": "...", "project-b": "...", "project-c": "..."}` (JSON in Secret Manager), resolved to a `client_id` on each request.
-- Exempt `/health`, `/admin`, Cloud Tasks and beat routes (already SA-protected).
-- Rotate by editing the secret + redeploying `pdf-api`.
+- New table `abuse_ip_blocks`: `cidr`, `reason`, `country_code`, `created_at`, `expires_at`, `hits`. Platform-admin RLS only, `service_role` full access.
+- Seed with the known Tor exit ranges already seen in `contact_submissions`.
+- `submit-contact` gains an early check: if the caller IP falls inside a blocked CIDR, increment `hits` and return the existing silent-OK response (no row stored, no email). Bots learn nothing.
+- Optional country rule: score `+5` when the request's country header (already read by `detect-region`) is in a configurable high-risk list, so it trips the existing spam threshold rather than hard-blocking.
+- Small platform admin screen at `/platform/security` listing blocked ranges, hit counts, and recent flagged submissions with IP + country, plus add/remove.
 
-### 2. Storage isolation by client prefix
-- Each client gets a mandatory S3 key prefix (`clients/{client_id}/...`), stored alongside the token.
-- Reject any request whose `source_storage_path` / output paths fall outside the caller's prefix (403).
-- Derived files and previews are written under the same prefix.
-- Persist `client_id` on `assets` and `jobs`, and scope `GET /v1/assets/{id}`, `/jobs` to the caller's `client_id`.
+## What I would not do
 
-### 3. Generate the two client tokens
-- Mint two tokens, add them to Secret Manager, and note them for the other projects.
-
-### 4. Integration notes to hand over
-Short reference for the other teams: base URL, bearer header, upload-then-register flow, the operation list, polling `GET /v1/jobs/{id}` until `status=done`, cold-start expectations (~8–12s on `pdf-api` at min-instances=0), 200MB practical file cap, and the fact that they must write uploads into their own prefix.
+- Hard-block Iran across the whole site at app level. It only affects form posts, breaks nothing for the bot (it can use Tor, as it already does), and risks blocking a legitimate visitor.
+- Chase the GA Tehran session specifically. GA IPs are approximate and it has not submitted anything.
 
 ## Technical notes
-- Code touched: `pdf-server/app/main.py`, `pdf-server/app/web/routes.py`, a new `pdf-server/app/core/auth.py`, `pdf-server/app/core/config.py`, plus a small migration adding `client_id` to assets/jobs.
-- Deploy: `.github/workflows/pdf-server-deploy.yml` runs on push to `main`; the new secret is wired via `pdf-server/docker/secrets-bootstrap.sh`.
-- This project's own calls go through the `pdf-api` Supabase edge function, which will need the same bearer header added — no frontend change.
+
+- IP is read from `cf-connecting-ip`, falling back to `x-forwarded-for` — already implemented in `submit-contact/index.ts`.
+- CIDR matching runs in Postgres via the `inet`/`cidr` operators (`ip <<= cidr`) in a single indexed lookup, so no per-request list download.
+- Blocklist check runs before the Turnstile call to save the round trip.
