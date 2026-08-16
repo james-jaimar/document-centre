@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
@@ -515,6 +516,9 @@ export function useDocumentUpload(
 ) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
+  const { unit: measurementUnit } = useMeasurementUnit();
+  const measurementUnitRef = useRef(measurementUnit);
+  measurementUnitRef.current = measurementUnit;
   const qc = useQueryClient();
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
 
@@ -774,7 +778,12 @@ export function useDocumentUpload(
         const knownNonIso = cleanSizeMatch ? null : detectNonIsoSize(pageWidthMm, pageHeightMm);
         const nearIsoMatch = cleanSizeMatch || knownNonIso
           ? null
-          : detectNearIsoWithBleed(pageWidthMm, pageHeightMm, productFamilySlug);
+          : detectNearIsoWithBleed(
+              pageWidthMm,
+              pageHeightMm,
+              productFamilySlug,
+              measurementUnitRef.current,
+            );
         const isUnknownSize = !cleanSizeMatch && !knownNonIso && !nearIsoMatch;
         const detectedSize = knownNonIso ?? (isUnknownSize ? UNKNOWN_SIZE_LABEL : null);
 
