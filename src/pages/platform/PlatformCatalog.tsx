@@ -48,7 +48,9 @@ import {
   type CatalogFinishing,
 } from "@/hooks/useCatalog";
 import { Plus, Trash2 } from "lucide-react";
+import { formatSize } from "@/lib/units";
 import { toast } from "sonner";
+
 
 const PAPER_FINISH_OPTIONS = ["bond", "gloss", "matt", "silk", "uncoated", "recycled", "card"];
 const PAPER_CATEGORY_OPTIONS = ["bond", "coated", "uncoated", "card", "speciality"];
@@ -327,7 +329,7 @@ export default function PlatformCatalog() {
                     <TableCell className="font-mono text-xs">{s.code}</TableCell>
                     <TableCell>{s.label}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {Math.round(Number(s.width_mm))} × {Math.round(Number(s.height_mm))}mm
+                      {formatSize(Number(s.width_mm), Number(s.height_mm), unitSystem)}
                     </TableCell>
                     <TableCell>{s.iso_name ?? "—"}</TableCell>
                     <TableCell>{s.region ?? "—"}</TableCell>
@@ -405,7 +407,7 @@ export default function PlatformCatalog() {
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Label</TableHead>
-                  <TableHead>GSM</TableHead>
+                  <TableHead>{imperial ? "Weight" : "GSM"}</TableHead>
                   <TableHead>Finish</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Sort</TableHead>
@@ -418,7 +420,14 @@ export default function PlatformCatalog() {
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setPaperDlg(p)}>
                     <TableCell className="font-mono text-xs">{p.code}</TableCell>
                     <TableCell>{p.label}</TableCell>
-                    <TableCell>{p.weight_gsm ?? "—"}</TableCell>
+                    <TableCell>
+                      {imperial
+                        ? p.weight_lb != null
+                          ? `${p.weight_lb}lb${p.lb_basis ? ` ${p.lb_basis}` : ""}`
+                          : "—"
+                        : p.weight_gsm ?? "—"}
+                    </TableCell>
+
                     <TableCell className="capitalize">{p.finish ?? "—"}</TableCell>
                     <TableCell className="capitalize">{p.category ?? "—"}</TableCell>
                     <TableCell>{p.sort_order}</TableCell>
