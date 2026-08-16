@@ -181,6 +181,7 @@ export default function OptionsPanel({
   allowedSides,
   variants,
 }: OptionsPanelProps) {
+  const { fmtLabel } = useMeasurementUnit();
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
   const sortedOptions = [...options]
