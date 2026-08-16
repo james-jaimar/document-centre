@@ -131,18 +131,20 @@ export interface CatalogSize {
   sort_order: number;
   is_active: boolean;
   metadata: Record<string, any>;
+  unit_system?: CatalogUnitSystem;
 }
 
 export function useCatalogSizes(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_sizes", ...scopeKey(args)],
     queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_sizes" as any).select("*"),
+      const q = applyUnitFilter(
+        applyCatalogScope(supabase.from("catalog_sizes" as any).select("*"), args),
         args,
       );
       const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
+
       return (data ?? []) as unknown as CatalogSize[];
     },
   });
