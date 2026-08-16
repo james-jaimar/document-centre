@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useActiveBranchLocale } from "@/hooks/useBranchLocale";
 import { PIVOT_CURRENCY } from "@/lib/pricing/convertCurrency";
+
 
 const OVERRIDE_KEY = "dc_region_override";
 const SESSION_COUNTRY_KEY = "dc_detected_country";
@@ -89,7 +91,10 @@ export function useRegionalPricing(): RegionalPricingResult {
   //  - multi_currency_enabled: the tenant opts in to selling in several
   //    currencies. Geo detection and the header picker come alive, restricted
   //    to the currencies they accept.
+  //  - Branch overrides (see below) always win: a branch that declares its own
+  //    default + sellable currencies pins the storefront to that list.
   const { tenantId } = useTenantContext();
+  const { locale: branchLocale, loading: branchLocaleLoading } = useActiveBranchLocale();
   const [tenantPolicy, setTenantPolicy] = useState<{
     currency: string;
     locked: boolean;
@@ -100,9 +105,11 @@ export function useRegionalPricing(): RegionalPricingResult {
 
   useEffect(() => {
     let cancelled = false;
-    if (!tenantId) {
-      setTenantPolicy(null);
-      setTenantLockLoaded(true);
+    if (!tenantId || branchLocaleLoading) {
+      if (!tenantId) {
+        setTenantPolicy(null);
+        setTenantLockLoaded(true);
+      }
       return;
     }
     setTenantLockLoaded(false);
@@ -131,13 +138,13 @@ export function useRegionalPricing(): RegionalPricingResult {
       keys.forEach((key, i) => {
         map[key] = results[i]?.data ?? null;
       });
-      const currency = String(map.default_currency_code ?? "ZAR")
+      let currency = String(map.default_currency_code ?? "ZAR")
         .replace(/^"|"$/g, "")
         .toUpperCase();
-      const multiCurrency = map.multi_currency_enabled === true;
+      let multiCurrency = map.multi_currency_enabled === true;
       // Default: locked on for safety — tenants opt out explicitly. Turning on
       // multi-currency implies unlocked.
-      const locked = multiCurrency
+      let locked = multiCurrency
         ? false
         : map.lock_currency === undefined || map.lock_currency === null
           ? true
@@ -145,14 +152,34 @@ export function useRegionalPricing(): RegionalPricingResult {
       const acceptedRaw = Array.isArray(map.accepted_currencies)
         ? (map.accepted_currencies as unknown[])
         : [];
-      const accepted = acceptedRaw.map((c) => String(c).toUpperCase());
+      let accepted = acceptedRaw.map((c) => String(c).toUpperCase());
       // The base currency is always sellable.
       if (multiCurrency && !accepted.includes(currency)) accepted.push(currency);
+
+      // ---- Branch overrides -------------------------------------------
+      // A branch is a locale: "Demo Branch UK/ZA/AU" sells GBP/ZAR/AUD in
+      // metric, "Demo Branch USA & Canada" sells USD/CAD in imperial. When
+      // the branch declares a currency policy it replaces the tenant's, so a
+      // visitor can never be shown a currency this branch does not sell.
+      if (branchLocale.currency || branchLocale.accepted.length > 0) {
+        currency = branchLocale.currency ?? currency;
+        accepted = branchLocale.accepted.length > 0 ? [...branchLocale.accepted] : [currency];
+        if (!accepted.includes(currency)) accepted.unshift(currency);
+        multiCurrency = accepted.length > 1;
+        locked = !multiCurrency;
+      }
+
       setTenantPolicy({ currency, locked, multiCurrency, accepted });
       setTenantLockLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [tenantId]);
+  }, [
+    tenantId,
+    branchLocaleLoading,
+    branchLocale.currency,
+    branchLocale.accepted.join(","),
+  ]);
+
 
   // Fetch all regions once
   useEffect(() => {
