@@ -172,19 +172,21 @@ export default function TenantProductSpecsDialog({
               <CardContent className="space-y-2">
                 {linkedSizes.map(({ link, master }) => {
                   const active = master!.is_active;
-                  const enabled = isEnabled("size", null, link.item_code, active);
+                  const code = master!.code;
+                  const enabled = isEnabled("size", null, code, active);
                   return (
                     <Row
                       key={link.id}
                       title={master!.label}
-                      meta={`${Math.round(Number(master!.width_mm))} × ${Math.round(Number(master!.height_mm))}mm · ${link.item_code}`}
+                      meta={`${formatSize(Number(master!.width_mm), Number(master!.height_mm), unitSystem)} · ${code}`}
                       masterActive={active}
                       enabled={enabled}
                       pending={setOverride.isPending}
-                      onChange={(c) => toggle("size", null, link.item_code, c)}
+                      onChange={(c) => toggle("size", null, code, c)}
                     />
                   );
                 })}
+
               </CardContent>
             </Card>
           )}
@@ -226,19 +228,27 @@ export default function TenantProductSpecsDialog({
               </CardHeader>
               <CardContent className="space-y-2">
                 {linkedPapers.map(({ link, master }) => {
-                  const enabled = isEnabled("paper", null, link.item_code, master!.is_active);
+                  const code = master!.code;
+                  const weight =
+                    unitSystem === "imperial"
+                      ? master!.weight_lb != null
+                        ? `${master!.weight_lb}lb${master!.lb_basis ? ` ${master!.lb_basis}` : ""}`
+                        : "?"
+                      : `${master!.weight_gsm ?? "?"}gsm`;
+                  const enabled = isEnabled("paper", null, code, master!.is_active);
                   return (
                     <Row
                       key={link.id}
                       title={master!.label}
-                      meta={`${master!.weight_gsm ?? "?"}gsm · ${master!.finish ?? ""} · ${link.item_code}`}
+                      meta={`${weight} · ${master!.finish ?? ""} · ${code}`}
                       masterActive={master!.is_active}
                       enabled={enabled}
                       pending={setOverride.isPending}
-                      onChange={(c) => toggle("paper", null, link.item_code, c)}
+                      onChange={(c) => toggle("paper", null, code, c)}
                     />
                   );
                 })}
+
               </CardContent>
             </Card>
           )}
