@@ -84,7 +84,9 @@ async function scopedUpsertByCode(
   const scope = args.scope ?? "master";
   const tenantId = args.tenantId ?? null;
   const branchId = args.branchId ?? null;
-  const payload = { ...row, scope_type: scope, tenant_id: tenantId, branch_id: branchId };
+  const payload: any = { ...row, scope_type: scope, tenant_id: tenantId, branch_id: branchId };
+  if (args.unitSystem && payload.unit_system == null) payload.unit_system = args.unitSystem;
+
 
   let findQ = supabase.from(table as any).select("id").eq("scope_type", scope).eq("code", row.code);
   findQ = tenantId ? findQ.eq("tenant_id", tenantId) : findQ.is("tenant_id", null);
