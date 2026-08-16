@@ -269,38 +269,51 @@ export function detectNonIsoSize(
 }
 
 /**
- * Get suitable ISO A-series alternatives for a given document size.
- * Returns sizes that are close in area (within a reasonable range).
+ * Get suitable standard alternatives for a given document size.
+ * Metric storefronts get ISO A-series; imperial (US/CA) storefronts get the
+ * North American equivalents (Half Letter / Letter / Legal / Tabloid, or
+ * 18×24 / 24×36 / 27×40 for posters).
  */
 export function getSuggestedIsoSizes(
   widthMm: number,
   heightMm: number,
   productFamilySlug?: string | null,
+  unit: "metric" | "imperial" = "metric",
 ): PaperSize[] {
-  // Posters: always offer A2/A1/A0, regardless of the source dimensions.
+  const imperial = unit === "imperial";
+  const pool = imperial
+    ? US_SIZES.filter((s) => !SPECIALTY_US_NAMES.has(s.name))
+    : ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+
+  // Posters: always offer the poster-scale set, regardless of source dims.
   if (isPosterFamily(productFamilySlug)) {
-    const posterNames = ["A2", "A1", "A0"];
-    return ISO_SIZES.filter((s) => posterNames.includes(s.name));
+    const posterNames = imperial ? US_POSTER_NAMES : ["A2", "A1", "A0"];
+    return pool.filter((s) => posterNames.includes(s.name));
   }
 
   const area = widthMm * heightMm;
-  const candidates = ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+  // On imperial storefronts only the mainstream document sizes are offered as
+  // scale targets — postcards and press sheets are product choices, not
+  // rescale destinations.
+  const candidates = imperial
+    ? pool.filter((s) => US_SUGGESTION_NAMES.includes(s.name))
+    : pool;
   const within = candidates.filter((s) => {
-    const isoArea = s.widthMm * s.heightMm;
-    const ratio = area / isoArea;
+    const stdArea = s.widthMm * s.heightMm;
+    const ratio = area / stdArea;
     return ratio > 0.5 && ratio < 2.0;
   });
-  // Always make sure A4 and A3 are offered — for very wide (presentation)
-  // or very tall pages the area-ratio filter can return an empty list and
-  // the advisory would render with no scale options.
-  const ensure = ["A4", "A3"];
+  // Always make sure the two workhorse sizes are offered — for very wide
+  // (presentation) or very tall pages the area-ratio filter can return an
+  // empty list and the advisory would render with no scale options.
+  const ensure = imperial ? ["Letter", "Tabloid"] : ["A4", "A3"];
   for (const name of ensure) {
     if (!within.some((s) => s.name === name)) {
-      const iso = ISO_SIZES.find((s) => s.name === name);
-      if (iso) within.push(iso);
+      const std = candidates.find((s) => s.name === name);
+      if (std) within.push(std);
     }
   }
-  // Preserve canonical ISO ordering (A6 → A0), excluding specialty formats.
+  // Preserve canonical ordering (A6 → A0 / Half Letter → Tabloid).
   return candidates.filter((s) => within.some((w) => w.name === s.name));
 }
 
@@ -323,11 +336,26 @@ const ALL_KNOWN_SIZES: Record<string, { widthMm: number; heightMm: number }> = {
   a5: { widthMm: 148, heightMm: 210 },
   a6: { widthMm: 105, heightMm: 148 },
   dl: { widthMm: 99, heightMm: 210 },
-  letter: { widthMm: 216, heightMm: 279 },
-  legal: { widthMm: 216, heightMm: 356 },
-  tabloid: { widthMm: 279, heightMm: 432 },
-
+  letter: { widthMm: 215.9, heightMm: 279.4 },
+  "us-letter": { widthMm: 215.9, heightMm: 279.4 },
+  "half-letter": { widthMm: 139.7, heightMm: 215.9 },
+  "us-half-letter": { widthMm: 139.7, heightMm: 215.9 },
+  legal: { widthMm: 215.9, heightMm: 355.6 },
+  "us-legal": { widthMm: 215.9, heightMm: 355.6 },
+  tabloid: { widthMm: 279.4, heightMm: 431.8 },
+  ledger: { widthMm: 431.8, heightMm: 279.4 },
+  executive: { widthMm: 184.15, heightMm: 266.7 },
+  "ansi-a": { widthMm: 215.9, heightMm: 279.4 },
+  "ansi-b": { widthMm: 279.4, heightMm: 431.8 },
+  "ansi-c": { widthMm: 431.8, heightMm: 558.8 },
+  "ansi-d": { widthMm: 558.8, heightMm: 863.6 },
+  "us-12x18": { widthMm: 304.8, heightMm: 457.2 },
+  "us-13x19": { widthMm: 330.2, heightMm: 482.6 },
+  "us-poster-18x24": { widthMm: 457.2, heightMm: 609.6 },
+  "us-poster-24x36": { widthMm: 609.6, heightMm: 914.4 },
+  "us-poster-27x40": { widthMm: 685.8, heightMm: 1016 },
 };
+
 
 /**
  * Look up target dimensions for a size slug (e.g. "a4", "letter").
