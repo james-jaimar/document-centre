@@ -45,6 +45,7 @@ export interface MeasurementUnitResult {
  */
 export function useMeasurementUnit(): MeasurementUnitResult {
   const { tenantId } = useTenantContext();
+  const { locale: branchLocale, loading: branchLocaleLoading } = useActiveBranchLocale();
   const { region, loading: regionLoading } = useRegionalPricing();
   const [preference, setPreference] = useState<UnitPreference>("auto");
   const [loading, setLoading] = useState(true);
@@ -84,9 +85,14 @@ export function useMeasurementUnit(): MeasurementUnitResult {
   }, [tenantId]);
 
   const unit = useMemo<UnitSystem>(() => {
+    // A branch that declares its measurement system is absolute — it is the
+    // locale of that storefront, so neither the visitor override nor geo
+    // detection may contradict it.
+    if (branchLocale.unit) return branchLocale.unit;
     if (override) return resolveUnitSystem(override, region?.region_code);
     return resolveUnitSystem(preference, region?.region_code);
-  }, [override, preference, region?.region_code]);
+  }, [branchLocale.unit, override, preference, region?.region_code]);
+
 
   const setOverride = useCallback((pref: UnitPreference | null) => {
     if (pref === "metric" || pref === "imperial") {
