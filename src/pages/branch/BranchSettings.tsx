@@ -21,6 +21,8 @@ import { BranchOnboardingChecklist } from "@/components/branch/BranchOnboardingC
 import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptanceBanner";
 import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
+import { BranchRegionalCard } from "@/components/branch/BranchRegionalCard";
+
 import { BranchInvoiceNumberingCard } from "@/components/branch/BranchInvoiceNumberingCard";
 import { useSearchParams } from "react-router-dom";
 import { isBranchManagerRole } from "@/lib/auth/branchPermissions";
@@ -325,10 +327,16 @@ const BranchSettings = () => {
         </CardContent>
       </Card>
 
+      {/* Regional & currency locale */}
+      {tenantId && branchId && (
+        <BranchRegionalCard tenantId={tenantId} branchId={branchId} />
+      )}
+
       {/* Tax / VAT override */}
       {tenantId && branchId && (
         <BranchTaxCard tenantId={tenantId} branchId={branchId} />
       )}
+
 
       {/* Invoice numbering override */}
       {tenantId && branchId && (

@@ -51,15 +51,19 @@ export function useBranchLocale(branchId: string | null | undefined) {
         { category: "financial", key: "default_currency_code" },
         { category: "financial", key: "accepted_currencies" },
       ] as const;
+      // `branch_setting_own` reads ONLY the branch's own row — unlike
+      // `resolve_branch_setting`, it does not cascade to the tenant. The
+      // caller needs to know whether the branch made an explicit choice.
       const results = await Promise.all(
         reads.map((r) =>
-          supabase.rpc("resolve_branch_setting", {
+          supabase.rpc("branch_setting_own" as any, {
             p_branch_id: branchId,
             p_category: r.category,
             p_key: r.key,
           }),
         ),
       );
+
       const rawUnit = unwrapString(results[0]?.data)?.toLowerCase() ?? null;
       const unit: CatalogUnitSystem | null =
         rawUnit === "imperial" ? "imperial" : rawUnit === "metric" ? "metric" : null;
