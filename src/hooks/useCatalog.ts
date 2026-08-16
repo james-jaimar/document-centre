@@ -288,17 +288,21 @@ export interface CatalogFinishing {
   sort_order: number;
   is_active: boolean;
   metadata: Record<string, any>;
+  size_mm?: number | null;
+  size_in?: number | null;
+  unit_system?: CatalogUnitSystem;
 }
 
 export function useCatalogFinishing(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_finishing", ...scopeKey(args)],
     queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_finishing" as any).select("*"),
+      const q = applyUnitFilter(
+        applyCatalogScope(supabase.from("catalog_finishing" as any).select("*"), args),
         args,
       );
       const { data, error } = await q.order("sort_order", { ascending: true });
+
       if (error) throw error;
       return (data ?? []) as unknown as CatalogFinishing[];
     },
