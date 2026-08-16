@@ -110,7 +110,8 @@ export default function PlatformCatalog() {
       width_mm: "",
       height_mm: "",
       iso_name: "",
-      region: "ISO",
+      region: imperial ? "US" : "ISO",
+
       sort_order: "0",
       is_active: true,
     });
