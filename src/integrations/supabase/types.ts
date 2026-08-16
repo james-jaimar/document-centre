@@ -7189,6 +7189,10 @@ export type Database = {
         Args: { p_tenant_id: string }
         Returns: number
       }
+      branch_setting_own: {
+        Args: { p_branch_id: string; p_category: string; p_key: string }
+        Returns: Json
+      }
       branch_subscription_active: {
         Args: { p_branch_id: string }
         Returns: boolean
