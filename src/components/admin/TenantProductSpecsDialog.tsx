@@ -265,19 +265,21 @@ export default function TenantProductSpecsDialog({
               </CardHeader>
               <CardContent className="space-y-2">
                 {linkedFinishing.map(({ link, master }) => {
-                  const enabled = isEnabled("finishing", null, link.item_code, master!.is_active);
+                  const code = master!.code;
+                  const enabled = isEnabled("finishing", null, code, master!.is_active);
                   return (
                     <Row
                       key={link.id}
                       title={master!.label}
-                      meta={`${master!.category ?? ""}${master!.variant ? " · " + master!.variant : ""} · ${link.item_code}`}
+                      meta={`${master!.category ?? ""}${master!.variant ? " · " + master!.variant : ""} · ${code}`}
                       masterActive={master!.is_active}
                       enabled={enabled}
                       pending={setOverride.isPending}
-                      onChange={(c) => toggle("finishing", null, link.item_code, c)}
+                      onChange={(c) => toggle("finishing", null, code, c)}
                     />
                   );
                 })}
+
               </CardContent>
             </Card>
           )}
