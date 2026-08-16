@@ -20,6 +20,8 @@ import {
   type ProductCatalogLink,
 } from "@/hooks/useCatalog";
 import { useCatalogUnitSystem, twinCodeLookup } from "@/hooks/useCatalogUnitSystem";
+import { formatSize } from "@/lib/units";
+
 import { toast } from "sonner";
 
 
