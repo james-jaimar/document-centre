@@ -145,8 +145,7 @@ export default function FileList({
                 )}
                 {doc.page_width_mm && doc.page_height_mm && (
                   <span className="text-xs text-muted-foreground">
-                    {Math.round(Number(doc.page_width_mm))}×
-                    {Math.round(Number(doc.page_height_mm))}mm
+                    {fmtSize(Number(doc.page_width_mm), Number(doc.page_height_mm))}
                   </span>
                 )}
                 {awaitingReview && (

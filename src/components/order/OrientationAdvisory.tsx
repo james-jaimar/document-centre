@@ -70,7 +70,7 @@ export default function OrientationAdvisory({
           </div>
           <DialogDescription className="pt-2 text-sm leading-relaxed">
             <span className="font-medium text-foreground">{fileName}</span> is {detectedOrientation}
-            {" "}({Math.round(widthMm)} × {Math.round(heightMm)}mm). {requirementSentence}
+            {" "}({fmtSize(widthMm, heightMm)}). {requirementSentence}
           </DialogDescription>
         </DialogHeader>
 

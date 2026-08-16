@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Scissors, FileText, Ruler } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import type { NearIsoMatch } from "@/lib/paperSizes";
 
 type BleedChoice = "match" | "custom" | "keep";
@@ -37,6 +38,7 @@ export default function BleedAdvisory({
   onConfirm,
 }: BleedAdvisoryProps) {
   const [choice, setChoice] = useState<BleedChoice>("match");
+  const { fmtSize, fmtLength } = useMeasurementUnit();
   const avgBleed = Math.round(((nearMatch.bleedW + nearMatch.bleedH) / 2) * 10) / 10;
   const [customBleed, setCustomBleed] = useState<string>(String(avgBleed));
 
@@ -59,13 +61,13 @@ export default function BleedAdvisory({
           <DialogDescription className="pt-2 text-sm leading-relaxed">
             <span className="font-medium text-foreground">{fileName}</span> is{" "}
             <span className="font-semibold text-foreground">
-              {Math.round(widthMm)} × {Math.round(heightMm)}mm
+              {fmtSize(widthMm, heightMm)}
             </span>
             {" "}— close to{" "}
             <span className="font-semibold text-foreground">
-              {nearMatch.matchedSize.name} ({trimW} × {trimH}mm)
+              {nearMatch.matchedSize.name} ({fmtSize(trimW, trimH)})
             </span>
-            {" "}with approximately {avgBleed}mm bleed per side.
+            {" "}with approximately {fmtLength(avgBleed)} bleed per side.
           </DialogDescription>
         </DialogHeader>
 
@@ -92,7 +94,7 @@ export default function BleedAdvisory({
                 This is {nearMatch.matchedSize.name} with bleed
               </p>
               <p className="text-xs text-muted-foreground">
-                Trim to {trimW} × {trimH}mm — ~{avgBleed}mm bleed per side
+                Trim to {fmtSize(trimW, trimH)} — ~{fmtLength(avgBleed)} bleed per side
               </p>
             </div>
           </button>
@@ -149,7 +151,7 @@ export default function BleedAdvisory({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">
-                Keep full size ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
+                Keep full size ({fmtSize(widthMm, heightMm)})
               </p>
               <p className="text-xs text-muted-foreground">
                 No trimming — treat this as the finished size
