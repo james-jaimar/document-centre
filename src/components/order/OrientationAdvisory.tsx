@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RotateCw, ArrowRight } from "lucide-react";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 
 interface OrientationAdvisoryProps {
   open: boolean;
