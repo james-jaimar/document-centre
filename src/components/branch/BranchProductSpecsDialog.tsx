@@ -193,26 +193,28 @@ export default function BranchProductSpecsDialog({
               <CardContent className="space-y-2">
                 {linkedSizes.map(({ link, master }) => {
                   const masterActive = master!.is_active;
-                  const enabled = isCatalogEnabled("size", null, link.item_code, masterActive);
+                  const code = master!.code;
+                  const enabled = isCatalogEnabled("size", null, code, masterActive);
                   return (
                     <div key={link.id} className="flex items-center justify-between gap-3 rounded-md border border-border p-2">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium">
                           {master!.label}
                           <span className="ml-2 text-xs text-muted-foreground">
-                            {Math.round(Number(master!.width_mm))} × {Math.round(Number(master!.height_mm))}mm
+                            {formatSize(Number(master!.width_mm), Number(master!.height_mm), unitSystem)}
                           </span>
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {link.item_code}
+                          {code}
                           {!masterActive && " · disabled by platform"}
                         </div>
                       </div>
                       <Switch
                         checked={enabled}
                         disabled={!masterActive || setCatalogOverride.isPending}
-                        onCheckedChange={(c) => toggleCatalog("size", null, link.item_code, c)}
+                        onCheckedChange={(c) => toggleCatalog("size", null, code, c)}
                       />
+
                     </div>
                   );
                 })}
