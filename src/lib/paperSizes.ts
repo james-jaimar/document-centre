@@ -38,6 +38,51 @@ function isPosterFamily(slug?: string | null): boolean {
   return !!slug && POSTER_FAMILY_SLUGS.has(slug.toLowerCase());
 }
 
+/**
+ * North American standard sizes (imperial). Dimensions are the exact
+ * millimetre equivalents — millimetres stay the stored unit everywhere,
+ * inches are a display concern (see `src/lib/units.ts`).
+ */
+export const US_SIZES: PaperSize[] = [
+  { name: "US Business Card", widthMm: 88.9, heightMm: 50.8 },      // 3.5 × 2
+  { name: "Postcard 4 × 6", widthMm: 101.6, heightMm: 152.4 },
+  { name: "Postcard 4.25 × 6", widthMm: 107.95, heightMm: 152.4 },
+  { name: "Postcard 5 × 7", widthMm: 127, heightMm: 177.8 },
+  { name: "Rack Card", widthMm: 101.6, heightMm: 228.6 },           // 4 × 9
+  { name: "Half Letter", widthMm: 139.7, heightMm: 215.9 },         // 5.5 × 8.5
+  { name: "Postcard 6 × 9", widthMm: 152.4, heightMm: 228.6 },
+  { name: "EDDM 6 × 11", widthMm: 152.4, heightMm: 279.4 },
+  { name: "Executive", widthMm: 184.15, heightMm: 266.7 },          // 7.25 × 10.5
+  { name: "Letter", widthMm: 215.9, heightMm: 279.4 },              // 8.5 × 11 (ANSI A)
+  { name: "Legal", widthMm: 215.9, heightMm: 355.6 },               // 8.5 × 14
+  { name: "Tabloid", widthMm: 279.4, heightMm: 431.8 },             // 11 × 17 (ANSI B)
+  { name: "12 × 18", widthMm: 304.8, heightMm: 457.2 },
+  { name: "13 × 19", widthMm: 330.2, heightMm: 482.6 },
+  { name: "ANSI C", widthMm: 431.8, heightMm: 558.8 },              // 17 × 22
+  { name: "Poster 18 × 24", widthMm: 457.2, heightMm: 609.6 },
+  { name: "ANSI D", widthMm: 558.8, heightMm: 863.6 },              // 22 × 34
+  { name: "Poster 24 × 36", widthMm: 609.6, heightMm: 914.4 },
+  { name: "Poster 27 × 40", widthMm: 685.8, heightMm: 1016 },
+  { name: "Banner 2 × 4 ft", widthMm: 609.6, heightMm: 1219.2 },
+  { name: "Banner 3 × 6 ft", widthMm: 914.4, heightMm: 1828.8 },
+  { name: "Banner 4 × 8 ft", widthMm: 1219.2, heightMm: 2438.4 },
+];
+
+/** Specialty US formats that shouldn't be offered as a generic scale target. */
+const SPECIALTY_US_NAMES = new Set([
+  "US Business Card",
+  "Rack Card",
+  "EDDM 6 × 11",
+  "Banner 2 × 4 ft",
+  "Banner 3 × 6 ft",
+  "Banner 4 × 8 ft",
+]);
+
+/** Common document sizes offered as scale targets on US/CA storefronts. */
+const US_SUGGESTION_NAMES = ["Half Letter", "Letter", "Legal", "Tabloid"];
+/** Poster-scale suggestions for US/CA storefronts. */
+const US_POSTER_NAMES = ["Poster 18 × 24", "Poster 24 × 36", "Poster 27 × 40"];
+
 // Common non-ISO sizes (US / ANSI + presentation defaults)
 export const NON_ISO_SIZES: PaperSize[] = [
   { name: "US Letter", widthMm: 216, heightMm: 279 },
@@ -45,12 +90,18 @@ export const NON_ISO_SIZES: PaperSize[] = [
   { name: "US Tabloid", widthMm: 279, heightMm: 432 },
   { name: "US Executive", widthMm: 184, heightMm: 267 },
   { name: "US Statement", widthMm: 140, heightMm: 216 },
+  // Remaining North American standards — recognised so imperial uploads are
+  // never labelled "Custom size".
+  ...US_SIZES.filter(
+    (s) => !["Letter", "Legal", "Tabloid", "Executive"].includes(s.name),
+  ),
   // PowerPoint / Keynote defaults — these are slide-deck sizes, not paper
   // sizes, but PPTX uploads land at these dimensions and need scaling to A4/A3.
   { name: "PowerPoint Widescreen (16:9)", widthMm: 339, heightMm: 191 },
   { name: "PowerPoint Standard (4:3)", widthMm: 254, heightMm: 191 },
   { name: "PowerPoint On-screen Show (16:10)", widthMm: 339, heightMm: 212 },
 ];
+
 
 /**
  * Business card sizes we sell. Used to suppress the "custom size" advisory
