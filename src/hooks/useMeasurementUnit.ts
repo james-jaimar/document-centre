@@ -6,6 +6,7 @@ import {
   formatLength,
   formatSize,
   formatSizeWithName,
+  localisePaperLabel,
   resolveUnitSystem,
   term,
   type UnitPreference,
@@ -30,6 +31,8 @@ export interface MeasurementUnitResult {
   fmtSize: (widthMm: number, heightMm: number) => string;
   fmtSizeWithName: (name: string | null | undefined, widthMm: number, heightMm: number) => string;
   fmtLength: (mm: number) => string;
+  /** Rewrites gsm tokens + UK spelling inside a catalogue label. */
+  fmtPaperLabel: (label: string, category?: string | null) => string;
   t: (text: string) => string;
 }
 
@@ -103,6 +106,10 @@ export function useMeasurementUnit(): MeasurementUnitResult {
       [unit],
     ),
     fmtLength: useCallback((mm: number) => formatLength(mm, unit), [unit]),
+    fmtPaperLabel: useCallback(
+      (label: string, category?: string | null) => localisePaperLabel(label, unit, category),
+      [unit],
+    ),
     t: useCallback((text: string) => term(text, unit), [unit]),
   };
 }

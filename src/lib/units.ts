@@ -148,3 +148,60 @@ export function term(text: string, unit: UnitSystem): string {
   }
   return out;
 }
+
+
+// ── Paper weights ────────────────────────────────────────────────
+// North America quotes stock in pounds against a basis-weight ream size.
+// Conversion factors are the industry-standard gsm-per-lb ratios.
+export type LbBasis = "text" | "cover" | "index" | "bond" | "pt";
+
+const GSM_PER_LB: Record<Exclude<LbBasis, "pt">, number> = {
+  text: 1.48,   // 60 lb text ≈ 89 gsm
+  cover: 2.708, // 100 lb cover ≈ 271 gsm
+  index: 1.807,
+  bond: 3.76,   // 20 lb bond ≈ 75 gsm
+};
+
+/** Pick the basis a US printer would quote this stock on. */
+export function basisForStock(gsm: number, category?: string | null): Exclude<LbBasis, "pt"> {
+  const c = (category ?? "").toLowerCase();
+  if (c.includes("cover") || c.includes("card") || gsm >= 200) return "cover";
+  if (c.includes("bond") || c.includes("copy") || gsm <= 90) return "bond";
+  return "text";
+}
+
+/** Convert a gsm weight into pounds on the given basis. */
+export function gsmToLb(gsm: number, basis: Exclude<LbBasis, "pt">): number {
+  return Math.round(gsm / GSM_PER_LB[basis]);
+}
+
+/** "170gsm" (metric) or "115 lb Text" (imperial). */
+export function formatPaperWeight(
+  gsm: number,
+  unit: UnitSystem,
+  category?: string | null,
+): string {
+  if (!gsm || gsm <= 0) return "";
+  if (unit !== "imperial") return `${Math.round(gsm)}gsm`;
+  const basis = basisForStock(gsm, category);
+  const label = basis === "bond" ? "Bond" : basis === "cover" ? "Cover" : "Text";
+  return `${gsmToLb(gsm, basis)} lb ${label}`;
+}
+
+/**
+ * Rewrite any "170gsm" / "170 gsm" token inside a catalogue label into its
+ * imperial equivalent, leaving the rest of the label untouched.
+ */
+export function localisePaperLabel(
+  label: string,
+  unit: UnitSystem,
+  category?: string | null,
+): string {
+  if (unit !== "imperial" || !label) return label;
+  return term(
+    label.replace(/(\d{2,4})\s*gsm/gi, (_m, g) =>
+      formatPaperWeight(Number(g), "imperial", category),
+    ),
+    unit,
+  );
+}
