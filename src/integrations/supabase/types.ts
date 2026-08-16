@@ -994,9 +994,11 @@ export type Database = {
           metadata: Json
           pricing_basis: string | null
           scope_type: Database["public"]["Enums"]["catalog_scope"]
+          size_in: number | null
           size_mm: number | null
           sort_order: number
           tenant_id: string | null
+          unit_system: string
           updated_at: string
           variant: string | null
         }
@@ -1014,9 +1016,11 @@ export type Database = {
           metadata?: Json
           pricing_basis?: string | null
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
+          size_in?: number | null
           size_mm?: number | null
           sort_order?: number
           tenant_id?: string | null
+          unit_system?: string
           updated_at?: string
           variant?: string | null
         }
@@ -1034,9 +1038,11 @@ export type Database = {
           metadata?: Json
           pricing_basis?: string | null
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
+          size_in?: number | null
           size_mm?: number | null
           sort_order?: number
           tenant_id?: string | null
+          unit_system?: string
           updated_at?: string
           variant?: string | null
         }
@@ -1160,6 +1166,7 @@ export type Database = {
           sort_order: number
           stocked_sizes: string[]
           tenant_id: string | null
+          unit_system: string
           updated_at: string
           weight_gsm: number | null
           weight_lb: number | null
@@ -1181,6 +1188,7 @@ export type Database = {
           sort_order?: number
           stocked_sizes?: string[]
           tenant_id?: string | null
+          unit_system?: string
           updated_at?: string
           weight_gsm?: number | null
           weight_lb?: number | null
@@ -1202,6 +1210,7 @@ export type Database = {
           sort_order?: number
           stocked_sizes?: string[]
           tenant_id?: string | null
+          unit_system?: string
           updated_at?: string
           weight_gsm?: number | null
           weight_lb?: number | null
@@ -1268,6 +1277,7 @@ export type Database = {
           scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
           tenant_id: string | null
+          unit_system: string
           updated_at: string
           width_mm: number
         }
@@ -1285,6 +1295,7 @@ export type Database = {
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
           tenant_id?: string | null
+          unit_system?: string
           updated_at?: string
           width_mm: number
         }
@@ -1302,6 +1313,7 @@ export type Database = {
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
           tenant_id?: string | null
+          unit_system?: string
           updated_at?: string
           width_mm?: number
         }
@@ -7483,6 +7495,14 @@ export type Database = {
       resolve_branch_entitlement: {
         Args: { _branch_id: string }
         Returns: Json
+      }
+      resolve_branch_setting: {
+        Args: { p_branch_id: string; p_category: string; p_key: string }
+        Returns: Json
+      }
+      resolve_catalog_unit_system: {
+        Args: { p_branch_id?: string; p_tenant_id: string }
+        Returns: string
       }
       resolve_delivery_zone: {
         Args: {
