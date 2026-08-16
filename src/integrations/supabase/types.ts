@@ -1154,6 +1154,7 @@ export type Database = {
           is_cover_stock: boolean
           is_edge_to_edge_only: boolean
           label: string
+          lb_basis: string | null
           metadata: Json
           scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
@@ -1161,6 +1162,7 @@ export type Database = {
           tenant_id: string | null
           updated_at: string
           weight_gsm: number | null
+          weight_lb: number | null
         }
         Insert: {
           branch_id?: string | null
@@ -1173,6 +1175,7 @@ export type Database = {
           is_cover_stock?: boolean
           is_edge_to_edge_only?: boolean
           label: string
+          lb_basis?: string | null
           metadata?: Json
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
@@ -1180,6 +1183,7 @@ export type Database = {
           tenant_id?: string | null
           updated_at?: string
           weight_gsm?: number | null
+          weight_lb?: number | null
         }
         Update: {
           branch_id?: string | null
@@ -1192,6 +1196,7 @@ export type Database = {
           is_cover_stock?: boolean
           is_edge_to_edge_only?: boolean
           label?: string
+          lb_basis?: string | null
           metadata?: Json
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
@@ -1199,6 +1204,7 @@ export type Database = {
           tenant_id?: string | null
           updated_at?: string
           weight_gsm?: number | null
+          weight_lb?: number | null
         }
         Relationships: []
       }
