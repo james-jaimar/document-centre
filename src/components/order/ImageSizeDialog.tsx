@@ -8,7 +8,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ISO_SIZES, type PaperSize } from "@/lib/paperSizes";
+import { ISO_SIZES, US_SIZES, type PaperSize } from "@/lib/paperSizes";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { Check, Image as ImageIcon } from "lucide-react";
 
 export interface ImageSizeSelection {
@@ -35,6 +36,7 @@ export default function ImageSizeDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  const { unit, fmtSize } = useMeasurementUnit();
   const [imgDims, setImgDims] = useState<{
     widthPx: number;
     heightPx: number;
@@ -73,8 +75,15 @@ export default function ImageSizeDialog({
       }
     : null;
 
-  // Prefer product-family allowed sizes; fall back to the ISO A-series.
-  const sourceSizes = allowedSizes && allowedSizes.length > 0 ? allowedSizes : ISO_SIZES;
+  // Prefer product-family allowed sizes; fall back to the regional standard
+  // set (ISO A-series, or the North American document sizes for US/CA).
+  const US_DEFAULTS = ["Half Letter", "Letter", "Legal", "Tabloid", "12 × 18", "13 × 19"];
+  const sourceSizes =
+    allowedSizes && allowedSizes.length > 0
+      ? allowedSizes
+      : unit === "imperial"
+        ? US_SIZES.filter((s) => US_DEFAULTS.includes(s.name))
+        : ISO_SIZES;
 
   // Orientation-match rectangular sizes to the uploaded image; keep squares as-is.
   const sizeOptions = useMemo(() => {
@@ -117,7 +126,7 @@ export default function ImageSizeDialog({
         <p className="text-sm text-muted-foreground">
           Select the page size for your uploaded image
           {imgDims && originalMm
-            ? ` (${originalMm.w} × ${originalMm.h} mm at 72 DPI)`
+            ? ` (${fmtSize(originalMm.w, originalMm.h)} at 72 DPI)`
             : ""}
           .
         </p>
@@ -141,7 +150,7 @@ export default function ImageSizeDialog({
                     {size.name}
                   </span>
                   <span className="ml-2 text-muted-foreground">
-                    {size.widthMm} × {size.heightMm} mm
+                    {fmtSize(size.widthMm, size.heightMm)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -168,7 +177,7 @@ export default function ImageSizeDialog({
               <span className="font-medium text-foreground">Original Size</span>
               {originalMm && (
                 <span className="ml-2 text-muted-foreground">
-                  {originalMm.w} × {originalMm.h} mm
+                  {fmtSize(originalMm.w, originalMm.h)}
                 </span>
               )}
             </div>

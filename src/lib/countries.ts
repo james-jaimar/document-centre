@@ -12,8 +12,8 @@ export interface CountryEntry {
 
 export const COUNTRIES: Record<string, CountryEntry> = {
   ZA: { code: "ZA", name: "South Africa", emoji: "🇿🇦", available: true },
-  US: { code: "US", name: "United States", emoji: "🇺🇸", available: false },
-  CA: { code: "CA", name: "Canada", emoji: "🇨🇦", available: false },
+  US: { code: "US", name: "United States", emoji: "🇺🇸", available: true },
+  CA: { code: "CA", name: "Canada", emoji: "🇨🇦", available: true },
   GB: { code: "GB", name: "United Kingdom", emoji: "🇬🇧", available: false },
   AU: { code: "AU", name: "Australia", emoji: "🇦🇺", available: false },
 };

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, FileText, ArrowRight, Lock } from "lucide-react";
 import { type PaperSize, getSuggestedIsoSizes, isLandscape, UNKNOWN_SIZE_LABEL, matchKnownSize, matchesAnySize } from "@/lib/paperSizes";
 import { cn } from "@/lib/utils";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 
 interface PaperSizeAdvisoryProps {
   open: boolean;
@@ -61,7 +62,11 @@ export default function PaperSizeAdvisory({
   allowedSizeNames,
   allowedCustomSizes,
 }: PaperSizeAdvisoryProps) {
-  const suggestionsAll = getSuggestedIsoSizes(widthMm, heightMm, productFamilySlug);
+  const { unit, fmtSize } = useMeasurementUnit();
+  const suggestionsAll = useMemo(
+    () => getSuggestedIsoSizes(widthMm, heightMm, productFamilySlug, unit),
+    [widthMm, heightMm, productFamilySlug, unit],
+  );
 
   const allowedSet = useMemo(() => {
     if (!allowedSizeNames || allowedSizeNames.length === 0) return null;
@@ -79,7 +84,11 @@ export default function PaperSizeAdvisory({
 
   const landscape = isLandscape(widthMm, heightMm);
   const isPoster = (productFamilySlug ?? "").toLowerCase().startsWith("poster");
-  const recommendedLabel = isPoster ? "A2, A1 or A0" : "A4 or A3";
+  const recommendedLabel =
+    unit === "imperial"
+      ? (isPoster ? "18 × 24\", 24 × 36\" or 27 × 40\"" : "Letter or Tabloid")
+      : (isPoster ? "A2, A1 or A0" : "A4 or A3");
+  const standardsLabel = unit === "imperial" ? "standard US paper size" : "standard ISO paper size";
 
   // Match against product-family custom sizes (e.g. Pull Up Banner 850×2000mm)
   // so an upload that already aligns with a catalogue-defined size can "Keep
@@ -154,7 +163,7 @@ export default function PaperSizeAdvisory({
                 <span className="font-medium text-foreground">{fileName}</span> is{" "}
                 <span className="font-semibold text-foreground">
                   {detectedSize ? `${detectedSize} ` : ""}
-                  ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
+                  ({fmtSize(widthMm, heightMm)})
                 </span>
                 . Your earlier files in this upload are{" "}
                 <span className="font-semibold text-foreground">{lockedSize.name}</span>.
@@ -164,7 +173,7 @@ export default function PaperSizeAdvisory({
               <>
                 <span className="font-medium text-foreground">{fileName}</span> is{" "}
                 <span className="font-semibold text-foreground">
-                  {detectedSize} ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
+                  {detectedSize} ({fmtSize(widthMm, heightMm)})
                 </span>
                 . Presentation slide sizes don't match standard printable paper. We
                 recommend scaling onto {recommendedLabel} so it prints correctly.
@@ -173,9 +182,9 @@ export default function PaperSizeAdvisory({
               <>
                 <span className="font-medium text-foreground">{fileName}</span> is{" "}
                 <span className="font-semibold text-foreground">
-                  {Math.round(widthMm)} × {Math.round(heightMm)}mm
+                  {fmtSize(widthMm, heightMm)}
                 </span>
-                , which isn't a standard ISO paper size. We recommend scaling onto
+                , which isn't a {standardsLabel}. We recommend scaling onto
                 {" "}{recommendedLabel} before printing — keeping the original may require custom
                 cutting and could incur a surcharge.
               </>
@@ -183,9 +192,9 @@ export default function PaperSizeAdvisory({
               <>
                 <span className="font-medium text-foreground">{fileName}</span> is{" "}
                 <span className="font-semibold text-foreground">
-                  {detectedSize} ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
+                  {detectedSize} ({fmtSize(widthMm, heightMm)})
                 </span>
-                . This is not a standard ISO size used locally. Printing at this size
+                . This is not a {standardsLabel} used locally. Printing at this size
                 may require custom paper cutting and could incur a surcharge.
               </>
             )}
@@ -221,7 +230,7 @@ export default function PaperSizeAdvisory({
                   <p className="text-sm font-medium text-foreground">
                     {isLockedOption
                       ? `Scale to ${size.name} (match other files)`
-                      : `Scale to ${size.name} (${targetW} × ${targetH}mm)`}
+                      : `Scale to ${size.name} (${fmtSize(targetW, targetH)})`}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {isLockedOption
@@ -254,8 +263,8 @@ export default function PaperSizeAdvisory({
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">
                   {isLocked
-                    ? `Keep original ${detectedSize || ""} (${Math.round(widthMm)} × ${Math.round(heightMm)}mm)`
-                    : `Keep original size (${Math.round(widthMm)} × ${Math.round(heightMm)}mm)`}
+                    ? `Keep original ${detectedSize || ""} (${fmtSize(widthMm, heightMm)})`
+                    : `Keep original size (${fmtSize(widthMm, heightMm)})`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isLocked

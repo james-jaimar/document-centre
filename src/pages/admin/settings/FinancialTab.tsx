@@ -15,10 +15,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
 import { SUPPORTED_CURRENCIES } from "@/lib/countries";
 import { toast } from "sonner";
-import { Save, Receipt, Coins } from "lucide-react";
+import { Save, Receipt, Coins, Ruler } from "lucide-react";
 
 export function FinancialTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("financial");
+  const { settingsMap: regionalMap, isLoading: regionalLoading } = useTenantSettingsMap("regional");
   const bulkUpsert = useBulkUpsertTenantSettings();
 
   const [taxEnabled, setTaxEnabled] = useState(true);
@@ -31,6 +32,14 @@ export function FinancialTab() {
   const [lockCurrency, setLockCurrency] = useState(true);
   const [multiCurrency, setMultiCurrency] = useState(false);
   const [acceptedCurrencies, setAcceptedCurrencies] = useState<string[]>([]);
+  const [measurementUnit, setMeasurementUnit] = useState("auto");
+
+  useEffect(() => {
+    if (!regionalLoading && regionalMap) {
+      const raw = String(regionalMap.measurement_unit ?? "auto").toLowerCase();
+      setMeasurementUnit(raw === "metric" || raw === "imperial" ? raw : "auto");
+    }
+  }, [regionalLoading, regionalMap]);
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
@@ -81,6 +90,7 @@ export function FinancialTab() {
             : [],
           value_type: "json",
         },
+        { category: "regional", setting_key: "measurement_unit", setting_value: measurementUnit, value_type: "string" },
       ]);
       toast.success("Financial settings saved");
     } catch (e: any) {
@@ -224,6 +234,33 @@ export function FinancialTab() {
             <Label>Next Invoice Number</Label>
             <Input type="number" value={invoiceNextNumber} onChange={(e) => setInvoiceNextNumber(e.target.value)} className="font-mono" />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Ruler className="h-5 w-5" /> Measurement Units</CardTitle>
+          <CardDescription>
+            How sizes, bleed and paper weights are displayed to customers. Millimetres are
+            always used internally — this only changes what shoppers see.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="max-w-md space-y-2">
+          <Label>Display units</Label>
+          <Select value={measurementUnit} onValueChange={setMeasurementUnit}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic (follow storefront region)</SelectItem>
+              <SelectItem value="metric">Metric — mm, gsm (A4, A3, DL)</SelectItem>
+              <SelectItem value="imperial">Imperial — inches, lb (Letter, Legal, Tabloid)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Automatic switches to inches and pound stock weights for US and Canadian
+            storefront regions, and stays metric everywhere else.
+          </p>
         </CardContent>
       </Card>
 

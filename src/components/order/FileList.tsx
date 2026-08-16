@@ -3,6 +3,7 @@ import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye, W
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 
 type Document = Tables<"documents">;
 
@@ -42,6 +43,7 @@ export default function FileList({
   onEditPosterImage,
   mismatchDocIds,
 }: FileListProps) {
+  const { fmtSize } = useMeasurementUnit();
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [recoveringIds, setRecoveringIds] = useState<Set<string>>(new Set());
@@ -145,8 +147,7 @@ export default function FileList({
                 )}
                 {doc.page_width_mm && doc.page_height_mm && (
                   <span className="text-xs text-muted-foreground">
-                    {Math.round(Number(doc.page_width_mm))}×
-                    {Math.round(Number(doc.page_height_mm))}mm
+                    {fmtSize(Number(doc.page_width_mm), Number(doc.page_height_mm))}
                   </span>
                 )}
                 {awaitingReview && (

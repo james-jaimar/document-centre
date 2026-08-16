@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { Tables } from "@/integrations/supabase/types";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { humaniseSlug } from "@/lib/utils";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
@@ -180,6 +181,7 @@ export default function OptionsPanel({
   allowedSides,
   variants,
 }: OptionsPanelProps) {
+  const { fmtLabel } = useMeasurementUnit();
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
   const sortedOptions = [...options]
@@ -300,8 +302,8 @@ export default function OptionsPanel({
   }, [blocksActive, sizeValues, paperValues, sidesValues, selectedSize, selectedPaper, selectedSides]);
 
   const labelForPackValue = (row: PackRow, slug: string) => {
-    if (row.sidesLabels && row.sidesLabels[slug]) return row.sidesLabels[slug];
-    return resolveLabel(row.valueLabelCandidates, slug);
+    if (row.sidesLabels && row.sidesLabels[slug]) return fmtLabel(row.sidesLabels[slug]);
+    return fmtLabel(resolveLabel(row.valueLabelCandidates, slug));
   };
 
   // Get current display value for a standard product option

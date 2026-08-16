@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RotateCw, ArrowRight } from "lucide-react";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 
 interface OrientationAdvisoryProps {
   open: boolean;
@@ -37,6 +38,7 @@ export default function OrientationAdvisory({
   isRotating = false,
   mode = "to-landscape",
 }: OrientationAdvisoryProps) {
+  const { fmtSize } = useMeasurementUnit();
   const toPortrait = mode === "to-portrait";
 
   const title = toPortrait ? "Landscape Document Detected" : "Portrait Document Detected";
@@ -70,7 +72,7 @@ export default function OrientationAdvisory({
           </div>
           <DialogDescription className="pt-2 text-sm leading-relaxed">
             <span className="font-medium text-foreground">{fileName}</span> is {detectedOrientation}
-            {" "}({Math.round(widthMm)} × {Math.round(heightMm)}mm). {requirementSentence}
+            {" "}({fmtSize(widthMm, heightMm)}). {requirementSentence}
           </DialogDescription>
         </DialogHeader>
 
