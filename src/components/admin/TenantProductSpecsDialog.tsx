@@ -19,7 +19,11 @@ import {
   useSetTenantCatalogOverride,
   type ProductCatalogLink,
 } from "@/hooks/useCatalog";
+import { useCatalogUnitSystem, twinCodeLookup } from "@/hooks/useCatalogUnitSystem";
+import { formatSize } from "@/lib/units";
+
 import { toast } from "sonner";
+
 
 interface Props {
   open: boolean;
@@ -44,11 +48,12 @@ export default function TenantProductSpecsDialog({
   productFamilyId,
   productFamilyName,
 }: Props) {
+  const { unitSystem } = useCatalogUnitSystem(tenantId);
   const { data: links = [] } = useProductCatalogLinks(productFamilyId);
-  const { data: sizes = [] } = useCatalogSizes();
+  const { data: sizes = [] } = useCatalogSizes({ unitSystem });
   const { data: printAttrs = [] } = useCatalogPrintAttrs();
-  const { data: papers = [] } = useCatalogPapers();
-  const { data: finishing = [] } = useCatalogFinishing();
+  const { data: papers = [] } = useCatalogPapers({ unitSystem });
+  const { data: finishing = [] } = useCatalogFinishing({ unitSystem });
   const { data: overrides = [] } = useTenantCatalogOverrides(tenantId);
   const setOverride = useSetTenantCatalogOverride();
 
@@ -60,13 +65,15 @@ export default function TenantProductSpecsDialog({
     return m;
   }, [overrides]);
 
-  const sizeByCode = useMemo(() => new Map(sizes.map((s) => [s.code, s])), [sizes]);
+  // Master links are authored in metric; map them onto the active unit list.
+  const sizeByCode = useMemo(() => twinCodeLookup(sizes as any[]), [sizes]);
   const attrByKey = useMemo(
     () => new Map(printAttrs.map((p) => [`${p.attribute}::${p.code}`, p])),
     [printAttrs],
   );
-  const paperByCode = useMemo(() => new Map(papers.map((p) => [p.code, p])), [papers]);
-  const finishByCode = useMemo(() => new Map(finishing.map((f) => [f.code, f])), [finishing]);
+  const paperByCode = useMemo(() => twinCodeLookup(papers as any[]), [papers]);
+  const finishByCode = useMemo(() => twinCodeLookup(finishing as any[]), [finishing]);
+
 
   const linkedSizes = useMemo(
     () =>
@@ -167,19 +174,21 @@ export default function TenantProductSpecsDialog({
               <CardContent className="space-y-2">
                 {linkedSizes.map(({ link, master }) => {
                   const active = master!.is_active;
-                  const enabled = isEnabled("size", null, link.item_code, active);
+                  const code = master!.code;
+                  const enabled = isEnabled("size", null, code, active);
                   return (
                     <Row
                       key={link.id}
                       title={master!.label}
-                      meta={`${Math.round(Number(master!.width_mm))} × ${Math.round(Number(master!.height_mm))}mm · ${link.item_code}`}
+                      meta={`${formatSize(Number(master!.width_mm), Number(master!.height_mm), unitSystem)} · ${code}`}
                       masterActive={active}
                       enabled={enabled}
                       pending={setOverride.isPending}
-                      onChange={(c) => toggle("size", null, link.item_code, c)}
+                      onChange={(c) => toggle("size", null, code, c)}
                     />
                   );
                 })}
+
               </CardContent>
             </Card>
           )}
@@ -221,19 +230,27 @@ export default function TenantProductSpecsDialog({
               </CardHeader>
               <CardContent className="space-y-2">
                 {linkedPapers.map(({ link, master }) => {
-                  const enabled = isEnabled("paper", null, link.item_code, master!.is_active);
+                  const code = master!.code;
+                  const weight =
+                    unitSystem === "imperial"
+                      ? master!.weight_lb != null
+                        ? `${master!.weight_lb}lb${master!.lb_basis ? ` ${master!.lb_basis}` : ""}`
+                        : "?"
+                      : `${master!.weight_gsm ?? "?"}gsm`;
+                  const enabled = isEnabled("paper", null, code, master!.is_active);
                   return (
                     <Row
                       key={link.id}
                       title={master!.label}
-                      meta={`${master!.weight_gsm ?? "?"}gsm · ${master!.finish ?? ""} · ${link.item_code}`}
+                      meta={`${weight} · ${master!.finish ?? ""} · ${code}`}
                       masterActive={master!.is_active}
                       enabled={enabled}
                       pending={setOverride.isPending}
-                      onChange={(c) => toggle("paper", null, link.item_code, c)}
+                      onChange={(c) => toggle("paper", null, code, c)}
                     />
                   );
                 })}
+
               </CardContent>
             </Card>
           )}
@@ -248,19 +265,21 @@ export default function TenantProductSpecsDialog({
               </CardHeader>
               <CardContent className="space-y-2">
                 {linkedFinishing.map(({ link, master }) => {
-                  const enabled = isEnabled("finishing", null, link.item_code, master!.is_active);
+                  const code = master!.code;
+                  const enabled = isEnabled("finishing", null, code, master!.is_active);
                   return (
                     <Row
                       key={link.id}
                       title={master!.label}
-                      meta={`${master!.category ?? ""}${master!.variant ? " · " + master!.variant : ""} · ${link.item_code}`}
+                      meta={`${master!.category ?? ""}${master!.variant ? " · " + master!.variant : ""} · ${code}`}
                       masterActive={master!.is_active}
                       enabled={enabled}
                       pending={setOverride.isPending}
-                      onChange={(c) => toggle("finishing", null, link.item_code, c)}
+                      onChange={(c) => toggle("finishing", null, code, c)}
                     />
                   );
                 })}
+
               </CardContent>
             </Card>
           )}

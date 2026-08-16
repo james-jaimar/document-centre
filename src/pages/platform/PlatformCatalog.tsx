@@ -48,7 +48,9 @@ import {
   type CatalogFinishing,
 } from "@/hooks/useCatalog";
 import { Plus, Trash2 } from "lucide-react";
+import { formatSize } from "@/lib/units";
 import { toast } from "sonner";
+
 
 const PAPER_FINISH_OPTIONS = ["bond", "gloss", "matt", "silk", "uncoated", "recycled", "card"];
 const PAPER_CATEGORY_OPTIONS = ["bond", "coated", "uncoated", "card", "speciality"];
@@ -72,17 +74,22 @@ const FINISHING_BASES = [
 ];
 
 export default function PlatformCatalog() {
-  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes();
-  const { data: attrs = [], isLoading: attrsLoading } = useCatalogPrintAttrs();
-  const { data: papers = [], isLoading: papersLoading } = useCatalogPapers();
-  const { data: finishing = [], isLoading: finLoading } = useCatalogFinishing();
+  const [unitSystem, setUnitSystem] = useState<"metric" | "imperial">("metric");
+  const scopeArgs = { unitSystem } as const;
+  const imperial = unitSystem === "imperial";
 
-  const upsertSize = useUpsertCatalogSize();
+  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes(scopeArgs);
+  const { data: attrs = [], isLoading: attrsLoading } = useCatalogPrintAttrs();
+  const { data: papers = [], isLoading: papersLoading } = useCatalogPapers(scopeArgs);
+  const { data: finishing = [], isLoading: finLoading } = useCatalogFinishing(scopeArgs);
+
+  const upsertSize = useUpsertCatalogSize(scopeArgs);
   const deleteSize = useDeleteCatalogSize();
-  const upsertPaper = useUpsertCatalogPaper();
+  const upsertPaper = useUpsertCatalogPaper(scopeArgs);
   const deletePaper = useDeleteCatalogPaper();
-  const upsertFin = useUpsertCatalogFinishing();
+  const upsertFin = useUpsertCatalogFinishing(scopeArgs);
   const deleteFin = useDeleteCatalogFinishing();
+
 
   // ------- size dialog -------
   const [dlgOpen, setDlgOpen] = useState(false);
@@ -103,7 +110,8 @@ export default function PlatformCatalog() {
       width_mm: "",
       height_mm: "",
       iso_name: "",
-      region: "ISO",
+      region: imperial ? "US" : "ISO",
+
       sort_order: "0",
       is_active: true,
     });
@@ -258,14 +266,35 @@ export default function PlatformCatalog() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Master Catalogue</h1>
-        <p className="text-muted-foreground">
-          Platform-wide source of truth for document sizes, print attributes,
-          paper stocks and finishing items. Tenants and branches reference these
-          items; branches can disable, rename or surcharge them per location.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Master Catalogue</h1>
+          <p className="text-muted-foreground">
+            Platform-wide source of truth for document sizes, print attributes,
+            paper stocks and finishing items. Tenants and branches reference these
+            items; branches can disable, rename or surcharge them per location.
+          </p>
+        </div>
+        <div className="inline-flex rounded-md border border-border p-1 bg-muted/40">
+          {(["metric", "imperial"] as const).map((u) => (
+            <Button
+              key={u}
+              size="sm"
+              variant={unitSystem === u ? "default" : "ghost"}
+              className="capitalize"
+              onClick={() => setUnitSystem(u)}
+            >
+              {u === "metric" ? "Metric (mm / gsm)" : 'Imperial (in / lb)'}
+            </Button>
+          ))}
+        </div>
       </div>
+      <p className="text-xs text-muted-foreground -mt-4">
+        Sizes, paper stocks and finishing are kept as two separate lists. Print
+        attributes are shared by both. Tenants and branches only ever see the list
+        that matches their measurement system.
+      </p>
+
 
       {/* ---------- Sizes ---------- */}
       <Card>
@@ -301,7 +330,7 @@ export default function PlatformCatalog() {
                     <TableCell className="font-mono text-xs">{s.code}</TableCell>
                     <TableCell>{s.label}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {Math.round(Number(s.width_mm))} × {Math.round(Number(s.height_mm))}mm
+                      {formatSize(Number(s.width_mm), Number(s.height_mm), unitSystem)}
                     </TableCell>
                     <TableCell>{s.iso_name ?? "—"}</TableCell>
                     <TableCell>{s.region ?? "—"}</TableCell>
@@ -379,7 +408,7 @@ export default function PlatformCatalog() {
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Label</TableHead>
-                  <TableHead>GSM</TableHead>
+                  <TableHead>{imperial ? "Weight" : "GSM"}</TableHead>
                   <TableHead>Finish</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Sort</TableHead>
@@ -392,7 +421,14 @@ export default function PlatformCatalog() {
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setPaperDlg(p)}>
                     <TableCell className="font-mono text-xs">{p.code}</TableCell>
                     <TableCell>{p.label}</TableCell>
-                    <TableCell>{p.weight_gsm ?? "—"}</TableCell>
+                    <TableCell>
+                      {imperial
+                        ? p.weight_lb != null
+                          ? `${p.weight_lb}lb${p.lb_basis ? ` ${p.lb_basis}` : ""}`
+                          : "—"
+                        : p.weight_gsm ?? "—"}
+                    </TableCell>
+
                     <TableCell className="capitalize">{p.finish ?? "—"}</TableCell>
                     <TableCell className="capitalize">{p.category ?? "—"}</TableCell>
                     <TableCell>{p.sort_order}</TableCell>

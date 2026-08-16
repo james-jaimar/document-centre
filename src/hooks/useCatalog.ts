@@ -38,10 +38,14 @@ async function deleteByIdChecked(table: string, id: string) {
 
 
 export type CatalogScope = "master" | "tenant" | "branch";
+export type CatalogUnitSystem = "metric" | "imperial";
 export interface CatalogScopeArgs {
   scope?: CatalogScope;
   tenantId?: string | null;
   branchId?: string | null;
+  /** Restricts size / paper / finishing lists to one measurement system.
+   *  Print attributes are unit-agnostic and ignore this. */
+  unitSystem?: CatalogUnitSystem | null;
 }
 
 /** Apply scope filtering. Default scope=master (no tenant/branch). */
@@ -59,9 +63,15 @@ export function applyCatalogScope(query: any, args: CatalogScopeArgs = {}) {
   return query;
 }
 
-function scopeKey(args: CatalogScopeArgs = {}) {
-  return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null];
+/** Adds the unit filter on tables that carry `unit_system`. */
+function applyUnitFilter(query: any, args: CatalogScopeArgs = {}) {
+  return args.unitSystem ? query.eq("unit_system", args.unitSystem) : query;
 }
+
+function scopeKey(args: CatalogScopeArgs = {}) {
+  return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null, args.unitSystem ?? null];
+}
+
 
 /** Manual update-or-insert keyed by (scope, tenant, branch, code).
  * Used in place of `.upsert(onConflict: "code")` because the scoped uniqueness
@@ -74,7 +84,9 @@ async function scopedUpsertByCode(
   const scope = args.scope ?? "master";
   const tenantId = args.tenantId ?? null;
   const branchId = args.branchId ?? null;
-  const payload = { ...row, scope_type: scope, tenant_id: tenantId, branch_id: branchId };
+  const payload: any = { ...row, scope_type: scope, tenant_id: tenantId, branch_id: branchId };
+  if (args.unitSystem && payload.unit_system == null) payload.unit_system = args.unitSystem;
+
 
   let findQ = supabase.from(table as any).select("id").eq("scope_type", scope).eq("code", row.code);
   findQ = tenantId ? findQ.eq("tenant_id", tenantId) : findQ.is("tenant_id", null);
@@ -119,18 +131,20 @@ export interface CatalogSize {
   sort_order: number;
   is_active: boolean;
   metadata: Record<string, any>;
+  unit_system?: CatalogUnitSystem;
 }
 
 export function useCatalogSizes(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_sizes", ...scopeKey(args)],
     queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_sizes" as any).select("*"),
+      const q = applyUnitFilter(
+        applyCatalogScope(supabase.from("catalog_sizes" as any).select("*"), args),
         args,
       );
       const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
+
       return (data ?? []) as unknown as CatalogSize[];
     },
   });
@@ -200,17 +214,21 @@ export interface CatalogPaper {
   sort_order: number;
   is_active: boolean;
   metadata: Record<string, any>;
+  weight_lb?: number | null;
+  lb_basis?: string | null;
+  unit_system?: CatalogUnitSystem;
 }
 
 export function useCatalogPapers(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_papers", ...scopeKey(args)],
     queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_papers" as any).select("*"),
+      const q = applyUnitFilter(
+        applyCatalogScope(supabase.from("catalog_papers" as any).select("*"), args),
         args,
       );
       const { data, error } = await q.order("sort_order", { ascending: true });
+
       if (error) throw error;
       return (data ?? []) as unknown as CatalogPaper[];
     },
@@ -270,17 +288,21 @@ export interface CatalogFinishing {
   sort_order: number;
   is_active: boolean;
   metadata: Record<string, any>;
+  size_mm?: number | null;
+  size_in?: number | null;
+  unit_system?: CatalogUnitSystem;
 }
 
 export function useCatalogFinishing(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_finishing", ...scopeKey(args)],
     queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_finishing" as any).select("*"),
+      const q = applyUnitFilter(
+        applyCatalogScope(supabase.from("catalog_finishing" as any).select("*"), args),
         args,
       );
       const { data, error } = await q.order("sort_order", { ascending: true });
+
       if (error) throw error;
       return (data ?? []) as unknown as CatalogFinishing[];
     },
