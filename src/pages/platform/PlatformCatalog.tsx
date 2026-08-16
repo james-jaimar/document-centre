@@ -72,17 +72,22 @@ const FINISHING_BASES = [
 ];
 
 export default function PlatformCatalog() {
-  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes();
-  const { data: attrs = [], isLoading: attrsLoading } = useCatalogPrintAttrs();
-  const { data: papers = [], isLoading: papersLoading } = useCatalogPapers();
-  const { data: finishing = [], isLoading: finLoading } = useCatalogFinishing();
+  const [unitSystem, setUnitSystem] = useState<"metric" | "imperial">("metric");
+  const scopeArgs = { unitSystem } as const;
+  const imperial = unitSystem === "imperial";
 
-  const upsertSize = useUpsertCatalogSize();
+  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes(scopeArgs);
+  const { data: attrs = [], isLoading: attrsLoading } = useCatalogPrintAttrs();
+  const { data: papers = [], isLoading: papersLoading } = useCatalogPapers(scopeArgs);
+  const { data: finishing = [], isLoading: finLoading } = useCatalogFinishing(scopeArgs);
+
+  const upsertSize = useUpsertCatalogSize(scopeArgs);
   const deleteSize = useDeleteCatalogSize();
-  const upsertPaper = useUpsertCatalogPaper();
+  const upsertPaper = useUpsertCatalogPaper(scopeArgs);
   const deletePaper = useDeleteCatalogPaper();
-  const upsertFin = useUpsertCatalogFinishing();
+  const upsertFin = useUpsertCatalogFinishing(scopeArgs);
   const deleteFin = useDeleteCatalogFinishing();
+
 
   // ------- size dialog -------
   const [dlgOpen, setDlgOpen] = useState(false);
