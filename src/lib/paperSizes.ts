@@ -379,22 +379,27 @@ export interface NearIsoMatch {
   landscape: boolean;
 }
 
-const BLEED_MIN_MM = 3;
+/**
+ * 3 mm is the metric standard; the US standard bleed is 0.125" (3.175 mm),
+ * so the lower bound sits just under it to catch imperial artwork.
+ */
+const BLEED_MIN_MM = 2.9;
 const BLEED_MAX_MM = 15;
 /** Posters routinely carry 20–25 mm bleed — widen the window for that family. */
 const POSTER_BLEED_MAX_MM = 30;
 const POSTER_ISO_NAMES = new Set(["A2", "A1", "A0"]);
 
 /**
- * Detect if dimensions are close to an ISO A-series size with unset bleed.
- * Returns the best match if the excess per side falls within 3–15 mm
- * (or 3–30 mm for posters, restricted to A2/A1/A0).
- * Only fires when the document does NOT already match an ISO or US size exactly.
+ * Detect if dimensions are close to a standard size with unset bleed.
+ * Returns the best match if the excess per side falls within ~3–15 mm
+ * (or 3–30 mm for posters).
+ * Only fires when the document does NOT already match a known size exactly.
  */
 export function detectNearIsoWithBleed(
   widthMm: number,
   heightMm: number,
   productFamilySlug?: string | null,
+  unit: "metric" | "imperial" = "metric",
 ): NearIsoMatch | null {
   // Skip if already an exact ISO or US match
   for (const iso of ISO_SIZES) {
@@ -406,9 +411,15 @@ export function detectNearIsoWithBleed(
 
   const isPoster = isPosterFamily(productFamilySlug);
   const bleedMax = isPoster ? POSTER_BLEED_MAX_MM : BLEED_MAX_MM;
+  const imperial = unit === "imperial";
   const candidates = isPoster
-    ? ISO_SIZES.filter((s) => POSTER_ISO_NAMES.has(s.name))
-    : ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name));
+    ? (imperial
+        ? US_SIZES.filter((s) => US_POSTER_NAMES.includes(s.name))
+        : ISO_SIZES.filter((s) => POSTER_ISO_NAMES.has(s.name)))
+    : (imperial
+        ? US_SIZES.filter((s) => !SPECIALTY_US_NAMES.has(s.name))
+        : ISO_SIZES.filter((s) => !SPECIALTY_ISO_NAMES.has(s.name)));
+
 
 
   let best: NearIsoMatch | null = null;
