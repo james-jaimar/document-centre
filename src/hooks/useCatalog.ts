@@ -214,17 +214,21 @@ export interface CatalogPaper {
   sort_order: number;
   is_active: boolean;
   metadata: Record<string, any>;
+  weight_lb?: number | null;
+  lb_basis?: string | null;
+  unit_system?: CatalogUnitSystem;
 }
 
 export function useCatalogPapers(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_papers", ...scopeKey(args)],
     queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_papers" as any).select("*"),
+      const q = applyUnitFilter(
+        applyCatalogScope(supabase.from("catalog_papers" as any).select("*"), args),
         args,
       );
       const { data, error } = await q.order("sort_order", { ascending: true });
+
       if (error) throw error;
       return (data ?? []) as unknown as CatalogPaper[];
     },
