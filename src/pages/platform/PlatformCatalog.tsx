@@ -263,14 +263,35 @@ export default function PlatformCatalog() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Master Catalogue</h1>
-        <p className="text-muted-foreground">
-          Platform-wide source of truth for document sizes, print attributes,
-          paper stocks and finishing items. Tenants and branches reference these
-          items; branches can disable, rename or surcharge them per location.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Master Catalogue</h1>
+          <p className="text-muted-foreground">
+            Platform-wide source of truth for document sizes, print attributes,
+            paper stocks and finishing items. Tenants and branches reference these
+            items; branches can disable, rename or surcharge them per location.
+          </p>
+        </div>
+        <div className="inline-flex rounded-md border border-border p-1 bg-muted/40">
+          {(["metric", "imperial"] as const).map((u) => (
+            <Button
+              key={u}
+              size="sm"
+              variant={unitSystem === u ? "default" : "ghost"}
+              className="capitalize"
+              onClick={() => setUnitSystem(u)}
+            >
+              {u === "metric" ? "Metric (mm / gsm)" : 'Imperial (in / lb)'}
+            </Button>
+          ))}
+        </div>
       </div>
+      <p className="text-xs text-muted-foreground -mt-4">
+        Sizes, paper stocks and finishing are kept as two separate lists. Print
+        attributes are shared by both. Tenants and branches only ever see the list
+        that matches their measurement system.
+      </p>
+
 
       {/* ---------- Sizes ---------- */}
       <Card>
