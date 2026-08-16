@@ -109,7 +109,7 @@ export function useMeasurementUnit(): MeasurementUnitResult {
   return {
     unit,
     preference,
-    loading: loading || regionLoading,
+    loading: loading || regionLoading || branchLocaleLoading,
     setOverride,
     fmtSize: useCallback((w: number, h: number) => formatSize(w, h, unit), [unit]),
     fmtSizeWithName: useCallback(
