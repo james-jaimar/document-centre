@@ -7198,6 +7198,10 @@ export type Database = {
         Args: { _branch_id: string }
         Returns: boolean
       }
+      catalog_unit_twin_code: {
+        Args: { p_catalog: string; p_code: string; p_unit: string }
+        Returns: string
+      }
       claim_email_batch: {
         Args: {
           p_batch_size?: number
