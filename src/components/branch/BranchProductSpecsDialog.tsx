@@ -25,7 +25,10 @@ import {
   isStructuredValues,
   type StructuredOptionValue,
 } from "@/lib/productOptionTypes";
+import { useCatalogUnitSystem, twinCodeLookup } from "@/hooks/useCatalogUnitSystem";
+import { formatSize } from "@/lib/units";
 import { toast } from "sonner";
+
 
 interface Props {
   open: boolean;
@@ -43,8 +46,9 @@ export default function BranchProductSpecsDialog({
   productFamilyName,
 }: Props) {
   // -------- New master-catalogue model --------
+  const { unitSystem } = useCatalogUnitSystem(null, branchId);
   const { data: links = [] } = useProductCatalogLinks(productFamilyId);
-  const { data: sizes = [] } = useCatalogSizes();
+  const { data: sizes = [] } = useCatalogSizes({ unitSystem });
   const { data: printAttrs = [] } = useCatalogPrintAttrs();
   const { data: catalogOverrides = [] } = useBranchCatalogOverrides(branchId);
   const setCatalogOverride = useSetBranchCatalogOverride();
@@ -57,7 +61,9 @@ export default function BranchProductSpecsDialog({
     return m;
   }, [catalogOverrides]);
 
-  const sizeByCode = useMemo(() => new Map(sizes.map((s) => [s.code, s])), [sizes]);
+  // Master links are authored in metric; map them onto the branch's unit list.
+  const sizeByCode = useMemo(() => twinCodeLookup(sizes as any[]), [sizes]);
+
   const attrByKey = useMemo(
     () => new Map(printAttrs.map((p) => [`${p.attribute}::${p.code}`, p])),
     [printAttrs],
