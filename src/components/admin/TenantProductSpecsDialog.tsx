@@ -44,11 +44,12 @@ export default function TenantProductSpecsDialog({
   productFamilyId,
   productFamilyName,
 }: Props) {
+  const { unitSystem } = useCatalogUnitSystem(tenantId);
   const { data: links = [] } = useProductCatalogLinks(productFamilyId);
-  const { data: sizes = [] } = useCatalogSizes();
+  const { data: sizes = [] } = useCatalogSizes({ unitSystem });
   const { data: printAttrs = [] } = useCatalogPrintAttrs();
-  const { data: papers = [] } = useCatalogPapers();
-  const { data: finishing = [] } = useCatalogFinishing();
+  const { data: papers = [] } = useCatalogPapers({ unitSystem });
+  const { data: finishing = [] } = useCatalogFinishing({ unitSystem });
   const { data: overrides = [] } = useTenantCatalogOverrides(tenantId);
   const setOverride = useSetTenantCatalogOverride();
 
@@ -60,13 +61,15 @@ export default function TenantProductSpecsDialog({
     return m;
   }, [overrides]);
 
-  const sizeByCode = useMemo(() => new Map(sizes.map((s) => [s.code, s])), [sizes]);
+  // Master links are authored in metric; map them onto the active unit list.
+  const sizeByCode = useMemo(() => twinCodeLookup(sizes as any[]), [sizes]);
   const attrByKey = useMemo(
     () => new Map(printAttrs.map((p) => [`${p.attribute}::${p.code}`, p])),
     [printAttrs],
   );
-  const paperByCode = useMemo(() => new Map(papers.map((p) => [p.code, p])), [papers]);
-  const finishByCode = useMemo(() => new Map(finishing.map((f) => [f.code, f])), [finishing]);
+  const paperByCode = useMemo(() => twinCodeLookup(papers as any[]), [papers]);
+  const finishByCode = useMemo(() => twinCodeLookup(finishing as any[]), [finishing]);
+
 
   const linkedSizes = useMemo(
     () =>
