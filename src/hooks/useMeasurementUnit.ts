@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useActiveBranchLocale } from "@/hooks/useBranchLocale";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+
 import {
   formatLength,
   formatSize,
