@@ -14,10 +14,11 @@ export function useCatalogUnitSystem(
 ) {
   const q = useQuery({
     queryKey: ["catalog_unit_system", tenantId ?? null, branchId ?? null],
-    enabled: !!tenantId,
+    enabled: !!(tenantId || branchId),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("resolve_catalog_unit_system", {
-        p_tenant_id: tenantId,
+        p_tenant_id: tenantId ?? null,
+
         p_branch_id: branchId ?? null,
       });
       if (error) throw error;
