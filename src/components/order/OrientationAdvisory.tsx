@@ -37,6 +37,7 @@ export default function OrientationAdvisory({
   isRotating = false,
   mode = "to-landscape",
 }: OrientationAdvisoryProps) {
+  const { fmtSize } = useMeasurementUnit();
   const toPortrait = mode === "to-portrait";
 
   const title = toPortrait ? "Landscape Document Detected" : "Portrait Document Detected";
