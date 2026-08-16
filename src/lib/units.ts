@@ -205,3 +205,25 @@ export function localisePaperLabel(
     unit,
   );
 }
+
+
+/**
+ * Localise any catalogue/display label for the active unit system:
+ *  - "210 × 297mm" → `8.27 × 11.69"`
+ *  - "170gsm"      → "115 lb Text"
+ *  - UK spelling   → US spelling
+ * Metric returns the label untouched.
+ */
+export function localiseLabel(
+  label: string,
+  unit: UnitSystem,
+  category?: string | null,
+): string {
+  if (unit !== "imperial" || !label) return label;
+  const withSizes = label.replace(
+    /(\d+(?:[.,]\d+)?)\s*[x×X]\s*(\d+(?:[.,]\d+)?)\s*mm/g,
+    (_m, w, h) =>
+      formatSize(Number(String(w).replace(",", ".")), Number(String(h).replace(",", ".")), "imperial"),
+  );
+  return localisePaperLabel(withSizes, unit, category);
+}

@@ -17,6 +17,7 @@ import {
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPriceDelta } from "@/lib/formatCurrency";
 import { humaniseSlug } from "@/lib/utils";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 
 type ProductOption = Tables<"product_options">;
 
@@ -37,6 +38,7 @@ export default function OptionSelector({
   suppressPriceDelta,
 }: OptionSelectorProps) {
   const { region } = useRegionalPricing();
+  const { fmtLabel } = useMeasurementUnit();
   const currency = region?.currency_code ?? "ZAR";
   const values = option.values;
 
@@ -83,7 +85,7 @@ export default function OptionSelector({
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full">
         <SelectValue placeholder={`Select ${option.name}`}>
-          {selectedValue?.label ?? humaniseSlug(value)}
+          {fmtLabel(selectedValue?.label ?? humaniseSlug(value))}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
@@ -91,7 +93,7 @@ export default function OptionSelector({
           // No grouping needed
           groups["General"].map((v) => (
             <SelectItem key={v.slug} value={v.slug}>
-              {v.label}
+              {fmtLabel(v.label)}
               {formatPrice(v) && (
                 <span className="text-muted-foreground text-xs ml-1">
                   {formatPrice(v)}
@@ -103,11 +105,11 @@ export default function OptionSelector({
           groupNames.map((groupName) => (
             <SelectGroup key={groupName}>
               <SelectLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {groupName}
+                {fmtLabel(groupName)}
               </SelectLabel>
               {groups[groupName].map((v) => (
                 <SelectItem key={v.slug} value={v.slug}>
-                  {v.label}
+                  {fmtLabel(v.label)}
                   {formatPrice(v) && (
                     <span className="text-muted-foreground text-xs ml-1">
                       {formatPrice(v)}

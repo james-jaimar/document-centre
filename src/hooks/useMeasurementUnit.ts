@@ -6,6 +6,7 @@ import {
   formatLength,
   formatSize,
   formatSizeWithName,
+  localiseLabel,
   localisePaperLabel,
   resolveUnitSystem,
   term,
@@ -33,6 +34,8 @@ export interface MeasurementUnitResult {
   fmtLength: (mm: number) => string;
   /** Rewrites gsm tokens + UK spelling inside a catalogue label. */
   fmtPaperLabel: (label: string, category?: string | null) => string;
+  /** Rewrites mm sizes, gsm weights and UK spelling inside any label. */
+  fmtLabel: (label: string, category?: string | null) => string;
   t: (text: string) => string;
 }
 
@@ -106,6 +109,10 @@ export function useMeasurementUnit(): MeasurementUnitResult {
       [unit],
     ),
     fmtLength: useCallback((mm: number) => formatLength(mm, unit), [unit]),
+    fmtLabel: useCallback(
+      (label: string, category?: string | null) => localiseLabel(label, unit, category),
+      [unit],
+    ),
     fmtPaperLabel: useCallback(
       (label: string, category?: string | null) => localisePaperLabel(label, unit, category),
       [unit],
