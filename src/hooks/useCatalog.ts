@@ -38,10 +38,14 @@ async function deleteByIdChecked(table: string, id: string) {
 
 
 export type CatalogScope = "master" | "tenant" | "branch";
+export type CatalogUnitSystem = "metric" | "imperial";
 export interface CatalogScopeArgs {
   scope?: CatalogScope;
   tenantId?: string | null;
   branchId?: string | null;
+  /** Restricts size / paper / finishing lists to one measurement system.
+   *  Print attributes are unit-agnostic and ignore this. */
+  unitSystem?: CatalogUnitSystem | null;
 }
 
 /** Apply scope filtering. Default scope=master (no tenant/branch). */
@@ -59,9 +63,15 @@ export function applyCatalogScope(query: any, args: CatalogScopeArgs = {}) {
   return query;
 }
 
-function scopeKey(args: CatalogScopeArgs = {}) {
-  return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null];
+/** Adds the unit filter on tables that carry `unit_system`. */
+function applyUnitFilter(query: any, args: CatalogScopeArgs = {}) {
+  return args.unitSystem ? query.eq("unit_system", args.unitSystem) : query;
 }
+
+function scopeKey(args: CatalogScopeArgs = {}) {
+  return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null, args.unitSystem ?? null];
+}
+
 
 /** Manual update-or-insert keyed by (scope, tenant, branch, code).
  * Used in place of `.upsert(onConflict: "code")` because the scoped uniqueness
