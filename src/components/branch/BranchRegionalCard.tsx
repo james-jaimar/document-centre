@@ -243,7 +243,15 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
                 <strong>{effectiveUnit === "imperial" ? "imperial" : "metric"}</strong> master
                 catalogue — sizes, paper stocks and finishing. Print attributes are shared.
               </p>
+              {unit !== savedUnit && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                  Saving this change rebuilds the branch catalogue from the tenant against the{" "}
+                  {effectiveUnit} master list. Branch-level price edits on sizes, papers and
+                  finishing will be replaced.
+                </p>
+              )}
             </div>
+
 
             <div className="space-y-2">
               <Label>Default currency</Label>
