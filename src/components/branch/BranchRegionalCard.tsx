@@ -81,7 +81,10 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
     if (!data) return;
     const b = data.branch;
     const rawUnit = String(b["regional.measurement_unit"] ?? "").replace(/"/g, "").toLowerCase();
-    setUnit(rawUnit === "metric" || rawUnit === "imperial" ? (rawUnit as UnitChoice) : "inherit");
+    const nextUnit: UnitChoice =
+      rawUnit === "metric" || rawUnit === "imperial" ? (rawUnit as UnitChoice) : "inherit";
+    setUnit(nextUnit);
+    setSavedUnit(nextUnit);
     setDefaultCurrency(
       String(b["financial.default_currency_code"] ?? "").replace(/"/g, "").toUpperCase(),
     );
