@@ -31,6 +31,10 @@ type UnitChoice = "inherit" | "metric" | "imperial";
 export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Props) {
   const qc = useQueryClient();
   const [unit, setUnit] = useState<UnitChoice>("inherit");
+  // The unit system the branch catalogue was last cloned against. Changing it
+  // means every branch size / paper / finishing row is from the wrong master
+  // list, so the catalogue has to be rebuilt.
+  const [savedUnit, setSavedUnit] = useState<UnitChoice>("inherit");
   const [defaultCurrency, setDefaultCurrency] = useState<string>("");
   const [accepted, setAccepted] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -77,7 +81,10 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
     if (!data) return;
     const b = data.branch;
     const rawUnit = String(b["regional.measurement_unit"] ?? "").replace(/"/g, "").toLowerCase();
-    setUnit(rawUnit === "metric" || rawUnit === "imperial" ? (rawUnit as UnitChoice) : "inherit");
+    const nextUnit: UnitChoice =
+      rawUnit === "metric" || rawUnit === "imperial" ? (rawUnit as UnitChoice) : "inherit";
+    setUnit(nextUnit);
+    setSavedUnit(nextUnit);
     setDefaultCurrency(
       String(b["financial.default_currency_code"] ?? "").replace(/"/g, "").toUpperCase(),
     );
@@ -157,11 +164,42 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
       }
 
       setAccepted(list);
-      toast.success("Branch locale saved");
+
+      // Switching the measurement system invalidates the whole branch
+      // catalogue — rebuild it from the tenant against the new master list.
+      const prevEffective =
+        savedUnit === "inherit" ? (tenantUnit === "imperial" ? "imperial" : "metric") : savedUnit;
+      if (prevEffective !== effectiveUnit) {
+        const { error: resyncError } = await supabase.rpc(
+          "resync_branch_catalog_from_tenant" as any,
+          { p_branch_id: branchId },
+        );
+        if (resyncError) {
+          toast.error(`Locale saved, but the catalogue rebuild failed: ${resyncError.message}`);
+        } else {
+          toast.success(
+            `Branch locale saved — catalogue rebuilt from the ${effectiveUnit} master list`,
+          );
+        }
+      } else {
+        toast.success("Branch locale saved");
+      }
+      setSavedUnit(unit);
       qc.invalidateQueries({ queryKey: ["branch_regional_settings", tenantId, branchId] });
       qc.invalidateQueries({ queryKey: ["branch_locale", branchId] });
       qc.invalidateQueries({ queryKey: ["catalog_unit_system"] });
       qc.invalidateQueries({ queryKey: ["resolve_product_options"] });
+      for (const key of [
+        "catalog_sizes",
+        "catalog_papers",
+        "catalog_finishing",
+        "catalog_print_attrs",
+        "catalog_paper_prices",
+        "catalog_finishing_prices",
+        "product_catalog_links",
+      ]) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -205,7 +243,15 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
                 <strong>{effectiveUnit === "imperial" ? "imperial" : "metric"}</strong> master
                 catalogue — sizes, paper stocks and finishing. Print attributes are shared.
               </p>
+              {unit !== savedUnit && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                  Saving this change rebuilds the branch catalogue from the tenant against the{" "}
+                  {effectiveUnit} master list. Branch-level price edits on sizes, papers and
+                  finishing will be replaced.
+                </p>
+              )}
             </div>
+
 
             <div className="space-y-2">
               <Label>Default currency</Label>

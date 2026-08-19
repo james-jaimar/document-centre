@@ -239,10 +239,12 @@ export function FinancialTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Ruler className="h-5 w-5" /> Measurement Units</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Ruler className="h-5 w-5" /> Measurement Units &amp; Locale</CardTitle>
           <CardDescription>
-            How sizes, bleed and paper weights are displayed to customers. Millimetres are
-            always used internally — this only changes what shoppers see.
+            The default measurement system for this tenant, and therefore which master
+            catalogue (metric or imperial) your branches are cloned from. Any branch can
+            override this under Branches → the branch → Regional, so you can run a metric
+            branch and an imperial branch side by side.
           </CardDescription>
         </CardHeader>
         <CardContent className="max-w-md space-y-2">
@@ -259,7 +261,9 @@ export function FinancialTab() {
           </Select>
           <p className="text-xs text-muted-foreground">
             Automatic switches to inches and pound stock weights for US and Canadian
-            storefront regions, and stays metric everywhere else.
+            storefront regions, and stays metric everywhere else. A branch that sets its
+            own measurement system ignores this setting entirely — its catalogue and its
+            labels follow the branch.
           </p>
         </CardContent>
       </Card>
