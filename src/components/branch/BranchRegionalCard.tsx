@@ -189,6 +189,17 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
       qc.invalidateQueries({ queryKey: ["branch_locale", branchId] });
       qc.invalidateQueries({ queryKey: ["catalog_unit_system"] });
       qc.invalidateQueries({ queryKey: ["resolve_product_options"] });
+      for (const key of [
+        "catalog_sizes",
+        "catalog_papers",
+        "catalog_finishing",
+        "catalog_print_attrs",
+        "catalog_paper_prices",
+        "catalog_finishing_prices",
+        "product_catalog_links",
+      ]) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
     } catch (e: any) {
       toast.error(e.message);
     } finally {
