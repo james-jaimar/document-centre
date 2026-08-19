@@ -164,7 +164,27 @@ export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Pro
       }
 
       setAccepted(list);
-      toast.success("Branch locale saved");
+
+      // Switching the measurement system invalidates the whole branch
+      // catalogue — rebuild it from the tenant against the new master list.
+      const prevEffective =
+        savedUnit === "inherit" ? (tenantUnit === "imperial" ? "imperial" : "metric") : savedUnit;
+      if (prevEffective !== effectiveUnit) {
+        const { error: resyncError } = await supabase.rpc(
+          "resync_branch_catalog_from_tenant" as any,
+          { p_branch_id: branchId },
+        );
+        if (resyncError) {
+          toast.error(`Locale saved, but the catalogue rebuild failed: ${resyncError.message}`);
+        } else {
+          toast.success(
+            `Branch locale saved — catalogue rebuilt from the ${effectiveUnit} master list`,
+          );
+        }
+      } else {
+        toast.success("Branch locale saved");
+      }
+      setSavedUnit(unit);
       qc.invalidateQueries({ queryKey: ["branch_regional_settings", tenantId, branchId] });
       qc.invalidateQueries({ queryKey: ["branch_locale", branchId] });
       qc.invalidateQueries({ queryKey: ["catalog_unit_system"] });
