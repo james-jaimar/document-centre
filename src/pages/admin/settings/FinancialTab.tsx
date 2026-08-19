@@ -261,7 +261,9 @@ export function FinancialTab() {
           </Select>
           <p className="text-xs text-muted-foreground">
             Automatic switches to inches and pound stock weights for US and Canadian
-            storefront regions, and stays metric everywhere else.
+            storefront regions, and stays metric everywhere else. A branch that sets its
+            own measurement system ignores this setting entirely — its catalogue and its
+            labels follow the branch.
           </p>
         </CardContent>
       </Card>
