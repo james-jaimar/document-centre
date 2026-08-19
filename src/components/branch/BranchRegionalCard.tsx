@@ -31,6 +31,10 @@ type UnitChoice = "inherit" | "metric" | "imperial";
 export function BranchRegionalCard({ tenantId, branchId, canManage = true }: Props) {
   const qc = useQueryClient();
   const [unit, setUnit] = useState<UnitChoice>("inherit");
+  // The unit system the branch catalogue was last cloned against. Changing it
+  // means every branch size / paper / finishing row is from the wrong master
+  // list, so the catalogue has to be rebuilt.
+  const [savedUnit, setSavedUnit] = useState<UnitChoice>("inherit");
   const [defaultCurrency, setDefaultCurrency] = useState<string>("");
   const [accepted, setAccepted] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
