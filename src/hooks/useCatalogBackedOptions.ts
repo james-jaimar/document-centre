@@ -1,8 +1,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useCatalogUnitSystem } from "@/hooks/useCatalogUnitSystem";
 import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
 import { useResolvedCatalogOptions } from "@/hooks/useResolvedCatalogOptions";
+
 import {
   isStructuredValues,
   type StructuredOptionValue,
@@ -43,16 +46,23 @@ export function useCatalogBackedOptions(
   productFamilyId: string | null,
   branchId: string | null,
 ) {
+  const { tenantId } = useTenantContext();
+  // Branch overrides tenant — mirrors the DB helper `resolve_catalog_unit_system`.
+  const { unitSystem, loading: unitLoading } = useCatalogUnitSystem(tenantId, branchId);
   const legacy = useResolvedProductOptions(productFamilyId, branchId);
   const resolved = useResolvedCatalogOptions(productFamilyId, branchId);
 
+  // Every master query below is scoped to the storefront's measurement
+  // system so metric and imperial rows never appear in the same dropdown.
   const papersQ = useQuery({
-    queryKey: ["catalog_papers", "master", "active"],
+    queryKey: ["catalog_papers", "master", "active", unitSystem],
+    enabled: !unitLoading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_papers" as any)
         .select("*")
         .eq("scope_type", "master")
+        .eq("unit_system", unitSystem)
         .eq("is_active", true);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -60,12 +70,14 @@ export function useCatalogBackedOptions(
   });
 
   const sizesQ = useQuery({
-    queryKey: ["catalog_sizes", "master", "active"],
+    queryKey: ["catalog_sizes", "master", "active", unitSystem],
+    enabled: !unitLoading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_sizes" as any)
         .select("*")
         .eq("scope_type", "master")
+        .eq("unit_system", unitSystem)
         .eq("is_active", true);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -76,12 +88,14 @@ export function useCatalogBackedOptions(
   // authoritative for customer visibility; we still need to find master rows
   // that are globally inactive so we can enrich product-enabled values.
   const finishingQ = useQuery({
-    queryKey: ["catalog_finishing", "master", "all"],
+    queryKey: ["catalog_finishing", "master", "all", unitSystem],
+    enabled: !unitLoading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_finishing" as any)
         .select("*")
-        .eq("scope_type", "master");
+        .eq("scope_type", "master")
+        .eq("unit_system", unitSystem);
       if (error) throw error;
       return (data ?? []) as any[];
     },
@@ -101,6 +115,7 @@ export function useCatalogBackedOptions(
   });
 
 
+  // Print attributes (colour mode, sides, orientation) are unit agnostic.
   const printAttrsQ = useQuery({
     queryKey: ["catalog_print_attrs", "master", "all"],
     queryFn: async () => {
@@ -112,6 +127,7 @@ export function useCatalogBackedOptions(
       return (data ?? []) as any[];
     },
   });
+
 
   const data = useMemo(() => {
     const opts = legacy.data ?? [];
@@ -164,7 +180,8 @@ export function useCatalogBackedOptions(
           const saved = isStructured(opt.values) ? opt.values : [];
           const next =
             saved.length > 0
-              ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+              ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices, { dropUnmatched: true })
+
               : finishingRowsToValues(masterFinishing, category, masterFinishingPrices);
           if (next.length > 0) {
             return {
@@ -186,7 +203,7 @@ export function useCatalogBackedOptions(
         const isCover = isCoverPaperOptionName(name);
         const saved = isStructured(opt.values) ? opt.values : [];
         if (saved.length > 0 && masterPapers.length > 0) {
-          const next = enrichPaperValuesFromMaster(saved, masterPapers);
+          const next = enrichPaperValuesFromMaster(saved, masterPapers, { dropUnmatched: true });
           if (next.length > 0) {
             return { ...opt, values: preserveDefault(opt.values, next) as any };
           }
@@ -209,7 +226,7 @@ export function useCatalogBackedOptions(
       if (source === "catalog.sizes") {
         const saved = isStructured(opt.values) ? opt.values : [];
         if (saved.length > 0 && masterSizes.length > 0) {
-          const next = enrichSizeValuesFromMaster(saved, masterSizes);
+          const next = enrichSizeValuesFromMaster(saved, masterSizes, { dropUnmatched: true });
           if (next.length > 0) {
             return { ...opt, values: preserveDefault(opt.values, next) as any };
           }
@@ -250,7 +267,7 @@ export function useCatalogBackedOptions(
       if (inferredCategory && masterFinishing.length > 0) {
         const saved = isStructured(opt.values) ? opt.values : [];
         const next = saved.length > 0
-          ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+          ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices, { dropUnmatched: true })
           : finishingRowsToValues(masterFinishing, inferredCategory, masterFinishingPrices);
 
         if (next.length > 0) {
@@ -283,7 +300,9 @@ export function useCatalogBackedOptions(
   return {
     data,
     isLoading:
+      unitLoading ||
       legacy.isLoading ||
+
       resolved.isLoading ||
       papersQ.isLoading ||
       sizesQ.isLoading ||

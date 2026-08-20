@@ -12,6 +12,34 @@
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ResolvedCatalogOption } from "@/hooks/useResolvedCatalogOptions";
 
+/**
+ * Options for the `enrich*FromMaster` helpers.
+ * `dropUnmatched` is set when the master list handed in is scoped to a single
+ * measurement system: a saved value that has no row (and no unit twin) in that
+ * system belongs to the other catalogue and must not reach the customer.
+ */
+export interface EnrichOptions {
+  dropUnmatched?: boolean;
+}
+
+/**
+ * Master rows keyed by their own code AND by their `metadata.unit_twin`, so a
+ * product link authored in one measurement system resolves to the equivalent
+ * row in the other (e.g. `250gsm-silk` → `100lb-silk`).
+ */
+function codeIndex<T extends { code: string; metadata?: Record<string, any> | null }>(
+  rows: T[],
+): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const r of rows) m.set(r.code, r);
+  for (const r of rows) {
+    const twin = r.metadata?.unit_twin;
+    if (typeof twin === "string" && !m.has(twin)) m.set(twin, r);
+  }
+  return m;
+}
+
+
 type CatalogPaperRow = {
   id: string;
   code: string;
@@ -328,8 +356,10 @@ export function enrichFinishingValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogFinishingRow[],
   priceRows?: CatalogFinishingPriceRow[],
+  opts?: EnrichOptions,
 ): StructuredOptionValue[] {
-  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const byCode = codeIndex(masterRows);
+
   const priceMap = pricesByFinishingId(priceRows);
   const enriched: StructuredOptionValue[] = [];
 
@@ -347,9 +377,13 @@ export function enrichFinishingValuesFromMaster(
     // the admin's curated list. The admin editor flags the orphan so it
     // can be cleaned up.
     if (!master) {
+      // With a unit-scoped master list an unmatched code belongs to the other
+      // measurement system — never show it on this storefront.
+      if (opts?.dropUnmatched) continue;
       enriched.push({ ...v, is_active: true });
       continue;
     }
+
 
 
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
@@ -552,8 +586,9 @@ export function resolvedRowsToSizeValues(
 export function enrichPaperValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogPaperRow[],
+  opts?: EnrichOptions,
 ): StructuredOptionValue[] {
-  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const byCode = codeIndex(masterRows);
   const enriched: StructuredOptionValue[] = [];
 
   for (const v of savedValues) {
@@ -568,12 +603,14 @@ export function enrichPaperValuesFromMaster(
       if (stripped !== code) master = byCode.get(stripped);
     }
     if (!master) {
-      // Keep the saved value visible (with its baked-in price/label) so the
-      // customer dropdown matches the admin's curated list. The admin
-      // editor flags orphans for cleanup.
+      // Unit-scoped master list ⇒ this code is from the other measurement
+      // system and must be hidden. Otherwise keep the saved value visible
+      // so the customer dropdown matches the admin's curated list.
+      if (opts?.dropUnmatched) continue;
       enriched.push({ ...v, is_active: true });
       continue;
     }
+
 
 
     const pmeta = (master.metadata ?? {}) as Record<string, unknown>;
@@ -617,8 +654,9 @@ export function enrichPaperValuesFromMaster(
 export function enrichSizeValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogSizeRow[],
+  opts?: EnrichOptions,
 ): StructuredOptionValue[] {
-  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const byCode = codeIndex(masterRows);
   const enriched: StructuredOptionValue[] = [];
 
   for (const v of savedValues) {
@@ -627,9 +665,11 @@ export function enrichSizeValuesFromMaster(
     if (!code) continue;
     const master = byCode.get(code);
     if (!master) {
+      if (opts?.dropUnmatched) continue;
       enriched.push({ ...v, is_active: true });
       continue;
     }
+
 
 
     const w = master.width_mm ?? 0;
