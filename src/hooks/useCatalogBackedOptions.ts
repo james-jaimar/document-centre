@@ -43,16 +43,23 @@ export function useCatalogBackedOptions(
   productFamilyId: string | null,
   branchId: string | null,
 ) {
+  const { tenantId } = useTenantContext();
+  // Branch overrides tenant — mirrors the DB helper `resolve_catalog_unit_system`.
+  const { unitSystem, loading: unitLoading } = useCatalogUnitSystem(tenantId, branchId);
   const legacy = useResolvedProductOptions(productFamilyId, branchId);
   const resolved = useResolvedCatalogOptions(productFamilyId, branchId);
 
+  // Every master query below is scoped to the storefront's measurement
+  // system so metric and imperial rows never appear in the same dropdown.
   const papersQ = useQuery({
-    queryKey: ["catalog_papers", "master", "active"],
+    queryKey: ["catalog_papers", "master", "active", unitSystem],
+    enabled: !unitLoading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_papers" as any)
         .select("*")
         .eq("scope_type", "master")
+        .eq("unit_system", unitSystem)
         .eq("is_active", true);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -60,12 +67,14 @@ export function useCatalogBackedOptions(
   });
 
   const sizesQ = useQuery({
-    queryKey: ["catalog_sizes", "master", "active"],
+    queryKey: ["catalog_sizes", "master", "active", unitSystem],
+    enabled: !unitLoading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_sizes" as any)
         .select("*")
         .eq("scope_type", "master")
+        .eq("unit_system", unitSystem)
         .eq("is_active", true);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -76,12 +85,14 @@ export function useCatalogBackedOptions(
   // authoritative for customer visibility; we still need to find master rows
   // that are globally inactive so we can enrich product-enabled values.
   const finishingQ = useQuery({
-    queryKey: ["catalog_finishing", "master", "all"],
+    queryKey: ["catalog_finishing", "master", "all", unitSystem],
+    enabled: !unitLoading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_finishing" as any)
         .select("*")
-        .eq("scope_type", "master");
+        .eq("scope_type", "master")
+        .eq("unit_system", unitSystem);
       if (error) throw error;
       return (data ?? []) as any[];
     },
@@ -101,6 +112,7 @@ export function useCatalogBackedOptions(
   });
 
 
+  // Print attributes (colour mode, sides, orientation) are unit agnostic.
   const printAttrsQ = useQuery({
     queryKey: ["catalog_print_attrs", "master", "all"],
     queryFn: async () => {
@@ -112,6 +124,7 @@ export function useCatalogBackedOptions(
       return (data ?? []) as any[];
     },
   });
+
 
   const data = useMemo(() => {
     const opts = legacy.data ?? [];
