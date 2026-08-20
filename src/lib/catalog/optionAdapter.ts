@@ -586,8 +586,9 @@ export function resolvedRowsToSizeValues(
 export function enrichPaperValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogPaperRow[],
+  opts?: EnrichOptions,
 ): StructuredOptionValue[] {
-  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const byCode = codeIndex(masterRows);
   const enriched: StructuredOptionValue[] = [];
 
   for (const v of savedValues) {
@@ -602,12 +603,14 @@ export function enrichPaperValuesFromMaster(
       if (stripped !== code) master = byCode.get(stripped);
     }
     if (!master) {
-      // Keep the saved value visible (with its baked-in price/label) so the
-      // customer dropdown matches the admin's curated list. The admin
-      // editor flags orphans for cleanup.
+      // Unit-scoped master list ⇒ this code is from the other measurement
+      // system and must be hidden. Otherwise keep the saved value visible
+      // so the customer dropdown matches the admin's curated list.
+      if (opts?.dropUnmatched) continue;
       enriched.push({ ...v, is_active: true });
       continue;
     }
+
 
 
     const pmeta = (master.metadata ?? {}) as Record<string, unknown>;
