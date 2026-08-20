@@ -226,7 +226,7 @@ export function useCatalogBackedOptions(
       if (source === "catalog.sizes") {
         const saved = isStructured(opt.values) ? opt.values : [];
         if (saved.length > 0 && masterSizes.length > 0) {
-          const next = enrichSizeValuesFromMaster(saved, masterSizes);
+          const next = enrichSizeValuesFromMaster(saved, masterSizes, { dropUnmatched: true });
           if (next.length > 0) {
             return { ...opt, values: preserveDefault(opt.values, next) as any };
           }
