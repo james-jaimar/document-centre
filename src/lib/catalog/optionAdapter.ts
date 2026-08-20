@@ -12,6 +12,34 @@
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ResolvedCatalogOption } from "@/hooks/useResolvedCatalogOptions";
 
+/**
+ * Options for the `enrich*FromMaster` helpers.
+ * `dropUnmatched` is set when the master list handed in is scoped to a single
+ * measurement system: a saved value that has no row (and no unit twin) in that
+ * system belongs to the other catalogue and must not reach the customer.
+ */
+export interface EnrichOptions {
+  dropUnmatched?: boolean;
+}
+
+/**
+ * Master rows keyed by their own code AND by their `metadata.unit_twin`, so a
+ * product link authored in one measurement system resolves to the equivalent
+ * row in the other (e.g. `250gsm-silk` → `100lb-silk`).
+ */
+function codeIndex<T extends { code: string; metadata?: Record<string, any> | null }>(
+  rows: T[],
+): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const r of rows) m.set(r.code, r);
+  for (const r of rows) {
+    const twin = r.metadata?.unit_twin;
+    if (typeof twin === "string" && !m.has(twin)) m.set(twin, r);
+  }
+  return m;
+}
+
+
 type CatalogPaperRow = {
   id: string;
   code: string;
