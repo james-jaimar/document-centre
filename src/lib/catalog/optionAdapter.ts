@@ -377,9 +377,13 @@ export function enrichFinishingValuesFromMaster(
     // the admin's curated list. The admin editor flags the orphan so it
     // can be cleaned up.
     if (!master) {
+      // With a unit-scoped master list an unmatched code belongs to the other
+      // measurement system — never show it on this storefront.
+      if (opts?.dropUnmatched) continue;
       enriched.push({ ...v, is_active: true });
       continue;
     }
+
 
 
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
