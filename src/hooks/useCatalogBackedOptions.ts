@@ -267,7 +267,7 @@ export function useCatalogBackedOptions(
       if (inferredCategory && masterFinishing.length > 0) {
         const saved = isStructured(opt.values) ? opt.values : [];
         const next = saved.length > 0
-          ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+          ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices, { dropUnmatched: true })
           : finishingRowsToValues(masterFinishing, inferredCategory, masterFinishingPrices);
 
         if (next.length > 0) {
