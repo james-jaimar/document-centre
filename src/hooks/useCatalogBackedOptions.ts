@@ -180,7 +180,8 @@ export function useCatalogBackedOptions(
           const saved = isStructured(opt.values) ? opt.values : [];
           const next =
             saved.length > 0
-              ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+              ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices, { dropUnmatched: true })
+
               : finishingRowsToValues(masterFinishing, category, masterFinishingPrices);
           if (next.length > 0) {
             return {
