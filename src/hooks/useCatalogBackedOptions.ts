@@ -1,8 +1,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useCatalogUnitSystem } from "@/hooks/useCatalogUnitSystem";
 import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
 import { useResolvedCatalogOptions } from "@/hooks/useResolvedCatalogOptions";
+
 import {
   isStructuredValues,
   type StructuredOptionValue,
