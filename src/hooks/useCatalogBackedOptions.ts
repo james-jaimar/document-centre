@@ -300,7 +300,9 @@ export function useCatalogBackedOptions(
   return {
     data,
     isLoading:
+      unitLoading ||
       legacy.isLoading ||
+
       resolved.isLoading ||
       papersQ.isLoading ||
       sizesQ.isLoading ||
