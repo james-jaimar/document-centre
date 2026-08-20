@@ -356,8 +356,10 @@ export function enrichFinishingValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogFinishingRow[],
   priceRows?: CatalogFinishingPriceRow[],
+  opts?: EnrichOptions,
 ): StructuredOptionValue[] {
-  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const byCode = codeIndex(masterRows);
+
   const priceMap = pricesByFinishingId(priceRows);
   const enriched: StructuredOptionValue[] = [];
 
