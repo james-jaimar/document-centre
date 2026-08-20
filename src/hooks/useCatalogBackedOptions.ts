@@ -203,7 +203,7 @@ export function useCatalogBackedOptions(
         const isCover = isCoverPaperOptionName(name);
         const saved = isStructured(opt.values) ? opt.values : [];
         if (saved.length > 0 && masterPapers.length > 0) {
-          const next = enrichPaperValuesFromMaster(saved, masterPapers);
+          const next = enrichPaperValuesFromMaster(saved, masterPapers, { dropUnmatched: true });
           if (next.length > 0) {
             return { ...opt, values: preserveDefault(opt.values, next) as any };
           }
