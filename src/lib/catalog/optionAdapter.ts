@@ -654,8 +654,9 @@ export function enrichPaperValuesFromMaster(
 export function enrichSizeValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogSizeRow[],
+  opts?: EnrichOptions,
 ): StructuredOptionValue[] {
-  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const byCode = codeIndex(masterRows);
   const enriched: StructuredOptionValue[] = [];
 
   for (const v of savedValues) {
@@ -664,9 +665,11 @@ export function enrichSizeValuesFromMaster(
     if (!code) continue;
     const master = byCode.get(code);
     if (!master) {
+      if (opts?.dropUnmatched) continue;
       enriched.push({ ...v, is_active: true });
       continue;
     }
+
 
 
     const w = master.width_mm ?? 0;
