@@ -478,6 +478,9 @@ export interface ProductCatalogLink {
   item_code: string;
   sort_order: number;
   is_default: boolean;
+  /** Sizes are authored per measurement system; null = shared (print attrs,
+   *  metric-canonical papers/finishing which twin-translate at runtime). */
+  unit_system: CatalogUnitSystem | null;
 }
 
 export function useProductCatalogLinks(productFamilyId: string | null) {
@@ -508,21 +511,27 @@ export function useSetProductCatalogLink() {
       enabled: boolean;
       sort_order?: number;
       is_default?: boolean;
+      /** Only meaningful for size links; other catalogs stay null (shared). */
+      unit_system?: CatalogUnitSystem | null;
     }) => {
       const { product_family_id, catalog, item_code, enabled, sort_order, is_default } = input;
       const sub_attribute = input.sub_attribute ?? "";
+      const unit_system = input.unit_system ?? null;
+      const withUnit = (q: any) =>
+        unit_system ? q.eq("unit_system", unit_system) : q.is("unit_system", null);
       if (enabled) {
-        const { data: existing, error: findErr } = await supabase
-          .from("product_catalog_links" as any)
-          .select("id")
-          .eq("product_family_id", product_family_id)
-          .eq("catalog", catalog)
-          .eq("sub_attribute", sub_attribute)
-          .eq("item_code", item_code)
-          .maybeSingle();
+        const { data: existing, error: findErr } = await withUnit(
+          supabase
+            .from("product_catalog_links" as any)
+            .select("id")
+            .eq("product_family_id", product_family_id)
+            .eq("catalog", catalog)
+            .eq("sub_attribute", sub_attribute)
+            .eq("item_code", item_code),
+        ).maybeSingle();
         if (findErr) throw findErr;
         const existingId = (existing as any)?.id as string | undefined;
-        const payload = { product_family_id, catalog, sub_attribute, item_code, sort_order: sort_order ?? 0, is_default: is_default ?? false };
+        const payload = { product_family_id, catalog, sub_attribute, item_code, unit_system, sort_order: sort_order ?? 0, is_default: is_default ?? false };
         if (existingId) {
           const { error } = await supabase.from("product_catalog_links" as any).update(payload).eq("id", existingId);
           if (error) throw error;
@@ -531,13 +540,15 @@ export function useSetProductCatalogLink() {
           if (error) throw error;
         }
       } else {
-        const { error } = await supabase
-          .from("product_catalog_links" as any)
-          .delete()
-          .eq("product_family_id", product_family_id)
-          .eq("catalog", catalog)
-          .eq("item_code", item_code)
-          .eq("sub_attribute", sub_attribute);
+        const { error } = await withUnit(
+          supabase
+            .from("product_catalog_links" as any)
+            .delete()
+            .eq("product_family_id", product_family_id)
+            .eq("catalog", catalog)
+            .eq("item_code", item_code)
+            .eq("sub_attribute", sub_attribute),
+        );
         if (error) throw error;
       }
     },

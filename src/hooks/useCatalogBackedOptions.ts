@@ -162,7 +162,7 @@ export function useCatalogBackedOptions(
       const name = opt.name ?? "";
       const source = (opt as any).source as string | undefined;
       const sourceFilter = (opt as any).source_filter as
-        | { category?: string; attribute?: string }
+        | { category?: string; attribute?: string; categories?: string[] }
         | null
         | undefined;
 
@@ -207,6 +207,20 @@ export function useCatalogBackedOptions(
           if (next.length > 0) {
             return { ...opt, values: preserveDefault(opt.values, next) as any };
           }
+        }
+        // Optional category filter (e.g. only "text"/"cover" stocks for Bound
+        // Documents — keeps poster stocks out of the dropdown).
+        const categories = Array.isArray(sourceFilter?.categories)
+          ? sourceFilter!.categories!.map(String)
+          : [];
+        if (categories.length > 0) {
+          const keep = new Set(categories);
+          const pool = masterPapers.filter((p: any) => keep.has(p.category ?? ""));
+          const seed = paperRowsToValues(pool, { coverOnly: isCover });
+          if (seed.length > 0) {
+            return { ...opt, values: preserveDefault(opt.values, seed) as any };
+          }
+          return opt;
         }
         const seed = isCover
           ? allCoverPaperValues

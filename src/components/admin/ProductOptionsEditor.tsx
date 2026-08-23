@@ -12,6 +12,7 @@ import {
   useCatalogPapers,
   useCatalogFinishing,
   useCatalogPrintAttrs,
+  type CatalogUnitSystem,
 } from "@/hooks/useCatalog";
 import { useRateCardBusinessCards } from "@/hooks/useRateCard";
 
@@ -108,6 +109,9 @@ interface OptionFormData {
   finishingCategory: string;
   printAttribute: string;
   businessCardAxis: BusinessCardAxis | "";
+  /** Optional category filter for catalog.papers options (e.g. only "text"
+   *  and "cover" stocks for Bound Documents). Empty = all categories. */
+  paperCategories: string[];
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -119,6 +123,7 @@ const emptyOptionForm: OptionFormData = {
   finishingCategory: "",
   printAttribute: "",
   businessCardAxis: "",
+  paperCategories: [],
 };
 
 
@@ -312,12 +317,23 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   });
   const isBlocksFamily = family?.quantity_mode === "blocks";
 
-  // Live catalog data (used when source ≠ manual)
-  const { data: catSizes = [] } = useCatalogSizes();
-  const { data: catPapers = [] } = useCatalogPapers();
-  const { data: catFinishing = [] } = useCatalogFinishing();
+  // Metric / Imperial lens. The master catalogue is two parallel lists; the
+  // editor works on one at a time so the two measurement systems can never be
+  // mixed into a single option. Papers & finishing are saved against the
+  // metric-canonical code (imperial rows translate via metadata.unit_twin).
+  const [unitSystem, setUnitSystem] = useState<CatalogUnitSystem>("metric");
+
+  // Live catalog data (used when source ≠ manual) — scoped to the active lens.
+  const { data: catSizes = [] } = useCatalogSizes({ unitSystem });
+  const { data: catPapers = [] } = useCatalogPapers({ unitSystem });
+  const { data: catFinishing = [] } = useCatalogFinishing({ unitSystem });
   const { data: catPrintAttrs = [] } = useCatalogPrintAttrs();
   const { data: rcBusinessCards = [] } = useRateCardBusinessCards({ scope: "master" });
+
+  // Unscoped lists for the coverage panel (twin analysis across both units).
+  const { data: allPapers = [] } = useCatalogPapers();
+  const { data: allFinishing = [] } = useCatalogFinishing();
+  const { data: allSizes = [] } = useCatalogSizes();
 
 
   const finishingCategories = useMemo(
@@ -329,6 +345,53 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     () => Array.from(new Set(catPrintAttrs.map((p: any) => p.attribute))).sort(),
     [catPrintAttrs],
   );
+
+  const paperCategoryOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(catPapers.map((p: any) => p.category).filter(Boolean)),
+      ).sort() as string[],
+    [catPapers],
+  );
+
+  /** In the imperial lens, papers/finishing save against the metric-canonical
+   *  code (the imperial row's `metadata.unit_twin`) so one option works for
+   *  both measurement systems — the storefront translates back via the twin. */
+  const canonicalCode = (row: any): string =>
+    unitSystem === "imperial"
+      ? typeof row?.metadata?.unit_twin === "string" && row.metadata.unit_twin
+        ? row.metadata.unit_twin
+        : row.code
+      : row.code;
+
+  /** Twin coverage across the two master catalogues — surfaces rows that only
+   *  exist on one side so gaps are visible while configuring. */
+  const coverage = useMemo(() => {
+    const split = (rows: any[]) => ({
+      metric: rows.filter((r) => (r.unit_system ?? "metric") === "metric" && r.is_active),
+      imperial: rows.filter((r) => r.unit_system === "imperial" && r.is_active),
+    });
+    const twinsOf = (rows: any[]) =>
+      new Set(rows.map((r) => r?.metadata?.unit_twin).filter((t): t is string => typeof t === "string"));
+    const p = split(allPapers);
+    const f = split(allFinishing);
+    const s = split(allSizes);
+    const missingImperial = (metricRows: any[], imperialTwins: Set<string>) =>
+      metricRows.filter((r) => !imperialTwins.has(r.code)).map((r) => r.code);
+    return {
+      sizes: { metric: s.metric.length, imperial: s.imperial.length },
+      papers: {
+        metric: p.metric.length,
+        imperial: p.imperial.length,
+        metricOnly: missingImperial(p.metric, twinsOf(p.imperial)),
+      },
+      finishing: {
+        metric: f.metric.length,
+        imperial: f.imperial.length,
+        metricOnly: missingImperial(f.metric, twinsOf(f.imperial)),
+      },
+    };
+  }, [allPapers, allFinishing, allSizes]);
 
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<ProductOption | null>(null);
@@ -395,16 +458,28 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.papers") {
+      const catFilter =
+        form.paperCategories.length > 0 ? new Set(form.paperCategories) : null;
       const rows = (catPapers as any[])
         .filter((p) => p.is_active)
-        .filter((p) => mode === "seed" || byCode.has(p.code))
-        .map((p) =>
-          make(p.code, p.label ?? p.code, p.weight_gsm ? `${p.weight_gsm}gsm` : "Default", "per_page", {
+        .filter((p) => !catFilter || catFilter.has(p.category ?? ""))
+        .map((p) => {
+          const code = canonicalCode(p);
+          const group = p.weight_gsm
+            ? `${p.weight_gsm}gsm`
+            : p.weight_lb
+            ? `${p.weight_lb}lb`
+            : "Default";
+          return make(code, p.label ?? p.code, group, "per_page", {
             weight_gsm: p.weight_gsm,
+            weight_lb: p.weight_lb ?? null,
             finish: p.finish,
             is_cover_stock: p.is_cover_stock,
-          }),
-        );
+            ...(code !== p.code ? { imperial_code: p.code } : {}),
+          });
+        })
+        // Match on the canonical code (imperial rows key by their metric twin).
+        .filter((v) => mode === "seed" || byCode.has(String(v.metadata?.catalog_code)));
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.finishing") {
@@ -413,8 +488,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       const rows = (catFinishing as any[])
         .filter((f) => f.is_active)
         .filter((f) => f.category === cat)
-        .filter((f) => mode === "seed" || byCode.has(f.code))
         .map((f) => {
+          const code = canonicalCode(f);
           // Bake preview-engine metadata (front/back/binding_method/etc.)
           // straight into the saved value so the customer preview wires up
           // even when the option is sourced from the catalogue.
@@ -426,8 +501,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           if (f.color) extra.color = f.color;
           if (f.size_mm != null) extra.size_mm = f.size_mm;
           if (f.max_sheets != null) extra.max_sheets = f.max_sheets;
-          return make(f.code, f.label ?? f.code, cat, "per_document", extra);
-        });
+          if (code !== f.code) extra.imperial_code = f.code;
+          return make(code, f.label ?? f.code, cat, "per_document", extra);
+        })
+        .filter((v) => mode === "seed" || byCode.has(String(v.metadata?.catalog_code)));
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.print_attrs") {
@@ -538,7 +615,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return;
     }
 
-    // Same source, but category/axis/master catalogue changed
+    // Same source, but category/axis/unit lens/master catalogue changed
     if (
       nextSource === "catalog.finishing" ||
       nextSource === "catalog.papers" ||
@@ -556,7 +633,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, optionForm.businessCardAxis, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, rcBusinessCards.length, optionDialogOpen]);
+  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, optionForm.businessCardAxis, optionForm.paperCategories, unitSystem, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, rcBusinessCards.length, optionDialogOpen]);
 
 
 
@@ -576,6 +653,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     const cat = (opt as any).source_filter?.category ?? "";
     const attr = (opt as any).source_filter?.attribute ?? "";
     const axis = ((opt as any).source_filter?.axis ?? "") as BusinessCardAxis | "";
+    const paperCats = Array.isArray((opt as any).source_filter?.categories)
+      ? ((opt as any).source_filter.categories as unknown[]).map(String)
+      : [];
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
@@ -585,6 +665,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       finishingCategory: cat,
       printAttribute: attr,
       businessCardAxis: axis,
+      paperCategories: paperCats,
     });
 
     const parsed = parseOptionValues(opt.values);
@@ -656,6 +737,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         source_filter:
           optionForm.source === "catalog.finishing"
             ? { category: optionForm.finishingCategory }
+            : optionForm.source === "catalog.papers"
+            ? optionForm.paperCategories.length > 0
+              ? { categories: optionForm.paperCategories }
+              : null
             : optionForm.source === "catalog.print_attrs"
             ? { attribute: optionForm.printAttribute }
             : optionForm.source === "rate_card.business_cards"
@@ -714,6 +799,45 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           <Plus className="h-3 w-3 mr-1" /> Add Option
         </Button>
       </div>
+
+      {/* Metric / Imperial lens + twin coverage. Catalogue-sourced options
+          (papers, finishing, sizes) show and seed from one measurement system
+          at a time; imperial rows save against their metric twin so a single
+          option works for both branch types. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border bg-muted/40 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Catalogue view:</span>
+          <div className="inline-flex rounded-md border bg-background p-0.5">
+            {(["metric", "imperial"] as const).map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setUnitSystem(u)}
+                className={`px-3 h-6 text-xs rounded-sm transition-colors ${
+                  unitSystem === u
+                    ? "bg-primary text-primary-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {u === "metric" ? "Metric (mm / gsm)" : "Imperial (in / lb)"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Master coverage — Sizes: {coverage.sizes.metric} metric / {coverage.sizes.imperial} imperial
+          · Papers: {coverage.papers.metric} / {coverage.papers.imperial}
+          · Finishing: {coverage.finishing.metric} / {coverage.finishing.imperial}
+        </p>
+      </div>
+      {(coverage.papers.metricOnly.length > 0 || coverage.finishing.metricOnly.length > 0) && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          No imperial twin:{" "}
+          {[...coverage.papers.metricOnly, ...coverage.finishing.metricOnly].slice(0, 8).join(", ")}
+          {[...coverage.papers.metricOnly, ...coverage.finishing.metricOnly].length > 8 ? "…" : ""}{" "}
+          — imperial branches can't sell these until a twin is added in Master Catalogue.
+        </p>
+      )}
 
       {visibleOptions.length === 0 && !isBlocksFamily ? (
         <p className="text-sm text-muted-foreground">No options configured yet.</p>
@@ -856,6 +980,42 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {optionForm.source === "catalog.papers" && paperCategoryOptions.length > 0 && (
+              <div className="space-y-1">
+                <Label>Paper categories (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Limit which paper categories this option offers (e.g. keep poster stocks out of
+                  Bound Documents). Leave all unchecked to include every category.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {paperCategoryOptions.map((c) => {
+                    const on = optionForm.paperCategories.includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() =>
+                          setOptionForm({
+                            ...optionForm,
+                            paperCategories: on
+                              ? optionForm.paperCategories.filter((x) => x !== c)
+                              : [...optionForm.paperCategories, c],
+                          })
+                        }
+                        className={`px-2.5 h-7 rounded-full border text-xs capitalize transition-colors ${
+                          on
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

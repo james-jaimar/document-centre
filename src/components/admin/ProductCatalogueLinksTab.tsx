@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   useCatalogSizes,
   useCatalogPrintAttrs,
@@ -8,6 +8,7 @@ import {
   useProductImpositionDefaults,
   useSetProductImposition,
   templateMatchesSize,
+  type CatalogUnitSystem,
 } from "@/hooks/useCatalog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,11 @@ interface Props {
  * (cut-sheet vs imposed N-up on a parent sheet) is configured here.
  */
 export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
-  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes();
+  // Sizes are authored per measurement system — metric and imperial branches
+  // get genuinely different size lists (A-series vs Letter/Tabloid), so each
+  // unit has its own set of links. Print attributes are unit-agnostic.
+  const [unitSystem, setUnitSystem] = useState<CatalogUnitSystem>("metric");
+  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes({ unitSystem });
   const { data: attrs = [], isLoading: attrsLoading } = useCatalogPrintAttrs();
   const { data: links = [] } = useProductCatalogLinks(productFamilyId);
   const { data: templates = [] } = useImpositionTemplates();
@@ -42,8 +47,14 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
   const setImposition = useSetProductImposition();
 
   const linkedSizes = useMemo(
-    () => new Set(links.filter((l) => l.catalog === "size").map((l) => l.item_code)),
-    [links],
+    () =>
+      new Set(
+        links
+          .filter((l) => l.catalog === "size")
+          .filter((l) => (l.unit_system ?? "metric") === unitSystem)
+          .map((l) => l.item_code),
+      ),
+    [links, unitSystem],
   );
   const linkedAttrs = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -79,6 +90,7 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
         sub_attribute: null,
         item_code: code,
         enabled,
+        unit_system: unitSystem,
       });
     } catch (e: any) {
       toast.error(e.message ?? "Failed to update");
@@ -128,11 +140,33 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Document Sizes</CardTitle>
-          <CardDescription className="text-xs">
-            Pick which master sizes this product supports. Branches can disable
-            individual sizes for their location.
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="text-base">Document Sizes</CardTitle>
+              <CardDescription className="text-xs">
+                Pick which master sizes this product supports — per measurement
+                system. Metric branches see the metric list, imperial branches
+                (US/Canada) see the imperial list. Branches can disable
+                individual sizes for their location.
+              </CardDescription>
+            </div>
+            <div className="inline-flex rounded-md border bg-muted p-0.5 shrink-0">
+              {(["metric", "imperial"] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setUnitSystem(u)}
+                  className={`px-3 h-7 text-xs rounded-sm transition-colors ${
+                    unitSystem === u
+                      ? "bg-background shadow-sm font-medium"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {u === "metric" ? "Metric (mm)" : "Imperial (in)"}
+                </button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {sizesLoading ? (
