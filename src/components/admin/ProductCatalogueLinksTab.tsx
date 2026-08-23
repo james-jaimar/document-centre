@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   useCatalogSizes,
   useCatalogPrintAttrs,
@@ -8,6 +8,7 @@ import {
   useProductImpositionDefaults,
   useSetProductImposition,
   templateMatchesSize,
+  type CatalogUnitSystem,
 } from "@/hooks/useCatalog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,11 @@ interface Props {
  * (cut-sheet vs imposed N-up on a parent sheet) is configured here.
  */
 export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
-  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes();
+  // Sizes are authored per measurement system — metric and imperial branches
+  // get genuinely different size lists (A-series vs Letter/Tabloid), so each
+  // unit has its own set of links. Print attributes are unit-agnostic.
+  const [unitSystem, setUnitSystem] = useState<CatalogUnitSystem>("metric");
+  const { data: sizes = [], isLoading: sizesLoading } = useCatalogSizes({ unitSystem });
   const { data: attrs = [], isLoading: attrsLoading } = useCatalogPrintAttrs();
   const { data: links = [] } = useProductCatalogLinks(productFamilyId);
   const { data: templates = [] } = useImpositionTemplates();
@@ -42,8 +47,14 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
   const setImposition = useSetProductImposition();
 
   const linkedSizes = useMemo(
-    () => new Set(links.filter((l) => l.catalog === "size").map((l) => l.item_code)),
-    [links],
+    () =>
+      new Set(
+        links
+          .filter((l) => l.catalog === "size")
+          .filter((l) => (l.unit_system ?? "metric") === unitSystem)
+          .map((l) => l.item_code),
+      ),
+    [links, unitSystem],
   );
   const linkedAttrs = useMemo(() => {
     const m = new Map<string, Set<string>>();
