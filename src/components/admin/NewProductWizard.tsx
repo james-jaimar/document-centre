@@ -53,8 +53,12 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
 
   const createFamily = useCreateProductFamily();
   const setLink = useSetProductCatalogLink();
-  const { data: sizes = [] } = useCatalogSizes();
-  const { data: papers = [] } = useCatalogPapers();
+  // New families are authored against the metric catalogue; imperial branches
+  // get their own per-unit size links in the Catalogue tab, and papers twin-
+  // translate at runtime. Listing only metric rows here keeps the two
+  // measurement systems from being mixed into one product.
+  const { data: sizes = [] } = useCatalogSizes({ unitSystem: "metric" });
+  const { data: papers = [] } = useCatalogPapers({ unitSystem: "metric" });
   const upsertSize = useUpsertCatalogSize();
 
   const activeSizes = useMemo(() => sizes.filter((s) => s.is_active).sort((a, b) => a.sort_order - b.sort_order), [sizes]);
@@ -111,7 +115,7 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
       const linkPromises: Promise<any>[] = [];
       for (const code of selectedSizes) {
         linkPromises.push(setLink.mutateAsync({
-          product_family_id: created.id, catalog: "size", sub_attribute: null, item_code: code, is_default: false, sort_order: 0, enabled: true,
+          product_family_id: created.id, catalog: "size", sub_attribute: null, item_code: code, is_default: false, sort_order: 0, enabled: true, unit_system: "metric",
         }));
       }
       for (const code of selectedPapers) {
