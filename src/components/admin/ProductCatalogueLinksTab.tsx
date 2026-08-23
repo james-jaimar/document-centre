@@ -90,6 +90,7 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
         sub_attribute: null,
         item_code: code,
         enabled,
+        unit_system: unitSystem,
       });
     } catch (e: any) {
       toast.error(e.message ?? "Failed to update");
@@ -139,11 +140,33 @@ export default function ProductCatalogueLinksTab({ productFamilyId }: Props) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Document Sizes</CardTitle>
-          <CardDescription className="text-xs">
-            Pick which master sizes this product supports. Branches can disable
-            individual sizes for their location.
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="text-base">Document Sizes</CardTitle>
+              <CardDescription className="text-xs">
+                Pick which master sizes this product supports — per measurement
+                system. Metric branches see the metric list, imperial branches
+                (US/Canada) see the imperial list. Branches can disable
+                individual sizes for their location.
+              </CardDescription>
+            </div>
+            <div className="inline-flex rounded-md border bg-muted p-0.5 shrink-0">
+              {(["metric", "imperial"] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setUnitSystem(u)}
+                  className={`px-3 h-7 text-xs rounded-sm transition-colors ${
+                    unitSystem === u
+                      ? "bg-background shadow-sm font-medium"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {u === "metric" ? "Metric (mm)" : "Imperial (in)"}
+                </button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {sizesLoading ? (
