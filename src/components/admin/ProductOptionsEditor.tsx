@@ -615,7 +615,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return;
     }
 
-    // Same source, but category/axis/master catalogue changed
+    // Same source, but category/axis/unit lens/master catalogue changed
     if (
       nextSource === "catalog.finishing" ||
       nextSource === "catalog.papers" ||
@@ -633,7 +633,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, optionForm.businessCardAxis, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, rcBusinessCards.length, optionDialogOpen]);
+  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, optionForm.businessCardAxis, optionForm.paperCategories, unitSystem, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, rcBusinessCards.length, optionDialogOpen]);
 
 
 
@@ -737,6 +737,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         source_filter:
           optionForm.source === "catalog.finishing"
             ? { category: optionForm.finishingCategory }
+            : optionForm.source === "catalog.papers"
+            ? optionForm.paperCategories.length > 0
+              ? { categories: optionForm.paperCategories }
+              : null
             : optionForm.source === "catalog.print_attrs"
             ? { attribute: optionForm.printAttribute }
             : optionForm.source === "rate_card.business_cards"
