@@ -983,6 +983,42 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               </div>
             )}
 
+            {optionForm.source === "catalog.papers" && paperCategoryOptions.length > 0 && (
+              <div className="space-y-1">
+                <Label>Paper categories (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Limit which paper categories this option offers (e.g. keep poster stocks out of
+                  Bound Documents). Leave all unchecked to include every category.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {paperCategoryOptions.map((c) => {
+                    const on = optionForm.paperCategories.includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() =>
+                          setOptionForm({
+                            ...optionForm,
+                            paperCategories: on
+                              ? optionForm.paperCategories.filter((x) => x !== c)
+                              : [...optionForm.paperCategories, c],
+                          })
+                        }
+                        className={`px-2.5 h-7 rounded-full border text-xs capitalize transition-colors ${
+                          on
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {optionForm.source === "catalog.print_attrs" && (
               <div className="space-y-1">
                 <Label>Print attribute</Label>
