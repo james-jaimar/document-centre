@@ -800,6 +800,45 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         </Button>
       </div>
 
+      {/* Metric / Imperial lens + twin coverage. Catalogue-sourced options
+          (papers, finishing, sizes) show and seed from one measurement system
+          at a time; imperial rows save against their metric twin so a single
+          option works for both branch types. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border bg-muted/40 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Catalogue view:</span>
+          <div className="inline-flex rounded-md border bg-background p-0.5">
+            {(["metric", "imperial"] as const).map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setUnitSystem(u)}
+                className={`px-3 h-6 text-xs rounded-sm transition-colors ${
+                  unitSystem === u
+                    ? "bg-primary text-primary-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {u === "metric" ? "Metric (mm / gsm)" : "Imperial (in / lb)"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Master coverage — Sizes: {coverage.sizes.metric} metric / {coverage.sizes.imperial} imperial
+          · Papers: {coverage.papers.metric} / {coverage.papers.imperial}
+          · Finishing: {coverage.finishing.metric} / {coverage.finishing.imperial}
+        </p>
+      </div>
+      {(coverage.papers.metricOnly.length > 0 || coverage.finishing.metricOnly.length > 0) && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          No imperial twin:{" "}
+          {[...coverage.papers.metricOnly, ...coverage.finishing.metricOnly].slice(0, 8).join(", ")}
+          {[...coverage.papers.metricOnly, ...coverage.finishing.metricOnly].length > 8 ? "…" : ""}{" "}
+          — imperial branches can't sell these until a twin is added in Master Catalogue.
+        </p>
+      )}
+
       {visibleOptions.length === 0 && !isBlocksFamily ? (
         <p className="text-sm text-muted-foreground">No options configured yet.</p>
       ) : (
