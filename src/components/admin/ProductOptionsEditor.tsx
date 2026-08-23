@@ -346,6 +346,53 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     [catPrintAttrs],
   );
 
+  const paperCategoryOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(catPapers.map((p: any) => p.category).filter(Boolean)),
+      ).sort() as string[],
+    [catPapers],
+  );
+
+  /** In the imperial lens, papers/finishing save against the metric-canonical
+   *  code (the imperial row's `metadata.unit_twin`) so one option works for
+   *  both measurement systems — the storefront translates back via the twin. */
+  const canonicalCode = (row: any): string =>
+    unitSystem === "imperial"
+      ? typeof row?.metadata?.unit_twin === "string" && row.metadata.unit_twin
+        ? row.metadata.unit_twin
+        : row.code
+      : row.code;
+
+  /** Twin coverage across the two master catalogues — surfaces rows that only
+   *  exist on one side so gaps are visible while configuring. */
+  const coverage = useMemo(() => {
+    const split = (rows: any[]) => ({
+      metric: rows.filter((r) => (r.unit_system ?? "metric") === "metric" && r.is_active),
+      imperial: rows.filter((r) => r.unit_system === "imperial" && r.is_active),
+    });
+    const twinsOf = (rows: any[]) =>
+      new Set(rows.map((r) => r?.metadata?.unit_twin).filter((t): t is string => typeof t === "string"));
+    const p = split(allPapers);
+    const f = split(allFinishing);
+    const s = split(allSizes);
+    const missingImperial = (metricRows: any[], imperialTwins: Set<string>) =>
+      metricRows.filter((r) => !imperialTwins.has(r.code)).map((r) => r.code);
+    return {
+      sizes: { metric: s.metric.length, imperial: s.imperial.length },
+      papers: {
+        metric: p.metric.length,
+        imperial: p.imperial.length,
+        metricOnly: missingImperial(p.metric, twinsOf(p.imperial)),
+      },
+      finishing: {
+        metric: f.metric.length,
+        imperial: f.imperial.length,
+        metricOnly: missingImperial(f.metric, twinsOf(f.imperial)),
+      },
+    };
+  }, [allPapers, allFinishing, allSizes]);
+
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<ProductOption | null>(null);
   const [optionForm, setOptionForm] = useState<OptionFormData>(emptyOptionForm);
