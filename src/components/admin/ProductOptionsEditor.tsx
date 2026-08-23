@@ -12,6 +12,7 @@ import {
   useCatalogPapers,
   useCatalogFinishing,
   useCatalogPrintAttrs,
+  type CatalogUnitSystem,
 } from "@/hooks/useCatalog";
 import { useRateCardBusinessCards } from "@/hooks/useRateCard";
 
@@ -108,6 +109,9 @@ interface OptionFormData {
   finishingCategory: string;
   printAttribute: string;
   businessCardAxis: BusinessCardAxis | "";
+  /** Optional category filter for catalog.papers options (e.g. only "text"
+   *  and "cover" stocks for Bound Documents). Empty = all categories. */
+  paperCategories: string[];
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -119,6 +123,7 @@ const emptyOptionForm: OptionFormData = {
   finishingCategory: "",
   printAttribute: "",
   businessCardAxis: "",
+  paperCategories: [],
 };
 
 
