@@ -5089,6 +5089,7 @@ export type Database = {
           sort_order: number
           sub_attribute: string
           tenant_id: string | null
+          unit_system: string | null
           updated_at: string
         }
         Insert: {
@@ -5103,6 +5104,7 @@ export type Database = {
           sort_order?: number
           sub_attribute?: string
           tenant_id?: string | null
+          unit_system?: string | null
           updated_at?: string
         }
         Update: {
@@ -5117,6 +5119,7 @@ export type Database = {
           sort_order?: number
           sub_attribute?: string
           tenant_id?: string | null
+          unit_system?: string | null
           updated_at?: string
         }
         Relationships: [
