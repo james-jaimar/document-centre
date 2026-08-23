@@ -317,12 +317,23 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   });
   const isBlocksFamily = family?.quantity_mode === "blocks";
 
-  // Live catalog data (used when source ≠ manual)
-  const { data: catSizes = [] } = useCatalogSizes();
-  const { data: catPapers = [] } = useCatalogPapers();
-  const { data: catFinishing = [] } = useCatalogFinishing();
+  // Metric / Imperial lens. The master catalogue is two parallel lists; the
+  // editor works on one at a time so the two measurement systems can never be
+  // mixed into a single option. Papers & finishing are saved against the
+  // metric-canonical code (imperial rows translate via metadata.unit_twin).
+  const [unitSystem, setUnitSystem] = useState<CatalogUnitSystem>("metric");
+
+  // Live catalog data (used when source ≠ manual) — scoped to the active lens.
+  const { data: catSizes = [] } = useCatalogSizes({ unitSystem });
+  const { data: catPapers = [] } = useCatalogPapers({ unitSystem });
+  const { data: catFinishing = [] } = useCatalogFinishing({ unitSystem });
   const { data: catPrintAttrs = [] } = useCatalogPrintAttrs();
   const { data: rcBusinessCards = [] } = useRateCardBusinessCards({ scope: "master" });
+
+  // Unscoped lists for the coverage panel (twin analysis across both units).
+  const { data: allPapers = [] } = useCatalogPapers();
+  const { data: allFinishing = [] } = useCatalogFinishing();
+  const { data: allSizes = [] } = useCatalogSizes();
 
 
   const finishingCategories = useMemo(
@@ -581,6 +592,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     const cat = (opt as any).source_filter?.category ?? "";
     const attr = (opt as any).source_filter?.attribute ?? "";
     const axis = ((opt as any).source_filter?.axis ?? "") as BusinessCardAxis | "";
+    const paperCats = Array.isArray((opt as any).source_filter?.categories)
+      ? ((opt as any).source_filter.categories as unknown[]).map(String)
+      : [];
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
@@ -590,6 +604,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       finishingCategory: cat,
       printAttribute: attr,
       businessCardAxis: axis,
+      paperCategories: paperCats,
     });
 
     const parsed = parseOptionValues(opt.values);
