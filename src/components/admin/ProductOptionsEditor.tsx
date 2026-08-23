@@ -458,16 +458,28 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.papers") {
+      const catFilter =
+        form.paperCategories.length > 0 ? new Set(form.paperCategories) : null;
       const rows = (catPapers as any[])
         .filter((p) => p.is_active)
-        .filter((p) => mode === "seed" || byCode.has(p.code))
-        .map((p) =>
-          make(p.code, p.label ?? p.code, p.weight_gsm ? `${p.weight_gsm}gsm` : "Default", "per_page", {
+        .filter((p) => !catFilter || catFilter.has(p.category ?? ""))
+        .map((p) => {
+          const code = canonicalCode(p);
+          const group = p.weight_gsm
+            ? `${p.weight_gsm}gsm`
+            : p.weight_lb
+            ? `${p.weight_lb}lb`
+            : "Default";
+          return make(code, p.label ?? p.code, group, "per_page", {
             weight_gsm: p.weight_gsm,
+            weight_lb: p.weight_lb ?? null,
             finish: p.finish,
             is_cover_stock: p.is_cover_stock,
-          }),
-        );
+            ...(code !== p.code ? { imperial_code: p.code } : {}),
+          });
+        })
+        // Match on the canonical code (imperial rows key by their metric twin).
+        .filter((v) => mode === "seed" || byCode.has(String(v.metadata?.catalog_code)));
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.finishing") {
@@ -476,8 +488,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       const rows = (catFinishing as any[])
         .filter((f) => f.is_active)
         .filter((f) => f.category === cat)
-        .filter((f) => mode === "seed" || byCode.has(f.code))
         .map((f) => {
+          const code = canonicalCode(f);
           // Bake preview-engine metadata (front/back/binding_method/etc.)
           // straight into the saved value so the customer preview wires up
           // even when the option is sourced from the catalogue.
@@ -489,8 +501,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           if (f.color) extra.color = f.color;
           if (f.size_mm != null) extra.size_mm = f.size_mm;
           if (f.max_sheets != null) extra.max_sheets = f.max_sheets;
-          return make(f.code, f.label ?? f.code, cat, "per_document", extra);
-        });
+          if (code !== f.code) extra.imperial_code = f.code;
+          return make(code, f.label ?? f.code, cat, "per_document", extra);
+        })
+        .filter((v) => mode === "seed" || byCode.has(String(v.metadata?.catalog_code)));
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.print_attrs") {
