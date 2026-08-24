@@ -219,6 +219,20 @@ export interface CatalogPaper {
   unit_system?: CatalogUnitSystem;
 }
 
+/** US-native stock definitions belong in the imperial catalogue. */
+export function isImperialOnlyPaper(
+  row: Pick<CatalogPaper, "code" | "label"> & Partial<Pick<CatalogPaper, "metadata">>,
+) {
+  const code = row.code.trim().toLowerCase();
+  const label = row.label.trim().toLowerCase();
+  const region = String(row.metadata?.region ?? "").trim().toUpperCase();
+  return (
+    region === "US" ||
+    code.startsWith("us-") ||
+    /(^|\s)\d+(?:\.\d+)?\s*(?:lb|pt)(?:\s|$)/i.test(label)
+  );
+}
+
 export function useCatalogPapers(args: CatalogScopeArgs = {}) {
   return useQuery({
     queryKey: ["catalog_papers", ...scopeKey(args)],
@@ -240,6 +254,9 @@ export function useUpsertCatalogPaper(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogPaper> & { code: string; label: string }) => {
+      if (args.unitSystem === "metric" && isImperialOnlyPaper(row)) {
+        throw new Error("US lb/pt paper stocks must be saved in the Imperial catalogue.");
+      }
       return scopedUpsertByCode("catalog_papers", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
