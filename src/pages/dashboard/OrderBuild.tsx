@@ -1366,8 +1366,56 @@ export default function OrderBuild() {
     const packCount = Number(meta.pack_count ?? 1) || 1;
     const count = Number(meta.tab_count ?? packSize * packCount) || packSize;
     const multiColor = String(meta.color ?? "").toLowerCase() === "multi";
-    return { count, packCount, multiColor };
-  }, [options, spec.selected_options]);
+    // Pre-made tab banks are a physical product at one fixed sheet size.
+    const sheetSize =
+      (typeof meta.sheet_size === "string" && meta.sheet_size.trim()) ||
+      (unit === "imperial" ? "Letter" : "A4");
+    return { count, packCount, multiColor, sheetSize };
+  }, [options, spec.selected_options, unit]);
+
+  // ── Tab dividers pin the document size ──
+  // Resolve the Document Size value that matches the tab bank's sheet size
+  // (portrait only — the tab protrusion sits on the long edge).
+  const tabSizeLock = useMemo(() => {
+    if (!tabInfo) return null;
+    const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
+    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return null;
+    const target = tabInfo.sheetSize.toLowerCase().replace(/\s+/g, "-");
+    const match = (sizeOpt.values as StructuredOptionValue[]).find((v) => {
+      const meta = (v.metadata ?? {}) as Record<string, any>;
+      const slug = (v.slug ?? "").toLowerCase();
+      const iso = String(meta.iso ?? "").toLowerCase();
+      const isLandscape =
+        meta.orientation === "landscape" || /landscape/.test(slug) || /landscape/i.test(v.label ?? "");
+      if (isLandscape) return false;
+      return slug === target || iso === target || slug.replace(/-portrait$/, "") === target;
+    });
+    if (!match) return { optionName: sizeOpt.name, slug: null, label: tabInfo.sheetSize };
+    return { optionName: sizeOpt.name, slug: match.slug, label: match.label };
+  }, [tabInfo, options]);
+
+  // Coerce the selected size to the tab-compatible one when tabs turn on.
+  const tabSizeToastRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tabSizeLock?.slug) return;
+    const key =
+      Object.keys(spec.selected_options).find((k) => k.toLowerCase() === "document size") ||
+      tabSizeLock.optionName;
+    const current = spec.selected_options[key];
+    if (current === tabSizeLock.slug) return;
+    setSpec((prev) => ({
+      ...prev,
+      selected_options: { ...prev.selected_options, [key]: tabSizeLock.slug as string },
+    }));
+    if (current && tabSizeToastRef.current !== tabSizeLock.slug) {
+      tabSizeToastRef.current = tabSizeLock.slug;
+      toast.info(
+        `Document size set to ${tabSizeLock.label} — pre-made tab dividers are only available at that size.`,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabSizeLock, spec.selected_options]);
+
 
   // ── Derive insert info from product options ──
   const insertEnabled = useMemo(() => {
