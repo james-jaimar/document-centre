@@ -193,6 +193,7 @@ export default function OrderBuild() {
 
   // Active region currency (geo-detected, with manual override support).
   const { region, baseCurrency } = useRegionalPricing();
+  const { unit } = useMeasurementUnit();
   const activeCurrency = region?.currency_code ?? "ZAR";
   const { convert: convertPrice } = useCurrencyConverter(activeCurrency, baseCurrency);
 
