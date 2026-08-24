@@ -32,6 +32,7 @@ import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
