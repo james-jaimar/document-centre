@@ -1638,6 +1638,15 @@ export default function OrderBuild() {
                 return undefined;
               })()}
               lockedDisplay={(() => {
+                // Tab dividers pin the sheet size for every family that offers them.
+                if (tabSizeLock?.slug) {
+                  return {
+                    [tabSizeLock.optionName]: {
+                      label: tabSizeLock.label,
+                      helper: `Locked to ${tabSizeLock.label} — pre-made tab dividers are only available at this size. Remove tabs to change the size.`,
+                    },
+                  };
+                }
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug !== "business-cards" && slug !== "business_cards") return undefined;
                 const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
@@ -1655,6 +1664,15 @@ export default function OrderBuild() {
                 };
               })()}
             />
+
+            {tabInfo && tabSizeLock && !tabSizeLock.slug && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+                Pre-made tab dividers are supplied at {tabInfo.sheetSize}. This product has no{" "}
+                {tabInfo.sheetSize} size option, so please confirm the tabs will fit before ordering.
+              </p>
+            )}
+
+
 
 
 
