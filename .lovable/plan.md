@@ -16,11 +16,12 @@ No bridge is built now. It stays cheap to add later because the store will alrea
 - Remix the project in Lovable (keeps all code: platform/tenant/branch tiers, cart, payments, quotes, PDF pipeline).
 - Connect a **new external Supabase project** to the remix. The remix does not carry over data, so the schema must be recreated:
   - Export the current schema (tables, enums, functions, triggers, RLS, grants) and apply it to the new project as one baseline migration.
-  - Create the storage buckets and their `storage.objects` policies.
-  - Re-add secrets (payment gateway, SMTP/email, PDF API, Turnstile) — none carry across.
+  - Re-add secrets (payment gateway, SMTP/email, PDF API, S3 keys, Turnstile) — none carry across.
   - Edge functions redeploy automatically against the new project.
 - Seed **one tenant** with one branch, locale ZA/metric, and toggle every product family off except Calendars. Nothing else is deleted — other products stay in the codebase, just hidden.
 - Keep the GCP PDF server at `api.document-centre.com`. It is shared, so add a per-project API key/allowlist so the calendar store authenticates separately from Document Centre.
+- **Storage stays on the existing AWS S3 buckets in Cape Town (af-south-1)** via the current `s3-storage` edge function and signed-URL flow — no Supabase Storage buckets. Either a dedicated `calendars/` key prefix in the existing bucket or a new bucket, your call. Once the remix has its URL, you add it to the bucket CORS allowlist and (if you want isolation) issue an IAM user scoped to that prefix; the access key + secret go in as project secrets.
+
 
 ## 2. Calendar product model
 
