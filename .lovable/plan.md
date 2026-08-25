@@ -56,12 +56,13 @@ Extend the PDF server with a `calendar-compose` job: take the base template PDF,
 ## 6. Order of work
 
 1. Remix + new Supabase + schema baseline + secrets + single tenant seed.
-2. Calendar template schema (templates, boxes, template pages) and admin CRUD.
-3. Admin PDF box editor.
-4. Customer calendar builder with live preview.
-5. PDF server compose endpoint + wire into print-ready.
-6. PrintStream bridge: `CALENDAR-*` SKU + stage template in PrintStream, receiving edge function, push on payment.
+2. S3 wiring: CORS allowlist for the new URL, IAM keys, verify upload + signed download end to end.
+3. Calendar template schema (templates, boxes) and admin CRUD.
+4. Admin PDF box editor.
+5. Customer calendar builder with live preview.
+6. PDF server compose endpoint + wire into print-ready.
 7. Branding, pricing, and go-live checks.
+
 
 ## Technical notes
 
