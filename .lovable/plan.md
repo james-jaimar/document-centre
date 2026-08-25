@@ -70,4 +70,6 @@ Extend the PDF server with a `calendar-compose` job: take the base template PDF,
 - Order spec stored as `order_items.spec.calendar` with `template_id` and a `boxes[]` array of `{ box_id, document_id, storage_path, crop, zoom, rotation }` — same shape family as `CanvasPrintEntry`, so the tile/editor patterns port over.
 - Preview compositing runs client-side on canvas from the rasterised template page + cropped images; production compositing runs server-side from the original PDF/images, never from the preview raster.
 - Reuse `rasterisePdfPageOneToImage`, `DebouncedColorInput`, `ResolutionBadge`, and the QR mobile-upload flow as-is.
+- All artwork (template PDFs, customer uploads, print-ready output) lives in af-south-1 S3 and is read through short-lived signed URLs, exactly as the current builders do — the new DB stores paths only.
+
 - Bridge auth: shared secret held as a secret in both projects; the PrintStream receiver validates it in code and never accepts anonymous calls. Idempotent on `client_reference` so a retry cannot double-create a job.
