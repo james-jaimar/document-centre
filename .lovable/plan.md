@@ -2,41 +2,26 @@
 
 Build a calendar storefront as a remix of this project: same platform, same PDF pipeline, plus one new product type (Calendars) with an admin-defined artwork template and customer-filled photo boxes.
 
-## 0. Separate app or bolt onto PrintStream?
+## 0. Separate app, separate database — decided
 
-Recommendation: **separate app + separate database, with a one-way live bridge into PrintStream** — not a later MIS ingest, and not building the store inside PrintStream.
+The calendar store is built standalone: its own Supabase project, its own auth and payments, reusing the existing GCP PDF server and the existing AWS S3 buckets in Cape Town (af-south-1).
 
-What PrintStream actually is today (checked in the snapshot): its own Supabase project (`kgizusgqexmlfcqfjopk`), ~120 tables of MIS — `production_jobs`, `job_stage_instances`, the scheduler and its gap-filling logic, labels, tracker, Excel import. It already has a light customer-order path (`pp_orders` → `pp_skus` → `pp_stage_templates` → `production_jobs`) but **no cart, no payments, no invoicing, no guest checkout** — no Payfast or Stripe anywhere in the codebase. It's a B2B "order now, get billed later" intake, not a shop.
+Why this is the right call (from the PrintStream snapshot): PrintStream is its own Supabase project (`kgizusgqexmlfcqfjopk`), ~120 tables of MIS — `production_jobs`, `job_stage_instances`, the scheduler, labels, tracker, Excel import. Its customer-order path (`pp_orders` → `pp_skus` → `pp_stage_templates` → `production_jobs`) is a B2B "order now, bill later" intake: no cart, no payments, no invoicing anywhere in that codebase. Putting a public shop inside a live scheduler would mean rebuilding all of that and exposing the MIS database to the internet.
 
-Building the calendar store inside PrintStream means writing cart, payment, invoicing, tax invoices, customer accounts, storefront theming, and the whole canvas/box builder from scratch inside a live production scheduler, and exposing that scheduler's database to the public internet. The remix gives you all of that on day one.
+No bridge is built now. It stays cheap to add later because the store will already hold the two things PrintStream needs: a stable order reference and a finished print-ready PDF path. A future push is one edge function inserting a `pp_orders` row against a `CALENDAR-*` SKU with `client_reference` = the store order number and `imposed_pdf_path` = the print-ready PDF. Nothing in this plan needs to change to enable that.
 
-The reason people bolt on — "otherwise I have to ingest later" — goes away if the bridge is built at the same time as the store rather than after. It's one edge function.
-
-### The bridge
-
-When a calendar order is paid in the calendar store:
-
-1. Store finalises the order and the 12-page print-ready PDF (GCP PDF server, as today).
-2. Store calls a small `push-to-printstream` edge function.
-3. That function calls a new edge function in PrintStream (service-role, shared secret) that inserts a `pp_orders` row against a `CALENDAR-*` SKU, with `client_reference` = the store's order number, `imposed_pdf_path` = the print-ready PDF, plus quantity and due date. PrintStream's existing SKU → stage-template → `production_jobs` path takes it from there.
-4. PrintStream writes status back (optional, phase 2): a webhook to the store updates the customer-visible order status from the scheduler's stage progress.
-
-The PDF itself is copied into PrintStream storage (or served via a signed URL the function fetches once) so the MIS is not dependent on the store's bucket.
-
-Cost of this choice: two databases to keep in step on one contract point — the SKU mapping and the order-status vocabulary. That is a much smaller surface than merging a shop into a scheduler.
-
-Bolt onto PrintStream only if the calendars will never take card payment (invoiced-on-account only) and the customers are already PrintStream account holders. If that's the actual situation, say so and this plan changes shape completely.
 
 ## 1. Remix and new backend
 
 - Remix the project in Lovable (keeps all code: platform/tenant/branch tiers, cart, payments, quotes, PDF pipeline).
 - Connect a **new external Supabase project** to the remix. The remix does not carry over data, so the schema must be recreated:
   - Export the current schema (tables, enums, functions, triggers, RLS, grants) and apply it to the new project as one baseline migration.
-  - Create the storage buckets and their `storage.objects` policies.
-  - Re-add secrets (payment gateway, SMTP/email, PDF API, Turnstile) — none carry across.
+  - Re-add secrets (payment gateway, SMTP/email, PDF API, S3 keys, Turnstile) — none carry across.
   - Edge functions redeploy automatically against the new project.
 - Seed **one tenant** with one branch, locale ZA/metric, and toggle every product family off except Calendars. Nothing else is deleted — other products stay in the codebase, just hidden.
 - Keep the GCP PDF server at `api.document-centre.com`. It is shared, so add a per-project API key/allowlist so the calendar store authenticates separately from Document Centre.
+- **Storage stays on the existing AWS S3 buckets in Cape Town (af-south-1)** via the current `s3-storage` edge function and signed-URL flow — no Supabase Storage buckets. Either a dedicated `calendars/` key prefix in the existing bucket or a new bucket, your call. Once the remix has its URL, you add it to the bucket CORS allowlist and (if you want isolation) issue an IAM user scoped to that prefix; the access key + secret go in as project secrets.
+
 
 ## 2. Calendar product model
 
@@ -71,12 +56,13 @@ Extend the PDF server with a `calendar-compose` job: take the base template PDF,
 ## 6. Order of work
 
 1. Remix + new Supabase + schema baseline + secrets + single tenant seed.
-2. Calendar template schema (templates, boxes, template pages) and admin CRUD.
-3. Admin PDF box editor.
-4. Customer calendar builder with live preview.
-5. PDF server compose endpoint + wire into print-ready.
-6. PrintStream bridge: `CALENDAR-*` SKU + stage template in PrintStream, receiving edge function, push on payment.
+2. S3 wiring: CORS allowlist for the new URL, IAM keys, verify upload + signed download end to end.
+3. Calendar template schema (templates, boxes) and admin CRUD.
+4. Admin PDF box editor.
+5. Customer calendar builder with live preview.
+6. PDF server compose endpoint + wire into print-ready.
 7. Branding, pricing, and go-live checks.
+
 
 ## Technical notes
 
@@ -84,4 +70,6 @@ Extend the PDF server with a `calendar-compose` job: take the base template PDF,
 - Order spec stored as `order_items.spec.calendar` with `template_id` and a `boxes[]` array of `{ box_id, document_id, storage_path, crop, zoom, rotation }` — same shape family as `CanvasPrintEntry`, so the tile/editor patterns port over.
 - Preview compositing runs client-side on canvas from the rasterised template page + cropped images; production compositing runs server-side from the original PDF/images, never from the preview raster.
 - Reuse `rasterisePdfPageOneToImage`, `DebouncedColorInput`, `ResolutionBadge`, and the QR mobile-upload flow as-is.
+- All artwork (template PDFs, customer uploads, print-ready output) lives in af-south-1 S3 and is read through short-lived signed URLs, exactly as the current builders do — the new DB stores paths only.
+
 - Bridge auth: shared secret held as a secret in both projects; the PrintStream receiver validates it in code and never accepts anonymous calls. Idempotent on `client_reference` so a retry cannot double-create a job.
