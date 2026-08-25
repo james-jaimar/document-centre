@@ -2,30 +2,14 @@
 
 Build a calendar storefront as a remix of this project: same platform, same PDF pipeline, plus one new product type (Calendars) with an admin-defined artwork template and customer-filled photo boxes.
 
-## 0. Separate app or bolt onto PrintStream?
+## 0. Separate app, separate database — decided
 
-Recommendation: **separate app + separate database, with a one-way live bridge into PrintStream** — not a later MIS ingest, and not building the store inside PrintStream.
+The calendar store is built standalone: its own Supabase project, its own auth and payments, reusing the existing GCP PDF server and the existing AWS S3 buckets in Cape Town (af-south-1).
 
-What PrintStream actually is today (checked in the snapshot): its own Supabase project (`kgizusgqexmlfcqfjopk`), ~120 tables of MIS — `production_jobs`, `job_stage_instances`, the scheduler and its gap-filling logic, labels, tracker, Excel import. It already has a light customer-order path (`pp_orders` → `pp_skus` → `pp_stage_templates` → `production_jobs`) but **no cart, no payments, no invoicing, no guest checkout** — no Payfast or Stripe anywhere in the codebase. It's a B2B "order now, get billed later" intake, not a shop.
+Why this is the right call (from the PrintStream snapshot): PrintStream is its own Supabase project (`kgizusgqexmlfcqfjopk`), ~120 tables of MIS — `production_jobs`, `job_stage_instances`, the scheduler, labels, tracker, Excel import. Its customer-order path (`pp_orders` → `pp_skus` → `pp_stage_templates` → `production_jobs`) is a B2B "order now, bill later" intake: no cart, no payments, no invoicing anywhere in that codebase. Putting a public shop inside a live scheduler would mean rebuilding all of that and exposing the MIS database to the internet.
 
-Building the calendar store inside PrintStream means writing cart, payment, invoicing, tax invoices, customer accounts, storefront theming, and the whole canvas/box builder from scratch inside a live production scheduler, and exposing that scheduler's database to the public internet. The remix gives you all of that on day one.
+No bridge is built now. It stays cheap to add later because the store will already hold the two things PrintStream needs: a stable order reference and a finished print-ready PDF path. A future push is one edge function inserting a `pp_orders` row against a `CALENDAR-*` SKU with `client_reference` = the store order number and `imposed_pdf_path` = the print-ready PDF. Nothing in this plan needs to change to enable that.
 
-The reason people bolt on — "otherwise I have to ingest later" — goes away if the bridge is built at the same time as the store rather than after. It's one edge function.
-
-### The bridge
-
-When a calendar order is paid in the calendar store:
-
-1. Store finalises the order and the 12-page print-ready PDF (GCP PDF server, as today).
-2. Store calls a small `push-to-printstream` edge function.
-3. That function calls a new edge function in PrintStream (service-role, shared secret) that inserts a `pp_orders` row against a `CALENDAR-*` SKU, with `client_reference` = the store's order number, `imposed_pdf_path` = the print-ready PDF, plus quantity and due date. PrintStream's existing SKU → stage-template → `production_jobs` path takes it from there.
-4. PrintStream writes status back (optional, phase 2): a webhook to the store updates the customer-visible order status from the scheduler's stage progress.
-
-The PDF itself is copied into PrintStream storage (or served via a signed URL the function fetches once) so the MIS is not dependent on the store's bucket.
-
-Cost of this choice: two databases to keep in step on one contract point — the SKU mapping and the order-status vocabulary. That is a much smaller surface than merging a shop into a scheduler.
-
-Bolt onto PrintStream only if the calendars will never take card payment (invoiced-on-account only) and the customers are already PrintStream account holders. If that's the actual situation, say so and this plan changes shape completely.
 
 ## 1. Remix and new backend
 
