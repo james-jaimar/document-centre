@@ -73,9 +73,35 @@ async function readPageBoxes(
 }
 
 /**
+ * Turn the near-white background of a rasterised template into transparency so
+ * placeholders drawn *behind* the template can show through. Pixels within
+ * `tolerance` of pure white become fully transparent; near-white pixels fade
+ * proportionally so edges stay smooth.
+ */
+function knockoutWhiteInPlace(canvas: HTMLCanvasElement, tolerance: number) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const tol = Math.max(0, Math.min(60, tolerance));
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = Math.min(d[i], d[i + 1], d[i + 2]);
+    const cut = 255 - tol;
+    if (lum >= cut) {
+      d[i + 3] = 0;
+    } else if (lum >= cut - 24) {
+      // Soft ramp over the 24-level band below the cut-off.
+      d[i + 3] = Math.round(d[i + 3] * (1 - (lum - (cut - 24)) / 24));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/**
  * Render every page (up to `maxPages`) at roughly `targetLongPx` on the long
  * edge and return JPEG data URLs plus the trimmed page size in mm.
  */
+
 export async function rasterisePdfPages(
   source: Blob | ArrayBuffer,
   opts: {
