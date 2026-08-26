@@ -5,12 +5,10 @@
 
 // Use the same pdfjs entrypoint the rest of the app uses.
 import * as pdfjsLib from "pdfjs-dist";
-// Worker URL — pdfjs-dist ships an ESM worker.
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - vite handles the ?url import
-import pdfWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
+import { applyPdfWorker } from "@/lib/pdfWorkerSetup";
 
-(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker;
+applyPdfWorker(pdfjsLib as any);
+
 
 /**
  * Render page 1 of the PDF at ~200 DPI and return a JPEG File.
