@@ -142,6 +142,34 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
     }
   };
 
+  /** Re-read the stored base PDF and refresh the trim size (fixes templates
+   *  saved before trim-box detection, which stored the crop size). */
+  const handleRedetectSize = async () => {
+    if (!selected?.base_pdf_path) return;
+    setRenderingPdf(true);
+    try {
+      const blob = await downloadFromS3(selected.base_pdf_path);
+      const rendered = await rasterisePdfPages(blob, { targetLongPx: 1400 });
+      if (rendered.length === 0) throw new Error("The PDF has no pages.");
+      await upsertTemplate.mutateAsync({
+        id: selected.id,
+        product_family_id: productFamilyId,
+        name: selected.name,
+        page_count: rendered.length,
+        trim_width_mm: rendered[0].widthMm,
+        trim_height_mm: rendered[0].heightMm,
+      } as any);
+      setPages(rendered);
+      toast.success(
+        `Trim size updated — ${rendered[0].widthMm} × ${rendered[0].heightMm} mm${rendered[0].trimmed ? " (from the PDF trim box)" : ""}.`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not re-read the base PDF.");
+    } finally {
+      setRenderingPdf(false);
+    }
+  };
+
   const patchTemplate = async (updates: Partial<ArtworkTemplate>) => {
     if (!selected) return;
     await upsertTemplate.mutateAsync({
@@ -151,6 +179,7 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       ...updates,
     } as any);
   };
+
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
 
