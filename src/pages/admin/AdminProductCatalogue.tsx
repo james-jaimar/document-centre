@@ -210,6 +210,18 @@ const AdminProductCatalogue = () => {
           productFamilyName={specsFamilyName}
         />
       )}
+
+      <Dialog
+        open={!!artworkFamilyId}
+        onOpenChange={(o) => { if (!o) setArtworkFamilyId(null); }}
+      >
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{artworkFamilyName} — Artwork templates</DialogTitle>
+          </DialogHeader>
+          {artworkFamilyId && <ArtworkTemplatesTab productFamilyId={artworkFamilyId} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
