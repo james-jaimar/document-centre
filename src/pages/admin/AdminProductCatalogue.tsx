@@ -158,7 +158,19 @@ const AdminProductCatalogue = () => {
                           <Settings2 className="h-3 w-3 mr-1" />
                           Pricing
                         </Button>
-
+                        {getFamilyKind(f) === "templated_artwork" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setArtworkFamilyId(f.id);
+                              setArtworkFamilyName(f.name);
+                            }}
+                          >
+                            <Image className="h-3 w-3 mr-1" />
+                            Artwork
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
