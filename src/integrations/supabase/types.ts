@@ -53,8 +53,10 @@ export type Database = {
           is_locked: boolean
           is_required: boolean
           kind: string
+          layer: string
           max_length: number | null
           name: string
+          opacity: number
           sort_order: number
           template_id: string
           text_style: Json
@@ -62,6 +64,7 @@ export type Database = {
           width_mm: number
           x_mm: number
           y_mm: number
+          z_index: number
         }
         Insert: {
           background_hex?: string | null
@@ -74,8 +77,10 @@ export type Database = {
           is_locked?: boolean
           is_required?: boolean
           kind: string
+          layer?: string
           max_length?: number | null
           name: string
+          opacity?: number
           sort_order?: number
           template_id: string
           text_style?: Json
@@ -83,6 +88,7 @@ export type Database = {
           width_mm?: number
           x_mm?: number
           y_mm?: number
+          z_index?: number
         }
         Update: {
           background_hex?: string | null
@@ -95,8 +101,10 @@ export type Database = {
           is_locked?: boolean
           is_required?: boolean
           kind?: string
+          layer?: string
           max_length?: number | null
           name?: string
+          opacity?: number
           sort_order?: number
           template_id?: string
           text_style?: Json
@@ -104,6 +112,7 @@ export type Database = {
           width_mm?: number
           x_mm?: number
           y_mm?: number
+          z_index?: number
         }
         Relationships: [
           {
@@ -117,7 +126,10 @@ export type Database = {
       }
       artwork_templates: {
         Row: {
+          base_knockout_tolerance: number
+          base_knockout_white: boolean
           base_pdf_path: string | null
+          base_transparent_path: string | null
           bleed_mm: number
           branch_id: string | null
           created_at: string
@@ -139,7 +151,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          base_knockout_tolerance?: number
+          base_knockout_white?: boolean
           base_pdf_path?: string | null
+          base_transparent_path?: string | null
           bleed_mm?: number
           branch_id?: string | null
           created_at?: string
@@ -161,7 +176,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          base_knockout_tolerance?: number
+          base_knockout_white?: boolean
           base_pdf_path?: string | null
+          base_transparent_path?: string | null
           bleed_mm?: number
           branch_id?: string | null
           created_at?: string
