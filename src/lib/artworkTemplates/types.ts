@@ -9,6 +9,9 @@
 
 export type PlaceholderKind = "image" | "text";
 export type PlaceholderFit = "fit" | "fill";
+/** Where the box sits relative to the template artwork itself. */
+export type PlaceholderLayer = "under" | "over";
+
 
 export interface ArtworkTextStyle {
   fontFamily?: string;
