@@ -44,13 +44,14 @@ function slugFallback(slug: string | null | undefined): FamilyKind {
   if (["photo-prints", "photo_prints", "photos"].includes(s)) return "photo_print";
   if (["wire-bound", "wire_bound", "comb-bound", "comb_bound", "spiral-bound", "spiral_bound", "bound-documents", "bound_documents", "perfect-bound", "perfect_bound"].includes(s)) return "bound_document";
   if (["canvas-prints", "canvas_prints", "canvas-wrap", "canvas_wrap"].includes(s)) return "canvas_wrap";
+  if (["deskpads", "deskpad", "desk-pads", "calendars", "calendar", "templated-artwork", "templated_artwork"].includes(s)) return "templated_artwork";
   return "custom";
 }
 
 /** Resolve a family's kind — DB column wins, slug fallback for un-backfilled rows. */
 export function getFamilyKind(family: { kind?: string | null; slug?: string | null } | null | undefined): FamilyKind {
   const k = (family?.kind ?? "").toLowerCase();
-  const valid: FamilyKind[] = ["flat_sheet", "bound_document", "folded_leaflet", "saddle_stitched", "business_card", "large_format", "photo_print", "canvas_wrap", "custom"];
+  const valid: FamilyKind[] = ["flat_sheet", "bound_document", "folded_leaflet", "saddle_stitched", "business_card", "large_format", "photo_print", "canvas_wrap", "templated_artwork", "custom"];
   if (valid.includes(k as FamilyKind)) return k as FamilyKind;
   return slugFallback(family?.slug);
 }

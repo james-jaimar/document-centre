@@ -55,6 +55,7 @@ import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
 import PhotoPrintsBuilder from "@/pages/dashboard/PhotoPrintsBuilder";
+import TemplatedArtworkBuilder from "@/pages/dashboard/TemplatedArtworkBuilder";
 import CanvasPrintsBuilder from "@/pages/dashboard/CanvasPrintsBuilder";
 import Cart from "@/pages/dashboard/Cart";
 import Checkout from "@/pages/dashboard/Checkout";
@@ -168,11 +169,13 @@ function customerRoutes() {
       <Route path="orders/new" element={<NewOrder />} />
       <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
       <Route path="orders/new/canvas-prints" element={<CanvasPrintsBuilder />} />
+      <Route path="orders/new/custom-artwork" element={<TemplatedArtworkBuilder />} />
       <Route path="orders/new/:familyId" element={<OrderFiles />} />
       <Route path="orders/:id/files" element={<OrderFiles />} />
       <Route path="orders/:id/build" element={<OrderBuild />} />
       <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
       <Route path="orders/:id/canvas-prints" element={<CanvasPrintsBuilder />} />
+      <Route path="orders/:id/custom-artwork" element={<TemplatedArtworkBuilder />} />
       <Route path="cart" element={<Cart />} />
       <Route path="checkout" element={<Checkout />} />
       <Route path="terms" element={<PortalTerms />} />
