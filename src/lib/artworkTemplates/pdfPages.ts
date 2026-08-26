@@ -154,13 +154,16 @@ export async function rasterisePdfPages(
         out = cropped;
       }
 
+      if (opts.knockoutWhite) knockoutWhiteInPlace(out, opts.knockoutTolerance ?? 12);
+
       const widthPt = trimPt ? trimPt.width : base.width;
       const heightPt = trimPt ? trimPt.height : base.height;
       const mm1 = (pt: number) => Math.round(pt * PT_TO_MM * 10) / 10;
 
       pages.push({
         index: i - 1,
-        dataUrl: out.toDataURL("image/jpeg", 0.9),
+        dataUrl: opts.knockoutWhite ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.9),
+
         widthPx: out.width,
         heightPx: out.height,
         widthMm: mm1(widthPt),
