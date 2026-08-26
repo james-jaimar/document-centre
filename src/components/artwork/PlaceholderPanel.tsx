@@ -113,26 +113,26 @@ export default function PlaceholderPanel({
           {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
           {v ? "Replace" : "Upload"}
         </Button>
-        {onPhoneUpload && (
-          <Button size="sm" variant="ghost" onClick={onPhoneUpload} disabled={busy}>
-            <Smartphone className="h-4 w-4 mr-1.5" /> From phone
-          </Button>
-        )}
       </div>
 
       {v && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="truncate text-xs text-muted-foreground">{v.file_name}</span>
-            <Badge variant={dpiTone as any} className="ml-auto text-[10px]">
-              {dpi} DPI
-            </Badge>
+            {isVector ? (
+              <Badge variant="secondary" className="ml-auto text-[10px]">PDF · vector</Badge>
+            ) : (
+              <Badge variant={dpiTone as any} className="ml-auto text-[10px]">
+                {dpi} DPI
+              </Badge>
+            )}
           </div>
-          {dpi < MIN_PLACEMENT_DPI && (
+          {!isVector && dpi < MIN_PLACEMENT_DPI && (
             <p className="text-xs text-destructive">
-              Low resolution for this box — the print may look soft.
+              Low resolution at this size — the print may look soft. Zoom out or supply a larger file.
             </p>
           )}
+
 
           <div className="space-y-1.5">
             <Label className="text-xs">Zoom</Label>
