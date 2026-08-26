@@ -204,18 +204,30 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         {selected && (
           <>
             <Badge variant="outline">{selected.page_count} pages</Badge>
+            {selected.trim_width_mm > 0 && (
+              <Badge variant="outline">
+                {selected.trim_width_mm} × {selected.trim_height_mm} mm trim
+              </Badge>
+            )}
             <Badge variant={selected.status === "published" ? "default" : "secondary"}>
-              {selected.status}
+              {selected.status === "published" ? "Published" : "Draft — not visible to customers"}
             </Badge>
             <Button
               size="sm"
-              variant="ghost"
-              onClick={() =>
-                patchTemplate({ status: selected.status === "published" ? "draft" : "published" })
-              }
+              variant={selected.status === "published" ? "ghost" : "default"}
+              onClick={async () => {
+                const next = selected.status === "published" ? "draft" : "published";
+                await patchTemplate({ status: next });
+                toast.success(
+                  next === "published"
+                    ? "Published — customers can now choose this layout."
+                    : "Unpublished — hidden from customers.",
+                );
+              }}
             >
               {selected.status === "published" ? "Unpublish" : "Publish"}
             </Button>
+
             <Button
               size="sm"
               variant="ghost"
