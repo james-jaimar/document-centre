@@ -253,7 +253,7 @@ export default function TemplateBoxEditor({
           onPointerDown={onStagePointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          className={`relative w-full overflow-hidden rounded-lg border bg-muted ${drawKind ? "cursor-crosshair" : ""}`}
+          className={`relative w-full overflow-hidden rounded-none border bg-muted ${drawKind ? "cursor-crosshair" : ""}`}
           style={{ aspectRatio: `${trimWidthMm || 1} / ${trimHeightMm || 1}` }}
         >
           {pageImageUrl ? (
