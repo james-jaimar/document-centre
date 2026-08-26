@@ -6,9 +6,9 @@ Give tenants an optional set of custom, shop-style front-facing pages (landing, 
 
 The zip is a rough Next.js prototype, not a facsimile of the four renders. It matches the **layout and section order** (assurance bar, branded header, hero + product strip, 3-step how-it-works, trade band; shop filters + grid; product gallery + config card + price-break table; editor 3-column shell), but the visuals are CSS-art placeholders and emoji glyphs (🛒, ▣, ◇) instead of real imagery and icons. So: use it as a structural reference, and take the visual fidelity from the PNG renders, expressed with our tokens, shadcn components and lucide icons.
 
-## Enablement
+## Enablement (platform admin only)
 
-A new `storefront_pages` tenant setting group (per-page toggles: landing, shop, product, editor chrome). When off, the current storefront behaviour is unchanged. Toggles live in a new **Storefront** tab in tenant settings alongside the editable content below.
+Custom pages are a platform-level capability I switch on per tenant — tenants cannot enable or configure them. A new `storefront_pages` setting group is written from the **Platform admin → Tenant detail** screen (per-page toggles: landing, shop, product, editor chrome). When off, the current storefront behaviour is unchanged. No Storefront tab is added to tenant settings, and writes are restricted to platform admins.
 
 ## Pages
 
