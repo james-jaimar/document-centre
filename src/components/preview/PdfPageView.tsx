@@ -5,13 +5,11 @@ import "react-pdf/dist/Page/TextLayer.css";
 import { Loader2, FileText } from "lucide-react";
 import { getPdfBlob } from "@/lib/pdfBlobCache";
 
-// Inline the worker source into the main bundle and serve it from a blob URL.
-// Amplify's default SPA rewrite doesn't whitelist `.mjs`, so a separately
-// emitted worker asset gets rewritten to index.html and served as text/html.
-// Our CSP allows `worker-src 'self' blob:`, so a blob URL works in production.
-import pdfWorkerSource from "pdfjs-dist/build/pdf.worker.min.mjs?raw";
-const workerBlob = new Blob([pdfWorkerSource], { type: "application/javascript" });
-pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+// Shared, production-safe worker setup (inlined + blob URL).
+import { applyPdfWorker } from "@/lib/pdfWorkerSetup";
+
+applyPdfWorker(pdfjs as any);
+
 
 interface PdfPageViewProps {
   /** Signed URL to the PDF file */
