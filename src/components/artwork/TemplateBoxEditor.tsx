@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ImageIcon, Type, Trash2, Copy } from "lucide-react";
+import { ImageIcon, Type, Trash2, Copy, ChevronUp, ChevronDown } from "lucide-react";
 import {
   ARTWORK_FONTS,
   DEFAULT_TEXT_STYLE,
