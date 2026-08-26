@@ -7,16 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageIcon, Type, Upload, Trash2, Smartphone } from "lucide-react";
+import { Loader2, ImageIcon, Type, Upload, Trash2 } from "lucide-react";
 import {
   GOOD_PLACEMENT_DPI,
   MIN_PLACEMENT_DPI,
-  placementDpi,
+  effectivePlacementDpi,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
   type TemplatedPlaceholderValue,
   type TemplatedTextValue,
 } from "@/lib/artworkTemplates/types";
+
 
 interface Props {
   placeholder: ArtworkPlaceholder;
