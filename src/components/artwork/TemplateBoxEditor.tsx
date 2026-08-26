@@ -235,18 +235,17 @@ export default function TemplateBoxEditor({
   const restack = (p: ArtworkPlaceholder, dir: -1 | 1) => {
     const sameLayer = ordered.filter((o) => o.layer === p.layer);
     const idx = sameLayer.findIndex((o) => o.id === p.id);
-    const swapWith = sameLayer[idx + dir];
-    if (!swapWith) return;
+    const target = idx + dir;
+    if (target < 0 || target >= sameLayer.length) return;
+    const reordered = [...sameLayer];
+    [reordered[idx], reordered[target]] = [reordered[target], reordered[idx]];
+    // Renumber the layer so the stack is always unambiguous.
+    const zById = new Map(reordered.map((o, i) => [o.id, i]));
     onChange(
-      placeholders.map((o) =>
-        o.id === p.id
-          ? { ...o, z_index: swapWith.z_index ?? 0 }
-          : o.id === swapWith.id
-            ? { ...o, z_index: p.z_index ?? 0 }
-            : o,
-      ),
+      placeholders.map((o) => (zById.has(o.id) ? { ...o, z_index: zById.get(o.id)! } : o)),
     );
   };
+
 
 
   return (
