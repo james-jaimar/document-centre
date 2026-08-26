@@ -294,6 +294,7 @@ export default function TemplateBoxEditor({
               alt="Template page"
               className="absolute inset-0 h-full w-full select-none object-fill"
               draggable={false}
+              style={{ zIndex: 5 }}
             />
           ) : (
             <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
@@ -301,7 +302,7 @@ export default function TemplateBoxEditor({
             </div>
           )}
 
-          {placeholders.map((p) => (
+          {ordered.map((p, i) => (
             <div
               key={p.id}
               onPointerDown={(e) => {
@@ -319,9 +320,13 @@ export default function TemplateBoxEditor({
                 (e.target as Element).setPointerCapture?.(e.pointerId);
               }}
               className={`absolute cursor-move border-2 ${
-                activeId === p.id
-                  ? "border-primary bg-primary/15"
-                  : "border-primary/50 bg-primary/5"
+                p.layer === "under"
+                  ? activeId === p.id
+                    ? "border-amber-500 bg-amber-500/20"
+                    : "border-amber-500/50 bg-amber-500/10"
+                  : activeId === p.id
+                    ? "border-primary bg-primary/15"
+                    : "border-primary/50 bg-primary/5"
               }`}
               style={{
                 left: pct(p.x_mm, trimWidthMm),
@@ -329,11 +334,22 @@ export default function TemplateBoxEditor({
                 width: pct(p.width_mm, trimWidthMm),
                 height: pct(p.height_mm, trimHeightMm),
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
+                // Under-template boxes sit below the artwork image (zIndex 5).
+                zIndex: p.layer === "under" ? 1 + i * 0.001 : 10 + i,
               }}
             >
-              <span className="pointer-events-none absolute left-0 top-0 max-w-full truncate bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+              <span
+                className={`pointer-events-none absolute left-0 top-0 max-w-full truncate px-1 text-[10px] leading-4 ${
+                  p.layer === "under"
+                    ? "bg-amber-500 text-white"
+                    : "bg-primary text-primary-foreground"
+                }`}
+              >
                 {p.kind === "text" ? "T" : "IMG"} · {p.name}
+                {p.layer === "under" ? " · behind" : ""}
+                {(p.opacity ?? 1) < 1 ? ` · ${Math.round((p.opacity ?? 1) * 100)}%` : ""}
               </span>
+
               <div
                 onPointerDown={(e) => {
                   e.stopPropagation();
