@@ -198,7 +198,7 @@ function CustomerLayoutInner() {
 
   // Mobile shell — phone-grade devices get a dedicated layout with a
   // bottom tab bar and sheet menu instead of the desktop sidebar/topbar.
-  if (device === "mobile" && !chromeless) {
+  if (device === "mobile" && !storefrontMode) {
     return (
       <div style={tenantStyle}>
         <BranchPicker />
