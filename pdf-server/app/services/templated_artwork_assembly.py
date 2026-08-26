@@ -171,29 +171,34 @@ def _render_overlay(
     out_pdf: Path,
     page_w_pt: float,
     page_h_pt: float,
-    trim_w_mm: float,
-    trim_h_mm: float,
+    trim_x_pt: float,
+    trim_top_pt: float,
     defs: list[dict[str, Any]],
     values: dict[str, dict[str, Any]],
     images: dict[str, Image.Image],
 ) -> None:
     """Draw every placeholder onto a transparent single-page PDF that is
-    later merged over the base template page."""
-    # mm → pt using the ACTUAL page box, so a base PDF that carries bleed
-    # still lines the boxes up with what the customer saw.
-    sx = page_w_pt / (trim_w_mm * mm) if trim_w_mm > 0 else 1.0
-    sy = page_h_pt / (trim_h_mm * mm) if trim_h_mm > 0 else 1.0
+    later merged over the base template page.
+
+    Placeholder geometry is millimetres measured from the TRIM box's top-left
+    corner (exactly what the designer measures in Illustrator), so the overlay
+    is drawn 1:1 in millimetres and simply offset to the trim origin. A base
+    PDF carrying bleed and crop marks therefore lines up perfectly.
+    """
+    sx = 1.0
+    sy = 1.0
 
     c = rl_canvas.Canvas(str(out_pdf), pagesize=(page_w_pt, page_h_pt))
 
     for d in defs:
         pid = str(d.get("id") or "")
         value = values.get(pid) or {}
-        x_pt = _num(d.get("x_mm")) * mm * sx
-        w_pt = _num(d.get("width_mm")) * mm * sx
-        h_pt = _num(d.get("height_mm")) * mm * sy
-        # Convert top-left mm origin to PDF bottom-left points.
-        y_pt = page_h_pt - (_num(d.get("y_mm")) * mm * sy) - h_pt
+        x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
+        w_pt = _num(d.get("width_mm")) * mm
+        h_pt = _num(d.get("height_mm")) * mm
+        # Convert top-left mm origin (from the trim top edge) to PDF points.
+        y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
+
         radius = _num(d.get("corner_radius_mm")) * mm * min(sx, sy)
         radius = max(0.0, min(radius, min(w_pt, h_pt) / 2.0))
         if w_pt <= 0 or h_pt <= 0:
