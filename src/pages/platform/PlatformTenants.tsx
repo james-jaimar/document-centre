@@ -243,7 +243,7 @@ const PlatformTenants = () => {
 
       {/* Edit Tenant Dialog */}
       <Dialog open={!!editing} onOpenChange={() => setEditing(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Tenant</DialogTitle>
           </DialogHeader>
