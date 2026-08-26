@@ -17,23 +17,23 @@ export default function ProductStrip({
 }) {
   if (!items.length) return null;
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
       {items.map(({ family, imageUrl, fromPriceLabel }) => (
         <button
           key={family.id}
           type="button"
           onClick={() => onSelect(family)}
-          className="group overflow-hidden rounded-lg border bg-card text-left transition-shadow hover:shadow-md"
+          className="group flex flex-col rounded-xl border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
         >
-          <div className="px-3 pb-2 pt-3">
-            <p className="truncate text-[13px] font-semibold text-foreground">{family.name}</p>
-          </div>
-          <div className="h-24 w-full overflow-hidden bg-muted">
+          <p className="mb-2.5 truncate text-center text-[13px] font-bold text-foreground">
+            {family.name}
+          </p>
+          <div className="h-[100px] w-full overflow-hidden rounded-md bg-muted">
             {imageUrl ? (
               <img
                 src={imageUrl}
                 alt={family.name}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
                 loading="lazy"
               />
             ) : (
@@ -42,7 +42,7 @@ export default function ProductStrip({
               </span>
             )}
           </div>
-          <div className="flex items-center justify-between px-3 py-2.5">
+          <div className="mt-3 flex items-center justify-between">
             <span className="text-[13px] font-semibold sf-accent">
               {fromPriceLabel ? `From ${fromPriceLabel}` : "View"}
             </span>
