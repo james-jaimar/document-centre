@@ -61,6 +61,25 @@ export default function PlaceholderPanel({
             onChange({ placeholder_id: placeholder.id, kind: "text", value: e.target.value })
           }
         />
+        <div className="space-y-1.5">
+          <Label className="text-xs">
+            Opacity ({Math.round(((v?.opacity ?? placeholder.opacity ?? 1)) * 100)}%)
+          </Label>
+          <Slider
+            min={0.05}
+            max={1}
+            step={0.05}
+            value={[v?.opacity ?? placeholder.opacity ?? 1]}
+            onValueChange={([o]) =>
+              onChange({
+                placeholder_id: placeholder.id,
+                kind: "text",
+                value: v?.value ?? placeholder.default_value ?? "",
+                opacity: o,
+              })
+            }
+          />
+        </div>
         {placeholder.max_length && (
           <p className="text-xs text-muted-foreground">
             {(v?.value ?? "").length}/{placeholder.max_length} characters
@@ -132,6 +151,19 @@ export default function PlaceholderPanel({
           )}
 
 
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Opacity ({Math.round((v.opacity ?? placeholder.opacity ?? 1) * 100)}%) — use ~10% for a
+              watermark
+            </Label>
+            <Slider
+              min={0.05}
+              max={1}
+              step={0.05}
+              value={[v.opacity ?? placeholder.opacity ?? 1]}
+              onValueChange={([o]) => onChange({ ...v, opacity: o })}
+            />
+          </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Zoom</Label>
             <Slider
