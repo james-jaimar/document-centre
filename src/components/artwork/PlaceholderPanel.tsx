@@ -72,9 +72,11 @@ export default function PlaceholderPanel({
   }
 
   const v = value as TemplatedImageValue | undefined;
-  const dpi = v ? placementDpi(v.source_width_px, placeholder.width_mm) : 0;
+  const dpi = v ? effectivePlacementDpi(v, placeholder.width_mm, placeholder.height_mm) : 0;
+  const isVector = !!v?.source_was_pdf;
   const dpiTone =
     dpi >= GOOD_PLACEMENT_DPI ? "default" : dpi >= MIN_PLACEMENT_DPI ? "secondary" : "destructive";
+
 
   return (
     <div
