@@ -20,9 +20,9 @@ Custom pages are a platform-level capability I switch on per tenant — tenants 
 
 **Editor shell** — header chrome only (back, product name, save state, undo/redo, Preview proof, Continue) plus the right-hand order summary (price, VAT, review checkbox, Add to cart). The editor canvas stays as the existing templated-artwork builder.
 
-## Admin-editable content
+## Page content (platform admin)
 
-New Storefront tab in tenant settings storing to `tenant_settings` (category `storefront`): assurance-bar items, nav links, hero eyebrow/heading/sub-copy/CTA labels, how-it-works steps, trade band copy + CTA, footer strip text, and the per-page toggles. Existing branding (logo, colours, fonts, hero image) is reused, not duplicated.
+The same platform-admin panel holds the copy: assurance-bar items, nav links, hero eyebrow/heading/sub-copy/CTA labels, how-it-works steps, trade band copy + CTA, footer strip text, plus the per-page toggles — stored in `tenant_settings` under category `storefront`. Existing tenant branding (logo, colours, fonts, hero image) is reused, not duplicated. Tenant admins see nothing new; they keep editing branding as today.
 
 ## Data
 
