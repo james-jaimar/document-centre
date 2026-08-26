@@ -21,7 +21,7 @@ import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
-import { downloadFromS3 } from "@/lib/s3Storage";
+import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { rasterisePdfPageOneToImage } from "@/lib/canvasPrints/pdfToImage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
@@ -195,7 +195,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     (async () => {
       try {
         const blob = await downloadFromS3(template.base_pdf_path!);
-        const rendered = await rasterisePdfPages(blob, { targetLongPx: 1400 });
+        const rendered = await rasterisePdfPages(blob, {
+          targetLongPx: 1400,
+          // Transparent base so "behind the template" placeholders show through.
+          knockoutWhite: template.base_knockout_white,
+          knockoutTolerance: template.base_knockout_tolerance,
+        });
         if (!cancelled) setPages(rendered);
       } catch (err) {
         console.error("[templated-artwork] template render failed", err);
@@ -207,7 +212,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     return () => {
       cancelled = true;
     };
-  }, [template?.id, template?.base_pdf_path]);
+  }, [
+    template?.id,
+    template?.base_pdf_path,
+    template?.base_knockout_white,
+    template?.base_knockout_tolerance,
+  ]);
 
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
   useEffect(() => {
@@ -298,6 +308,19 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         const itemId = await ensureOrder();
         const uploaded = await uploadPhoto(file, itemId);
         if (!uploaded) return;
+        // Keep the original vector PDF too — the print composer places it as a
+        // form XObject (with a transparency group when opacity < 1) instead of
+        // using the rasterised proof image.
+        let sourcePdfPath: string | null = null;
+        if (isPdf) {
+          try {
+            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-source.pdf`;
+            await uploadToS3(sourcePdfPath, rawFile);
+          } catch (err) {
+            console.warn("[templated-artwork] original PDF upload failed", err);
+            sourcePdfPath = null;
+          }
+        }
         const ph = placeholders.find((p) => p.id === placeholderId);
         const next: TemplatedImageValue = {
           placeholder_id: placeholderId,
@@ -307,6 +330,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           file_name: uploaded.fileName,
           mime_type: uploaded.mimeType,
           source_was_pdf: wasPdf,
+          source_pdf_path: sourcePdfPath,
           source_width_px: uploaded.width,
           source_height_px: uploaded.height,
           fit: ph?.fit_mode ?? "fill",
@@ -314,6 +338,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           offset_x: 0,
           offset_y: 0,
           background_hex: ph?.background_hex ?? null,
+          opacity: ph?.opacity ?? 1,
         };
         setValues((prev) => ({ ...prev, [placeholderId]: next }));
       } catch (err: any) {

@@ -9,10 +9,12 @@
 import {
   DEFAULT_TEXT_STYLE,
   fontCss,
+  splitByLayer,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
   type TemplatedPlaceholderValue,
 } from "./types";
+
 
 export interface BoxRectPx {
   x: number;
@@ -119,8 +121,99 @@ export interface ComposeOptions {
   activeId?: string | null;
 }
 
-/** Draw the template page plus all customer content into `ctx`. Coordinates are
- *  in the canvas' own pixel space, which must match pageWidthPx/pageHeightPx. */
+function drawPlaceholder(
+  ctx: CanvasRenderingContext2D,
+  p: ArtworkPlaceholder,
+  opts: ComposeOptions,
+  pxPerMm: number,
+) {
+  const box = boxRectPx(p, pxPerMm);
+  const value = opts.values[p.id];
+  const alpha = Math.max(0, Math.min(1, value?.opacity ?? p.opacity ?? 1));
+
+  if (p.kind === "image") {
+    const img = opts.images[p.id];
+    const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    roundedPath(ctx, box);
+    ctx.clip();
+    if (bg) {
+      ctx.fillStyle = bg;
+      ctx.fillRect(box.x, box.y, box.w, box.h);
+    }
+    if (img && value && value.kind === "image") {
+      const r = imageDrawRect(box, img.naturalWidth, img.naturalHeight, value);
+      ctx.drawImage(img, r.x, r.y, r.w, r.h);
+    }
+    ctx.restore();
+  } else {
+    const style = { ...DEFAULT_TEXT_STYLE, ...(p.text_style ?? {}) };
+    const raw = (value && value.kind === "text" ? value.value : "") || p.default_value || "";
+    const text = style.uppercase ? raw.toUpperCase() : raw;
+    if (text.trim()) {
+      // 1pt = 1/72 inch = 25.4/72 mm
+      const sizePx = (style.fontSizePt * (25.4 / 72)) * pxPerMm;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      roundedPath(ctx, box);
+      ctx.clip();
+      ctx.fillStyle = style.colorHex;
+      ctx.font = `${style.fontStyle === "italic" ? "italic " : ""}${style.fontWeight === "bold" ? "700 " : "400 "}${sizePx}px ${fontCss(style.fontFamily)}`;
+      ctx.textBaseline = "top";
+      ctx.textAlign = style.align === "center" ? "center" : style.align === "right" ? "right" : "left";
+      const lines = wrapLines(ctx, text, box.w);
+      const lineH = sizePx * (style.lineHeight || 1.2);
+      const blockH = lines.length * lineH;
+      let y =
+        style.verticalAlign === "top"
+          ? box.y
+          : style.verticalAlign === "bottom"
+            ? box.y + box.h - blockH
+            : box.y + (box.h - blockH) / 2;
+      const x =
+        style.align === "center" ? box.x + box.w / 2 : style.align === "right" ? box.x + box.w : box.x;
+      for (const line of lines) {
+        ctx.fillText(line, x, y);
+        y += lineH;
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function outlineBox(
+  ctx: CanvasRenderingContext2D,
+  p: ArtworkPlaceholder,
+  opts: ComposeOptions,
+  pxPerMm: number,
+) {
+  const box = boxRectPx(p, pxPerMm);
+  ctx.save();
+  const active = opts.activeId === p.id;
+  const under = p.layer === "under";
+  ctx.strokeStyle = under
+    ? active
+      ? "rgba(217,119,6,0.95)"
+      : "rgba(217,119,6,0.5)"
+    : active
+      ? "rgba(37,99,235,0.95)"
+      : "rgba(37,99,235,0.45)";
+  ctx.lineWidth = Math.max(1, pxPerMm * (active ? 0.7 : 0.4));
+  ctx.setLineDash(active ? [] : [pxPerMm * 2, pxPerMm * 1.5]);
+  roundedPath(ctx, box);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Draw the template page plus all customer content into `ctx`. Coordinates are
+ * in the canvas' own pixel space, which must match pageWidthPx/pageHeightPx.
+ *
+ * Draw order: `under` placeholders → template page → `over` placeholders.
+ * For `under` boxes to be visible the template page image must have a
+ * transparent background (see the knockout option in `pdfPages.ts`).
+ */
 export function composeTemplatePage(
   ctx: CanvasRenderingContext2D,
   opts: ComposeOptions,
@@ -129,73 +222,20 @@ export function composeTemplatePage(
   ctx.clearRect(0, 0, pageWidthPx, pageHeightPx);
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
+
+  const pxPerMm = trimWidthMm > 0 ? pageWidthPx / trimWidthMm : 1;
+  const { under, over } = splitByLayer(opts.placeholders);
+
+  for (const p of under) drawPlaceholder(ctx, p, opts, pxPerMm);
+
   if (opts.pageImage) {
     ctx.drawImage(opts.pageImage, 0, 0, pageWidthPx, pageHeightPx);
   }
 
-  const pxPerMm = trimWidthMm > 0 ? pageWidthPx / trimWidthMm : 1;
+  for (const p of over) drawPlaceholder(ctx, p, opts, pxPerMm);
 
-  for (const p of opts.placeholders) {
-    const box = boxRectPx(p, pxPerMm);
-    const value = opts.values[p.id];
-
-    if (p.kind === "image") {
-      const img = opts.images[p.id];
-      const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
-      ctx.save();
-      roundedPath(ctx, box);
-      ctx.clip();
-      if (bg) {
-        ctx.fillStyle = bg;
-        ctx.fillRect(box.x, box.y, box.w, box.h);
-      }
-      if (img && value && value.kind === "image") {
-        const r = imageDrawRect(box, img.naturalWidth, img.naturalHeight, value);
-        ctx.drawImage(img, r.x, r.y, r.w, r.h);
-      }
-      ctx.restore();
-    } else {
-      const style = { ...DEFAULT_TEXT_STYLE, ...(p.text_style ?? {}) };
-      const raw = (value && value.kind === "text" ? value.value : "") || p.default_value || "";
-      const text = style.uppercase ? raw.toUpperCase() : raw;
-      if (text.trim()) {
-        // 1pt = 1/72 inch = 25.4/72 mm
-        const sizePx = (style.fontSizePt * (25.4 / 72)) * pxPerMm;
-        ctx.save();
-        roundedPath(ctx, box);
-        ctx.clip();
-        ctx.fillStyle = style.colorHex;
-        ctx.font = `${style.fontStyle === "italic" ? "italic " : ""}${style.fontWeight === "bold" ? "700 " : "400 "}${sizePx}px ${fontCss(style.fontFamily)}`;
-        ctx.textBaseline = "top";
-        ctx.textAlign = style.align === "center" ? "center" : style.align === "right" ? "right" : "left";
-        const lines = wrapLines(ctx, text, box.w);
-        const lineH = sizePx * (style.lineHeight || 1.2);
-        const blockH = lines.length * lineH;
-        let y =
-          style.verticalAlign === "top"
-            ? box.y
-            : style.verticalAlign === "bottom"
-              ? box.y + box.h - blockH
-              : box.y + (box.h - blockH) / 2;
-        const x =
-          style.align === "center" ? box.x + box.w / 2 : style.align === "right" ? box.x + box.w : box.x;
-        for (const line of lines) {
-          ctx.fillText(line, x, y);
-          y += lineH;
-        }
-        ctx.restore();
-      }
-    }
-
-    if (opts.showBoxes) {
-      ctx.save();
-      const active = opts.activeId === p.id;
-      ctx.strokeStyle = active ? "rgba(37,99,235,0.95)" : "rgba(37,99,235,0.45)";
-      ctx.lineWidth = Math.max(1, pxPerMm * (active ? 0.7 : 0.4));
-      ctx.setLineDash(active ? [] : [pxPerMm * 2, pxPerMm * 1.5]);
-      roundedPath(ctx, box);
-      ctx.stroke();
-      ctx.restore();
-    }
+  if (opts.showBoxes) {
+    for (const p of [...under, ...over]) outlineBox(ctx, p, opts, pxPerMm);
   }
 }
+

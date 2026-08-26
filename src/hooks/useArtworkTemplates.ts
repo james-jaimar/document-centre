@@ -17,6 +17,9 @@ function asTemplate(row: any): ArtworkTemplate {
     trim_offset_x_mm: Number(row.trim_offset_x_mm ?? 0),
     trim_offset_y_mm: Number(row.trim_offset_y_mm ?? 0),
     bleed_mm: Number(row.bleed_mm ?? 3),
+    base_knockout_white: !!row.base_knockout_white,
+    base_knockout_tolerance: Number(row.base_knockout_tolerance ?? 12),
+    base_transparent_path: row.base_transparent_path ?? null,
   } as ArtworkTemplate;
 }
 
@@ -29,9 +32,13 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     width_mm: Number(row.width_mm ?? 0),
     height_mm: Number(row.height_mm ?? 0),
     corner_radius_mm: Number(row.corner_radius_mm ?? 0),
+    layer: row.layer === "under" ? "under" : "over",
+    z_index: Number(row.z_index ?? row.sort_order ?? 0),
+    opacity: row.opacity == null ? 1 : Number(row.opacity),
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
   } as ArtworkPlaceholder;
 }
+
 
 /** Templates for a product family. Admin view shows drafts too. */
 export function useArtworkTemplates(
@@ -170,7 +177,11 @@ export function useSaveArtworkPlaceholders() {
           is_required: p.is_required,
           is_locked: p.is_locked,
           sort_order: i,
+          layer: p.layer === "under" ? "under" : "over",
+          z_index: Number.isFinite(p.z_index) ? p.z_index : i,
+          opacity: p.opacity == null ? 1 : Math.max(0, Math.min(1, p.opacity)),
         };
+
         if (p.id.startsWith("new-")) {
           // Omit `id` entirely — the DB default generates it. Sending it as
           // part of a mixed bulk payload would serialise as null and fail

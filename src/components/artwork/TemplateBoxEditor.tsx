@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ImageIcon, Type, Trash2, Copy } from "lucide-react";
+import { ImageIcon, Type, Trash2, Copy, ChevronUp, ChevronDown } from "lucide-react";
 import {
   ARTWORK_FONTS,
   DEFAULT_TEXT_STYLE,
@@ -63,7 +63,11 @@ export function makePlaceholder(
     is_required: kind === "image",
     is_locked: false,
     sort_order: index,
+    layer: "over",
+    z_index: index,
+    opacity: 1,
   };
+
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -216,6 +220,34 @@ export default function TemplateBoxEditor({
 
   const pct = (v: number, total: number) => `${total > 0 ? (v / total) * 100 : 0}%`;
 
+  /** Boxes in paint order: `under` first, then the template, then `over`. */
+  const ordered = useMemo(
+    () =>
+      [...placeholders].sort(
+        (a, b) =>
+          (a.layer === "under" ? 0 : 1) - (b.layer === "under" ? 0 : 1) ||
+          (a.z_index ?? 0) - (b.z_index ?? 0),
+      ),
+    [placeholders],
+  );
+
+  /** Nudge a box up or down the stack within its own layer. */
+  const restack = (p: ArtworkPlaceholder, dir: -1 | 1) => {
+    const sameLayer = ordered.filter((o) => o.layer === p.layer);
+    const idx = sameLayer.findIndex((o) => o.id === p.id);
+    const target = idx + dir;
+    if (target < 0 || target >= sameLayer.length) return;
+    const reordered = [...sameLayer];
+    [reordered[idx], reordered[target]] = [reordered[target], reordered[idx]];
+    // Renumber the layer so the stack is always unambiguous.
+    const zById = new Map(reordered.map((o, i) => [o.id, i]));
+    onChange(
+      placeholders.map((o) => (zById.has(o.id) ? { ...o, z_index: zById.get(o.id)! } : o)),
+    );
+  };
+
+
+
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       {/* Stage */}
@@ -262,6 +294,7 @@ export default function TemplateBoxEditor({
               alt="Template page"
               className="absolute inset-0 h-full w-full select-none object-fill"
               draggable={false}
+              style={{ zIndex: 5 }}
             />
           ) : (
             <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
@@ -269,7 +302,7 @@ export default function TemplateBoxEditor({
             </div>
           )}
 
-          {placeholders.map((p) => (
+          {ordered.map((p, i) => (
             <div
               key={p.id}
               onPointerDown={(e) => {
@@ -287,9 +320,13 @@ export default function TemplateBoxEditor({
                 (e.target as Element).setPointerCapture?.(e.pointerId);
               }}
               className={`absolute cursor-move border-2 ${
-                activeId === p.id
-                  ? "border-primary bg-primary/15"
-                  : "border-primary/50 bg-primary/5"
+                p.layer === "under"
+                  ? activeId === p.id
+                    ? "border-amber-500 bg-amber-500/20"
+                    : "border-amber-500/50 bg-amber-500/10"
+                  : activeId === p.id
+                    ? "border-primary bg-primary/15"
+                    : "border-primary/50 bg-primary/5"
               }`}
               style={{
                 left: pct(p.x_mm, trimWidthMm),
@@ -297,11 +334,22 @@ export default function TemplateBoxEditor({
                 width: pct(p.width_mm, trimWidthMm),
                 height: pct(p.height_mm, trimHeightMm),
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
+                // Under-template boxes sit below the artwork image (zIndex 5).
+                zIndex: p.layer === "under" ? 1 : 10 + i,
               }}
             >
-              <span className="pointer-events-none absolute left-0 top-0 max-w-full truncate bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+              <span
+                className={`pointer-events-none absolute left-0 top-0 max-w-full truncate px-1 text-[10px] leading-4 ${
+                  p.layer === "under"
+                    ? "bg-amber-500 text-white"
+                    : "bg-primary text-primary-foreground"
+                }`}
+              >
                 {p.kind === "text" ? "T" : "IMG"} · {p.name}
+                {p.layer === "under" ? " · behind" : ""}
+                {(p.opacity ?? 1) < 1 ? ` · ${Math.round((p.opacity ?? 1) * 100)}%` : ""}
               </span>
+
               <div
                 onPointerDown={(e) => {
                   e.stopPropagation();
@@ -342,34 +390,68 @@ export default function TemplateBoxEditor({
       <div className="space-y-3">
         <div className="rounded-lg border">
           <div className="border-b px-3 py-2 text-sm font-medium">
-            Placeholders ({placeholders.length})
+            Layers ({placeholders.length})
           </div>
-          <div className="max-h-48 overflow-auto">
-            {placeholders.length === 0 ? (
+          <div className="max-h-56 overflow-auto">
+            {ordered.length === 0 ? (
               <p className="p-3 text-sm text-muted-foreground">None yet.</p>
             ) : (
-              placeholders.map((p) => (
-                <button
+              // Top of the list = top of the stack.
+              [...ordered].reverse().map((p) => (
+                <div
                   key={p.id}
                   onClick={() => setActiveId(p.id)}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
+                  className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
                     activeId === p.id ? "bg-muted" : ""
                   }`}
                 >
-                  <span className="flex items-center gap-2 truncate">
-                    {p.kind === "text" ? (
-                      <Type className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <ImageIcon className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="truncate">{p.name}</span>
+                  {p.kind === "text" ? (
+                    <Type className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">{p.name}</span>
+                  {p.layer === "under" && (
+                    <Badge variant="secondary" className="shrink-0 text-[10px]">behind</Badge>
+                  )}
+                  {(p.opacity ?? 1) < 1 && (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      {Math.round((p.opacity ?? 1) * 100)}%
+                    </Badge>
+                  )}
+                  {p.is_required && (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">req</Badge>
+                  )}
+                  <span className="ml-auto flex shrink-0 items-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        restack(p, 1);
+                      }}
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        restack(p, -1);
+                      }}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
                   </span>
-                  {p.is_required && <Badge variant="outline" className="text-[10px]">req</Badge>}
-                </button>
+                </div>
               ))
             )}
           </div>
         </div>
+
 
         {active && (
           <div className="space-y-3 rounded-lg border p-3">
@@ -411,6 +493,43 @@ export default function TemplateBoxEditor({
                 </div>
               ))}
             </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Layer</Label>
+                <Select
+                  value={active.layer ?? "over"}
+                  onValueChange={(v) => patch(active.id, { layer: v as "under" | "over" })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="over">In front of the template</SelectItem>
+                    <SelectItem value="under">Behind the template</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Opacity ({Math.round((active.opacity ?? 1) * 100)}%)</Label>
+                <Input
+                  type="number"
+                  min={5}
+                  max={100}
+                  step={5}
+                  value={Math.round((active.opacity ?? 1) * 100)}
+                  onChange={(e) => {
+                    const pctVal = Math.max(5, Math.min(100, Number(e.target.value) || 100));
+                    patch(active.id, { opacity: pctVal / 100 });
+                  }}
+                />
+              </div>
+            </div>
+            {active.layer === "under" && (
+              <p className="text-xs text-muted-foreground">
+                Behind-template boxes only show through where the template artwork is
+                transparent — enable “Knock out white background” on the template.
+              </p>
+            )}
+
 
             {active.kind === "image" ? (
               <>

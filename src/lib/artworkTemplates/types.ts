@@ -9,6 +9,9 @@
 
 export type PlaceholderKind = "image" | "text";
 export type PlaceholderFit = "fit" | "fill";
+/** Where the box sits relative to the template artwork itself. */
+export type PlaceholderLayer = "under" | "over";
+
 
 export interface ArtworkTextStyle {
   fontFamily?: string;
@@ -66,6 +69,14 @@ export interface ArtworkTemplate {
   trim_offset_y_mm: number;
   bleed_mm: number;
 
+  /** Base PDF paints a solid white background — knock it out so boxes placed
+   *  behind the template can show through. */
+  base_knockout_white: boolean;
+  /** 0–60: how far from pure white still counts as "background". */
+  base_knockout_tolerance: number;
+  /** Optional pre-rendered transparent PNG of the base (server-side use). */
+  base_transparent_path: string | null;
+
   status: "draft" | "published";
   sort_order: number;
   is_active: boolean;
@@ -89,7 +100,29 @@ export interface ArtworkPlaceholder {
   is_required: boolean;
   is_locked: boolean;
   sort_order: number;
+  /** Behind or on top of the template artwork. */
+  layer: PlaceholderLayer;
+  /** Stacking order within the layer (higher paints later). */
+  z_index: number;
+  /** 0–1 constant opacity applied to the whole placement. */
+  opacity: number;
 }
+
+/** Draw order: `under` boxes first, then the template page, then `over`. */
+export function sortPlaceholders(list: ArtworkPlaceholder[]): ArtworkPlaceholder[] {
+  return [...list].sort(
+    (a, b) => (a.z_index ?? 0) - (b.z_index ?? 0) || (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
+}
+
+export function splitByLayer(list: ArtworkPlaceholder[]) {
+  const sorted = sortPlaceholders(list);
+  return {
+    under: sorted.filter((p) => p.layer === "under"),
+    over: sorted.filter((p) => p.layer !== "under"),
+  };
+}
+
 
 // ── Customer-side spec (stored on order_items.spec.templated_artwork) ────────
 
@@ -102,6 +135,8 @@ export interface TemplatedImageValue {
   mime_type: string;
   /** Whether the original upload was a PDF (page 1 rasterised for editing). */
   source_was_pdf?: boolean;
+  /** Original vector PDF, kept so the server can place it 1:1 (no rasterising). */
+  source_pdf_path?: string | null;
   source_width_px: number;
   source_height_px: number;
   fit: PlaceholderFit;
@@ -111,13 +146,17 @@ export interface TemplatedImageValue {
   offset_x: number;
   offset_y: number;
   background_hex?: string | null;
+  /** 0–1 — e.g. 0.1 for a watermark. Applied by both preview and PDF server. */
+  opacity?: number;
 }
 
 export interface TemplatedTextValue {
   placeholder_id: string;
   kind: "text";
   value: string;
+  opacity?: number;
 }
+
 
 export type TemplatedPlaceholderValue = TemplatedImageValue | TemplatedTextValue;
 
