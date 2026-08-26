@@ -49,6 +49,9 @@ import ImpersonationConsume from "@/pages/ImpersonationConsume";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
+import StorefrontIndex from "@/pages/storefront/StorefrontIndex";
+import StorefrontShop from "@/pages/storefront/StorefrontShop";
+import StorefrontProduct from "@/pages/storefront/StorefrontProduct";
 import CustomerOrders from "@/pages/dashboard/CustomerOrders";
 import CustomerAccount from "@/pages/dashboard/CustomerAccount";
 import NewOrder from "@/pages/dashboard/NewOrder";
