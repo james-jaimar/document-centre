@@ -155,6 +155,8 @@ export default function OrderBuild() {
       navigate(tenantPath(`orders/${orderId}/canvas-prints`), { replace: true });
     } else if (productFamily.kind === "photo_print") {
       navigate(tenantPath(`orders/${orderId}/photo-prints`), { replace: true });
+    } else if (productFamily.kind === "templated_artwork") {
+      navigate(tenantPath(`orders/${orderId}/custom-artwork`), { replace: true });
     }
   }, [orderId, productFamily?.kind, navigate, tenantPath]);
 

@@ -1,0 +1,536 @@
+/**
+ * Admin editor: draw / drag / resize placeholder boxes over the rendered
+ * template page. Geometry is kept in millimetres relative to the trim box.
+ */
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ImageIcon, Type, Trash2, Copy } from "lucide-react";
+import {
+  ARTWORK_FONTS,
+  DEFAULT_TEXT_STYLE,
+  type ArtworkPlaceholder,
+  type PlaceholderKind,
+} from "@/lib/artworkTemplates/types";
+
+interface Props {
+  pageImageUrl: string | null;
+  trimWidthMm: number;
+  trimHeightMm: number;
+  placeholders: ArtworkPlaceholder[];
+  onChange: (next: ArtworkPlaceholder[]) => void;
+}
+
+type DragState =
+  | { mode: "move"; id: string; startX: number; startY: number; origX: number; origY: number }
+  | { mode: "resize"; id: string; startX: number; startY: number; origW: number; origH: number }
+  | { mode: "draw"; startXmm: number; startYmm: number }
+  | null;
+
+let newCounter = 0;
+function makeId() {
+  newCounter += 1;
+  return `new-${Date.now()}-${newCounter}`;
+}
+
+export function makePlaceholder(
+  kind: PlaceholderKind,
+  geom: { x_mm: number; y_mm: number; width_mm: number; height_mm: number },
+  index: number,
+): ArtworkPlaceholder {
+  return {
+    id: makeId(),
+    template_id: "",
+    kind,
+    name: kind === "image" ? `Image ${index + 1}` : `Text ${index + 1}`,
+    ...geom,
+    fit_mode: "fill",
+    corner_radius_mm: 0,
+    background_hex: null,
+    text_style: kind === "text" ? { ...DEFAULT_TEXT_STYLE } : {},
+    max_length: kind === "text" ? 80 : null,
+    default_value: null,
+    is_required: kind === "image",
+    is_locked: false,
+    sort_order: index,
+  };
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+export default function TemplateBoxEditor({
+  pageImageUrl,
+  trimWidthMm,
+  trimHeightMm,
+  placeholders,
+  onChange,
+}: Props) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [drawKind, setDrawKind] = useState<PlaceholderKind | null>(null);
+  const [drag, setDrag] = useState<DragState>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  const active = useMemo(
+    () => placeholders.find((p) => p.id === activeId) ?? null,
+    [placeholders, activeId],
+  );
+
+  const toMm = useCallback(
+    (clientX: number, clientY: number) => {
+      const el = stageRef.current;
+      if (!el || !trimWidthMm) return { x: 0, y: 0 };
+      const r = el.getBoundingClientRect();
+      return {
+        x: ((clientX - r.left) / r.width) * trimWidthMm,
+        y: ((clientY - r.top) / r.height) * trimHeightMm,
+      };
+    },
+    [trimWidthMm, trimHeightMm],
+  );
+
+  const mmPerPx = useCallback(() => {
+    const el = stageRef.current;
+    if (!el || !trimWidthMm) return 1;
+    return trimWidthMm / el.getBoundingClientRect().width;
+  }, [trimWidthMm]);
+
+  const patch = useCallback(
+    (id: string, updates: Partial<ArtworkPlaceholder>) => {
+      onChange(placeholders.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+    },
+    [placeholders, onChange],
+  );
+
+  const clampBox = useCallback(
+    (p: ArtworkPlaceholder): ArtworkPlaceholder => ({
+      ...p,
+      x_mm: round1(Math.max(0, Math.min(p.x_mm, trimWidthMm - p.width_mm))),
+      y_mm: round1(Math.max(0, Math.min(p.y_mm, trimHeightMm - p.height_mm))),
+      width_mm: round1(Math.max(5, Math.min(p.width_mm, trimWidthMm))),
+      height_mm: round1(Math.max(5, Math.min(p.height_mm, trimHeightMm))),
+    }),
+    [trimWidthMm, trimHeightMm],
+  );
+
+  // ── pointer handling ──────────────────────────────────────────────
+  const onStagePointerDown = (e: React.PointerEvent) => {
+    if (!drawKind) return;
+    const { x, y } = toMm(e.clientX, e.clientY);
+    setDrag({ mode: "draw", startXmm: x, startYmm: y });
+    setGhost({ x, y, w: 0, h: 0 });
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag) return;
+    if (drag.mode === "draw") {
+      const { x, y } = toMm(e.clientX, e.clientY);
+      setGhost({
+        x: Math.min(x, drag.startXmm),
+        y: Math.min(y, drag.startYmm),
+        w: Math.abs(x - drag.startXmm),
+        h: Math.abs(y - drag.startYmm),
+      });
+      return;
+    }
+    const scale = mmPerPx();
+    const dx = (e.clientX - drag.startX) * scale;
+    const dy = (e.clientY - drag.startY) * scale;
+    const target = placeholders.find((p) => p.id === drag.id);
+    if (!target) return;
+    if (drag.mode === "move") {
+      patch(drag.id, clampBox({ ...target, x_mm: drag.origX + dx, y_mm: drag.origY + dy }));
+    } else {
+      patch(drag.id, clampBox({ ...target, width_mm: drag.origW + dx, height_mm: drag.origH + dy }));
+    }
+  };
+
+  const onPointerUp = () => {
+    if (drag?.mode === "draw" && ghost) {
+      if (ghost.w > 4 && ghost.h > 4) {
+        const created = clampBox(
+          makePlaceholder(
+            drawKind ?? "image",
+            {
+              x_mm: round1(ghost.x),
+              y_mm: round1(ghost.y),
+              width_mm: round1(ghost.w),
+              height_mm: round1(ghost.h),
+            },
+            placeholders.length,
+          ),
+        );
+        onChange([...placeholders, created]);
+        setActiveId(created.id);
+      }
+      setDrawKind(null);
+      setGhost(null);
+    }
+    setDrag(null);
+  };
+
+  const addDefault = (kind: PlaceholderKind) => {
+    const created = clampBox(
+      makePlaceholder(
+        kind,
+        {
+          x_mm: round1(trimWidthMm * 0.1),
+          y_mm: round1(trimHeightMm * 0.1),
+          width_mm: round1(trimWidthMm * (kind === "image" ? 0.5 : 0.4)),
+          height_mm: round1(trimHeightMm * (kind === "image" ? 0.3 : 0.08)),
+        },
+        placeholders.length,
+      ),
+    );
+    onChange([...placeholders, created]);
+    setActiveId(created.id);
+  };
+
+  const remove = (id: string) => {
+    onChange(placeholders.filter((p) => p.id !== id));
+    if (activeId === id) setActiveId(null);
+  };
+
+  const duplicate = (p: ArtworkPlaceholder) => {
+    const copy = clampBox({
+      ...p,
+      id: makeId(),
+      name: `${p.name} copy`,
+      x_mm: p.x_mm + 5,
+      y_mm: p.y_mm + 5,
+    });
+    onChange([...placeholders, copy]);
+    setActiveId(copy.id);
+  };
+
+  const pct = (v: number, total: number) => `${total > 0 ? (v / total) * 100 : 0}%`;
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {/* Stage */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={drawKind === "image" ? "default" : "outline"}
+            onClick={() => setDrawKind(drawKind === "image" ? null : "image")}
+          >
+            <ImageIcon className="h-4 w-4 mr-1.5" /> Draw image box
+          </Button>
+          <Button
+            size="sm"
+            variant={drawKind === "text" ? "default" : "outline"}
+            onClick={() => setDrawKind(drawKind === "text" ? null : "text")}
+          >
+            <Type className="h-4 w-4 mr-1.5" /> Draw text box
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => addDefault("image")}>
+            + Image
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => addDefault("text")}>
+            + Text
+          </Button>
+          {drawKind && (
+            <span className="text-xs text-muted-foreground">
+              Drag on the page to draw the box.
+            </span>
+          )}
+        </div>
+
+        <div
+          ref={stageRef}
+          onPointerDown={onStagePointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          className={`relative w-full overflow-hidden rounded-lg border bg-muted ${drawKind ? "cursor-crosshair" : ""}`}
+          style={{ aspectRatio: `${trimWidthMm || 1} / ${trimHeightMm || 1}` }}
+        >
+          {pageImageUrl ? (
+            <img
+              src={pageImageUrl}
+              alt="Template page"
+              className="absolute inset-0 h-full w-full select-none object-fill"
+              draggable={false}
+            />
+          ) : (
+            <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
+              Upload a template PDF to start placing boxes.
+            </div>
+          )}
+
+          {placeholders.map((p) => (
+            <div
+              key={p.id}
+              onPointerDown={(e) => {
+                if (drawKind) return;
+                e.stopPropagation();
+                setActiveId(p.id);
+                setDrag({
+                  mode: "move",
+                  id: p.id,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  origX: p.x_mm,
+                  origY: p.y_mm,
+                });
+                (e.target as Element).setPointerCapture?.(e.pointerId);
+              }}
+              className={`absolute cursor-move border-2 ${
+                activeId === p.id
+                  ? "border-primary bg-primary/15"
+                  : "border-primary/50 bg-primary/5"
+              }`}
+              style={{
+                left: pct(p.x_mm, trimWidthMm),
+                top: pct(p.y_mm, trimHeightMm),
+                width: pct(p.width_mm, trimWidthMm),
+                height: pct(p.height_mm, trimHeightMm),
+                borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
+              }}
+            >
+              <span className="pointer-events-none absolute left-0 top-0 max-w-full truncate bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+                {p.kind === "text" ? "T" : "IMG"} · {p.name}
+              </span>
+              <div
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  setActiveId(p.id);
+                  setDrag({
+                    mode: "resize",
+                    id: p.id,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origW: p.width_mm,
+                    origH: p.height_mm,
+                  });
+                  (e.target as Element).setPointerCapture?.(e.pointerId);
+                }}
+                className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-sm border border-background bg-primary"
+              />
+            </div>
+          ))}
+
+          {ghost && (
+            <div
+              className="pointer-events-none absolute border-2 border-dashed border-primary bg-primary/10"
+              style={{
+                left: pct(ghost.x, trimWidthMm),
+                top: pct(ghost.y, trimHeightMm),
+                width: pct(ghost.w, trimWidthMm),
+                height: pct(ghost.h, trimHeightMm),
+              }}
+            />
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Trim {trimWidthMm} × {trimHeightMm} mm. Boxes repeat on every page of the template.
+        </p>
+      </div>
+
+      {/* Inspector */}
+      <div className="space-y-3">
+        <div className="rounded-lg border">
+          <div className="border-b px-3 py-2 text-sm font-medium">
+            Placeholders ({placeholders.length})
+          </div>
+          <div className="max-h-48 overflow-auto">
+            {placeholders.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground">None yet.</p>
+            ) : (
+              placeholders.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setActiveId(p.id)}
+                  className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
+                    activeId === p.id ? "bg-muted" : ""
+                  }`}
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    {p.kind === "text" ? (
+                      <Type className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className="truncate">{p.name}</span>
+                  </span>
+                  {p.is_required && <Badge variant="outline" className="text-[10px]">req</Badge>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {active && (
+          <div className="space-y-3 rounded-lg border p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Selected box</span>
+              <div className="flex gap-1">
+                <Button size="icon" variant="ghost" onClick={() => duplicate(active)}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => remove(active.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Label shown to the customer</Label>
+              <Input
+                value={active.name}
+                onChange={(e) => patch(active.id, { name: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {(["x_mm", "y_mm", "width_mm", "height_mm"] as const).map((key) => (
+                <div key={key} className="space-y-1.5">
+                  <Label className="text-xs uppercase">{key.replace("_mm", "")} (mm)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={active[key]}
+                    onChange={(e) =>
+                      patch(
+                        active.id,
+                        clampBox({ ...active, [key]: Number(e.target.value) || 0 }),
+                      )
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+
+            {active.kind === "image" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Default fit</Label>
+                  <Select
+                    value={active.fit_mode}
+                    onValueChange={(v) => patch(active.id, { fit_mode: v as "fit" | "fill" })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fill">Fill box (crop overflow)</SelectItem>
+                      <SelectItem value="fit">Fit inside (show all)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Corner radius (mm)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    value={active.corner_radius_mm}
+                    onChange={(e) =>
+                      patch(active.id, { corner_radius_mm: Number(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Font</Label>
+                    <Select
+                      value={active.text_style?.fontFamily ?? DEFAULT_TEXT_STYLE.fontFamily}
+                      onValueChange={(v) =>
+                        patch(active.id, { text_style: { ...active.text_style, fontFamily: v } })
+                      }
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ARTWORK_FONTS.map((f) => (
+                          <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Size (pt)</Label>
+                    <Input
+                      type="number"
+                      min={4}
+                      value={active.text_style?.fontSizePt ?? DEFAULT_TEXT_STYLE.fontSizePt}
+                      onChange={(e) =>
+                        patch(active.id, {
+                          text_style: { ...active.text_style, fontSizePt: Number(e.target.value) || 12 },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Align</Label>
+                    <Select
+                      value={active.text_style?.align ?? "left"}
+                      onValueChange={(v) =>
+                        patch(active.id, { text_style: { ...active.text_style, align: v as any } })
+                      }
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left</SelectItem>
+                        <SelectItem value="center">Centre</SelectItem>
+                        <SelectItem value="right">Right</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Colour</Label>
+                    <Input
+                      type="color"
+                      className="h-9 p-1"
+                      value={active.text_style?.colorHex ?? DEFAULT_TEXT_STYLE.colorHex}
+                      onChange={(e) =>
+                        patch(active.id, { text_style: { ...active.text_style, colorHex: e.target.value } })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Max characters</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={active.max_length ?? 80}
+                      onChange={(e) => patch(active.id, { max_length: Number(e.target.value) || 80 })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Default text</Label>
+                    <Input
+                      value={active.default_value ?? ""}
+                      onChange={(e) => patch(active.id, { default_value: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="flex items-center justify-between rounded-md border p-2">
+              <Label className="text-xs">Required</Label>
+              <Switch
+                checked={active.is_required}
+                onCheckedChange={(v) => patch(active.id, { is_required: v })}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

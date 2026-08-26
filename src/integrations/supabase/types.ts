@@ -41,6 +41,165 @@ export type Database = {
         }
         Relationships: []
       }
+      artwork_template_placeholders: {
+        Row: {
+          background_hex: string | null
+          corner_radius_mm: number
+          created_at: string
+          default_value: string | null
+          fit_mode: string
+          height_mm: number
+          id: string
+          is_locked: boolean
+          is_required: boolean
+          kind: string
+          max_length: number | null
+          name: string
+          sort_order: number
+          template_id: string
+          text_style: Json
+          updated_at: string
+          width_mm: number
+          x_mm: number
+          y_mm: number
+        }
+        Insert: {
+          background_hex?: string | null
+          corner_radius_mm?: number
+          created_at?: string
+          default_value?: string | null
+          fit_mode?: string
+          height_mm?: number
+          id?: string
+          is_locked?: boolean
+          is_required?: boolean
+          kind: string
+          max_length?: number | null
+          name: string
+          sort_order?: number
+          template_id: string
+          text_style?: Json
+          updated_at?: string
+          width_mm?: number
+          x_mm?: number
+          y_mm?: number
+        }
+        Update: {
+          background_hex?: string | null
+          corner_radius_mm?: number
+          created_at?: string
+          default_value?: string | null
+          fit_mode?: string
+          height_mm?: number
+          id?: string
+          is_locked?: boolean
+          is_required?: boolean
+          kind?: string
+          max_length?: number | null
+          name?: string
+          sort_order?: number
+          template_id?: string
+          text_style?: Json
+          updated_at?: string
+          width_mm?: number
+          x_mm?: number
+          y_mm?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "artwork_template_placeholders_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "artwork_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      artwork_templates: {
+        Row: {
+          base_pdf_path: string | null
+          bleed_mm: number
+          branch_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          page_count: number
+          preview_path: string | null
+          product_family_id: string | null
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sort_order: number
+          status: string
+          tenant_id: string | null
+          trim_height_mm: number
+          trim_width_mm: number
+          updated_at: string
+        }
+        Insert: {
+          base_pdf_path?: string | null
+          bleed_mm?: number
+          branch_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          page_count?: number
+          preview_path?: string | null
+          product_family_id?: string | null
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sort_order?: number
+          status?: string
+          tenant_id?: string | null
+          trim_height_mm?: number
+          trim_width_mm?: number
+          updated_at?: string
+        }
+        Update: {
+          base_pdf_path?: string | null
+          bleed_mm?: number
+          branch_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          page_count?: number
+          preview_path?: string | null
+          product_family_id?: string | null
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sort_order?: number
+          status?: string
+          tenant_id?: string | null
+          trim_height_mm?: number
+          trim_width_mm?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "artwork_templates_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "artwork_templates_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "artwork_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assets: {
         Row: {
           boxes: Json | null
