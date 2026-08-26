@@ -149,7 +149,10 @@ export function useSaveArtworkPlaceholders() {
       const { error: delErr } = await del;
       if (delErr) throw delErr;
 
-      const rows = placeholders.map((p, i) => {
+      const existingRows: Record<string, unknown>[] = [];
+      const newRows: Record<string, unknown>[] = [];
+
+      placeholders.forEach((p, i) => {
         const base: Record<string, unknown> = {
           template_id: templateId,
           kind: p.kind,
@@ -168,17 +171,31 @@ export function useSaveArtworkPlaceholders() {
           is_locked: p.is_locked,
           sort_order: i,
         };
-        if (!p.id.startsWith("new-")) base.id = p.id;
-        return base;
+        if (p.id.startsWith("new-")) {
+          // Omit `id` entirely — the DB default generates it. Sending it as
+          // part of a mixed bulk payload would serialise as null and fail
+          // the not-null constraint.
+          newRows.push(base);
+        } else {
+          existingRows.push({ ...base, id: p.id });
+        }
       });
 
-      if (rows.length > 0) {
+      if (existingRows.length > 0) {
         const { error } = await supabase
           .from("artwork_template_placeholders")
-          .upsert(rows as any, { onConflict: "id" });
+          .upsert(existingRows as any, { onConflict: "id" });
+        if (error) throw error;
+      }
+
+      if (newRows.length > 0) {
+        const { error } = await supabase
+          .from("artwork_template_placeholders")
+          .insert(newRows as any);
         if (error) throw error;
       }
       return templateId;
+
     },
     onSuccess: (templateId) => {
       qc.invalidateQueries({ queryKey: [PLACEHOLDERS_KEY, templateId] });
