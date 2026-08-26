@@ -494,6 +494,43 @@ export default function TemplateBoxEditor({
               ))}
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Layer</Label>
+                <Select
+                  value={active.layer ?? "over"}
+                  onValueChange={(v) => patch(active.id, { layer: v as "under" | "over" })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="over">In front of the template</SelectItem>
+                    <SelectItem value="under">Behind the template</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Opacity ({Math.round((active.opacity ?? 1) * 100)}%)</Label>
+                <Input
+                  type="number"
+                  min={5}
+                  max={100}
+                  step={5}
+                  value={Math.round((active.opacity ?? 1) * 100)}
+                  onChange={(e) => {
+                    const pctVal = Math.max(5, Math.min(100, Number(e.target.value) || 100));
+                    patch(active.id, { opacity: pctVal / 100 });
+                  }}
+                />
+              </div>
+            </div>
+            {active.layer === "under" && (
+              <p className="text-xs text-muted-foreground">
+                Behind-template boxes only show through where the template artwork is
+                transparent — enable “Knock out white background” on the template.
+              </p>
+            )}
+
+
             {active.kind === "image" ? (
               <>
                 <div className="space-y-1.5">
