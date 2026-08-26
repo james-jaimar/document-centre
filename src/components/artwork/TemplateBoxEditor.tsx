@@ -335,7 +335,7 @@ export default function TemplateBoxEditor({
                 height: pct(p.height_mm, trimHeightMm),
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
                 // Under-template boxes sit below the artwork image (zIndex 5).
-                zIndex: p.layer === "under" ? 1 + i * 0.001 : 10 + i,
+                zIndex: p.layer === "under" ? 1 : 10 + i,
               }}
             >
               <span
