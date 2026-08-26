@@ -18,7 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
-import { useTenantContext } from "@/hooks/useTenantContext";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import TemplateBoxEditor from "@/components/artwork/TemplateBoxEditor";
