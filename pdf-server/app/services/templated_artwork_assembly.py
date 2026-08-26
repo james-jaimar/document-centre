@@ -104,7 +104,7 @@ def _font_name(style: dict[str, Any]) -> str:
     bold = str(style.get("fontWeight") or "").lower() == "bold"
     italic = str(style.get("fontStyle") or "").lower() == "italic"
 
-    if "times" in family or "serif" in family and "sans" not in family:
+    if "times" in family or ("serif" in family and "sans" not in family):
         base, b, i, bi = "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic"
     elif "courier" in family or "mono" in family:
         base, b, i, bi = "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"
@@ -206,9 +206,10 @@ def _render_overlay(
                 continue
             c.saveState()
             path = c.beginPath()
-            path.roundRect(x_pt, y_pt, w_pt, h_pt, radius) if radius else path.rect(
-                x_pt, y_pt, w_pt, h_pt
-            )
+            if radius:
+                path.roundRect(x_pt, y_pt, w_pt, h_pt, radius)
+            else:
+                path.rect(x_pt, y_pt, w_pt, h_pt)
             c.clipPath(path, stroke=0, fill=0)
             if bg:
                 try:
