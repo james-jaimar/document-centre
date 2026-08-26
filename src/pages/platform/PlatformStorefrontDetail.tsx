@@ -237,6 +237,18 @@ export default function PlatformStorefrontDetail() {
               {text("hero_cta_secondary", "Secondary CTA label")}
             </div>
             {text("hero_subcopy", "Sub-copy", true)}
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <Label className="text-sm">Full-width hero image</Label>
+                <p className="text-xs text-muted-foreground">
+                  Image spans the whole hero with the copy overlaid. Off = image on the right half.
+                </p>
+              </div>
+              <Switch
+                checked={draft.hero_layout === "full"}
+                onCheckedChange={(v) => set("hero_layout", v ? "full" : "split")}
+              />
+            </div>
             <div className="flex items-center gap-3">
               <ImageUploadButton
                 tenantId={tenantId}

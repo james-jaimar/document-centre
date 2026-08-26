@@ -38,6 +38,8 @@ export interface StorefrontPagesConfig {
   hero_cta_primary: string;
   hero_cta_secondary: string;
   hero_image_url: string;
+  /** "split" = image in the right column, "full" = full-width image with copy overlaid. */
+  hero_layout: "split" | "full";
   strip_heading: string;
   strip_subcopy: string;
   how_it_works_heading: string;
@@ -73,6 +75,7 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   hero_cta_primary: "Start designing",
   hero_cta_secondary: "Browse the shop",
   hero_image_url: "",
+  hero_layout: "split",
   strip_heading: "",
   strip_subcopy: "",
   how_it_works_heading: "How it works",
