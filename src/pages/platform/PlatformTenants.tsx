@@ -285,6 +285,8 @@ const PlatformTenants = () => {
                 onChange={(e) => setForm({ ...form, show_country_selector: e.target.checked })}
               />
             </div>
+
+            {editing && <TenantStorefrontPagesPanel tenantId={editing.id} />}
           </div>
 
           <DialogFooter>
