@@ -180,6 +180,7 @@ export function useSaveArtworkPlaceholders() {
           layer: p.layer === "under" ? "under" : "over",
           z_index: Number.isFinite(p.z_index) ? p.z_index : i,
           opacity: p.opacity == null ? 1 : Math.max(0, Math.min(1, p.opacity)),
+        };
 
         if (p.id.startsWith("new-")) {
           // Omit `id` entirely — the DB default generates it. Sending it as
