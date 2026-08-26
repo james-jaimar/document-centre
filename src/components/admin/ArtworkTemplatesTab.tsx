@@ -119,11 +119,14 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         page_count: rendered.length,
         trim_width_mm: rendered[0].widthMm,
         trim_height_mm: rendered[0].heightMm,
+        trim_offset_x_mm: rendered[0].offsetXMm,
+        trim_offset_y_mm: rendered[0].offsetYMm,
       } as any);
       setPages(rendered);
       toast.success(
         `Uploaded — ${rendered.length} page${rendered.length === 1 ? "" : "s"} at ${rendered[0].widthMm} × ${rendered[0].heightMm} mm.`,
       );
+
     } catch (err: any) {
       toast.error(err?.message ?? "Upload failed.");
     } finally {
