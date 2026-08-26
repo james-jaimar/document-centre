@@ -1,3 +1,4 @@
+import TenantStorefrontPagesPanel from "@/components/platform/TenantStorefrontPagesPanel";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTenants, useUpdateTenant, useCreateTenant } from "@/hooks/useTenants";
@@ -243,7 +244,7 @@ const PlatformTenants = () => {
 
       {/* Edit Tenant Dialog */}
       <Dialog open={!!editing} onOpenChange={() => setEditing(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Tenant</DialogTitle>
           </DialogHeader>
@@ -285,6 +286,8 @@ const PlatformTenants = () => {
                 onChange={(e) => setForm({ ...form, show_country_selector: e.target.checked })}
               />
             </div>
+
+            {editing && <TenantStorefrontPagesPanel tenantId={editing.id} />}
           </div>
 
           <DialogFooter>
