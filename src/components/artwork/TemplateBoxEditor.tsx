@@ -63,7 +63,11 @@ export function makePlaceholder(
     is_required: kind === "image",
     is_locked: false,
     sort_order: index,
+    layer: "over",
+    z_index: index,
+    opacity: 1,
   };
+
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
