@@ -198,7 +198,7 @@ function CustomerLayoutInner() {
 
   // Mobile shell — phone-grade devices get a dedicated layout with a
   // bottom tab bar and sheet menu instead of the desktop sidebar/topbar.
-  if (device === "mobile" && !storefrontMode) {
+  if (device === "mobile" && !chromeless) {
     return (
       <div style={tenantStyle}>
         <BranchPicker />
@@ -226,7 +226,7 @@ function CustomerLayoutInner() {
       <div className="flex flex-1 w-full min-h-0">
         {/* Desktop sidebar — animated collapse */}
         <div
-          className={`${storefrontMode ? "hidden" : "hidden lg:flex"} transition-all duration-300 ease-in-out overflow-hidden ${
+          className={`${chromeless ? "hidden" : "hidden lg:flex"} transition-all duration-300 ease-in-out overflow-hidden ${
             collapsed ? "w-0" : "w-64"
           } ${brandingReady ? "opacity-100" : "opacity-0"}`}
         >
@@ -234,7 +234,7 @@ function CustomerLayoutInner() {
         </div>
 
         {/* Collapse toggle tab — visible when sidebar is collapsed */}
-        {collapsed && !storefrontMode && (
+        {collapsed && !chromeless && (
           <button
             onClick={toggle}
             className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
@@ -246,7 +246,7 @@ function CustomerLayoutInner() {
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Content */}
-          <main className={`flex-1 overflow-auto customer-body ${storefrontMode ? "" : "p-6 xl:p-8"}`}>
+          <main className={`flex-1 overflow-auto customer-body ${chromeless ? "" : "p-6 xl:p-8"}`}>
             <Outlet />
           </main>
 
