@@ -532,7 +532,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           <div className="flex items-baseline justify-between border-t pt-3">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-lg font-semibold">
-              {baseUnit > 0 ? formatPrice(priceDisplay.toDisplay(netTotal), activeCurrency) : "On request"}
+              {baseUnit > 0
+                ? `${formatPrice(priceDisplay.toGross(netTotal), activeCurrency)} ${priceDisplay.inclSuffix}`.trim()
+                : "On request"}
             </span>
           </div>
           {missingRequired.length > 0 && (
