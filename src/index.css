@@ -386,12 +386,16 @@
    Ecommerce storefront pages (scoped — never leaks into admin UI)
    --------------------------------------------------------------- */
 .dc-storefront {
-  --sf-accent: 152 52% 33%;
-  --sf-accent-soft: 152 45% 95%;
-  --sf-info: 214 84% 46%;
-  --sf-info-soft: 214 84% 96%;
-  --sf-band: 210 20% 98%;
+  --sf-navy: 218 92% 14%;
+  --sf-blue: 213 100% 39%;
+  --sf-accent: 134 57% 34%;
+  --sf-accent-soft: 129 57% 94%;
+  --sf-info: var(--sf-blue);
+  --sf-info-soft: 210 38% 96%;
+  --sf-band: 210 33% 97%;
   background: hsl(var(--background));
+  color: hsl(var(--sf-navy));
+  font-family: "Manrope", "Segoe UI", sans-serif;
 }
 
 .dc-storefront .sf-container {
@@ -421,20 +425,28 @@
 }
 
 .dc-storefront h1 {
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .dc-storefront h2,
 .dc-storefront h3 {
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
+  font-family: "Sora", "Segoe UI", sans-serif;
 }
 .dc-storefront .sf-hero-title {
-  font-size: clamp(2rem, 2.9vw, 2.95rem);
-  line-height: 1.1;
-  letter-spacing: -0.035em;
+  font-family: "Sora", "Segoe UI", sans-serif;
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  line-height: 1.08;
+  letter-spacing: 0;
   font-weight: 800;
 }
 .dc-storefront .sf-section-title {
   font-size: clamp(1.25rem, 1.4vw, 1.5rem);
   line-height: 1.2;
   font-weight: 700;
+}
+
+@media (max-width: 767px) {
+  .dc-storefront .sf-container {
+    padding-inline: 18px;
+  }
 }

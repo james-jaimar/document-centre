@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
@@ -23,7 +24,7 @@ export interface StorefrontCatalogueEntry {
  */
 export function useStorefrontCatalogue() {
   const { activeBranch } = useBranch();
-  const tenantId = activeBranch?.tenant_id ?? null;
+  const { tenantId } = useTenantContext();
   const branchId = activeBranch?.id ?? null;
   const { families, isLoading } = useVisibleProductFamilies();
 

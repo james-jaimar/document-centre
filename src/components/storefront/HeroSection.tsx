@@ -25,13 +25,11 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
           {config.hero_eyebrow}
         </p>
       )}
-      <h1 className={`sf-hero-title ${full ? "text-primary-foreground" : "text-foreground"}`}>
+      <h1 className="sf-hero-title text-foreground">
         {config.hero_heading}
       </h1>
       <p
-        className={`mt-4 max-w-[44ch] text-[15px] leading-relaxed ${
-          full ? "text-primary-foreground/85" : "text-muted-foreground"
-        }`}
+        className="mt-4 max-w-[48ch] text-[15px] leading-relaxed text-foreground/80"
       >
         {config.hero_subcopy}
       </p>
@@ -43,11 +41,7 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
         <Button
           size="lg"
           variant="outline"
-          className={`h-12 border-2 px-6 text-[15px] font-bold ${
-            full
-              ? "border-primary-foreground bg-transparent text-primary-foreground hover:bg-primary-foreground hover:text-foreground"
-              : "border-primary text-primary"
-          }`}
+           className="h-12 border-2 border-primary bg-background/90 px-6 text-[15px] font-bold text-primary hover:bg-background"
           onClick={onSecondary}
         >
           {config.hero_cta_secondary}
@@ -58,16 +52,15 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
 
   if (full) {
     return (
-      <section className="relative border-b">
+      <section className="relative min-h-[350px] overflow-hidden border-b lg:min-h-[420px]">
         <img
           src={image}
           alt={config.hero_heading}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover object-center"
           loading="eager"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-foreground/85 via-foreground/60 to-foreground/20" />
-        <div className="sf-container relative flex min-h-[340px] items-center py-12 lg:min-h-[460px]">
-          <div className="max-w-[620px]">{copy}</div>
+        <div className="sf-container relative flex min-h-[350px] items-center py-8 lg:min-h-[420px]">
+          <div className="max-w-[590px]">{copy}</div>
         </div>
       </section>
     );
@@ -77,12 +70,12 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
     <section className="border-b bg-background">
       <div className="grid items-stretch lg:grid-cols-[48%_52%]">
         <div className="flex items-center">
-          <div className="ml-auto w-full max-w-[680px] px-[6vw] py-10 lg:py-12 lg:pl-[9vw] lg:pr-10">
+           <div className="ml-auto w-full max-w-[680px] px-[6vw] py-9 lg:py-10 lg:pl-[9vw] lg:pr-10">
             {copy}
           </div>
         </div>
 
-        <div className="relative min-h-[260px] bg-muted lg:min-h-[420px]">
+        <div className="relative min-h-[260px] bg-muted lg:min-h-[400px]">
           <img
             src={image}
             alt={config.hero_heading}

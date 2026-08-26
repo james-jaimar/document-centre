@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchCapabilities } from "@/hooks/useBranchCapabilities";
+import { useTenantContext } from "@/hooks/useTenantContext";
 
 /**
  * Returns the list of master product families the current customer should see,
@@ -15,8 +16,10 @@ import { useBranchCapabilities } from "@/hooks/useBranchCapabilities";
  */
 export function useVisibleProductFamilies() {
   const { activeBranch } = useBranch();
-  const tenantId = activeBranch?.tenant_id ?? null;
-  const { data: capabilities } = useBranchCapabilities(activeBranch?.id ?? null);
+  const { tenantId } = useTenantContext();
+  const { data: capabilities, isLoading: capabilitiesLoading } = useBranchCapabilities(
+    activeBranch?.id ?? null,
+  );
 
   const { data: families, isLoading } = useQuery({
     queryKey: ["product_families_active"],
@@ -32,7 +35,7 @@ export function useVisibleProductFamilies() {
     },
   });
 
-  const { data: tenantToggles } = useQuery({
+  const { data: tenantToggles, isLoading: togglesLoading } = useQuery({
     queryKey: ["tenant_product_toggles_public", tenantId],
     enabled: !!tenantId,
     queryFn: async () => {
@@ -53,12 +56,18 @@ export function useVisibleProductFamilies() {
   );
 
   const filtered = families?.filter((family) => {
-    if (tenantDisabled.has(family.id)) return false;
-    if (!activeBranch || !capabilities || capabilities.length === 0) return true;
-    const cap = capabilities.find((c) => c.product_family_id === family.id);
+    if (!tenantId || tenantDisabled.has(family.id)) return false;
+    if (!activeBranch) return true;
+    const cap = capabilities?.find((c) => c.product_family_id === family.id);
     if (!cap) return false;
     return cap.is_enabled && !cap.temporary_outage;
   });
 
-  return { families: filtered, isLoading };
+  return {
+    families: filtered,
+    isLoading:
+      isLoading ||
+      (!!tenantId && togglesLoading) ||
+      (!!activeBranch && capabilitiesLoading),
+  };
 }
