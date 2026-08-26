@@ -11,7 +11,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "r
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Loader2, ShoppingCart } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -28,6 +28,7 @@ import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artwork
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
+import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
 import QRUploadModal from "@/components/order/QRUploadModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -148,6 +149,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   );
 
   // Debounced persist onto the order item.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [proofOpen, setProofOpen] = useState(false);
   const persistTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!orderItem?.id || !templateId) return;
@@ -169,6 +172,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           quantity,
         })
         .eq("id", orderItem.id);
+      setSavedAt(Date.now());
     }, 600);
     return () => {
       if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -410,36 +414,70 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     );
   }
 
+  const sizeCaption = template
+    ? `${family?.name ?? "Artwork"} (${Math.round(template.trim_width_mm)} × ${Math.round(
+        template.trim_height_mm,
+      )} mm)`
+    : family?.name ?? "";
+
   return (
-    <div ref={ref} className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
-      <div className="flex items-center gap-2">
+    <div ref={ref} className="flex min-h-0 w-full flex-1 flex-col bg-muted/20">
+      {/* Editor bar */}
+      <div className="flex flex-wrap items-center gap-3 border-b bg-background px-4 py-2.5">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="mr-1 h-4 w-4" /> Back
         </Button>
-        <h1 className="text-2xl font-semibold">{family?.name ?? "Custom artwork"}</h1>
-      </div>
-
-      {/* Layout picker */}
-      <div className="flex gap-3 overflow-x-auto pb-1">
-        {templates.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTemplateId(t.id)}
-            className={`shrink-0 rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
-              templateId === t.id ? "border-primary bg-primary/5" : "hover:bg-muted"
-            }`}
+        <h1 className="text-base font-semibold">{family?.name ?? "Custom artwork"}</h1>
+        {savedAt && (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Check className="h-3.5 w-3.5 text-primary" /> Saved
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setProofOpen(true)}
+            disabled={pages.length === 0}
           >
-            <span className="block font-medium">{t.name}</span>
-            <span className="block text-xs text-muted-foreground">
-              {t.page_count} pages · {t.trim_width_mm} × {t.trim_height_mm} mm
-            </span>
-          </button>
-        ))}
+            <Eye className="mr-1.5 h-4 w-4" /> Preview proof
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleAddToCart}
+            disabled={submitting || missingRequired.length > 0}
+          >
+            {submitting ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <ShoppingCart className="mr-1.5 h-4 w-4" />
+            )}
+            Add to cart
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr_300px]">
-        {/* Controls */}
-        <div className="space-y-3">
+      {/* Three-zone editor */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
+        {/* Left rail — layout + placeholder controls */}
+        <div className="min-h-0 space-y-3 overflow-y-auto border-b bg-background p-3 lg:border-b-0 lg:border-r">
+          {templates.length > 1 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Layout</Label>
+              <select
+                value={templateId ?? ""}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — {t.page_count} pages
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {placeholders.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               This layout has no editable areas — it prints exactly as designed.
@@ -468,62 +506,72 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           )}
         </div>
 
-        {/* Preview */}
-        <div className="space-y-3">
-          <div className="rounded-lg border bg-muted/30 p-3">
+        {/* Stage */}
+        <div className="flex min-h-0 min-w-0 flex-col">
+          <div className="px-4 pt-3 text-xs text-muted-foreground">{sizeCaption}</div>
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
             {pagesLoading ? (
-              <Skeleton className="aspect-[4/3] w-full" />
+              <Skeleton className="h-full w-full" />
             ) : (
-              <canvas ref={canvasRef} className="block h-auto w-full rounded-none bg-white shadow-sm" />
+              <canvas
+                ref={canvasRef}
+                className="bg-white shadow-md"
+                style={{ maxHeight: "100%", maxWidth: "100%", width: "auto", height: "auto" }}
+              />
             )}
           </div>
 
-          <div className="flex items-center justify-between">
+          {/* Filmstrip */}
+          <div className="flex items-center gap-2 border-t bg-background px-3 py-2">
             <Button
-              size="sm"
-              variant="outline"
+              size="icon"
+              variant="ghost"
               disabled={pageIndex === 0}
               onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+              aria-label="Previous page"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {pageIndex + 1} of {pages.length || 1}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={pageIndex >= pages.length - 1}
-              onClick={() => setPageIndex((i) => Math.min(pages.length - 1, i + 1))}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {pages.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto rounded-lg border bg-muted/30 p-2">
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
               {pages.map((p) => (
                 <button
                   key={p.index}
                   onClick={() => setPageIndex(p.index)}
-                  className={`shrink-0 rounded border-2 ${
-                    p.index === pageIndex ? "border-primary" : "border-transparent"
+                  className={`shrink-0 rounded border-2 p-0.5 ${
+                    p.index === pageIndex ? "border-primary" : "border-transparent hover:border-border"
                   }`}
                 >
-                  <img src={p.dataUrl} alt={`Page ${p.index + 1}`} className="h-16 w-auto rounded-sm" />
+                  <img src={p.dataUrl} alt={`Page ${p.index + 1}`} className="h-12 w-auto" />
                 </button>
               ))}
+              {pages.length === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Page {pageIndex + 1} of {pages.length || 1}
+                </span>
+              )}
             </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Your artwork repeats on every page. This is a proof — the final print file is produced at
-            full resolution.
-          </p>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              Page {pageIndex + 1} of {pages.length || 1}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={pageIndex >= pages.length - 1}
+              onClick={() => setPageIndex((i) => Math.min(pages.length - 1, i + 1))}
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Summary */}
-        <div className="space-y-4 rounded-lg border p-4">
+        <div className="min-h-0 space-y-4 overflow-y-auto border-t bg-background p-4 lg:border-l lg:border-t-0">
           <h2 className="text-sm font-semibold">Order summary</h2>
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-muted-foreground">Product</span>
+            <span className="text-right font-medium">{family?.name ?? "—"}</span>
+          </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
             <Input
@@ -541,6 +589,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 : "On request"}
             </span>
           </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setProofOpen(true)}
+            disabled={pages.length === 0}
+          >
+            <Eye className="mr-1.5 h-4 w-4" /> Preview proof
+          </Button>
           {missingRequired.length > 0 && (
             <p className="text-xs text-destructive">
               Still needed: {missingRequired.map((p) => p.name).join(", ")}
@@ -558,12 +614,30 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             )}
             Add to cart
           </Button>
+          <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+            Your artwork repeats on every page. This is a proof — the final print file is produced
+            at full resolution.
+          </div>
         </div>
       </div>
+
+      <ArtworkProofModal
+        open={proofOpen}
+        onClose={() => setProofOpen(false)}
+        pages={pages}
+        pageImages={pageImages}
+        placedImages={placedImages}
+        placeholders={placeholders}
+        values={values}
+        trimWidthMm={template?.trim_width_mm ?? 0}
+        initialPage={pageIndex}
+        title={`${family?.name ?? "Artwork"} proof`}
+      />
 
       <QRUploadModal open={qrOpen} onOpenChange={setQrOpen} orderItemId={qrItemId} />
     </div>
   );
+
 });
 
 export default TemplatedArtworkBuilder;
