@@ -390,34 +390,68 @@ export default function TemplateBoxEditor({
       <div className="space-y-3">
         <div className="rounded-lg border">
           <div className="border-b px-3 py-2 text-sm font-medium">
-            Placeholders ({placeholders.length})
+            Layers ({placeholders.length})
           </div>
-          <div className="max-h-48 overflow-auto">
-            {placeholders.length === 0 ? (
+          <div className="max-h-56 overflow-auto">
+            {ordered.length === 0 ? (
               <p className="p-3 text-sm text-muted-foreground">None yet.</p>
             ) : (
-              placeholders.map((p) => (
-                <button
+              // Top of the list = top of the stack.
+              [...ordered].reverse().map((p) => (
+                <div
                   key={p.id}
                   onClick={() => setActiveId(p.id)}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
+                  className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
                     activeId === p.id ? "bg-muted" : ""
                   }`}
                 >
-                  <span className="flex items-center gap-2 truncate">
-                    {p.kind === "text" ? (
-                      <Type className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <ImageIcon className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="truncate">{p.name}</span>
+                  {p.kind === "text" ? (
+                    <Type className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">{p.name}</span>
+                  {p.layer === "under" && (
+                    <Badge variant="secondary" className="shrink-0 text-[10px]">behind</Badge>
+                  )}
+                  {(p.opacity ?? 1) < 1 && (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      {Math.round((p.opacity ?? 1) * 100)}%
+                    </Badge>
+                  )}
+                  {p.is_required && (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">req</Badge>
+                  )}
+                  <span className="ml-auto flex shrink-0 items-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        restack(p, 1);
+                      }}
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        restack(p, -1);
+                      }}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
                   </span>
-                  {p.is_required && <Badge variant="outline" className="text-[10px]">req</Badge>}
-                </button>
+                </div>
               ))
             )}
           </div>
         </div>
+
 
         {active && (
           <div className="space-y-3 rounded-lg border p-3">
