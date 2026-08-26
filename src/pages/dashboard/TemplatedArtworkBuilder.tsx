@@ -474,7 +474,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             {pagesLoading ? (
               <Skeleton className="aspect-[4/3] w-full" />
             ) : (
-              <canvas ref={canvasRef} className="block h-auto w-full rounded bg-white shadow-sm" />
+              <canvas ref={canvasRef} className="block h-auto w-full rounded-none bg-white shadow-sm" />
             )}
           </div>
 
