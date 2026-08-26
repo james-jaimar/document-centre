@@ -626,6 +626,13 @@ def assemble_templated_artwork(
                     knocked_out = True
             # The underlay becomes the page; the template is merged on top.
             under_page.merge_page(base_layer)
+            # Keep the original page geometry (trim/bleed boxes drive imposition).
+            under_page.mediabox = page.mediabox
+            for attr in ("cropbox", "trimbox", "bleedbox", "artbox"):
+                try:
+                    setattr(under_page, attr, getattr(page, attr))
+                except Exception:  # noqa: BLE001 - optional boxes
+                    pass
             composed = under_page
 
         # 2. Boxes in front of the template artwork.
@@ -639,17 +646,19 @@ def assemble_templated_artwork(
 
         writer.add_page(composed)
 
-
-
-
     out_pdf = workspace.path("templated-artwork.pdf")
     with open(out_pdf, "wb") as fh:
         writer.write(fh)
+
+    # Customer PDFs go in last, straight from their originals (vector, with a
+    # real PDF transparency group when the opacity is below 100%).
+    vector_stamped = _stamp_vector_placements(out_pdf, placements)
 
     storage_path = unique_name(
         f"production/print-ready/{job_number}/templated-artwork", ".pdf",
     )
     storage.upload(out_pdf, storage_path, "application/pdf")
+
 
     report = {
         "engine": "templated_artwork",
