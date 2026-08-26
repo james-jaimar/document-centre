@@ -127,6 +127,10 @@ export interface TemplatedArtworkSpec {
   bleed_mm?: number;
   /** One entry per placeholder — repeated across every page. */
   placeholders: TemplatedPlaceholderValue[];
+  /** Snapshot of the template's placeholder geometry/styling at order time, so
+   *  the PDF server can compose without re-reading the admin tables (and so a
+   *  later template edit can never change an already-placed order). */
+  placeholder_defs?: ArtworkPlaceholder[];
 }
 
 export function isImageValue(v: TemplatedPlaceholderValue): v is TemplatedImageValue {

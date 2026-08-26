@@ -25,9 +25,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Settings2, SlidersHorizontal } from "lucide-react";
+import { Image, Settings2, SlidersHorizontal } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
+import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
+import { getFamilyKind } from "@/lib/products/familyKind";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
@@ -49,6 +51,9 @@ const AdminProductCatalogue = () => {
   const [openFamilySlug, setOpenFamilySlug] = useState<string>("");
   const [specsFamilyId, setSpecsFamilyId] = useState<string | null>(null);
   const [specsFamilyName, setSpecsFamilyName] = useState<string>("");
+  const [artworkFamilyId, setArtworkFamilyId] = useState<string | null>(null);
+  const [artworkFamilyName, setArtworkFamilyName] = useState<string>("");
+
 
 
   async function handleToggle(familyId: string, next: boolean) {
@@ -153,7 +158,19 @@ const AdminProductCatalogue = () => {
                           <Settings2 className="h-3 w-3 mr-1" />
                           Pricing
                         </Button>
-
+                        {getFamilyKind(f) === "templated_artwork" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setArtworkFamilyId(f.id);
+                              setArtworkFamilyName(f.name);
+                            }}
+                          >
+                            <Image className="h-3 w-3 mr-1" />
+                            Artwork
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -193,6 +210,18 @@ const AdminProductCatalogue = () => {
           productFamilyName={specsFamilyName}
         />
       )}
+
+      <Dialog
+        open={!!artworkFamilyId}
+        onOpenChange={(o) => { if (!o) setArtworkFamilyId(null); }}
+      >
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{artworkFamilyName} — Artwork templates</DialogTitle>
+          </DialogHeader>
+          {artworkFamilyId && <ArtworkTemplatesTab productFamilyId={artworkFamilyId} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

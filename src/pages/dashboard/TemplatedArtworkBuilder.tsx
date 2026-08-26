@@ -139,6 +139,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       placeholders: placeholders
         .map((p) => values[p.id])
         .filter(Boolean) as TemplatedPlaceholderValue[],
+      // Geometry snapshot for the print-ready composer.
+      placeholder_defs: placeholders,
     }),
     [templateId, template, placeholders, values],
   );
