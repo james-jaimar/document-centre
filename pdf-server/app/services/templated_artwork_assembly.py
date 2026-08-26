@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +50,7 @@ from app.services.files import Workspace, unique_name
 from app.services.storage import StorageService
 
 log = logging.getLogger(__name__)
+
 
 DEFAULT_TEXT_STYLE: dict[str, Any] = {
     "fontFamily": "Helvetica",
