@@ -7,9 +7,9 @@ import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import PriceBreakTable from "@/components/storefront/PriceBreakTable";
+import ProductGallery from "@/components/storefront/ProductGallery";
+import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Accordion,
@@ -17,9 +17,15 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronRight, Truck, Store, FileText } from "lucide-react";
-import { familyImage } from "@/lib/storefront/productImages";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronRight, Truck, Store, Clock } from "lucide-react";
+import { familyImages } from "@/lib/storefront/productImages";
 import { isEditableFamily, startOrderPath } from "@/lib/storefront/catalogue";
 
 const ANY = "*";
@@ -66,8 +72,7 @@ export default function StorefrontProduct() {
     () =>
       blocks
         .filter(
-          (b) =>
-            b.size === activeSize && b.paper === activePaper && b.sides === activeSides,
+          (b) => b.size === activeSize && b.paper === activePaper && b.sides === activeSides,
         )
         .map((b) => ({ qty: b.qty, priceMajor: b.price_minor / 100 }))
         .sort((a, b) => a.qty - b.qty),
@@ -80,7 +85,7 @@ export default function StorefrontProduct() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-7xl space-y-6 px-6 py-10">
+      <div className="dc-storefront sf-container space-y-6 py-10">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-96 w-full rounded-xl" />
       </div>
@@ -89,7 +94,7 @@ export default function StorefrontProduct() {
 
   if (!entry) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-20 text-center">
+      <div className="dc-storefront sf-container max-w-3xl py-20 text-center">
         <h1 className="text-2xl font-bold text-foreground">Product not found</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           This product isn't available on your storefront.
@@ -103,99 +108,114 @@ export default function StorefrontProduct() {
 
   const { family } = entry;
   const editable = isEditableFamily(family);
-  const image = familyImage(family);
+  const images = familyImages(family, config.images);
+  const chips = [
+    editable ? "Customise online" : "Upload artwork",
+    ...(entry.sizes.length ? [entry.sizes.slice(0, 3).join(" · ")] : []),
+    config.turnaround_note,
+  ].filter(Boolean) as string[];
 
   return (
-    <div className="dc-storefront -mx-4 -my-4 md:-mx-6 md:-my-6">
+    <div className="dc-storefront">
       <AssuranceBar items={config.assurance_items} />
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <nav className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="sf-container py-8">
+        <nav className="mb-5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <button onClick={() => navigate(tenantPath("shop"))} className="hover:text-foreground">
             Shop
           </button>
-          <ChevronRight className="h-3 w-3" />
+          <ChevronRight className="h-3 w-3" aria-hidden />
           <span className="text-foreground">{family.name}</span>
         </nav>
 
-        <div className="grid gap-10 lg:grid-cols-2">
-          {/* Gallery */}
-          <div className="space-y-3">
-            <div className="overflow-hidden rounded-2xl border bg-muted">
-              {image ? (
-                <img src={image} alt={family.name} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex aspect-[4/3] items-center justify-center">
-                  <FileText className="h-12 w-12 text-muted-foreground/40" />
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+          <ProductGallery images={images} alt={family.name} />
 
-          {/* Config */}
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div>
               <h1 className="text-3xl font-bold text-foreground">{family.name}</h1>
               {family.description && (
-                <p className="mt-2 text-sm text-muted-foreground">{family.description}</p>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {family.description}
+                </p>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
-                <Badge variant={editable ? "default" : "secondary"}>
-                  {editable ? "Customise online" : "Upload artwork"}
-                </Badge>
-                {entry.fromPrice != null && (
-                  <Badge variant="outline">From {format(entry.fromPrice)}</Badge>
-                )}
+                {chips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-full border px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {chip}
+                  </span>
+                ))}
               </div>
             </div>
 
             {rows.length > 0 && (
-              <Card>
-                <CardContent className="space-y-4 p-5">
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    {sizes.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground">Size</p>
-                        <Select value={activeSize ?? ""} onValueChange={setSize}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {sizes.map((s) => (
-                              <SelectItem key={s} value={s}>{label(s)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {papers.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground">Paper</p>
-                        <Select value={activePaper ?? ""} onValueChange={setPaper}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {papers.map((p) => (
-                              <SelectItem key={p} value={p}>{label(p)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {sidesOptions.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground">Sides</p>
-                        <Select value={activeSides ?? ""} onValueChange={setSides}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {sidesOptions.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s === "double" ? "Double sided" : "Single sided"}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
+              <div className="rounded-xl border bg-card p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {sizes.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">Size</p>
+                      <Select value={activeSize ?? ""} onValueChange={setSize}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {sizes.map((s) => (
+                            <SelectItem key={s} value={s}>{label(s)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {rows.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">Quantity</p>
+                      <Select
+                        value={activeQty ? String(activeQty) : ""}
+                        onValueChange={(v) => setQty(Number(v))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {rows.map((r) => (
+                            <SelectItem key={r.qty} value={String(r.qty)}>
+                              {r.qty.toLocaleString()}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {papers.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">Paper</p>
+                      <Select value={activePaper ?? ""} onValueChange={setPaper}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {papers.map((p) => (
+                            <SelectItem key={p} value={p}>{label(p)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {sidesOptions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">Sides</p>
+                      <Select value={activeSides ?? ""} onValueChange={setSides}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {sidesOptions.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {s === "double" ? "Double sided" : "Single sided"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
 
+                <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
                   <PriceBreakTable
                     rows={rows}
                     activeQty={activeQty}
@@ -204,32 +224,53 @@ export default function StorefrontProduct() {
                   />
 
                   {activeRow && (
-                    <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Your price</p>
-                        <p className="text-2xl font-bold tabular-nums text-foreground">
-                          {format(activeRow.priceMajor)}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {activeQty?.toLocaleString()} units
+                    <div className="flex flex-col justify-center rounded-xl sf-accent-soft p-4">
+                      <p className="text-xs">Your price</p>
+                      <p className="text-3xl font-bold tabular-nums">
+                        {format(activeRow.priceMajor)}
+                      </p>
+                      <p className="mt-1 text-xs">
+                        {activeQty?.toLocaleString()} units{" "}
+                        {config.pricing_note ? "· incl. VAT" : ""}
+                      </p>
+                      <p className="mt-3 flex items-center gap-1.5 text-xs">
+                        <Clock className="h-3.5 w-3.5" aria-hidden />
+                        {config.turnaround_note}
                       </p>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             )}
 
-            <Button size="lg" className="w-full" onClick={() => navigate(tenantPath(startOrderPath(family)))}>
+            <Button
+              size="lg"
+              className="h-12 w-full text-[15px]"
+              onClick={() => navigate(tenantPath(startOrderPath(family)))}
+            >
               {editable ? "Start designing" : "Upload artwork"}
             </Button>
 
-            <div className="flex flex-wrap gap-5 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Delivery available</span>
-              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5" /> Collect in store</span>
+            <div className="grid divide-y rounded-xl border text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              <p className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
+                <Truck className="h-4 w-4" aria-hidden />
+                {config.delivery_note}
+              </p>
+              <p className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
+                <Store className="h-4 w-4" aria-hidden />
+                {config.collect_note}
+              </p>
             </div>
 
             <Accordion type="single" collapsible>
+              <AccordionItem value="specs">
+                <AccordionTrigger className="text-sm">Specifications</AccordionTrigger>
+                <AccordionContent className="text-sm text-muted-foreground">
+                  {entry.sizes.length
+                    ? `Available sizes: ${entry.sizes.join(", ")}.`
+                    : "Sizes and materials are confirmed during configuration."}
+                </AccordionContent>
+              </AccordionItem>
               <AccordionItem value="artwork">
                 <AccordionTrigger className="text-sm">Artwork requirements</AccordionTrigger>
                 <AccordionContent className="text-sm text-muted-foreground">
@@ -237,17 +278,18 @@ export default function StorefrontProduct() {
                   fonts and image resolution, and flag anything that needs attention before print.
                 </AccordionContent>
               </AccordionItem>
-              <AccordionItem value="turnaround">
+              <AccordionItem value="delivery">
                 <AccordionTrigger className="text-sm">Turnaround & delivery</AccordionTrigger>
                 <AccordionContent className="text-sm text-muted-foreground">
-                  Most orders are produced within 2–3 working days once your proof is approved.
-                  Delivery and in-store collection options are shown at checkout.
+                  {config.turnaround_note}. {config.delivery_note} or {config.collect_note.toLowerCase()}.
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
           </div>
         </div>
       </div>
+
+      <StorefrontFooterStrip items={config.footer_items} note={config.footer_note} />
     </div>
   );
 }

@@ -1,7 +1,6 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Wand2, Upload } from "lucide-react";
+import { FileText, Truck, ArrowRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { StorefrontFamily } from "@/lib/storefront/catalogue";
 import { isEditableFamily } from "@/lib/storefront/catalogue";
 
@@ -10,6 +9,7 @@ interface Props {
   imageUrl?: string | null;
   fromPriceLabel?: string | null;
   turnaround?: string | null;
+  view?: "grid" | "list";
   onView: () => void;
   onStart: () => void;
 }
@@ -19,61 +19,90 @@ export default function ProductCard({
   imageUrl,
   fromPriceLabel,
   turnaround,
+  view = "grid",
   onView,
   onStart,
 }: Props) {
   const editable = isEditableFamily(family);
-  return (
-    <Card className="group flex h-full flex-col overflow-hidden transition-shadow hover:shadow-lg">
-      <button
-        type="button"
-        onClick={onView}
-        className="relative block h-40 w-full overflow-hidden bg-muted text-left"
-        aria-label={`View ${family.name}`}
+  const pill = editable ? "Customise online" : "Upload artwork";
+
+  const media = (
+    <button
+      type="button"
+      onClick={onView}
+      className={cn(
+        "group relative block overflow-hidden bg-muted text-left",
+        view === "grid" ? "h-44 w-full" : "h-full w-48 shrink-0",
+      )}
+      aria-label={`View ${family.name}`}
+    >
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={family.name}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          loading="lazy"
+        />
+      ) : (
+        <span className="flex h-full items-center justify-center">
+          <FileText className="h-9 w-9 text-muted-foreground/40" aria-hidden />
+        </span>
+      )}
+      <span
+        className={cn(
+          "absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+          editable ? "sf-accent-bg" : "sf-info-soft",
+        )}
       >
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={family.name}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            loading="lazy"
-          />
-        ) : (
-          <span className="flex h-full items-center justify-center">
-            <FileText className="h-10 w-10 text-muted-foreground/50" aria-hidden />
-          </span>
-        )}
-        {fromPriceLabel && (
-          <span className="absolute right-3 top-3 rounded-full bg-background/95 px-2.5 py-1 text-xs font-semibold shadow-sm">
-            From {fromPriceLabel}
-          </span>
-        )}
-      </button>
+        {pill}
+      </span>
+    </button>
+  );
 
-      <CardContent className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="text-base font-semibold leading-tight text-foreground">{family.name}</h3>
-          <Badge variant={editable ? "default" : "secondary"} className="shrink-0 gap-1 text-[11px]">
-            {editable ? <Wand2 className="h-3 w-3" /> : <Upload className="h-3 w-3" />}
-            {editable ? "Customise online" : "Upload artwork"}
-          </Badge>
+  const body = (
+    <div className="flex flex-1 flex-col p-4">
+      <h3 className="text-[15px] font-semibold leading-snug text-foreground">{family.name}</h3>
+      {family.description && (
+        <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+          {family.description}
+        </p>
+      )}
+      {turnaround && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Truck className="h-3.5 w-3.5" aria-hidden />
+          {turnaround}
+        </p>
+      )}
+      <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+        <div className="leading-tight">
+          {fromPriceLabel ? (
+            <>
+              <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">
+                From
+              </span>
+              <span className="text-lg font-bold sf-accent">{fromPriceLabel}</span>
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">Price on configuration</span>
+          )}
         </div>
+        <Button size="sm" onClick={onStart} className="shrink-0">
+          {editable ? "Start designing" : "Upload artwork"}
+          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
 
-        {family.description && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">{family.description}</p>
-        )}
-
-        {turnaround && <p className="text-xs text-muted-foreground">{turnaround}</p>}
-
-        <div className="mt-auto flex gap-2 pt-1">
-          <Button variant="outline" size="sm" className="flex-1" onClick={onView}>
-            View details
-          </Button>
-          <Button size="sm" className="flex-1" onClick={onStart}>
-            {editable ? "Start designing" : "Upload artwork"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+  return (
+    <article
+      className={cn(
+        "flex overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md",
+        view === "grid" ? "h-full flex-col" : "flex-row",
+      )}
+    >
+      {media}
+      {body}
+    </article>
   );
 }

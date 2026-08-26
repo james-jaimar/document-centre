@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
@@ -20,6 +20,7 @@ import { BranchProvider } from "@/contexts/BranchContext";
 import BranchPicker from "@/components/BranchPicker";
 import { useDeviceKind } from "@/hooks/useDeviceKind";
 import CustomerMobileLayout from "@/components/customer/mobile/CustomerMobileLayout";
+import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
 function hexToHslString(hex: string | undefined | null): string | null {
@@ -54,6 +55,22 @@ function CustomerLayoutInner() {
   const { tenant, loading: tenantLoading } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
   const { settingsMap: integrations } = useTenantSettingsMap("integrations");
+  const { pathname } = useLocation();
+  const { config, isPageEnabled } = useStorefrontPages(tenant?.id ?? null);
+
+  // Storefront mode: the ecommerce landing/shop/product pages run full-bleed
+  // with no sidebar so they match the shop design rather than the portal shell.
+  const storefrontMode = useMemo(() => {
+    if (!config.enabled) return false;
+    const rest = slug
+      ? pathname.replace(new RegExp(`^/t/${slug}`), "")
+      : pathname;
+    const path = rest.replace(/^\//, "").replace(/\/$/, "");
+    if (path === "" ) return isPageEnabled("landing");
+    if (path === "shop") return isPageEnabled("shop");
+    if (path.startsWith("shop/")) return isPageEnabled("product");
+    return false;
+  }, [config.enabled, pathname, slug, isPageEnabled]);
   useTenantGA(integrations.ga_property_id as string | undefined);
 
   // True once both the tenant lookup AND branding fetch have settled. When a
@@ -200,7 +217,7 @@ function CustomerLayoutInner() {
       <div className="flex flex-1 w-full min-h-0">
         {/* Desktop sidebar — animated collapse */}
         <div
-          className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+          className={`${storefrontMode ? "hidden" : "hidden lg:flex"} transition-all duration-300 ease-in-out overflow-hidden ${
             collapsed ? "w-0" : "w-64"
           } ${brandingReady ? "opacity-100" : "opacity-0"}`}
         >
@@ -208,7 +225,7 @@ function CustomerLayoutInner() {
         </div>
 
         {/* Collapse toggle tab — visible when sidebar is collapsed */}
-        {collapsed && (
+        {collapsed && !storefrontMode && (
           <button
             onClick={toggle}
             className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
@@ -220,7 +237,7 @@ function CustomerLayoutInner() {
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Content */}
-          <main className="flex-1 overflow-auto customer-body p-6 xl:p-8">
+          <main className={`flex-1 overflow-auto customer-body ${storefrontMode ? "" : "p-6 xl:p-8"}`}>
             <Outlet />
           </main>
 

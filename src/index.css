@@ -381,3 +381,59 @@
   cursor: default;
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------------
+   Ecommerce storefront pages (scoped — never leaks into admin UI)
+   --------------------------------------------------------------- */
+.dc-storefront {
+  --sf-accent: 152 52% 33%;
+  --sf-accent-soft: 152 45% 95%;
+  --sf-info: 214 84% 46%;
+  --sf-info-soft: 214 84% 96%;
+  --sf-band: 210 20% 98%;
+  background: hsl(var(--background));
+}
+
+.dc-storefront .sf-container {
+  margin-inline: auto;
+  max-width: 1240px;
+  padding-inline: 1.5rem;
+  width: 100%;
+}
+
+.dc-storefront .sf-accent {
+  color: hsl(var(--sf-accent));
+}
+.dc-storefront .sf-accent-bg {
+  background-color: hsl(var(--sf-accent));
+  color: hsl(0 0% 100%);
+}
+.dc-storefront .sf-accent-soft {
+  background-color: hsl(var(--sf-accent-soft));
+  color: hsl(var(--sf-accent));
+}
+.dc-storefront .sf-info-soft {
+  background-color: hsl(var(--sf-info-soft));
+  color: hsl(var(--sf-info));
+}
+.dc-storefront .sf-band {
+  background-color: hsl(var(--sf-band));
+}
+
+.dc-storefront h1 {
+  letter-spacing: -0.02em;
+}
+.dc-storefront h2,
+.dc-storefront h3 {
+  letter-spacing: -0.01em;
+}
+.dc-storefront .sf-hero-title {
+  font-size: clamp(2.25rem, 3.4vw, 3.4rem);
+  line-height: 1.05;
+  font-weight: 800;
+}
+.dc-storefront .sf-section-title {
+  font-size: clamp(1.375rem, 1.6vw, 1.75rem);
+  line-height: 1.2;
+  font-weight: 700;
+}

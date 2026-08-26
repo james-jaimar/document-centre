@@ -142,6 +142,8 @@ import PlatformDocumentCentreAudit from "@/pages/platform/PlatformDocumentCentre
 import PlatformSentMail from "@/pages/platform/PlatformSentMail";
 import PlatformCommunications from "@/pages/platform/PlatformCommunications";
 import PlatformEnquiries from "@/pages/platform/PlatformEnquiries";
+import PlatformStorefronts from "@/pages/platform/PlatformStorefronts";
+import PlatformStorefrontDetail from "@/pages/platform/PlatformStorefrontDetail";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -454,6 +456,16 @@ function AppRoutes() {
         <Route path="/platform/enquiries" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformEnquiries />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/storefronts" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformStorefronts />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/storefronts/:tenantId" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformStorefrontDetail />
           </ProtectedRoute>
         } />
         <Route path="/platform/demo" element={

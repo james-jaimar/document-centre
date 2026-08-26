@@ -10,20 +10,21 @@ const ICONS: Record<string, React.ElementType> = {
   card: CreditCard,
 };
 
+/** Thin trust strip that sits above the page content. */
 export default function AssuranceBar({ items }: { items: StorefrontAssuranceItem[] }) {
   if (!items.length) return null;
   return (
-    <div className="border-b bg-muted/40">
-      <div className="mx-auto grid max-w-7xl gap-3 px-6 py-3 sm:grid-cols-3">
+    <div className="sf-band border-b">
+      <div className="sf-container flex flex-wrap items-center justify-center gap-x-10 gap-y-1.5 py-2">
         {items.map((item) => {
           const Icon = ICONS[item.icon] ?? Shield;
           return (
-            <div key={item.title} className="flex items-center gap-2.5">
-              <Icon className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-              <div className="leading-tight">
-                <p className="text-sm font-medium text-foreground">{item.title}</p>
-                <p className="text-xs text-muted-foreground">{item.subtitle}</p>
-              </div>
+            <div key={item.title} className="flex items-center gap-2 text-[13px] leading-none">
+              <Icon className="h-3.5 w-3.5 shrink-0 sf-accent" aria-hidden />
+              <span className="font-medium text-foreground">{item.title}</span>
+              {item.subtitle && (
+                <span className="text-muted-foreground">· {item.subtitle}</span>
+              )}
             </div>
           );
         })}

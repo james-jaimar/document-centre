@@ -37,12 +37,25 @@ export interface StorefrontPagesConfig {
   hero_subcopy: string;
   hero_cta_primary: string;
   hero_cta_secondary: string;
+  hero_image_url: string;
+  strip_heading: string;
+  strip_subcopy: string;
   how_it_works_heading: string;
   how_it_works: StorefrontStep[];
   trade_heading: string;
   trade_body: string;
   trade_cta: string;
+  trade_benefits: string[];
+  shop_heading: string;
+  shop_subcopy: string;
+  pricing_note: string;
+  turnaround_note: string;
+  delivery_note: string;
+  collect_note: string;
+  footer_items: string[];
   footer_note: string;
+  /** Per product-family gallery images (family id -> image urls). */
+  images: Record<string, string[]>;
 }
 
 export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
@@ -59,6 +72,9 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
     "Design online in minutes or upload your own artwork. Trade pricing, proofing and delivery handled for you.",
   hero_cta_primary: "Start designing",
   hero_cta_secondary: "Browse the shop",
+  hero_image_url: "",
+  strip_heading: "Popular products",
+  strip_subcopy: "Live pricing, proofing and delivery on every order.",
   how_it_works_heading: "How it works",
   how_it_works: [
     { title: "Choose your product", body: "Pick a size, paper and quantity with live pricing." },
@@ -68,7 +84,16 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   trade_heading: "Ordering for a business?",
   trade_body: "Open a trade account for volume pricing, saved artwork and invoiced billing.",
   trade_cta: "Talk to us",
+  trade_benefits: ["Volume pricing", "Saved artwork & repeat orders", "Invoiced billing"],
+  shop_heading: "Shop",
+  shop_subcopy: "Every product available to you, with live pricing.",
+  pricing_note: "Retail prices shown incl. VAT — sign in for trade pricing",
+  turnaround_note: "Typically 2–3 working days",
+  delivery_note: "Nationwide courier delivery",
+  collect_note: "Collect in store, free",
+  footer_items: ["Secure checkout", "Card, EFT & instant EFT", "Need help? Talk to us"],
   footer_note: "",
+  images: {},
 };
 
 function coerce(raw: unknown): StorefrontPagesConfig {
@@ -83,8 +108,16 @@ function coerce(raw: unknown): StorefrontPagesConfig {
     how_it_works: v.how_it_works?.length
       ? v.how_it_works
       : STOREFRONT_PAGES_DEFAULTS.how_it_works,
+    trade_benefits: v.trade_benefits?.length
+      ? v.trade_benefits
+      : STOREFRONT_PAGES_DEFAULTS.trade_benefits,
+    footer_items: v.footer_items?.length
+      ? v.footer_items
+      : STOREFRONT_PAGES_DEFAULTS.footer_items,
+    images: v.images ?? {},
   };
 }
+
 
 const KEY = "storefront_pages_config";
 
