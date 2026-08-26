@@ -280,7 +280,13 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
                 )}
                 {selected.base_pdf_path ? "Replace base PDF" : "Upload base PDF"}
               </Button>
+              {selected.base_pdf_path && (
+                <Button variant="outline" onClick={handleRedetectSize} disabled={renderingPdf}>
+                  Re-detect size
+                </Button>
+              )}
               <Button onClick={handleSaveBoxes} disabled={savePlaceholders.isPending}>
+
                 <Save className="h-4 w-4 mr-1.5" /> Save boxes
               </Button>
             </div>
