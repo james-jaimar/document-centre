@@ -138,7 +138,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       page_count: template?.page_count,
       trim_width_mm: template?.trim_width_mm,
       trim_height_mm: template?.trim_height_mm,
+      trim_offset_x_mm: template?.trim_offset_x_mm,
+      trim_offset_y_mm: template?.trim_offset_y_mm,
       bleed_mm: template?.bleed_mm,
+
       placeholders: placeholders
         .map((p) => values[p.id])
         .filter(Boolean) as TemplatedPlaceholderValue[],
