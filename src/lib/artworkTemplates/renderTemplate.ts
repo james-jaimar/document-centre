@@ -1,0 +1,201 @@
+/**
+ * Client-side compositing for templated artwork previews.
+ *
+ * The preview draws the rasterised template page and stamps the customer's
+ * content into each placeholder box. This is a PROOF only — production output
+ * is composed server-side from the original PDF and full-resolution uploads.
+ */
+
+import {
+  DEFAULT_TEXT_STYLE,
+  fontCss,
+  type ArtworkPlaceholder,
+  type TemplatedImageValue,
+  type TemplatedPlaceholderValue,
+} from "./types";
+
+export interface BoxRectPx {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r: number;
+}
+
+/** Convert a placeholder's mm geometry into pixels for a page drawn at `scale`
+ *  pixels per millimetre. */
+export function boxRectPx(p: ArtworkPlaceholder, pxPerMm: number): BoxRectPx {
+  return {
+    x: p.x_mm * pxPerMm,
+    y: p.y_mm * pxPerMm,
+    w: p.width_mm * pxPerMm,
+    h: p.height_mm * pxPerMm,
+    r: (p.corner_radius_mm ?? 0) * pxPerMm,
+  };
+}
+
+function roundedPath(ctx: CanvasRenderingContext2D, r: BoxRectPx) {
+  const radius = Math.max(0, Math.min(r.r, Math.min(r.w, r.h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(r.x + radius, r.y);
+  ctx.lineTo(r.x + r.w - radius, r.y);
+  ctx.quadraticCurveTo(r.x + r.w, r.y, r.x + r.w, r.y + radius);
+  ctx.lineTo(r.x + r.w, r.y + r.h - radius);
+  ctx.quadraticCurveTo(r.x + r.w, r.y + r.h, r.x + r.w - radius, r.y + r.h);
+  ctx.lineTo(r.x + radius, r.y + r.h);
+  ctx.quadraticCurveTo(r.x, r.y + r.h, r.x, r.y + r.h - radius);
+  ctx.lineTo(r.x, r.y + radius);
+  ctx.quadraticCurveTo(r.x, r.y, r.x + radius, r.y);
+  ctx.closePath();
+}
+
+/** Where the image lands inside the box, honouring fit/fill + zoom + pan. */
+export function imageDrawRect(
+  box: BoxRectPx,
+  imgW: number,
+  imgH: number,
+  value: Pick<TemplatedImageValue, "fit" | "scale" | "offset_x" | "offset_y">,
+) {
+  if (!imgW || !imgH) return { x: box.x, y: box.y, w: box.w, h: box.h };
+  const boxRatio = box.w / box.h;
+  const imgRatio = imgW / imgH;
+  const cover = value.fit !== "fit";
+  const fitScale =
+    cover === (imgRatio > boxRatio)
+      ? box.h / imgH // cover & wide image, or contain & tall image
+      : box.w / imgW;
+  const s = fitScale * Math.max(0.1, value.scale || 1);
+  const w = imgW * s;
+  const h = imgH * s;
+  const spareX = box.w - w;
+  const spareY = box.h - h;
+  const ox = (value.offset_x ?? 0) * (Math.abs(spareX) / 2);
+  const oy = (value.offset_y ?? 0) * (Math.abs(spareY) / 2);
+  return {
+    x: box.x + spareX / 2 + ox,
+    y: box.y + spareY / 2 + oy,
+    w,
+    h,
+  };
+}
+
+function wrapLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string[] {
+  const out: string[] = [];
+  for (const paragraph of text.split(/\n/)) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      out.push("");
+      continue;
+    }
+    let line = words[0];
+    for (let i = 1; i < words.length; i++) {
+      const candidate = `${line} ${words[i]}`;
+      if (ctx.measureText(candidate).width <= maxWidth) line = candidate;
+      else {
+        out.push(line);
+        line = words[i];
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+export interface ComposeOptions {
+  pageImage: CanvasImageSource | null;
+  /** Natural pixel size of the page image. */
+  pageWidthPx: number;
+  pageHeightPx: number;
+  trimWidthMm: number;
+  placeholders: ArtworkPlaceholder[];
+  values: Record<string, TemplatedPlaceholderValue | undefined>;
+  images: Record<string, HTMLImageElement | undefined>;
+  showBoxes?: boolean;
+  /** Highlighted placeholder id (drawn with an accent outline). */
+  activeId?: string | null;
+}
+
+/** Draw the template page plus all customer content into `ctx`. Coordinates are
+ *  in the canvas' own pixel space, which must match pageWidthPx/pageHeightPx. */
+export function composeTemplatePage(
+  ctx: CanvasRenderingContext2D,
+  opts: ComposeOptions,
+) {
+  const { pageWidthPx, pageHeightPx, trimWidthMm } = opts;
+  ctx.clearRect(0, 0, pageWidthPx, pageHeightPx);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
+  if (opts.pageImage) {
+    ctx.drawImage(opts.pageImage, 0, 0, pageWidthPx, pageHeightPx);
+  }
+
+  const pxPerMm = trimWidthMm > 0 ? pageWidthPx / trimWidthMm : 1;
+
+  for (const p of opts.placeholders) {
+    const box = boxRectPx(p, pxPerMm);
+    const value = opts.values[p.id];
+
+    if (p.kind === "image") {
+      const img = opts.images[p.id];
+      const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
+      ctx.save();
+      roundedPath(ctx, box);
+      ctx.clip();
+      if (bg) {
+        ctx.fillStyle = bg;
+        ctx.fillRect(box.x, box.y, box.w, box.h);
+      }
+      if (img && value && value.kind === "image") {
+        const r = imageDrawRect(box, img.naturalWidth, img.naturalHeight, value);
+        ctx.drawImage(img, r.x, r.y, r.w, r.h);
+      }
+      ctx.restore();
+    } else {
+      const style = { ...DEFAULT_TEXT_STYLE, ...(p.text_style ?? {}) };
+      const raw = (value && value.kind === "text" ? value.value : "") || p.default_value || "";
+      const text = style.uppercase ? raw.toUpperCase() : raw;
+      if (text.trim()) {
+        // 1pt = 1/72 inch = 25.4/72 mm
+        const sizePx = (style.fontSizePt * (25.4 / 72)) * pxPerMm;
+        ctx.save();
+        roundedPath(ctx, box);
+        ctx.clip();
+        ctx.fillStyle = style.colorHex;
+        ctx.font = `${style.fontStyle === "italic" ? "italic " : ""}${style.fontWeight === "bold" ? "700 " : "400 "}${sizePx}px ${fontCss(style.fontFamily)}`;
+        ctx.textBaseline = "top";
+        ctx.textAlign = style.align === "center" ? "center" : style.align === "right" ? "right" : "left";
+        const lines = wrapLines(ctx, text, box.w);
+        const lineH = sizePx * (style.lineHeight || 1.2);
+        const blockH = lines.length * lineH;
+        let y =
+          style.verticalAlign === "top"
+            ? box.y
+            : style.verticalAlign === "bottom"
+              ? box.y + box.h - blockH
+              : box.y + (box.h - blockH) / 2;
+        const x =
+          style.align === "center" ? box.x + box.w / 2 : style.align === "right" ? box.x + box.w : box.x;
+        for (const line of lines) {
+          ctx.fillText(line, x, y);
+          y += lineH;
+        }
+        ctx.restore();
+      }
+    }
+
+    if (opts.showBoxes) {
+      ctx.save();
+      const active = opts.activeId === p.id;
+      ctx.strokeStyle = active ? "rgba(37,99,235,0.95)" : "rgba(37,99,235,0.45)";
+      ctx.lineWidth = Math.max(1, pxPerMm * (active ? 0.7 : 0.4));
+      ctx.setLineDash(active ? [] : [pxPerMm * 2, pxPerMm * 1.5]);
+      roundedPath(ctx, box);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
