@@ -9,10 +9,12 @@
 import {
   DEFAULT_TEXT_STYLE,
   fontCss,
+  splitByLayer,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
   type TemplatedPlaceholderValue,
 } from "./types";
+
 
 export interface BoxRectPx {
   x: number;
