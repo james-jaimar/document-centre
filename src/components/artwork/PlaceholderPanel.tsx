@@ -7,16 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageIcon, Type, Upload, Trash2, Smartphone } from "lucide-react";
+import { Loader2, ImageIcon, Type, Upload, Trash2 } from "lucide-react";
 import {
   GOOD_PLACEMENT_DPI,
   MIN_PLACEMENT_DPI,
-  placementDpi,
+  effectivePlacementDpi,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
   type TemplatedPlaceholderValue,
   type TemplatedTextValue,
 } from "@/lib/artworkTemplates/types";
+
 
 interface Props {
   placeholder: ArtworkPlaceholder;
@@ -25,7 +26,6 @@ interface Props {
   active?: boolean;
   onFocus: () => void;
   onPickFile: (file: File) => void;
-  onPhoneUpload?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
 }
@@ -37,7 +37,6 @@ export default function PlaceholderPanel({
   active,
   onFocus,
   onPickFile,
-  onPhoneUpload,
   onChange,
   onClear,
 }: Props) {
@@ -72,9 +71,11 @@ export default function PlaceholderPanel({
   }
 
   const v = value as TemplatedImageValue | undefined;
-  const dpi = v ? placementDpi(v.source_width_px, placeholder.width_mm) : 0;
+  const dpi = v ? effectivePlacementDpi(v, placeholder.width_mm, placeholder.height_mm) : 0;
+  const isVector = !!v?.source_was_pdf;
   const dpiTone =
     dpi >= GOOD_PLACEMENT_DPI ? "default" : dpi >= MIN_PLACEMENT_DPI ? "secondary" : "destructive";
+
 
   return (
     <div
@@ -110,26 +111,26 @@ export default function PlaceholderPanel({
           {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
           {v ? "Replace" : "Upload"}
         </Button>
-        {onPhoneUpload && (
-          <Button size="sm" variant="ghost" onClick={onPhoneUpload} disabled={busy}>
-            <Smartphone className="h-4 w-4 mr-1.5" /> From phone
-          </Button>
-        )}
       </div>
 
       {v && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="truncate text-xs text-muted-foreground">{v.file_name}</span>
-            <Badge variant={dpiTone as any} className="ml-auto text-[10px]">
-              {dpi} DPI
-            </Badge>
+            {isVector ? (
+              <Badge variant="secondary" className="ml-auto text-[10px]">PDF · vector</Badge>
+            ) : (
+              <Badge variant={dpiTone as any} className="ml-auto text-[10px]">
+                {dpi} DPI
+              </Badge>
+            )}
           </div>
-          {dpi < MIN_PLACEMENT_DPI && (
+          {!isVector && dpi < MIN_PLACEMENT_DPI && (
             <p className="text-xs text-destructive">
-              Low resolution for this box — the print may look soft.
+              Low resolution at this size — the print may look soft. Zoom out or supply a larger file.
             </p>
           )}
+
 
           <div className="space-y-1.5">
             <Label className="text-xs">Zoom</Label>

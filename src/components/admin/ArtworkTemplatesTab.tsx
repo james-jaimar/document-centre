@@ -119,11 +119,14 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         page_count: rendered.length,
         trim_width_mm: rendered[0].widthMm,
         trim_height_mm: rendered[0].heightMm,
+        trim_offset_x_mm: rendered[0].offsetXMm,
+        trim_offset_y_mm: rendered[0].offsetYMm,
       } as any);
       setPages(rendered);
       toast.success(
         `Uploaded — ${rendered.length} page${rendered.length === 1 ? "" : "s"} at ${rendered[0].widthMm} × ${rendered[0].heightMm} mm.`,
       );
+
     } catch (err: any) {
       toast.error(err?.message ?? "Upload failed.");
     } finally {
@@ -158,6 +161,8 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         page_count: rendered.length,
         trim_width_mm: rendered[0].widthMm,
         trim_height_mm: rendered[0].heightMm,
+        trim_offset_x_mm: rendered[0].offsetXMm,
+        trim_offset_y_mm: rendered[0].offsetYMm,
       } as any);
       setPages(rendered);
       toast.success(
@@ -165,6 +170,7 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       );
     } catch (err: any) {
       toast.error(err?.message ?? "Could not re-read the base PDF.");
+
     } finally {
       setRenderingPdf(false);
     }
@@ -291,6 +297,40 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               </Button>
             </div>
           </div>
+
+          {/* Trim geometry — everything in the editor is measured from this
+              rectangle, exactly as in Illustrator. */}
+          <div className="grid gap-3 sm:grid-cols-4">
+            {([
+              ["trim_width_mm", "Trim width (mm)"],
+              ["trim_height_mm", "Trim height (mm)"],
+              ["trim_offset_x_mm", "Trim left offset (mm)"],
+              ["trim_offset_y_mm", "Trim top offset (mm)"],
+            ] as const).map(([key, label]) => (
+              <div key={key} className="space-y-1.5">
+                <Label className="text-xs">{label}</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  key={`${selected.id}-${key}`}
+                  defaultValue={(selected as any)[key] ?? 0}
+                  onBlur={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n !== (selected as any)[key]) {
+                      patchTemplate({ [key]: n } as any);
+                    }
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The offsets say where the trimmed sheet sits on the supplied page (bleed and crop
+            marks sit outside it). Placeholder positions are measured from the trim's top-left
+            corner, so they match your Illustrator measurements.
+          </p>
+
+
 
           {renderingPdf ? (
             <Skeleton className="h-96 w-full" />

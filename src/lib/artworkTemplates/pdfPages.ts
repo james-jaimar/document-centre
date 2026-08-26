@@ -22,9 +22,17 @@ export interface RasterisedPage {
   /** Trim width in mm (what the customer receives). */
   widthMm: number;
   heightMm: number;
+  /** Where the trim box sits inside the full page, in mm from the page's
+   *  top-left. Needed so the PDF server can stamp at the same origin. */
+  offsetXMm: number;
+  offsetYMm: number;
+  /** Full (crop/media) page size in mm, before trimming. */
+  pageWidthMm: number;
+  pageHeightMm: number;
   /** True when the raster was cropped down to a TrimBox smaller than the page. */
   trimmed: boolean;
 }
+
 
 const PT_TO_MM = 25.4 / 72;
 
@@ -139,16 +147,22 @@ export async function rasterisePdfPages(
 
       const widthPt = trimPt ? trimPt.width : base.width;
       const heightPt = trimPt ? trimPt.height : base.height;
+      const mm1 = (pt: number) => Math.round(pt * PT_TO_MM * 10) / 10;
 
       pages.push({
         index: i - 1,
         dataUrl: out.toDataURL("image/jpeg", 0.9),
         widthPx: out.width,
         heightPx: out.height,
-        widthMm: Math.round(widthPt * PT_TO_MM * 10) / 10,
-        heightMm: Math.round(heightPt * PT_TO_MM * 10) / 10,
+        widthMm: mm1(widthPt),
+        heightMm: mm1(heightPt),
+        offsetXMm: mm1(trimPt ? trimPt.x : 0),
+        offsetYMm: mm1(trimPt ? trimPt.y : 0),
+        pageWidthMm: mm1(base.width),
+        pageHeightMm: mm1(base.height),
         trimmed: !!trimPt,
       });
+
     }
   } finally {
     try {

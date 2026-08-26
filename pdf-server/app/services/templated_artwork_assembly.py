@@ -171,29 +171,34 @@ def _render_overlay(
     out_pdf: Path,
     page_w_pt: float,
     page_h_pt: float,
-    trim_w_mm: float,
-    trim_h_mm: float,
+    trim_x_pt: float,
+    trim_top_pt: float,
     defs: list[dict[str, Any]],
     values: dict[str, dict[str, Any]],
     images: dict[str, Image.Image],
 ) -> None:
     """Draw every placeholder onto a transparent single-page PDF that is
-    later merged over the base template page."""
-    # mm → pt using the ACTUAL page box, so a base PDF that carries bleed
-    # still lines the boxes up with what the customer saw.
-    sx = page_w_pt / (trim_w_mm * mm) if trim_w_mm > 0 else 1.0
-    sy = page_h_pt / (trim_h_mm * mm) if trim_h_mm > 0 else 1.0
+    later merged over the base template page.
+
+    Placeholder geometry is millimetres measured from the TRIM box's top-left
+    corner (exactly what the designer measures in Illustrator), so the overlay
+    is drawn 1:1 in millimetres and simply offset to the trim origin. A base
+    PDF carrying bleed and crop marks therefore lines up perfectly.
+    """
+    sx = 1.0
+    sy = 1.0
 
     c = rl_canvas.Canvas(str(out_pdf), pagesize=(page_w_pt, page_h_pt))
 
     for d in defs:
         pid = str(d.get("id") or "")
         value = values.get(pid) or {}
-        x_pt = _num(d.get("x_mm")) * mm * sx
-        w_pt = _num(d.get("width_mm")) * mm * sx
-        h_pt = _num(d.get("height_mm")) * mm * sy
-        # Convert top-left mm origin to PDF bottom-left points.
-        y_pt = page_h_pt - (_num(d.get("y_mm")) * mm * sy) - h_pt
+        x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
+        w_pt = _num(d.get("width_mm")) * mm
+        h_pt = _num(d.get("height_mm")) * mm
+        # Convert top-left mm origin (from the trim top edge) to PDF points.
+        y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
+
         radius = _num(d.get("corner_radius_mm")) * mm * min(sx, sy)
         radius = max(0.0, min(radius, min(w_pt, h_pt) / 2.0))
         if w_pt <= 0 or h_pt <= 0:
@@ -344,23 +349,48 @@ def assemble_templated_artwork(
 
     trim_w_mm = _num(ta.get("trim_width_mm"))
     trim_h_mm = _num(ta.get("trim_height_mm"))
+    spec_off_x_mm = _num(ta.get("trim_offset_x_mm"))
+    spec_off_y_mm = _num(ta.get("trim_offset_y_mm"))
 
     writer = PdfWriter()
     for page_index, page in enumerate(reader.pages):
         box = page.mediabox
         page_w_pt = float(box.width)
         page_h_pt = float(box.height)
-        # Fall back to the page's own size when the spec didn't record a trim.
-        tw = trim_w_mm if trim_w_mm > 0 else page_w_pt / mm
-        th = trim_h_mm if trim_h_mm > 0 else page_h_pt / mm
+
+        # Where does the trimmed sheet sit on this page? Prefer the PDF's own
+        # TrimBox; fall back to the offsets captured when the template was set
+        # up; finally assume the page is already trimmed.
+        trim_x_pt: float | None = None
+        trim_top_pt: float | None = None
+        try:
+            tb = page.trimbox
+            tw = float(tb.width)
+            th = float(tb.height)
+            if tw > 1 and th > 1 and (tw <= page_w_pt + 1 and th <= page_h_pt + 1):
+                trim_x_pt = float(tb.left) - float(box.left)
+                trim_top_pt = float(tb.top) - float(box.bottom)
+        except Exception:  # noqa: BLE001 - malformed boxes are not fatal
+            trim_x_pt = None
+        if trim_x_pt is None or trim_top_pt is None:
+            trim_x_pt = spec_off_x_mm * mm
+            trim_top_pt = page_h_pt - spec_off_y_mm * mm
 
         overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
         _render_overlay(
-            overlay_path, page_w_pt, page_h_pt, tw, th, defs, values, images,
+            overlay_path,
+            page_w_pt,
+            page_h_pt,
+            trim_x_pt,
+            trim_top_pt,
+            defs,
+            values,
+            images,
         )
         overlay_page = PdfReader(str(overlay_path)).pages[0]
         page.merge_page(overlay_page)
         writer.add_page(page)
+
 
     out_pdf = workspace.path("templated-artwork.pdf")
     with open(out_pdf, "wb") as fh:

@@ -14,9 +14,12 @@ function asTemplate(row: any): ArtworkTemplate {
     page_count: Number(row.page_count ?? 12),
     trim_width_mm: Number(row.trim_width_mm ?? 0),
     trim_height_mm: Number(row.trim_height_mm ?? 0),
+    trim_offset_x_mm: Number(row.trim_offset_x_mm ?? 0),
+    trim_offset_y_mm: Number(row.trim_offset_y_mm ?? 0),
     bleed_mm: Number(row.bleed_mm ?? 3),
   } as ArtworkTemplate;
 }
+
 
 function asPlaceholder(row: any): ArtworkPlaceholder {
   return {
