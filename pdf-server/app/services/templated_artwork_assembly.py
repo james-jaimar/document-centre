@@ -305,8 +305,160 @@ def _render_overlay(
 
 
 # ---------------------------------------------------------------------------
+# Layering helpers
+# ---------------------------------------------------------------------------
+def _layer_of(d: dict[str, Any]) -> str:
+    return "under" if str(d.get("layer") or "over") == "under" else "over"
+
+
+def _split_layers(defs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return ``(under, over)`` ordered by z_index — matching the browser proof."""
+    ordered = sorted(
+        defs,
+        key=lambda d: (_num(d.get("z_index")), _num(d.get("sort_order"))),
+    )
+    return (
+        [d for d in ordered if _layer_of(d) == "under"],
+        [d for d in ordered if _layer_of(d) == "over"],
+    )
+
+
+def _knockout_base_page(
+    base_pdf: Path,
+    page_index: int,
+    out_png: Path,
+    tolerance: float,
+    dpi: int = 300,
+) -> bool:
+    """Rasterise one base page with a transparent background so placeholders
+    on the ``under`` layer show through.
+
+    A vector base can't have its white knocked out without rewriting its
+    content streams, so the template layer becomes a high-resolution RGBA
+    raster instead. Returns False when mutool isn't available.
+    """
+    mutool = shutil.which("mutool")
+    if not mutool:
+        log.warning("templated_artwork: mutool missing — cannot knock out the base background")
+        return False
+    tmp = out_png.with_suffix(".raw.png")
+    try:
+        subprocess.run(
+            [
+                mutool, "draw", "-F", "png", "-c", "rgba", "-r", str(dpi),
+                "-o", str(tmp), str(base_pdf), str(page_index + 1),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as exc:  # noqa: BLE001
+        log.warning("templated_artwork: mutool render failed: %s", exc)
+        return False
+
+    img = Image.open(tmp).convert("RGBA")
+    tol = max(0.0, min(60.0, tolerance))
+    cut = 255 - tol
+    px = img.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                continue
+            lum = min(r, g, b)
+            if lum >= cut:
+                px[x, y] = (r, g, b, 0)
+            elif lum >= cut - 24:
+                px[x, y] = (r, g, b, int(a * (1 - (lum - (cut - 24)) / 24)))
+    img.save(out_png)
+    return True
+
+
+def _render_base_raster_layer(
+    out_pdf: Path, png: Path, page_w_pt: float, page_h_pt: float
+) -> None:
+    """Wrap a transparent base-page PNG in a single-page PDF at page size."""
+    c = rl_canvas.Canvas(str(out_pdf), pagesize=(page_w_pt, page_h_pt))
+    c.drawImage(
+        ImageReader(str(png)), 0, 0, width=page_w_pt, height=page_h_pt, mask="auto"
+    )
+    c.showPage()
+    c.save()
+
+
+def _stamp_vector_placements(
+    pdf_path: Path,
+    placements: list[dict[str, Any]],
+) -> int:
+    """Place customer-supplied PDFs as form XObjects — vector, full quality.
+
+    Each placement carries the clip box, the target rectangle, the constant
+    alpha (so a 10% watermark stays vector) and whether it belongs under or
+    over the template artwork.
+    """
+    if not placements:
+        return 0
+    try:
+        import pikepdf
+    except ImportError:  # pragma: no cover - pikepdf ships in requirements
+        log.warning("templated_artwork: pikepdf missing — vector placements skipped")
+        return 0
+
+    stamped = 0
+    with pikepdf.open(str(pdf_path), allow_overwriting_input=True) as pdf:
+        sources: dict[str, Any] = {}
+        for page in pdf.pages:
+            for pl in placements:
+                src_path = str(pl["source"])
+                try:
+                    src = sources.get(src_path)
+                    if src is None:
+                        src = pikepdf.open(src_path)
+                        sources[src_path] = src
+                    form = pdf.copy_foreign(
+                        pikepdf.Page(src.pages[0]).as_form_xobject()
+                    )
+                    bbox = [float(v) for v in form.BBox]
+                    bw = abs(bbox[2] - bbox[0]) or 1.0
+                    bh = abs(bbox[3] - bbox[1]) or 1.0
+                    sx = pl["w"] / bw
+                    sy = pl["h"] / bh
+                    tx = pl["x"] - bbox[0] * sx
+                    ty = pl["y"] - bbox[1] * sy
+
+                    pg = pikepdf.Page(page)
+                    xname = pg.add_resource(form, pikepdf.Name.XObject)
+                    gs = pdf.make_indirect(
+                        pikepdf.Dictionary(
+                            Type=pikepdf.Name.ExtGState,
+                            ca=pl["alpha"],
+                            CA=pl["alpha"],
+                        )
+                    )
+                    gname = pg.add_resource(gs, pikepdf.Name.ExtGState)
+                    content = (
+                        f"q {gname} gs "
+                        f"{pl['clip_x']:.4f} {pl['clip_y']:.4f} "
+                        f"{pl['clip_w']:.4f} {pl['clip_h']:.4f} re W n "
+                        f"{sx:.6f} 0 0 {sy:.6f} {tx:.4f} {ty:.4f} cm "
+                        f"{xname} Do Q"
+                    ).encode()
+                    pg.contents_add(
+                        pikepdf.Stream(pdf, content), prepend=pl["layer"] == "under"
+                    )
+                    stamped += 1
+                except Exception as exc:  # noqa: BLE001 - never fail the job
+                    log.warning("templated_artwork: vector placement failed: %s", exc)
+        pdf.save(str(pdf_path))
+        for src in sources.values():
+            src.close()
+    return stamped
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
+
 def assemble_templated_artwork(
     bundle,
     workspace: Workspace,
