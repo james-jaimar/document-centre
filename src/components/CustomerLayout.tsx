@@ -71,6 +71,15 @@ function CustomerLayoutInner() {
     if (path.startsWith("shop/")) return isPageEnabled("product");
     return false;
   }, [config.enabled, pathname, slug, isPageEnabled]);
+
+  // Editor mode: the templated-artwork designer owns the whole canvas — no
+  // sidebar, no page padding, so it behaves like a dedicated design surface.
+  const editorMode = useMemo(
+    () => /\/custom-artwork\/?$/.test(pathname),
+    [pathname],
+  );
+  const chromeless = storefrontMode || editorMode;
+
   useTenantGA(integrations.ga_property_id as string | undefined);
 
   // True once both the tenant lookup AND branding fetch have settled. When a
