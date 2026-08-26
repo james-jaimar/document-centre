@@ -78,7 +78,15 @@ async function readPageBoxes(
  */
 export async function rasterisePdfPages(
   source: Blob | ArrayBuffer,
-  opts: { targetLongPx?: number; maxPages?: number } = {},
+  opts: {
+    targetLongPx?: number;
+    maxPages?: number;
+    /** Make the template's white background transparent so placeholders placed
+     *  behind the artwork show through. */
+    knockoutWhite?: boolean;
+    /** 0–60 — how far from pure white still counts as background. */
+    knockoutTolerance?: number;
+  } = {},
 ): Promise<RasterisedPage[]> {
   const targetLongPx = opts.targetLongPx ?? 1400;
   const buf = source instanceof Blob ? await source.arrayBuffer() : source;
@@ -86,6 +94,7 @@ export async function rasterisePdfPages(
   const boxes = await readPageBoxes(buf.slice(0));
   const doc = await (pdfjsLib as any).getDocument({ data: buf.slice(0) }).promise;
   const pages: RasterisedPage[] = [];
+
   try {
     const count = Math.min(doc.numPages, opts.maxPages ?? doc.numPages);
     for (let i = 1; i <= count; i++) {
