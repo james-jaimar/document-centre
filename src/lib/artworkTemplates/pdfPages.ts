@@ -22,9 +22,17 @@ export interface RasterisedPage {
   /** Trim width in mm (what the customer receives). */
   widthMm: number;
   heightMm: number;
+  /** Where the trim box sits inside the full page, in mm from the page's
+   *  top-left. Needed so the PDF server can stamp at the same origin. */
+  offsetXMm: number;
+  offsetYMm: number;
+  /** Full (crop/media) page size in mm, before trimming. */
+  pageWidthMm: number;
+  pageHeightMm: number;
   /** True when the raster was cropped down to a TrimBox smaller than the page. */
   trimmed: boolean;
 }
+
 
 const PT_TO_MM = 25.4 / 72;
 
