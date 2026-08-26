@@ -1,3 +1,4 @@
+import TenantStorefrontPagesPanel from "@/components/platform/TenantStorefrontPagesPanel";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTenants, useUpdateTenant, useCreateTenant } from "@/hooks/useTenants";
