@@ -585,6 +585,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       ...(isCanvasPrints && spec?.canvas_prints
         ? { canvas_prints: spec.canvas_prints }
         : {}),
+      // Surface the templated-artwork block so the PDF server can stamp the
+      // customer's images / text into the base template at full resolution.
+      ...(isTemplatedArtwork ? { templated_artwork: spec.templated_artwork } : {}),
       // Ordered instructions for the print-shop merge worker.
       // See `MergeDirective` for the contract.
       ...(mergeDirectives.length > 0 ? { merge_directives: mergeDirectives } : {}),
