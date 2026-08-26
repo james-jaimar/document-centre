@@ -12,22 +12,25 @@ export default function HowItWorks({
 }) {
   if (!steps.length) return null;
   return (
-    <section className="sf-band border-t py-14">
+    <section className="pb-4">
       <div className="sf-container">
-        <h2 className="sf-section-title text-center text-foreground">{heading}</h2>
-        <ol className="mt-8 grid divide-y rounded-xl border bg-background md:grid-cols-3 md:divide-x md:divide-y-0">
+        {heading && <h2 className="sr-only">{heading}</h2>}
+        <ol className="sf-band grid gap-4 rounded-xl px-[2%] py-4 md:grid-cols-3">
           {steps.map((step, i) => {
             const Icon = STEP_ICONS[i % STEP_ICONS.length];
             return (
-              <li key={step.title} className="px-7 py-8">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                    {i + 1}
-                  </span>
-                  <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
+              <li
+                key={step.title}
+                className="grid grid-cols-[32px_1fr] items-start gap-x-3 gap-y-1 pr-6 md:border-r md:last:border-r-0"
+              >
+                <span className="row-span-2 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  {i + 1}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 shrink-0 text-foreground/70" aria-hidden />
+                  <b className="text-[15px] font-bold text-foreground">{step.title}</b>
                 </div>
-                <h3 className="mt-4 text-base font-semibold text-foreground">{step.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{step.body}</p>
               </li>
             );
           })}
