@@ -7,7 +7,6 @@ import {
 } from "@/hooks/useProductFamilies";
 import type { ProductFamily } from "@/hooks/useProductFamilies";
 import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
-import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 import ProductCatalogueLinksTab from "@/components/admin/ProductCatalogueLinksTab";
 import ProductFamilyVariantsEditor from "@/components/admin/ProductFamilyVariantsEditor";
@@ -226,7 +225,6 @@ const AdminProducts = () => {
                                 <TabsTrigger value="catalogue">Catalogue</TabsTrigger>
                                 <TabsTrigger value="variants">Variants</TabsTrigger>
                                 <TabsTrigger value="options">Options</TabsTrigger>
-                                <TabsTrigger value="artwork">Artwork</TabsTrigger>
                               </TabsList>
                               <TabsContent value="catalogue">
                                 <ProductCatalogueLinksTab productFamilyId={f.id} />
@@ -236,9 +234,6 @@ const AdminProducts = () => {
                               </TabsContent>
                               <TabsContent value="options">
                                 <ProductOptionsEditor productFamilyId={f.id} />
-                              </TabsContent>
-                              <TabsContent value="artwork">
-                                <ArtworkTemplatesTab productFamilyId={f.id} />
                               </TabsContent>
                             </Tabs>
                           </td>

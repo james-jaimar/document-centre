@@ -61,8 +61,8 @@ export default function NewOrder() {
       return;
     }
     const family = filteredFamilies.find((f: any) => f.id === familyId);
-    if (getFamilyKind(family as any) === "templated_artwork") {
-      navigate(tenantPath("orders/new/custom-artwork"));
+    if ((family as any)?.supports_editable_artwork || getFamilyKind(family as any) === "templated_artwork") {
+      navigate(tenantPath(`orders/new/${familyId}/custom-artwork`));
       return;
     }
     navigate(tenantPath(`orders/new/${familyId}`));
