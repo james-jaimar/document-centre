@@ -133,6 +133,8 @@ export type Database = {
           status: string
           tenant_id: string | null
           trim_height_mm: number
+          trim_offset_x_mm: number
+          trim_offset_y_mm: number
           trim_width_mm: number
           updated_at: string
         }
@@ -153,6 +155,8 @@ export type Database = {
           status?: string
           tenant_id?: string | null
           trim_height_mm?: number
+          trim_offset_x_mm?: number
+          trim_offset_y_mm?: number
           trim_width_mm?: number
           updated_at?: string
         }
@@ -173,6 +177,8 @@ export type Database = {
           status?: string
           tenant_id?: string | null
           trim_height_mm?: number
+          trim_offset_x_mm?: number
+          trim_offset_y_mm?: number
           trim_width_mm?: number
           updated_at?: string
         }
