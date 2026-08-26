@@ -11,7 +11,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "r
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Loader2, ShoppingCart } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -28,6 +28,7 @@ import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artwork
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
+import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
 import QRUploadModal from "@/components/order/QRUploadModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -148,6 +149,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   );
 
   // Debounced persist onto the order item.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [proofOpen, setProofOpen] = useState(false);
   const persistTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!orderItem?.id || !templateId) return;
@@ -169,6 +172,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           quantity,
         })
         .eq("id", orderItem.id);
+      setSavedAt(Date.now());
     }, 600);
     return () => {
       if (persistTimer.current) clearTimeout(persistTimer.current);
