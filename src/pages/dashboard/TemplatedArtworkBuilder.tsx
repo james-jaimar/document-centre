@@ -29,7 +29,6 @@ import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
-import QRUploadModal from "@/components/order/QRUploadModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -288,8 +287,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   // ── Uploads
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrItemId, setQrItemId] = useState<string | undefined>();
 
   const handlePickFile = useCallback(
     async (placeholderId: string, rawFile: File) => {
@@ -328,16 +325,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     },
     [ensureOrder, uploadPhoto, placeholders],
   );
-
-  const handlePhoneUpload = useCallback(async () => {
-    try {
-      const id = await ensureOrder();
-      setQrItemId(id);
-      setQrOpen(true);
-    } catch {
-      toast.error("Could not start phone upload. Please try again.");
-    }
-  }, [ensureOrder]);
 
   // ── Pricing (v1: flat unit price configured on the product family)
   const priceDisplay = usePriceDisplay();
@@ -495,7 +482,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 active={activeId === p.id}
                 onFocus={() => setActiveId(p.id)}
                 onPickFile={(file) => handlePickFile(p.id, file)}
-                onPhoneUpload={p.kind === "image" ? handlePhoneUpload : undefined}
                 onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: v }))}
                 onClear={() =>
                   setValues((prev) => {
@@ -637,7 +623,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         title={`${family?.name ?? "Artwork"} proof`}
       />
 
-      <QRUploadModal open={qrOpen} onOpenChange={setQrOpen} orderItemId={qrItemId} />
     </div>
   );
 
