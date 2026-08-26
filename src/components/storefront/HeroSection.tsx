@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ImageIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { StorefrontPagesConfig } from "@/hooks/useStorefrontPages";
+import defaultHero from "@/assets/storefront-hero.jpg.asset.json";
 
 interface Props {
   config: StorefrontPagesConfig;
@@ -10,30 +11,30 @@ interface Props {
 }
 
 export default function HeroSection({ config, heroImageUrl, onPrimary, onSecondary }: Props) {
-  const image = config.hero_image_url || heroImageUrl || null;
+  const image = config.hero_image_url || heroImageUrl || defaultHero.url;
   return (
     <section className="border-b bg-background">
-      <div className="grid items-stretch lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid items-stretch lg:grid-cols-[48%_52%]">
         <div className="flex items-center">
-          <div className="ml-auto w-full max-w-[620px] px-6 py-14 lg:py-20 lg:pr-12">
+          <div className="ml-auto w-full max-w-[680px] px-[6vw] py-10 lg:py-12 lg:pl-[9vw] lg:pr-10">
             {config.hero_eyebrow && (
-              <p className="mb-4 inline-flex rounded-full sf-accent-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
+              <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">
                 {config.hero_eyebrow}
               </p>
             )}
             <h1 className="sf-hero-title text-foreground">{config.hero_heading}</h1>
-            <p className="mt-4 max-w-[46ch] text-base leading-relaxed text-muted-foreground">
+            <p className="mt-4 max-w-[44ch] text-[15px] leading-relaxed text-muted-foreground">
               {config.hero_subcopy}
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Button size="lg" className="h-12 px-6 text-[15px]" onClick={onPrimary}>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button size="lg" className="h-12 px-6 text-[15px] font-bold" onClick={onPrimary}>
                 {config.hero_cta_primary}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
               <Button
                 size="lg"
                 variant="outline"
-                className="h-12 px-6 text-[15px]"
+                className="h-12 border-2 border-primary px-6 text-[15px] font-bold text-primary"
                 onClick={onSecondary}
               >
                 {config.hero_cta_secondary}
@@ -42,19 +43,13 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
           </div>
         </div>
 
-        <div className="relative min-h-[280px] bg-muted lg:min-h-[440px]">
-          {image ? (
-            <img
-              src={image}
-              alt={config.hero_heading}
-              className="absolute inset-0 h-full w-full object-cover"
-              loading="eager"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/15 via-primary/5 to-accent/20">
-              <ImageIcon className="h-10 w-10 text-muted-foreground/40" aria-hidden />
-            </div>
-          )}
+        <div className="relative min-h-[260px] bg-muted lg:min-h-[420px]">
+          <img
+            src={image}
+            alt={config.hero_heading}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="eager"
+          />
         </div>
       </div>
     </section>
