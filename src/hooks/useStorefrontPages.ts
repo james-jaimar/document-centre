@@ -75,6 +75,7 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   hero_cta_primary: "Start designing",
   hero_cta_secondary: "Browse the shop",
   hero_image_url: "",
+  hero_layout: "split",
   strip_heading: "",
   strip_subcopy: "",
   how_it_works_heading: "How it works",
