@@ -128,7 +128,10 @@ export interface TemplatedArtworkSpec {
   page_count?: number;
   trim_width_mm?: number;
   trim_height_mm?: number;
+  trim_offset_x_mm?: number;
+  trim_offset_y_mm?: number;
   bleed_mm?: number;
+
   /** One entry per placeholder — repeated across every page. */
   placeholders: TemplatedPlaceholderValue[];
   /** Snapshot of the template's placeholder geometry/styling at order time, so
