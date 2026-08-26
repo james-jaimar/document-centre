@@ -16,6 +16,7 @@ export type FamilyKind =
   | "large_format"
   | "photo_print"
   | "canvas_wrap"
+  | "templated_artwork"
   | "custom";
 
 export const FAMILY_KIND_OPTIONS: { value: FamilyKind; label: string; description: string }[] = [
@@ -27,8 +28,10 @@ export const FAMILY_KIND_OPTIONS: { value: FamilyKind; label: string; descriptio
   { value: "large_format", label: "Large format", description: "Pull-up banners, posters over A2, roll-fed output." },
   { value: "photo_print", label: "Photo print", description: "Uses the Photo Prints rate card (dye-sub / RGB output)." },
   { value: "canvas_wrap", label: "Canvas wrap", description: "Stretched canvas prints with gallery / mirror / colour wrap around the sides." },
+  { value: "templated_artwork", label: "Templated artwork", description: "Admin artwork template with customer-filled image / text placeholders — deskpads, calendars." },
   { value: "custom", label: "Custom", description: "Doesn't fit a template — configure manually." },
 ];
+
 
 /** Best-effort slug→kind for legacy rows still missing `kind`. */
 function slugFallback(slug: string | null | undefined): FamilyKind {
