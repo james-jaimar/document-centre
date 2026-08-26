@@ -195,6 +195,59 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             job_repo.mark_done(db, pdf_job_id, result)
             return result
 
+        # ── Templated-artwork branch ────────────────────────────────────
+        # The admin's base PDF is stamped with the customer's images and
+        # text at full upload resolution — the browser proof is never used
+        # for print.
+        from app.services.templated_artwork_assembly import (
+            is_templated_artwork_job,
+            assemble_templated_artwork,
+        )
+        if is_templated_artwork_job(bundle):
+            cfg_ta = (bundle.configuration or {}).get("templated_artwork") if isinstance(bundle.configuration, dict) else None
+            ta_spec_inputs = {
+                "engine": "templated_artwork",
+                "template_id": (cfg_ta or {}).get("template_id"),
+                "base_pdf_path": (cfg_ta or {}).get("base_pdf_path"),
+                "trim_width_mm": (cfg_ta or {}).get("trim_width_mm"),
+                "trim_height_mm": (cfg_ta or {}).get("trim_height_mm"),
+                "placeholder_defs": (cfg_ta or {}).get("placeholder_defs"),
+                "placeholders": (cfg_ta or {}).get("placeholders"),
+                "templated_artwork_pipeline_version": 1,
+            }
+            ta_hash = pdf_ops.spec_hash(ta_spec_inputs)
+            existing_hash = bundle.job.get("print_ready_spec_hash")
+            existing_path = bundle.job.get("print_ready_pdf_path")
+            if (not force) and existing_hash == ta_hash and existing_path:
+                result = {
+                    "storage_path": existing_path,
+                    "reused_cache": True,
+                    "spec_hash": ta_hash,
+                }
+                job_repo.mark_done(db, pdf_job_id, result)
+                return result
+
+            from datetime import datetime, timezone
+            job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
+            with Workspace() as ws:
+                storage_path, report = assemble_templated_artwork(bundle, ws, job_number)
+
+            write_artefact_path(job_id, "print_ready_pdf_path", storage_path)
+            write_job_field(job_id, "assembly_report", report)
+            write_job_field(job_id, "print_ready_spec_hash", ta_hash)
+            write_job_field(job_id, "print_ready_assembled_at", datetime.now(timezone.utc).isoformat())
+
+            result = {
+                "storage_path": storage_path,
+                "reused_cache": False,
+                "spec_hash": ta_hash,
+                **report,
+            }
+            job_repo.mark_done(db, pdf_job_id, result)
+            return result
+
+
+
         if not bundle.asset_paths:
             cfg = bundle.configuration or {}
             src_item = cfg.get("source_order_item_id") if isinstance(cfg, dict) else None
