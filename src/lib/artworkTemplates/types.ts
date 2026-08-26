@@ -135,6 +135,8 @@ export interface TemplatedImageValue {
   mime_type: string;
   /** Whether the original upload was a PDF (page 1 rasterised for editing). */
   source_was_pdf?: boolean;
+  /** Original vector PDF, kept so the server can place it 1:1 (no rasterising). */
+  source_pdf_path?: string | null;
   source_width_px: number;
   source_height_px: number;
   fit: PlaceholderFit;
@@ -144,13 +146,17 @@ export interface TemplatedImageValue {
   offset_x: number;
   offset_y: number;
   background_hex?: string | null;
+  /** 0–1 — e.g. 0.1 for a watermark. Applied by both preview and PDF server. */
+  opacity?: number;
 }
 
 export interface TemplatedTextValue {
   placeholder_id: string;
   kind: "text";
   value: string;
+  opacity?: number;
 }
+
 
 export type TemplatedPlaceholderValue = TemplatedImageValue | TemplatedTextValue;
 
