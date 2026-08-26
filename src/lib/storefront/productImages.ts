@@ -26,6 +26,21 @@ export const SLUG_IMAGE_MAP: Record<string, string> = {
   "pull-up-banner": pullUpBannersImg,
 };
 
-export function familyImage(family: { slug?: string | null; image_url?: string | null }) {
-  return family.image_url || (family.slug ? SLUG_IMAGE_MAP[family.slug] : null) || null;
+type FamilyLike = { id?: string; slug?: string | null; image_url?: string | null };
+
+/** All gallery images for a family: admin-configured first, then fallbacks. */
+export function familyImages(
+  family: FamilyLike,
+  configured?: Record<string, string[]>,
+): string[] {
+  const fromConfig = (family.id && configured?.[family.id]) || [];
+  const fallback = family.image_url || (family.slug ? SLUG_IMAGE_MAP[family.slug] : null);
+  const list = [...fromConfig.filter(Boolean)];
+  if (!list.length && fallback) list.push(fallback);
+  return list;
 }
+
+export function familyImage(family: FamilyLike, configured?: Record<string, string[]>) {
+  return familyImages(family, configured)[0] ?? null;
+}
+

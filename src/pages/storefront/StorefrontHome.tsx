@@ -9,11 +9,12 @@ import AssuranceBar from "@/components/storefront/AssuranceBar";
 import HeroSection from "@/components/storefront/HeroSection";
 import HowItWorks from "@/components/storefront/HowItWorks";
 import TradeBand from "@/components/storefront/TradeBand";
-import ProductCard from "@/components/storefront/ProductCard";
+import ProductStrip from "@/components/storefront/ProductStrip";
+import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { familyImage } from "@/lib/storefront/productImages";
-import { startOrderPath } from "@/lib/storefront/catalogue";
+import { startOrderPath, type StorefrontFamily } from "@/lib/storefront/catalogue";
 
 export default function StorefrontHome() {
   const navigate = useNavigate();
@@ -25,10 +26,15 @@ export default function StorefrontHome() {
   const { format } = useStorefrontPrice();
 
   const shopEnabled = isPageEnabled("shop");
-  const featured = entries.slice(0, 8);
+  const featured = entries.slice(0, 6);
+
+  const openFamily = (family: StorefrontFamily) =>
+    navigate(
+      tenantPath(isPageEnabled("product") ? `shop/${family.slug}` : startOrderPath(family)),
+    );
 
   return (
-    <div className="dc-storefront -mx-4 -my-4 md:-mx-6 md:-my-6">
+    <div className="dc-storefront">
       <AssuranceBar items={config.assurance_items} />
 
       <HeroSection
@@ -38,49 +44,35 @@ export default function StorefrontHome() {
         onSecondary={() => navigate(tenantPath(shopEnabled ? "shop" : "orders/new"))}
       />
 
-      <section className="py-14">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mb-7 flex items-end justify-between gap-4">
+      <section className="py-12">
+        <div className="sf-container">
+          <div className="mb-6 flex items-end justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-foreground md:text-3xl">Popular products</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Live pricing, proofing and delivery on every order.
-              </p>
+              <h2 className="sf-section-title text-foreground">{config.strip_heading}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{config.strip_subcopy}</p>
             </div>
             {shopEnabled && (
-              <Button variant="outline" onClick={() => navigate(tenantPath("shop"))}>
+              <Button variant="outline" size="sm" onClick={() => navigate(tenantPath("shop"))}>
                 View all
               </Button>
             )}
           </div>
 
           {isLoading ? (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-72 rounded-xl" />
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-44 rounded-lg" />
               ))}
             </div>
           ) : (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {featured.map(({ family, fromPrice }) => (
-                <ProductCard
-                  key={family.id}
-                  family={family}
-                  imageUrl={familyImage(family)}
-                  fromPriceLabel={format(fromPrice)}
-                  onView={() =>
-                    navigate(
-                      tenantPath(
-                        isPageEnabled("product")
-                          ? `shop/${family.slug}`
-                          : startOrderPath(family),
-                      ),
-                    )
-                  }
-                  onStart={() => navigate(tenantPath(startOrderPath(family)))}
-                />
-              ))}
-            </div>
+            <ProductStrip
+              items={featured.map(({ family, fromPrice }) => ({
+                family,
+                imageUrl: familyImage(family, config.images),
+                fromPriceLabel: format(fromPrice),
+              }))}
+              onSelect={openFamily}
+            />
           )}
         </div>
       </section>
@@ -91,14 +83,11 @@ export default function StorefrontHome() {
         heading={config.trade_heading}
         body={config.trade_body}
         cta={config.trade_cta}
+        benefits={config.trade_benefits}
         onClick={() => navigate(tenantPath("account"))}
       />
 
-      {config.footer_note && (
-        <p className="border-t px-6 py-6 text-center text-xs text-muted-foreground">
-          {config.footer_note}
-        </p>
-      )}
+      <StorefrontFooterStrip items={config.footer_items} note={config.footer_note} />
     </div>
   );
 }

@@ -6,15 +6,39 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import ProductCard from "@/components/storefront/ProductCard";
-import ShopFilters, { type ShopFilterState } from "@/components/storefront/ShopFilters";
+import ShopFilters, {
+  type FilterOption,
+  type ShopFilterState,
+} from "@/components/storefront/ShopFilters";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
+import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { LayoutGrid, Rows3 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { familyImage } from "@/lib/storefront/productImages";
 import { isEditableFamily, startOrderPath } from "@/lib/storefront/catalogue";
 import { getFamilyKind } from "@/lib/products/familyKind";
 
 type SortKey = "featured" | "price_asc" | "price_desc" | "name";
+
+const humanise = (v: string) =>
+  v.replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+function counted(values: string[], labeller: (v: string) => string): FilterOption[] {
+  const counts = new Map<string, number>();
+  values.forEach((v) => counts.set(v, (counts.get(v) ?? 0) + 1));
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: labeller(value), count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
 
 export default function StorefrontShop() {
   const navigate = useNavigate();
@@ -24,6 +48,7 @@ export default function StorefrontShop() {
   const { entries, isLoading } = useStorefrontCatalogue();
   const { format } = useStorefrontPrice();
   const [sort, setSort] = useState<SortKey>("featured");
+  const [view, setView] = useState<"grid" | "list">("grid");
 
   const priceCeiling = useMemo(() => {
     const max = Math.max(0, ...entries.map((e) => e.fromPrice ?? 0));
@@ -38,12 +63,20 @@ export default function StorefrontShop() {
   });
   const activeMax = filters.maxPrice || priceCeiling;
 
-  const types = useMemo(
-    () => [...new Set(entries.map((e) => getFamilyKind(e.family as any) || "print"))].sort(),
+  const typeOptions = useMemo(
+    () => counted(entries.map((e) => getFamilyKind(e.family as any) || "print"), humanise),
     [entries],
   );
-  const sizes = useMemo(
-    () => [...new Set(entries.flatMap((e) => e.sizes))].sort(),
+  const sizeOptions = useMemo(
+    () => counted(entries.flatMap((e) => e.sizes), (v) => v.toUpperCase()),
+    [entries],
+  );
+  const orderingOptions = useMemo(
+    () =>
+      counted(
+        entries.map((e) => (isEditableFamily(e.family) ? "Customise online" : "Upload artwork")),
+        (v) => v,
+      ),
     [entries],
   );
 
@@ -70,21 +103,25 @@ export default function StorefrontShop() {
   }, [entries, filters, sort, activeMax, priceCeiling]);
 
   return (
-    <div className="dc-storefront -mx-4 -my-4 md:-mx-6 md:-my-6">
+    <div className="dc-storefront">
       <AssuranceBar items={config.assurance_items} />
 
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Shop</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Every product available to you, with live pricing.
-          </p>
+      <div className="sf-container py-9">
+        <header className="mb-7 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="sf-section-title text-foreground">{config.shop_heading}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{config.shop_subcopy}</p>
+          </div>
+          {config.pricing_note && (
+            <p className="text-xs text-muted-foreground">{config.pricing_note}</p>
+          )}
         </header>
 
-        <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
+        <div className="grid gap-8 lg:grid-cols-[256px_1fr]">
           <ShopFilters
-            types={types}
-            sizes={sizes}
+            types={typeOptions}
+            sizes={sizeOptions}
+            ordering={orderingOptions}
             priceCeiling={priceCeiling}
             value={{ ...filters, maxPrice: activeMax }}
             onChange={setFilters}
@@ -92,21 +129,46 @@ export default function StorefrontShop() {
           />
 
           <div>
-            <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                {isLoading ? "Loading…" : `${visible.length} product${visible.length === 1 ? "" : "s"}`}
+                {isLoading
+                  ? "Loading…"
+                  : `${visible.length} product${visible.length === 1 ? "" : "s"}`}
               </p>
-              <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="featured">Featured</SelectItem>
-                  <SelectItem value="price_asc">Price: low to high</SelectItem>
-                  <SelectItem value="price_desc">Price: high to low</SelectItem>
-                  <SelectItem value="name">Name A–Z</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Sort by</span>
+                <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+                  <SelectTrigger className="h-9 w-[170px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="featured">Featured</SelectItem>
+                    <SelectItem value="price_asc">Price: low to high</SelectItem>
+                    <SelectItem value="price_desc">Price: high to low</SelectItem>
+                    <SelectItem value="name">Name A–Z</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex overflow-hidden rounded-md border">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Grid view"
+                    className={cn("h-9 w-9 rounded-none", view === "grid" && "bg-muted")}
+                    onClick={() => setView("grid")}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="List view"
+                    className={cn("h-9 w-9 rounded-none border-l", view === "list" && "bg-muted")}
+                    onClick={() => setView("list")}
+                  >
+                    <Rows3 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {isLoading ? (
@@ -120,13 +182,20 @@ export default function StorefrontShop() {
                 No products match these filters.
               </div>
             ) : (
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              <div
+                className={cn(
+                  "grid gap-5",
+                  view === "grid" ? "sm:grid-cols-2 xl:grid-cols-3" : "grid-cols-1",
+                )}
+              >
                 {visible.map(({ family, fromPrice }) => (
                   <ProductCard
                     key={family.id}
                     family={family}
-                    imageUrl={familyImage(family)}
+                    view={view}
+                    imageUrl={familyImage(family, config.images)}
                     fromPriceLabel={format(fromPrice)}
+                    turnaround={config.turnaround_note}
                     onView={() =>
                       navigate(
                         tenantPath(
@@ -142,6 +211,8 @@ export default function StorefrontShop() {
           </div>
         </div>
       </div>
+
+      <StorefrontFooterStrip items={config.footer_items} note={config.footer_note} />
     </div>
   );
 }
