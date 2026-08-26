@@ -44,24 +44,30 @@ export default function StorefrontHome() {
         onSecondary={() => navigate(tenantPath(shopEnabled ? "shop" : "orders/new"))}
       />
 
-      <section className="py-12">
+      <section className="border-t py-4">
         <div className="sf-container">
-          <div className="mb-6 flex items-end justify-between gap-4">
-            <div>
-              <h2 className="sf-section-title text-foreground">{config.strip_heading}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{config.strip_subcopy}</p>
+          {(config.strip_heading || config.strip_subcopy) && (
+            <div className="mb-3 flex items-end justify-between gap-4">
+              <div>
+                {config.strip_heading && (
+                  <h2 className="sf-section-title text-foreground">{config.strip_heading}</h2>
+                )}
+                {config.strip_subcopy && (
+                  <p className="mt-0.5 text-sm text-muted-foreground">{config.strip_subcopy}</p>
+                )}
+              </div>
+              {shopEnabled && (
+                <Button variant="outline" size="sm" onClick={() => navigate(tenantPath("shop"))}>
+                  View all
+                </Button>
+              )}
             </div>
-            {shopEnabled && (
-              <Button variant="outline" size="sm" onClick={() => navigate(tenantPath("shop"))}>
-                View all
-              </Button>
-            )}
-          </div>
+          )}
 
           {isLoading ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
               {[0, 1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-44 rounded-lg" />
+                <Skeleton key={i} className="h-40 rounded-xl" />
               ))}
             </div>
           ) : (

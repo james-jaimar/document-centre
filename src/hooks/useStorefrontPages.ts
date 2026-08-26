@@ -73,8 +73,8 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   hero_cta_primary: "Start designing",
   hero_cta_secondary: "Browse the shop",
   hero_image_url: "",
-  strip_heading: "Popular products",
-  strip_subcopy: "Live pricing, proofing and delivery on every order.",
+  strip_heading: "",
+  strip_subcopy: "",
   how_it_works_heading: "How it works",
   how_it_works: [
     { title: "Choose your product", body: "Pick a size, paper and quantity with live pricing." },

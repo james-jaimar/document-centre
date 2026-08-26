@@ -396,8 +396,8 @@
 
 .dc-storefront .sf-container {
   margin-inline: auto;
-  max-width: 1240px;
-  padding-inline: 1.5rem;
+  max-width: 1680px;
+  padding-inline: 4.5%;
   width: 100%;
 }
 
@@ -428,12 +428,13 @@
   letter-spacing: -0.01em;
 }
 .dc-storefront .sf-hero-title {
-  font-size: clamp(2.25rem, 3.4vw, 3.4rem);
-  line-height: 1.05;
+  font-size: clamp(2rem, 2.9vw, 2.95rem);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
   font-weight: 800;
 }
 .dc-storefront .sf-section-title {
-  font-size: clamp(1.375rem, 1.6vw, 1.75rem);
+  font-size: clamp(1.25rem, 1.4vw, 1.5rem);
   line-height: 1.2;
   font-weight: 700;
 }
