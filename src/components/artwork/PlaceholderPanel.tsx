@@ -26,7 +26,6 @@ interface Props {
   active?: boolean;
   onFocus: () => void;
   onPickFile: (file: File) => void;
-  onPhoneUpload?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
 }
@@ -38,7 +37,6 @@ export default function PlaceholderPanel({
   active,
   onFocus,
   onPickFile,
-  onPhoneUpload,
   onChange,
   onClear,
 }: Props) {
