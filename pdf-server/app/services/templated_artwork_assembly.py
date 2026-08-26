@@ -669,6 +669,11 @@ def assemble_templated_artwork(
         "trim_height_mm": trim_h_mm or None,
         "placeholder_count": len(defs),
         "image_placeholders_filled": len(images),
+        "vector_placeholders": len(vector_sources),
+        "vector_placements_stamped": vector_stamped,
+        "under_layer_count": len(under_defs),
+        "over_layer_count": len(over_defs),
+        "base_knockout_applied": knocked_out,
         "storage_path": storage_path,
     }
     log.info("templated_artwork: assembled %s", report)
