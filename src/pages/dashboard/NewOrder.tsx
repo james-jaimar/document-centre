@@ -3,6 +3,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, FileText, Layers, Printer, Presentation, Image, Newspaper } from "lucide-react";
+import { getFamilyKind } from "@/lib/products/familyKind";
 import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 
 import boundDocumentsImg from "@/assets/products/bound-documents.jpg";
@@ -57,6 +58,11 @@ export default function NewOrder() {
     }
     if (familySlug === "canvas-prints" || familySlug === "canvas-wrap") {
       navigate(tenantPath("orders/new/canvas-prints"));
+      return;
+    }
+    const family = filteredFamilies.find((f: any) => f.id === familyId);
+    if (getFamilyKind(family as any) === "templated_artwork") {
+      navigate(tenantPath("orders/new/custom-artwork"));
       return;
     }
     navigate(tenantPath(`orders/new/${familyId}`));
