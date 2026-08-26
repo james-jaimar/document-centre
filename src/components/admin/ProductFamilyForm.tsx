@@ -76,6 +76,7 @@ interface FormValues {
   pricing_engine: "click_charges" | "photo_prints" | "business_cards";
   printing_rules: PrintingRules;
   quantity_mode: "free" | "blocks";
+  supports_editable_artwork: boolean;
 
 }
 
@@ -110,6 +111,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       pricing_engine: "click_charges",
       printing_rules: DEFAULT_PRINTING_RULES,
       quantity_mode: "free",
+      supports_editable_artwork: false,
 
     },
   });
@@ -132,6 +134,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         pricing_engine: (fam.pricing_engine as FormValues["pricing_engine"]) ?? "click_charges",
         printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
         quantity_mode: fam.quantity_mode ?? "free",
+        supports_editable_artwork: fam.supports_editable_artwork ?? false,
 
       });
     } else {
@@ -150,6 +153,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         pricing_engine: "click_charges",
         printing_rules: DEFAULT_PRINTING_RULES,
         quantity_mode: "free",
+        supports_editable_artwork: false,
 
       });
     }
@@ -232,6 +236,24 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                   <p className="text-xs text-muted-foreground">
                     {FAMILY_KIND_OPTIONS.find((o) => o.value === field.value)?.description}
                   </p>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="supports_editable_artwork"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-between gap-4 rounded-md border p-4">
+                  <div>
+                    <FormLabel>Editable artwork product</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      Lets each tenant create and publish customer-editable PDF templates for this product.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
                 </FormItem>
               )}
             />

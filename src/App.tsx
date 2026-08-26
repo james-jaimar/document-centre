@@ -170,6 +170,7 @@ function customerRoutes() {
       <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
       <Route path="orders/new/canvas-prints" element={<CanvasPrintsBuilder />} />
       <Route path="orders/new/custom-artwork" element={<TemplatedArtworkBuilder />} />
+      <Route path="orders/new/:familyId/custom-artwork" element={<TemplatedArtworkBuilder />} />
       <Route path="orders/new/:familyId" element={<OrderFiles />} />
       <Route path="orders/:id/files" element={<OrderFiles />} />
       <Route path="orders/:id/build" element={<OrderBuild />} />

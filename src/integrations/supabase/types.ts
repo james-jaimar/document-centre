@@ -5310,6 +5310,7 @@ export type Database = {
           render_intent: string
           slug: string
           sort_order: number
+          supports_editable_artwork: boolean
           tenant_id: string | null
         }
         Insert: {
@@ -5330,6 +5331,7 @@ export type Database = {
           render_intent?: string
           slug: string
           sort_order?: number
+          supports_editable_artwork?: boolean
           tenant_id?: string | null
         }
         Update: {
@@ -5350,6 +5352,7 @@ export type Database = {
           render_intent?: string
           slug?: string
           sort_order?: number
+          supports_editable_artwork?: boolean
           tenant_id?: string | null
         }
         Relationships: [

@@ -25,11 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Image, Settings2, SlidersHorizontal } from "lucide-react";
+import { Images, Settings2, SlidersHorizontal } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
 import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
-import { getFamilyKind } from "@/lib/products/familyKind";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
@@ -158,7 +157,7 @@ const AdminProductCatalogue = () => {
                           <Settings2 className="h-3 w-3 mr-1" />
                           Pricing
                         </Button>
-                        {getFamilyKind(f) === "templated_artwork" && (
+                        {f.supports_editable_artwork && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -167,8 +166,8 @@ const AdminProductCatalogue = () => {
                               setArtworkFamilyName(f.name);
                             }}
                           >
-                            <Image className="h-3 w-3 mr-1" />
-                            Artwork
+                            <Images className="h-3 w-3 mr-1" />
+                            Templates
                           </Button>
                         )}
                       </div>
@@ -217,9 +216,11 @@ const AdminProductCatalogue = () => {
       >
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{artworkFamilyName} — Artwork templates</DialogTitle>
+            <DialogTitle>{artworkFamilyName} — Customer templates</DialogTitle>
           </DialogHeader>
-          {artworkFamilyId && <ArtworkTemplatesTab productFamilyId={artworkFamilyId} />}
+          {tenantId && artworkFamilyId && (
+            <ArtworkTemplatesTab productFamilyId={artworkFamilyId} tenantId={tenantId} />
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -51,6 +51,7 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
   const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set());
   const [selectedPapers, setSelectedPapers] = useState<Set<string>>(new Set());
   const [pricingEngine, setPricingEngine] = useState<PricingEngine>("click_charges");
+  const [supportsEditableArtwork, setSupportsEditableArtwork] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const createFamily = useCreateProductFamily();
@@ -71,6 +72,7 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
     setKind("flat_sheet"); setImageUrl("");
     setSelectedSizes(new Set()); setSelectedPapers(new Set());
     setPricingEngine("click_charges");
+    setSupportsEditableArtwork(false);
   }
 
   function handleKindChange(k: FamilyKind) {
@@ -111,6 +113,7 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
         pricing_engine: pricingEngine,
         printing_rules: { allowed_finished_sizes: Array.from(selectedSizes), default_finished_size: Array.from(selectedSizes)[0] ?? null },
         quantity_mode: kind === "flat_sheet" ? "blocks" : "free",
+        supports_editable_artwork: supportsEditableArtwork,
       } as any);
 
       // Link selected sizes and papers
@@ -269,12 +272,23 @@ export default function NewProductWizard({ open, onOpenChange, onCreated }: Prop
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">Which Master Pricing tab supplies the per-unit price.</p>
               </div>
+              <label className="flex items-center gap-3 rounded-md border p-3">
+                <Checkbox
+                  checked={supportsEditableArtwork}
+                  onCheckedChange={(checked) => setSupportsEditableArtwork(checked === true)}
+                />
+                <span>
+                  <span className="block text-sm font-medium">Editable artwork product</span>
+                  <span className="block text-xs text-muted-foreground">Tenants can create customer-editable PDF templates for this product.</span>
+                </span>
+              </label>
               <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
                 <div><strong>Name:</strong> {name}</div>
                 <div><strong>Template:</strong> {FAMILY_KIND_OPTIONS.find((o) => o.value === kind)?.label}</div>
                 <div><strong>Sizes:</strong> {selectedSizes.size > 0 ? Array.from(selectedSizes).map((c) => c.toUpperCase()).join(", ") : <em className="text-muted-foreground">none — you can add later</em>}</div>
                 <div><strong>Papers:</strong> {selectedPapers.size > 0 ? `${selectedPapers.size} selected` : <em className="text-muted-foreground">none</em>}</div>
                 <div><strong>Pricing:</strong> {pricingEngine.replace("_", " ")}</div>
+                <div><strong>Editable artwork:</strong> {supportsEditableArtwork ? "Enabled" : "Disabled"}</div>
                 <div><strong>Hero image:</strong> {imageUrl ? "✓ uploaded" : <em className="text-muted-foreground">none</em>}</div>
               </div>
             </div>

@@ -47,7 +47,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   _props,
   ref,
 ) {
-  const { id: orderIdParam } = useParams<{ id?: string }>();
+  const { id: orderIdParam, familyId: routeFamilyId } = useParams<{ id?: string; familyId?: string }>();
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -57,19 +57,26 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const createOrder = useCreateOrder();
   const addItemToCart = useAddItemToCart();
 
-  // ── Product family (kind = templated_artwork)
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
+  const effectiveOrderId = orderIdParam ?? createdOrderId ?? undefined;
+  const { order, orderItem } = useOrderData(effectiveOrderId);
+  const selectedFamilyId = routeFamilyId ?? orderItem?.product_family_id ?? null;
+
+  // Resolve the exact family selected by the customer (or stored on the order).
   const { data: family, isLoading: familyLoading } = useQuery({
-    queryKey: ["templated_artwork_family", tenantId],
+    queryKey: ["editable_artwork_family", selectedFamilyId],
     queryFn: async () => {
+      if (!selectedFamilyId) return null;
       const { data, error } = await supabase
         .from("product_families")
         .select("*")
-        .eq("kind", "templated_artwork")
-        .or(tenantId ? `tenant_id.eq.${tenantId},tenant_id.is.null` : "tenant_id.is.null");
+        .eq("id", selectedFamilyId)
+        .maybeSingle();
       if (error) throw error;
-      const rows = (data ?? []) as any[];
-      return rows.find((r) => r.tenant_id === tenantId) ?? rows[0] ?? null;
+      if (data && !data.supports_editable_artwork && data.kind !== "templated_artwork") return null;
+      return data;
     },
+    enabled: !!selectedFamilyId,
   });
   const familyId: string | null = family?.id ?? null;
 
@@ -84,11 +91,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [templates, templateId]);
 
   const { data: placeholders = [] } = useArtworkPlaceholders(templateId);
-
-  // ── Order lazy-init
-  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
-  const effectiveOrderId = orderIdParam ?? createdOrderId ?? undefined;
-  const { order, orderItem } = useOrderData(effectiveOrderId);
 
   const ensureOrder = useCallback(async (): Promise<string> => {
     if (orderItem?.id) return orderItem.id;

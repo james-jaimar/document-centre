@@ -18,7 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
-import { useTenantContext } from "@/hooks/useTenantContext";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import TemplateBoxEditor from "@/components/artwork/TemplateBoxEditor";
@@ -33,10 +32,10 @@ import type { ArtworkPlaceholder, ArtworkTemplate } from "@/lib/artworkTemplates
 
 interface Props {
   productFamilyId: string;
+  tenantId: string;
 }
 
-export default function ArtworkTemplatesTab({ productFamilyId }: Props) {
-  const { tenantId } = useTenantContext();
+export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props) {
   const { data: templates = [], isLoading } = useArtworkTemplates(productFamilyId);
   const upsertTemplate = useUpsertArtworkTemplate();
   const deleteTemplate = useDeleteArtworkTemplate();
@@ -88,8 +87,8 @@ export default function ArtworkTemplatesTab({ productFamilyId }: Props) {
       const created = await upsertTemplate.mutateAsync({
         product_family_id: productFamilyId,
         name: `Layout ${templates.length + 1}`,
-        scope_type: tenantId ? "tenant" : "master",
-        tenant_id: tenantId ?? null,
+        scope_type: "tenant",
+        tenant_id: tenantId,
         sort_order: templates.length,
         status: "draft",
       } as Partial<ArtworkTemplate> & { product_family_id: string; name: string });
@@ -171,7 +170,7 @@ export default function ArtworkTemplatesTab({ productFamilyId }: Props) {
           </SelectContent>
         </Select>
         <Button size="sm" variant="outline" onClick={handleCreate} disabled={upsertTemplate.isPending}>
-          <Plus className="h-4 w-4 mr-1.5" /> New layout
+          <Plus className="h-4 w-4 mr-1.5" /> New template
         </Button>
         {selected && (
           <>
@@ -204,7 +203,7 @@ export default function ArtworkTemplatesTab({ productFamilyId }: Props) {
 
       {!selected ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No artwork layouts yet. Create one, upload the multi-page base PDF, then draw the
+          No customer templates yet. Create one, upload the multi-page base PDF, then draw the
           placeholder boxes your customers fill in.
         </div>
       ) : (
