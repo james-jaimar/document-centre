@@ -1,6 +1,6 @@
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useStorefrontPages } from "@/hooks/useStorefrontPages";
-import CustomerDashboard from "@/pages/customer/CustomerDashboard";
+import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
 import StorefrontHome from "@/pages/storefront/StorefrontHome";
 
 /**
