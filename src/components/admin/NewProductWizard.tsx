@@ -32,7 +32,9 @@ const KIND_DEFAULTS: Record<FamilyKind, { pricing: PricingEngine; suggestSizes: 
   large_format:    { pricing: "click_charges", suggestSizes: [] },
   photo_print:     { pricing: "photo_prints", suggestSizes: [] },
   canvas_wrap:     { pricing: "click_charges", suggestSizes: [] },
+  templated_artwork: { pricing: "click_charges", suggestSizes: [] },
   custom:          { pricing: "click_charges", suggestSizes: [] },
+
 };
 
 function slugify(t: string) {
