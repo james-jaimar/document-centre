@@ -91,11 +91,20 @@ export function useUpsertArtworkTemplate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: Partial<ArtworkTemplate> & { product_family_id: string; name: string }) => {
-      const { data, error } = await supabase
-        .from("artwork_templates")
-        .upsert(input as any, { onConflict: "id" })
-        .select()
-        .single();
+      const { id, scope_type, tenant_id, branch_id, product_family_id, ...changes } = input;
+      const query = id
+        ? supabase
+            .from("artwork_templates")
+            .update(changes as any)
+            .eq("id", id)
+        : supabase.from("artwork_templates").insert({
+            ...changes,
+            scope_type,
+            tenant_id,
+            branch_id,
+            product_family_id,
+          } as any);
+      const { data, error } = await query.select().single();
       if (error) throw error;
       return asTemplate(data);
     },
