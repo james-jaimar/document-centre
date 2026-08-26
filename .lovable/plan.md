@@ -33,9 +33,10 @@ Real data throughout: visible product families for the tenant/branch, catalogue 
 - New folder `src/components/storefront/` with `AssuranceBar`, `StorefrontHeader`, `HeroSection`, `ProductStrip`, `HowItWorks`, `TradeBand`, `ShopFilters`, `ProductCard`, `PriceBreakTable`, `EditorShell`.
 - New pages `src/pages/storefront/StorefrontShop.tsx` and `StorefrontProduct.tsx`; `StorefrontLanding.tsx` gains an ecommerce branch driven by the toggle.
 - Routes added inside `customerRoutes()` so both `/t/:slug/...` and subdomain hosts work; guarded by the toggle with a redirect to today's pages when off.
-- New hook `useStorefrontPages(tenantId)` reading the `storefront` settings category with defaults, mirroring `useTenantSettingsMap`.
+- New hook `useStorefrontPages(tenantId)` reading the `storefront` settings category with defaults, mirroring `useTenantSettingsMap`; reads are public (storefront needs them), writes are gated to platform admins.
+- New platform-admin panel `src/components/platform/TenantStorefrontPagesPanel.tsx` surfaced on the tenant detail screen.
 - Styling stays on our semantic tokens plus tenant `--storefront-*` CSS variables; a scoped `.dc-storefront` block in `index.css` holds the shop-specific type scale/spacing so nothing leaks into the admin UI. No hardcoded colour utilities.
-- No schema migration required — `tenant_settings` already supports arbitrary categories.
+- A migration may be needed only to allow platform-admin writes / public reads for the `storefront` category on `tenant_settings`; the RLS policies will be checked first and adjusted only if they don't already permit it.
 
 ## Out of scope for this pass
 
