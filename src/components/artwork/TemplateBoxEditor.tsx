@@ -220,6 +220,35 @@ export default function TemplateBoxEditor({
 
   const pct = (v: number, total: number) => `${total > 0 ? (v / total) * 100 : 0}%`;
 
+  /** Boxes in paint order: `under` first, then the template, then `over`. */
+  const ordered = useMemo(
+    () =>
+      [...placeholders].sort(
+        (a, b) =>
+          (a.layer === "under" ? 0 : 1) - (b.layer === "under" ? 0 : 1) ||
+          (a.z_index ?? 0) - (b.z_index ?? 0),
+      ),
+    [placeholders],
+  );
+
+  /** Nudge a box up or down the stack within its own layer. */
+  const restack = (p: ArtworkPlaceholder, dir: -1 | 1) => {
+    const sameLayer = ordered.filter((o) => o.layer === p.layer);
+    const idx = sameLayer.findIndex((o) => o.id === p.id);
+    const swapWith = sameLayer[idx + dir];
+    if (!swapWith) return;
+    onChange(
+      placeholders.map((o) =>
+        o.id === p.id
+          ? { ...o, z_index: swapWith.z_index ?? 0 }
+          : o.id === swapWith.id
+            ? { ...o, z_index: p.z_index ?? 0 }
+            : o,
+      ),
+    );
+  };
+
+
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       {/* Stage */}
