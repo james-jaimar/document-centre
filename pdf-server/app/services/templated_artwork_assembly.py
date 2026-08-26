@@ -497,13 +497,24 @@ def assemble_templated_artwork(
     if len(reader.pages) == 0:
         raise ValueError("templated-artwork base PDF has no pages")
 
-    # Download every customer image once — the same content repeats on all pages.
+    # Download every customer asset once — the same content repeats on all pages.
     images: dict[str, Image.Image] = {}
+    vector_sources: dict[str, Path] = {}
     for idx, d in enumerate(defs):
         pid = str(d.get("id") or "")
         v = values.get(pid)
         if (d.get("kind") or "image") != "image" or not v:
             continue
+        # Prefer the original vector PDF — placed 1:1, never rasterised.
+        pdf_src = v.get("source_pdf_path")
+        if pdf_src:
+            local_pdf = workspace.path(f"ph-{idx:03d}-source.pdf")
+            try:
+                storage.download(str(pdf_src), local_pdf)
+                vector_sources[pid] = local_pdf
+                continue
+            except Exception as exc:  # noqa: BLE001 - fall back to the raster
+                log.warning("templated_artwork: vector source %s failed: %s", pdf_src, exc)
         src = v.get("storage_path")
         if not src:
             continue
@@ -518,6 +529,13 @@ def assemble_templated_artwork(
     trim_h_mm = _num(ta.get("trim_height_mm"))
     spec_off_x_mm = _num(ta.get("trim_offset_x_mm"))
     spec_off_y_mm = _num(ta.get("trim_offset_y_mm"))
+    knockout = bool(ta.get("base_knockout_white"))
+    knockout_tol = _num(ta.get("base_knockout_tolerance"), 12.0)
+
+    under_defs, over_defs = _split_layers(defs)
+    vector_ids = set(vector_sources)
+    placements: list[dict[str, Any]] = []
+    knocked_out = False
 
     writer = PdfWriter()
     for page_index, page in enumerate(reader.pages):
@@ -543,20 +561,85 @@ def assemble_templated_artwork(
             trim_x_pt = spec_off_x_mm * mm
             trim_top_pt = page_h_pt - spec_off_y_mm * mm
 
-        overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
-        _render_overlay(
-            overlay_path,
-            page_w_pt,
-            page_h_pt,
-            trim_x_pt,
-            trim_top_pt,
-            defs,
-            values,
-            images,
-        )
-        overlay_page = PdfReader(str(overlay_path)).pages[0]
-        page.merge_page(overlay_page)
-        writer.add_page(page)
+        # Collect vector placements once — geometry is identical on every page.
+        if page_index == 0:
+            for d in defs:
+                pid = str(d.get("id") or "")
+                if pid not in vector_ids:
+                    continue
+                value = values.get(pid) or {}
+                w_pt = _num(d.get("width_mm")) * mm
+                h_pt = _num(d.get("height_mm")) * mm
+                if w_pt <= 0 or h_pt <= 0:
+                    continue
+                x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
+                y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
+                try:
+                    src_reader = PdfReader(str(vector_sources[pid]))
+                    src_box = src_reader.pages[0].mediabox
+                    src_w = float(src_box.width)
+                    src_h = float(src_box.height)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("templated_artwork: unreadable vector source: %s", exc)
+                    continue
+                dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, src_w, src_h, value)
+                alpha = _num(
+                    value.get("opacity")
+                    if value.get("opacity") is not None
+                    else d.get("opacity"),
+                    1.0,
+                )
+                placements.append(
+                    {
+                        "source": vector_sources[pid],
+                        "clip_x": x_pt,
+                        "clip_y": y_pt,
+                        "clip_w": w_pt,
+                        "clip_h": h_pt,
+                        "x": x_pt + dx,
+                        "y": y_pt + h_pt - dy - dh,
+                        "w": dw,
+                        "h": dh,
+                        "alpha": max(0.0, min(1.0, alpha if alpha else 1.0)),
+                        "layer": _layer_of(d),
+                    }
+                )
+
+        composed = page
+
+        # 1. Boxes that sit BEHIND the template artwork.
+        if under_defs:
+            under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
+            _render_overlay(
+                under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
+                under_defs, values, images, vector_ids,
+            )
+            under_page = PdfReader(str(under_path)).pages[0]
+
+            base_layer = page
+            if knockout:
+                png = workspace.path(f"base-knockout-{page_index:03d}.png")
+                if _knockout_base_page(local_base, page_index, png, knockout_tol):
+                    layer_pdf = workspace.path(f"base-layer-{page_index:03d}.pdf")
+                    _render_base_raster_layer(layer_pdf, png, page_w_pt, page_h_pt)
+                    base_layer = PdfReader(str(layer_pdf)).pages[0]
+                    knocked_out = True
+            # The underlay becomes the page; the template is merged on top.
+            under_page.merge_page(base_layer)
+            composed = under_page
+
+        # 2. Boxes in front of the template artwork.
+        if over_defs:
+            overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
+            _render_overlay(
+                overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
+                over_defs, values, images, vector_ids,
+            )
+            composed.merge_page(PdfReader(str(overlay_path)).pages[0])
+
+        writer.add_page(composed)
+
+
 
 
     out_pdf = workspace.path("templated-artwork.pdf")
