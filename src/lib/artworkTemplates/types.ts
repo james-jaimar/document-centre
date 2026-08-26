@@ -155,3 +155,27 @@ export function placementDpi(
   if (!targetMm) return 0;
   return Math.round(sourcePx / (targetMm / 25.4));
 }
+
+/**
+ * Effective DPI for an image as it is actually drawn in its box — accounts for
+ * fit/fill and the customer's zoom, so the badge updates as they scale.
+ */
+export function effectivePlacementDpi(
+  v: TemplatedImageValue,
+  boxWidthMm: number,
+  boxHeightMm: number,
+): number {
+  const imgW = v.source_width_px || 0;
+  const imgH = v.source_height_px || 0;
+  if (!imgW || !imgH || !boxWidthMm || !boxHeightMm) return 0;
+  const boxRatio = boxWidthMm / boxHeightMm;
+  const imgRatio = imgW / imgH;
+  const cover = v.fit !== "fit";
+  // Same rule as the PDF server: cover scales on the tighter axis.
+  const fitScale =
+    cover === imgRatio > boxRatio ? boxHeightMm / imgH : boxWidthMm / imgW;
+  const drawnWidthMm = imgW * fitScale * Math.max(0.1, v.scale || 1);
+  if (drawnWidthMm <= 0) return 0;
+  return Math.round(imgW / (drawnWidthMm / 25.4));
+}
+
