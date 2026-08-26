@@ -541,7 +541,10 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   const resolved = resolveSelectedOptions(selected, productOptions);
   const isPhotoPrints = item.product_families?.slug === "photo-prints";
   const isCanvasPrints = item.product_families?.slug === "canvas-prints";
-  const isRasterProduct = isPhotoPrints || isCanvasPrints;
+  // Templated artwork carries its own composer spec — detected from the spec
+  // itself so it works regardless of the family's slug.
+  const isTemplatedArtwork = !!spec?.templated_artwork?.template_id;
+  const isRasterProduct = isPhotoPrints || isCanvasPrints || isTemplatedArtwork;
 
   const totalPages = documents.reduce((s, d) => s + (d.page_count ?? 0), 0);
   const summary = buildSummary(resolved, spec, totalPages);
