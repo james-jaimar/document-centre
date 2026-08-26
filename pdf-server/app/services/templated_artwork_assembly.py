@@ -179,6 +179,7 @@ def _render_overlay(
     defs: list[dict[str, Any]],
     values: dict[str, dict[str, Any]],
     images: dict[str, Image.Image],
+    skip_ids: set[str] | None = None,
 ) -> None:
     """Draw every placeholder onto a transparent single-page PDF that is
     later merged over the base template page.
@@ -196,6 +197,12 @@ def _render_overlay(
     for d in defs:
         pid = str(d.get("id") or "")
         value = values.get(pid) or {}
+        # Constant opacity (e.g. a 10% watermark). The customer's choice wins,
+        # otherwise the template default.
+        alpha = _num(
+            value.get("opacity") if value.get("opacity") is not None else d.get("opacity"), 1.0
+        )
+        alpha = max(0.0, min(1.0, alpha if alpha else 1.0))
         x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
         w_pt = _num(d.get("width_mm")) * mm
         h_pt = _num(d.get("height_mm")) * mm
@@ -209,10 +216,13 @@ def _render_overlay(
 
         if (d.get("kind") or "image") == "image":
             bg = value.get("background_hex") or d.get("background_hex")
-            img = images.get(pid)
+            # Vector uploads are stamped later, straight from their PDF.
+            img = None if (skip_ids and pid in skip_ids) else images.get(pid)
             if not bg and img is None:
                 continue
             c.saveState()
+            c.setFillAlpha(alpha)
+            c.setStrokeAlpha(alpha)
             path = c.beginPath()
             if radius:
                 path.roundRect(x_pt, y_pt, w_pt, h_pt, radius)
@@ -268,6 +278,8 @@ def _render_overlay(
 
         align = str(style.get("align") or "left")
         c.saveState()
+        c.setFillAlpha(alpha)
+        c.setStrokeAlpha(alpha)
         path = c.beginPath()
         path.rect(x_pt, y_pt, w_pt, h_pt)
         c.clipPath(path, stroke=0, fill=0)
