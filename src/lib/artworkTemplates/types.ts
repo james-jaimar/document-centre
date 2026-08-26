@@ -61,7 +61,11 @@ export interface ArtworkTemplate {
   page_count: number;
   trim_width_mm: number;
   trim_height_mm: number;
+  /** Where the trim box sits inside the base PDF page (mm from top-left). */
+  trim_offset_x_mm: number;
+  trim_offset_y_mm: number;
   bleed_mm: number;
+
   status: "draft" | "published";
   sort_order: number;
   is_active: boolean;
