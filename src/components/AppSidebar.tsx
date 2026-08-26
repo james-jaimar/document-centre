@@ -93,6 +93,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
       { to: "/platform/communications", icon: <Mail size={20} />, label: "Communications" },
       { to: "/platform/enquiries", icon: <Inbox size={20} />, label: "Enquiries" },
+      { to: "/platform/storefronts", icon: <Store size={20} />, label: "Storefronts" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },
