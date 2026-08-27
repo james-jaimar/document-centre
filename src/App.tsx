@@ -143,6 +143,7 @@ import PlatformSentMail from "@/pages/platform/PlatformSentMail";
 import PlatformCommunications from "@/pages/platform/PlatformCommunications";
 import PlatformEnquiries from "@/pages/platform/PlatformEnquiries";
 import PlatformStorefronts from "@/pages/platform/PlatformStorefronts";
+import PlatformProductCategories from "@/pages/platform/PlatformProductCategories";
 import PlatformStorefrontDetail from "@/pages/platform/PlatformStorefrontDetail";
 
 const queryClient = new QueryClient({
@@ -458,6 +459,11 @@ function AppRoutes() {
         <Route path="/platform/enquiries" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformEnquiries />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/product-categories" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformProductCategories />
           </ProtectedRoute>
         } />
         <Route path="/platform/storefronts" element={

@@ -102,6 +102,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
     appRoles: ["platform_admin"],
     items: [
       { to: "/platform/products", icon: <Package size={20} />, label: "Products" },
+      { to: "/platform/product-categories", icon: <Package size={20} />, label: "Categories" },
       { to: "/platform/catalog", icon: <Package size={20} />, label: "Master Catalogue" },
       { to: "/platform/master-pricing", icon: <DollarSign size={20} />, label: "Master Pricing" },
       { to: "/platform/pricing", icon: <DollarSign size={20} />, label: "Pricing Regions" },
