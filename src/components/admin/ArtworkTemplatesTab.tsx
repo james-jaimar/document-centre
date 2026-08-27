@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Image as ImageIcon, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Image as ImageIcon, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import { uploadTemplateThumbnail } from "@/lib/artworkTemplates/thumbnails";
@@ -55,6 +55,7 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   const fileRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLInputElement>(null);
   const [thumbBusy, setThumbBusy] = useState(false);
+  const [reordering, setReordering] = useState(false);
 
   useEffect(() => {
     if (!selectedId && templates.length > 0) setSelectedId(templates[0].id);
@@ -247,6 +248,31 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
     } as any);
   };
 
+  /** Swap a template with its neighbour and renumber sort_order sequentially. */
+  const handleMove = async (index: number, dir: -1 | 1) => {
+    const next = [...templates];
+    const target = index + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setReordering(true);
+    try {
+      for (let i = 0; i < next.length; i++) {
+        if (next[i].sort_order === i) continue;
+        await upsertTemplate.mutateAsync({
+          id: next[i].id,
+          product_family_id: productFamilyId,
+          name: next[i].name,
+          sort_order: i,
+        } as any);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not reorder the layouts.");
+    } finally {
+      setReordering(false);
+    }
+  };
+
+
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
 
@@ -311,24 +337,54 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
       {templates.length > 0 && (
         <div className="flex gap-3 overflow-x-auto pb-1">
-          {templates.map((t) => (
-            <button
+          {templates.map((t, i) => (
+            <div
               key={t.id}
-              type="button"
               onClick={() => setSelectedId(t.id)}
-              className={`w-32 shrink-0 rounded-lg border bg-background p-1.5 text-left transition hover:border-primary/60 ${
+              className={`w-32 shrink-0 cursor-pointer rounded-lg border bg-background p-1.5 text-left transition hover:border-primary/60 ${
                 t.id === selectedId ? "border-primary ring-2 ring-primary/30" : ""
               }`}
             >
               <TemplateThumb template={t} className="h-20 w-full" />
               <p className="mt-1 truncate px-0.5 text-xs font-medium">{t.name}</p>
-              <p className="px-0.5 text-[11px] text-muted-foreground">
-                {t.status === "published" ? "Published" : "Draft"}
-              </p>
-            </button>
+              <div className="flex items-center justify-between gap-1 px-0.5">
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {t.status === "published" ? "Published" : "Draft"}
+                </p>
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-5 w-5"
+                    title="Move earlier"
+                    disabled={i === 0 || reordering}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMove(i, -1);
+                    }}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-5 w-5"
+                    title="Move later"
+                    disabled={i === templates.length - 1 || reordering}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMove(i, 1);
+                    }}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       )}
+
 
       {!selected ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
