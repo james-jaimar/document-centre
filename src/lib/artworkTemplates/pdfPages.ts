@@ -99,7 +99,11 @@ function knockoutWhiteInPlace(canvas: HTMLCanvasElement, tolerance: number) {
 
 /**
  * Render every page (up to `maxPages`) at roughly `targetLongPx` on the long
- * edge and return JPEG data URLs plus the trimmed page size in mm.
+ * edge and return PNG data URLs plus the trimmed page size in mm.
+ *
+ * White areas are always knocked out to transparency so that placeholders on the
+ * "behind the template" layer show through. The templates we use are vector PDFs
+ * with no white fill, so this is the correct default behaviour.
  */
 
 export async function rasterisePdfPages(
@@ -107,8 +111,7 @@ export async function rasterisePdfPages(
   opts: {
     targetLongPx?: number;
     maxPages?: number;
-    /** Make the template's white background transparent so placeholders placed
-     *  behind the artwork show through. */
+    /** @deprecated White is always knocked out now; kept for compatibility. */
     knockoutWhite?: boolean;
     /** 0–60 — how far from pure white still counts as background. */
     knockoutTolerance?: number;
