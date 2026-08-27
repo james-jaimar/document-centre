@@ -65,13 +65,13 @@ export default function CustomerHeader() {
   const publicNavItems = [
     { to: homePath, label: "Home", end: true },
     ...(shopEnabled ? [{ to: shopPath, label: "Shop", end: false }] : []),
-    { to: tenantPath("orders/new"), label: "Create", end: false },
+    ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), label: "Create", end: false }]),
     { to: tenantPath("cart"), label: "Cart", end: false },
   ];
   const authNavItems = [
     { to: homePath, label: "Home", end: true },
     ...(shopEnabled ? [{ to: shopPath, label: "Shop", end: false }] : []),
-    { to: tenantPath("orders/new"), label: "Create", end: false },
+    ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), label: "Create", end: false }]),
     { to: tenantPath("orders"), label: "Orders", end: false },
     { to: tenantPath("quotes"), label: "Quotes", end: false },
     { to: tenantPath("cart"), label: "Cart", end: false },

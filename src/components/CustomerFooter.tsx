@@ -44,7 +44,7 @@ export default function CustomerFooter() {
   const navItems = [
     { to: homePath, label: "Home" },
     ...(shopEnabled ? [{ to: shopPath, label: "Shop" }] : []),
-    { to: tenantPath("orders/new"), label: "Create an Order" },
+    ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), label: "Create an Order" }]),
     { to: tenantPath("orders"), label: "My Orders" },
     { to: tenantPath("account"), label: "My Account" },
   ];
