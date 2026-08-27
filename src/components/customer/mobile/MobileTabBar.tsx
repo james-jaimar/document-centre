@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Plus, ClipboardList, User } from "lucide-react";
+import { Home, Plus, ClipboardList, User, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useStorefrontNav } from "@/hooks/useStorefrontNav";
