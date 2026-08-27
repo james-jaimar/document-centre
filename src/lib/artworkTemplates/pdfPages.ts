@@ -182,8 +182,9 @@ export async function rasterisePdfPages(
         out = cropped;
       }
 
-      // Opt-in extra pass for templates that *do* paint a white background.
-      if (opts.knockoutWhite) knockoutWhiteInPlace(out, opts.knockoutTolerance ?? 12);
+      // White is always knocked out to transparency by default so that "behind the template"
+      // placeholders show through. Pass knockoutWhite: false to keep white areas opaque.
+      if (opts.knockoutWhite !== false) knockoutWhiteInPlace(out, opts.knockoutTolerance ?? 12);
 
       const widthPt = trimPt ? trimPt.width : base.width;
       const heightPt = trimPt ? trimPt.height : base.height;
