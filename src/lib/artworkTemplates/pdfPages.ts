@@ -153,9 +153,10 @@ export async function rasterisePdfPages(
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
+      // No white fill: the page is rendered onto a transparent canvas so that
+      // templates exported without a background rectangle stay see-through and
+      // `under` placeholders show through. The compositor paints the paper.
       const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
       let out = canvas;
@@ -164,8 +165,6 @@ export async function rasterisePdfPages(
         cropped.width = Math.max(1, Math.round(trimPt.width * scale));
         cropped.height = Math.max(1, Math.round(trimPt.height * scale));
         const cctx = cropped.getContext("2d")!;
-        cctx.fillStyle = "#ffffff";
-        cctx.fillRect(0, 0, cropped.width, cropped.height);
         cctx.drawImage(
           canvas,
           Math.round(trimPt.x * scale),
@@ -180,6 +179,7 @@ export async function rasterisePdfPages(
         out = cropped;
       }
 
+      // Opt-in extra pass for templates that *do* paint a white background.
       if (opts.knockoutWhite) knockoutWhiteInPlace(out, opts.knockoutTolerance ?? 12);
 
       const widthPt = trimPt ? trimPt.width : base.width;
@@ -188,7 +188,9 @@ export async function rasterisePdfPages(
 
       pages.push({
         index: i - 1,
-        dataUrl: opts.knockoutWhite ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.9),
+        // Always PNG — JPEG cannot carry the alpha channel.
+        dataUrl: out.toDataURL("image/png"),
+
 
         widthPx: out.width,
         heightPx: out.height,
