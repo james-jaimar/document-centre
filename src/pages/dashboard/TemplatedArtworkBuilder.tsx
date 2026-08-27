@@ -413,6 +413,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     return <Skeleton className="m-6 h-96" />;
   }
 
+  // "Upload my own artwork" route — the customer supplies a finished PDF.
+  if (uploadMode) {
+    return (
+      <UploadedArtworkBuilder
+        ref={ref}
+        family={family as any}
+        reference={(templates[0] as any) ?? null}
+        orderIdParam={orderIdParam}
+        onSwitchToDesign={
+          templates.length > 0 ? () => setSearchParams({}, { replace: true }) : undefined
+        }
+      />
+    );
+  }
+
   if (!familyId || templates.length === 0) {
     return (
       <div className="mx-auto max-w-3xl p-6">
@@ -425,6 +440,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       </div>
     );
   }
+
 
   const sizeCaption = template
     ? `${family?.name ?? "Artwork"} (${Math.round(template.trim_width_mm)} × ${Math.round(
