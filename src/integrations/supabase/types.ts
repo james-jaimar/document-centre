@@ -5315,8 +5315,45 @@ export type Database = {
           },
         ]
       }
+      product_categories: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          name: string
+          slug: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name: string
+          slug: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name?: string
+          slug?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       product_families: {
         Row: {
+          category_id: string | null
           cmyk_profile: string
           color_output: string
           created_at: string
@@ -5342,6 +5379,7 @@ export type Database = {
           tenant_id: string | null
         }
         Insert: {
+          category_id?: string | null
           cmyk_profile?: string
           color_output?: string
           created_at?: string
@@ -5367,6 +5405,7 @@ export type Database = {
           tenant_id?: string | null
         }
         Update: {
+          category_id?: string | null
           cmyk_profile?: string
           color_output?: string
           created_at?: string
@@ -5392,6 +5431,13 @@ export type Database = {
           tenant_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "product_families_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "product_families_tenant_id_fkey"
             columns: ["tenant_id"]

@@ -1,6 +1,7 @@
 import { useForm } from "react-hook-form";
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useProductCategories } from "@/hooks/useProductCategories";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +79,7 @@ const TRIM_SIZE_PRESETS = [
 
 
 interface FormValues {
+  category_id: string | null;
   name: string;
   slug: string;
   description: string;
@@ -115,8 +117,10 @@ function slugify(text: string) {
 }
 
 export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit, isPending }: Props) {
+  const { data: categories } = useProductCategories();
   const form = useForm<FormValues>({
     defaultValues: {
+      category_id: null,
       name: "",
       slug: "",
       description: "",
@@ -144,6 +148,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
     const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"]; quantity_mode?: FormValues["quantity_mode"]; kind?: FamilyKind; image_url?: string | null }) | null;
     if (fam) {
       form.reset({
+        category_id: (fam as any).category_id ?? null,
         name: fam.name,
         slug: fam.slug,
         description: fam.description || "",
@@ -167,6 +172,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       });
     } else {
       form.reset({
+        category_id: null,
         name: "",
         slug: "",
         description: "",
@@ -243,6 +249,33 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                   <FormLabel>Description</FormLabel>
                   <FormControl><Textarea {...field} rows={2} placeholder="Brief description…" /></FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="category_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Storefront Category</FormLabel>
+                  <Select
+                    onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                    value={field.value ?? "none"}
+                  >
+                    <FormControl>
+                      <SelectTrigger><SelectValue placeholder="Uncategorised" /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">Uncategorised</SelectItem>
+                      {(categories ?? []).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Groups this product on storefront shop pages.
+                  </p>
                 </FormItem>
               )}
             />

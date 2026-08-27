@@ -1,17 +1,19 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import ProductCard from "@/components/storefront/ProductCard";
+import CategoryCard from "@/components/storefront/CategoryCard";
 import ShopFilters, {
   type FilterOption,
   type ShopFilterState,
 } from "@/components/storefront/ShopFilters";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,18 +44,30 @@ function counted(values: string[], labeller: (v: string) => string): FilterOptio
 
 export default function StorefrontShop() {
   const navigate = useNavigate();
+  const { categorySlug } = useParams<{ categorySlug: string }>();
   const { tenantPath } = useTenantSlug();
   const { tenantId } = useTenantContext();
   const { config, isPageEnabled } = useStorefrontPages(tenantId);
-  const { entries, isLoading } = useStorefrontCatalogue();
+  const { entries: allEntries, categories, isLoading } = useStorefrontCatalogue();
   const { format } = useStorefrontPrice();
   const [sort, setSort] = useState<SortKey>("featured");
   const [view, setView] = useState<"grid" | "list">("grid");
+
+  const activeCategory = categorySlug
+    ? categories.find((c) => c.slug === categorySlug) ?? null
+    : null;
+  /** Show category tiles on /shop when categories exist and none is selected. */
+  const showCategoryIndex = !categorySlug && categories.length > 1;
+  const entries = useMemo(
+    () => (activeCategory ? allEntries.filter((e) => e.category.id === activeCategory.id) : allEntries),
+    [allEntries, activeCategory],
+  );
 
   const priceCeiling = useMemo(() => {
     const max = Math.max(0, ...entries.map((e) => e.fromPrice ?? 0));
     return max > 0 ? Math.ceil(max) : 0;
   }, [entries]);
+
 
   const [filters, setFilters] = useState<ShopFilterState>({
     types: [],
@@ -107,15 +121,52 @@ export default function StorefrontShop() {
       <AssuranceBar items={config.assurance_items} />
 
       <div className="sf-container py-9">
+        {activeCategory && (
+          <nav className="mb-3 text-xs text-muted-foreground" aria-label="Breadcrumb">
+            <Link to={tenantPath("shop")} className="hover:text-foreground">
+              Shop
+            </Link>
+            <span className="mx-1.5">/</span>
+            <span className="text-foreground">{activeCategory.name}</span>
+          </nav>
+        )}
         <header className="mb-7 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="sf-section-title text-foreground">{config.shop_heading}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{config.shop_subcopy}</p>
+            <h1 className="sf-section-title text-foreground">
+              {activeCategory ? activeCategory.name : config.shop_heading}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {activeCategory ? activeCategory.description ?? config.shop_subcopy : config.shop_subcopy}
+            </p>
           </div>
           {config.pricing_note && (
             <p className="text-xs text-muted-foreground">{config.pricing_note}</p>
           )}
         </header>
+
+        {showCategoryIndex ? (
+          isLoading ? (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-56 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {categories.map((c) => (
+                <CategoryCard
+                  key={c.id}
+                  name={c.name}
+                  description={c.description}
+                  imageUrl={c.image_url}
+                  count={c.count}
+                  onClick={() => navigate(tenantPath(`shop/c/${c.slug}`))}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+
 
         <div className="grid gap-8 lg:grid-cols-[256px_1fr]">
           <ShopFilters
@@ -210,7 +261,9 @@ export default function StorefrontShop() {
             )}
           </div>
         </div>
+        )}
       </div>
+
 
       <StorefrontFooterStrip items={config.footer_items} note={config.footer_note} />
     </div>
