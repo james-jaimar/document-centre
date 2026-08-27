@@ -10,6 +10,7 @@ export interface StorefrontFamily {
   icon?: string | null;
   quantity_blocks?: QuantityBlock[] | null;
   supports_editable_artwork?: boolean | null;
+  supplied_artwork_only?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -53,6 +54,8 @@ export function startOrderPath(
   if (family.slug === "photo-prints") return "orders/new/photo-prints";
   if (family.slug === "canvas-prints" || family.slug === "canvas-wrap")
     return "orders/new/canvas-prints";
+  if (family.supplied_artwork_only)
+    return `orders/new/${family.id}/custom-artwork?mode=upload`;
   if (isEditableFamily(family))
     return `orders/new/${family.id}/custom-artwork${mode === "upload" ? "?mode=upload" : ""}`;
   return `orders/new/${family.id}`;
