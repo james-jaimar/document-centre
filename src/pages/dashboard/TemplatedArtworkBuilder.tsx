@@ -212,8 +212,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [
     template?.id,
     template?.base_pdf_path,
-    template?.base_knockout_white,
-    template?.base_knockout_tolerance,
   ]);
 
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
