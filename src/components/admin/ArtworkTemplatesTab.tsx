@@ -71,8 +71,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         const blob = await downloadFromS3(selected.base_pdf_path!);
         const rendered = await rasterisePdfPages(blob, {
           targetLongPx: 1400,
-          knockoutWhite: selected.base_knockout_white,
-          knockoutTolerance: selected.base_knockout_tolerance,
         });
         if (!cancelled) setPages(rendered);
       } catch (err) {
@@ -88,8 +86,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   }, [
     selected?.id,
     selected?.base_pdf_path,
-    selected?.base_knockout_white,
-    selected?.base_knockout_tolerance,
   ]);
 
   const handleCreate = async () => {
@@ -121,8 +117,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       await uploadToS3(path, file);
       const rendered = await rasterisePdfPages(file, {
         targetLongPx: 1400,
-        knockoutWhite: selected.base_knockout_white,
-        knockoutTolerance: selected.base_knockout_tolerance,
       });
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       await upsertTemplate.mutateAsync({
@@ -168,8 +162,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       const blob = await downloadFromS3(selected.base_pdf_path);
       const rendered = await rasterisePdfPages(blob, {
         targetLongPx: 1400,
-        knockoutWhite: selected.base_knockout_white,
-        knockoutTolerance: selected.base_knockout_tolerance,
       });
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       await upsertTemplate.mutateAsync({
