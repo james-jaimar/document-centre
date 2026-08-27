@@ -51,7 +51,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 ) {
   const { id: orderIdParam, familyId: routeFamilyId } = useParams<{ id?: string; familyId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const uploadMode = searchParams.get("mode") === "upload";
+  const modeParam = searchParams.get("mode") === "upload";
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const qc = useQueryClient();
