@@ -172,7 +172,9 @@ function customerRoutes() {
       <Route path="print-centre" element={<CustomerDashboard />} />
       {/* Ecommerce storefront pages (platform-admin enabled per tenant) */}
       <Route path="shop" element={<StorefrontShop />} />
+      <Route path="shop/c/:categorySlug" element={<StorefrontShop />} />
       <Route path="shop/:familySlug" element={<StorefrontProduct />} />
+
       {/* Public routes */}
       <Route path="orders/new" element={<NewOrder />} />
       <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
