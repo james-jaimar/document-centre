@@ -251,6 +251,17 @@ export default function StorefrontProduct() {
               {editable ? "Start designing" : "Upload artwork"}
             </Button>
 
+            {editable && (
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-12 w-full text-[15px]"
+                onClick={() => navigate(tenantPath(startOrderPath(family, "upload")))}
+              >
+                Upload my own artwork
+              </Button>
+            )}
+
             <div className="grid divide-y rounded-xl border text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
               <p className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
                 <Truck className="h-4 w-4" aria-hidden />

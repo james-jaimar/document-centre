@@ -64,6 +64,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
   const effectiveOrderId = orderIdParam ?? createdOrderId ?? undefined;
   const { order, orderItem } = useOrderData(effectiveOrderId);
+  /** Upload route: explicit ?mode=upload, or an order that already holds a supplied PDF. */
+  const uploadMode = modeParam || !!(orderItem?.spec as any)?.uploaded_artwork;
   const selectedFamilyId = routeFamilyId ?? orderItem?.product_family_id ?? null;
 
   // Resolve the exact family selected by the customer (or stored on the order).

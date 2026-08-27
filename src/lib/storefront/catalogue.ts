@@ -44,12 +44,17 @@ export function isEditableFamily(family: StorefrontFamily): boolean {
   );
 }
 
-/** Route suffix (relative to the tenant path) that starts an order. */
-export function startOrderPath(family: StorefrontFamily): string {
+/** Route suffix (relative to the tenant path) that starts an order.
+ *  `mode: "upload"` sends editable-artwork products to the supply-your-own-PDF route. */
+export function startOrderPath(
+  family: StorefrontFamily,
+  mode?: "design" | "upload",
+): string {
   if (family.slug === "photo-prints") return "orders/new/photo-prints";
   if (family.slug === "canvas-prints" || family.slug === "canvas-wrap")
     return "orders/new/canvas-prints";
-  if (isEditableFamily(family)) return `orders/new/${family.id}/custom-artwork`;
+  if (isEditableFamily(family))
+    return `orders/new/${family.id}/custom-artwork${mode === "upload" ? "?mode=upload" : ""}`;
   return `orders/new/${family.id}`;
 }
 
