@@ -79,7 +79,13 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         .eq("id", selectedFamilyId)
         .maybeSingle();
       if (error) throw error;
-      if (data && !data.supports_editable_artwork && data.kind !== "templated_artwork") return null;
+      if (
+        data &&
+        !data.supports_editable_artwork &&
+        !(data as any).supplied_artwork_only &&
+        data.kind !== "templated_artwork"
+      )
+        return null;
       return data;
     },
     enabled: !!selectedFamilyId,
@@ -414,6 +420,28 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     }
   };
 
+  /** Expected geometry for the upload route: the published layout when there
+   *  is one, otherwise the family's supplied-artwork settings. */
+  const uploadGeometry = useMemo(() => {
+    const t = templates[0] as any;
+    if (t) {
+      return {
+        page_count: t.page_count ?? null,
+        trim_width_mm: t.trim_width_mm ?? null,
+        trim_height_mm: t.trim_height_mm ?? null,
+        bleed_mm: t.bleed_mm ?? null,
+      };
+    }
+    const f = family as any;
+    if (!f) return null;
+    return {
+      page_count: f.expected_page_count ?? null,
+      trim_width_mm: f.expected_trim_width_mm ?? null,
+      trim_height_mm: f.expected_trim_height_mm ?? null,
+      bleed_mm: null,
+    };
+  }, [templates, family]);
+
   if (familyLoading || templatesLoading) {
     return <Skeleton className="m-6 h-96" />;
   }
@@ -424,7 +452,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       <UploadedArtworkBuilder
         ref={ref}
         family={family as any}
-        reference={(templates[0] as any) ?? null}
+        reference={uploadGeometry}
         orderIdParam={orderIdParam}
         onSwitchToDesign={
           templates.length > 0 ? () => setSearchParams({}, { replace: true }) : undefined
