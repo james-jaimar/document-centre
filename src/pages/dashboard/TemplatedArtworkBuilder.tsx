@@ -91,6 +91,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   });
   const familyId: string | null = family?.id ?? null;
 
+  /** Upload route: explicit ?mode=upload, an order that already holds a supplied
+   *  PDF, or a family configured as supplied-artwork only. */
+  const uploadMode =
+    modeParam ||
+    !!(orderItem?.spec as any)?.uploaded_artwork ||
+    !!(family as any)?.supplied_artwork_only;
+
+
   const { data: templates = [], isLoading: templatesLoading } = useArtworkTemplates(familyId, {
     publishedOnly: true,
   });
