@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Image as ImageIcon, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Image as ImageIcon, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import { uploadTemplateThumbnail } from "@/lib/artworkTemplates/thumbnails";
