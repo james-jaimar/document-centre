@@ -23,12 +23,12 @@ export default function ProductStrip({
           key={family.id}
           type="button"
           onClick={() => onSelect(family)}
-          className="group flex min-h-[166px] flex-col rounded-lg border bg-card px-3 py-2.5 text-left transition-shadow hover:shadow-sm"
+          className="group flex min-h-[214px] flex-col rounded-lg border bg-card px-3 py-2.5 text-left transition-shadow hover:shadow-sm"
         >
-          <p className="mb-1.5 truncate text-center text-[13px] font-bold text-foreground">
+          <p className="mb-2 truncate text-center text-[13px] font-bold text-foreground">
             {family.name}
           </p>
-          <div className="h-[96px] w-full overflow-hidden rounded-md bg-muted">
+          <div className="h-[132px] w-full overflow-hidden rounded-md">
             {imageUrl ? (
               <img
                 src={imageUrl}
@@ -42,6 +42,7 @@ export default function ProductStrip({
               </span>
             )}
           </div>
+
           <div className="mt-2 flex items-center justify-between">
             <span className="text-[13px] font-semibold sf-accent">
               {fromPriceLabel ? `From ${fromPriceLabel}` : "View"}
