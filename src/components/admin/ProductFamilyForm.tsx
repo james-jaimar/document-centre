@@ -60,6 +60,22 @@ const DEFAULT_PRINTING_RULES: PrintingRules = {
 
 const CANVAS_WRAP_DEPTH_OPTIONS = [25, 38, 50] as const;
 
+/** Standard finished sizes offered when configuring supplied-artwork checks. */
+const TRIM_SIZE_PRESETS = [
+  { label: "A6", w: 105, h: 148 },
+  { label: "DL", w: 99, h: 210 },
+  { label: "A5", w: 148, h: 210 },
+  { label: "A4", w: 210, h: 297 },
+  { label: "A3", w: 297, h: 420 },
+  { label: "A2", w: 420, h: 594 },
+  { label: "A1", w: 594, h: 841 },
+  { label: "A0", w: 841, h: 1189 },
+  { label: "Letter", w: 215.9, h: 279.4 },
+  { label: "Legal", w: 215.9, h: 355.6 },
+  { label: "Tabloid", w: 279.4, h: 431.8 },
+] as const;
+
+
 
 interface FormValues {
   name: string;
