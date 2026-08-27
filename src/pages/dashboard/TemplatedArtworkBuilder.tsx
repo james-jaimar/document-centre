@@ -153,6 +153,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   // Debounced persist onto the order item.
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [proofOpen, setProofOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const persistTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!orderItem?.id || !templateId) return;
