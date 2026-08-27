@@ -29,6 +29,7 @@ import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
+import TemplatePickerSheet, { TemplateThumb } from "@/components/artwork/TemplatePickerSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
