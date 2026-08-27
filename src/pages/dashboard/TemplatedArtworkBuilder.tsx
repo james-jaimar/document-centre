@@ -8,7 +8,7 @@
  * full-resolution uploads.
  */
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, LayoutTemplate, Loader2, ShoppingCart } from "lucide-react";
@@ -29,6 +29,7 @@ import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
+import UploadedArtworkBuilder from "@/pages/dashboard/UploadedArtworkBuilder";
 import TemplatePickerSheet, { TemplateThumb } from "@/components/artwork/TemplatePickerSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   ref,
 ) {
   const { id: orderIdParam, familyId: routeFamilyId } = useParams<{ id?: string; familyId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const uploadMode = searchParams.get("mode") === "upload";
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const qc = useQueryClient();
