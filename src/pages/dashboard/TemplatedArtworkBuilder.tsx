@@ -446,6 +446,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {templates.length > 1 && (
+            <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+              <LayoutTemplate className="mr-1.5 h-4 w-4" /> Change layout
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
