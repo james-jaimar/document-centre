@@ -42,7 +42,8 @@ import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
-import type { ArtworkTemplate } from "@/lib/artworkTemplates/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useFamilyPackBlocks } from "@/hooks/useFamilyPackBlocks";
 
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
@@ -57,10 +58,19 @@ export interface UploadedArtworkSpec {
   approved_at: string | null;
 }
 
+/** Geometry the uploaded PDF is checked against — from a published artwork
+ *  template, or from the product family's supplied-artwork settings. */
+export interface ArtworkGeometry {
+  page_count?: number | null;
+  trim_width_mm?: number | null;
+  trim_height_mm?: number | null;
+  bleed_mm?: number | null;
+}
+
 interface Props {
   family: { id: string; name?: string | null } | null;
-  /** Published layout used only as the geometry yardstick for the checks. */
-  reference: ArtworkTemplate | null;
+  /** Expected page count / trim size used as the yardstick for the checks. */
+  reference: ArtworkGeometry | null;
   orderIdParam?: string;
   /** Switch back to the design-online editor. */
   onSwitchToDesign?: () => void;
@@ -309,9 +319,38 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
-  const baseUnit = Number((family as any)?.printing_rules?.templated_unit_price ?? 0);
+  const packBlocks = useFamilyPackBlocks(family as any);
+  /** Distinct pack quantities, cheapest block per quantity. */
+  const packOptions = useMemo(() => {
+    const byQty = new Map<number, number>();
+    for (const b of packBlocks) {
+      const qty = Number(b.qty) || 0;
+      const price = Number(b.price_minor) || 0;
+      if (qty <= 0 || price <= 0) continue;
+      const current = byQty.get(qty);
+      if (current === undefined || price < current) byQty.set(qty, price);
+    }
+    return [...byQty.entries()]
+      .map(([qty, priceMinor]) => ({ qty, priceMinor }))
+      .sort((a, b) => a.qty - b.qty);
+  }, [packBlocks]);
+  const packMode = packOptions.length > 0;
+
+  // Snap the quantity onto a valid pack as soon as pack pricing is available.
+  useEffect(() => {
+    if (!packMode) return;
+    if (!packOptions.some((o) => o.qty === quantity)) setQuantity(packOptions[0].qty);
+  }, [packMode, packOptions, quantity]);
+
+  const activePack = packMode
+    ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
+    : null;
+  const flatUnit = Number((family as any)?.printing_rules?.templated_unit_price ?? 0);
+  const baseUnit = activePack ? activePack.priceMinor / 100 / activePack.qty : flatUnit;
   const unitPrice = convert(baseUnit);
-  const netTotal = unitPrice * Math.max(quantity, 1);
+  const netTotal = activePack
+    ? convert(activePack.priceMinor / 100)
+    : unitPrice * Math.max(quantity, 1);
 
   const pageLabels = useMemo(() => pages.map((p) => `Page ${p.index + 1}`), [pages]);
 
@@ -545,12 +584,31 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
-            <Input
-              type="number"
-              min={1}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-            />
+            {packMode ? (
+              <Select
+                value={String(quantity)}
+                onValueChange={(v) => setQuantity(Number(v))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {packOptions.map((o) => (
+                    <SelectItem key={o.qty} value={String(o.qty)}>
+                      {o.qty.toLocaleString()} —{" "}
+                      {formatPrice(priceDisplay.toGross(convert(o.priceMinor / 100)), activeCurrency)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+              />
+            )}
           </div>
           <div className="flex items-baseline justify-between border-t pt-3">
             <span className="text-sm text-muted-foreground">Total</span>

@@ -64,9 +64,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
   const effectiveOrderId = orderIdParam ?? createdOrderId ?? undefined;
   const { order, orderItem } = useOrderData(effectiveOrderId);
-  /** Upload route: explicit ?mode=upload, or an order that already holds a supplied PDF. */
-  const uploadMode = modeParam || !!(orderItem?.spec as any)?.uploaded_artwork;
   const selectedFamilyId = routeFamilyId ?? orderItem?.product_family_id ?? null;
+
 
   // Resolve the exact family selected by the customer (or stored on the order).
   const { data: family, isLoading: familyLoading } = useQuery({
@@ -79,12 +78,26 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         .eq("id", selectedFamilyId)
         .maybeSingle();
       if (error) throw error;
-      if (data && !data.supports_editable_artwork && data.kind !== "templated_artwork") return null;
+      if (
+        data &&
+        !data.supports_editable_artwork &&
+        !(data as any).supplied_artwork_only &&
+        data.kind !== "templated_artwork"
+      )
+        return null;
       return data;
     },
     enabled: !!selectedFamilyId,
   });
   const familyId: string | null = family?.id ?? null;
+
+  /** Upload route: explicit ?mode=upload, an order that already holds a supplied
+   *  PDF, or a family configured as supplied-artwork only. */
+  const uploadMode =
+    modeParam ||
+    !!(orderItem?.spec as any)?.uploaded_artwork ||
+    !!(family as any)?.supplied_artwork_only;
+
 
   const { data: templates = [], isLoading: templatesLoading } = useArtworkTemplates(familyId, {
     publishedOnly: true,
@@ -414,6 +427,28 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     }
   };
 
+  /** Expected geometry for the upload route: the published layout when there
+   *  is one, otherwise the family's supplied-artwork settings. */
+  const uploadGeometry = useMemo(() => {
+    const t = templates[0] as any;
+    if (t) {
+      return {
+        page_count: t.page_count ?? null,
+        trim_width_mm: t.trim_width_mm ?? null,
+        trim_height_mm: t.trim_height_mm ?? null,
+        bleed_mm: t.bleed_mm ?? null,
+      };
+    }
+    const f = family as any;
+    if (!f) return null;
+    return {
+      page_count: f.expected_page_count ?? null,
+      trim_width_mm: f.expected_trim_width_mm ?? null,
+      trim_height_mm: f.expected_trim_height_mm ?? null,
+      bleed_mm: null,
+    };
+  }, [templates, family]);
+
   if (familyLoading || templatesLoading) {
     return <Skeleton className="m-6 h-96" />;
   }
@@ -424,10 +459,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       <UploadedArtworkBuilder
         ref={ref}
         family={family as any}
-        reference={(templates[0] as any) ?? null}
+        reference={uploadGeometry}
         orderIdParam={orderIdParam}
         onSwitchToDesign={
-          templates.length > 0 ? () => setSearchParams({}, { replace: true }) : undefined
+          templates.length > 0 && !(family as any)?.supplied_artwork_only
+            ? () => setSearchParams({}, { replace: true })
+            : undefined
         }
       />
     );

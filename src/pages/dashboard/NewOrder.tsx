@@ -61,6 +61,10 @@ export default function NewOrder() {
       return;
     }
     const family = filteredFamilies.find((f: any) => f.id === familyId);
+    if ((family as any)?.supplied_artwork_only) {
+      navigate(tenantPath(`orders/new/${familyId}/custom-artwork?mode=upload`));
+      return;
+    }
     if ((family as any)?.supports_editable_artwork || getFamilyKind(family as any) === "templated_artwork") {
       navigate(tenantPath(`orders/new/${familyId}/custom-artwork`));
       return;

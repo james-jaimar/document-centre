@@ -155,10 +155,19 @@ export default function OrderBuild() {
       navigate(tenantPath(`orders/${orderId}/canvas-prints`), { replace: true });
     } else if (productFamily.kind === "photo_print") {
       navigate(tenantPath(`orders/${orderId}/photo-prints`), { replace: true });
+    } else if ((productFamily as any).supplied_artwork_only) {
+      navigate(tenantPath(`orders/${orderId}/custom-artwork?mode=upload`), { replace: true });
     } else if (productFamily.supports_editable_artwork || productFamily.kind === "templated_artwork") {
       navigate(tenantPath(`orders/${orderId}/custom-artwork`), { replace: true });
     }
-  }, [orderId, productFamily?.kind, productFamily?.supports_editable_artwork, navigate, tenantPath]);
+  }, [
+    orderId,
+    productFamily?.kind,
+    productFamily?.supports_editable_artwork,
+    (productFamily as any)?.supplied_artwork_only,
+    navigate,
+    tenantPath,
+  ]);
 
   // Derive preview type from binding option metadata or product family slug
   const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
