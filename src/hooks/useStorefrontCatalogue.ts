@@ -59,17 +59,34 @@ export function useStorefrontCatalogue() {
     },
   });
 
+  const { data: categories } = useProductCategories({ activeOnly: true });
+
   const entries: StorefrontCatalogueEntry[] = (families ?? []).map((f: any) => {
     const family = f as StorefrontFamily;
     const rows = (overrides ?? []).filter((o) => o.product_family_id === family.id);
     const blocks = resolvePackBlocks(family, rows, branchId);
+    const category =
+      (categories ?? []).find((c) => c.id === (f.category_id ?? null)) ?? UNCATEGORISED;
     return {
       family,
       blocks,
       fromPrice: fromPriceMajor(blocks),
       sizes: packSizes(blocks),
+      category,
     };
   });
 
-  return { entries, isLoading };
+  /** Categories that actually contain visible products, in sort order. */
+  const visibleCategories: (ProductCategory & { count: number })[] = [
+    ...(categories ?? []),
+    UNCATEGORISED,
+  ]
+    .map((c) => ({
+      ...c,
+      count: entries.filter((e) => e.category.id === c.id).length,
+    }))
+    .filter((c) => c.count > 0);
+
+  return { entries, categories: visibleCategories, isLoading };
 }
+
