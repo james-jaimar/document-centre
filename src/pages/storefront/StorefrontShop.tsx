@@ -44,18 +44,30 @@ function counted(values: string[], labeller: (v: string) => string): FilterOptio
 
 export default function StorefrontShop() {
   const navigate = useNavigate();
+  const { categorySlug } = useParams<{ categorySlug: string }>();
   const { tenantPath } = useTenantSlug();
   const { tenantId } = useTenantContext();
   const { config, isPageEnabled } = useStorefrontPages(tenantId);
-  const { entries, isLoading } = useStorefrontCatalogue();
+  const { entries: allEntries, categories, isLoading } = useStorefrontCatalogue();
   const { format } = useStorefrontPrice();
   const [sort, setSort] = useState<SortKey>("featured");
   const [view, setView] = useState<"grid" | "list">("grid");
+
+  const activeCategory = categorySlug
+    ? categories.find((c) => c.slug === categorySlug) ?? null
+    : null;
+  /** Show category tiles on /shop when categories exist and none is selected. */
+  const showCategoryIndex = !categorySlug && categories.length > 1;
+  const entries = useMemo(
+    () => (activeCategory ? allEntries.filter((e) => e.category.id === activeCategory.id) : allEntries),
+    [allEntries, activeCategory],
+  );
 
   const priceCeiling = useMemo(() => {
     const max = Math.max(0, ...entries.map((e) => e.fromPrice ?? 0));
     return max > 0 ? Math.ceil(max) : 0;
   }, [entries]);
+
 
   const [filters, setFilters] = useState<ShopFilterState>({
     types: [],
