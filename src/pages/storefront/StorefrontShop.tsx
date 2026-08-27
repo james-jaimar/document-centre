@@ -261,7 +261,9 @@ export default function StorefrontShop() {
             )}
           </div>
         </div>
+        )}
       </div>
+
 
       <StorefrontFooterStrip items={config.footer_items} note={config.footer_note} />
     </div>
