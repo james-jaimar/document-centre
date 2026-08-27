@@ -5321,6 +5321,9 @@ export type Database = {
           color_output: string
           created_at: string
           description: string | null
+          expected_page_count: number | null
+          expected_trim_height_mm: number | null
+          expected_trim_width_mm: number | null
           icon: string | null
           id: string
           image_url: string | null
@@ -5334,6 +5337,7 @@ export type Database = {
           render_intent: string
           slug: string
           sort_order: number
+          supplied_artwork_only: boolean
           supports_editable_artwork: boolean
           tenant_id: string | null
         }
@@ -5342,6 +5346,9 @@ export type Database = {
           color_output?: string
           created_at?: string
           description?: string | null
+          expected_page_count?: number | null
+          expected_trim_height_mm?: number | null
+          expected_trim_width_mm?: number | null
           icon?: string | null
           id?: string
           image_url?: string | null
@@ -5355,6 +5362,7 @@ export type Database = {
           render_intent?: string
           slug: string
           sort_order?: number
+          supplied_artwork_only?: boolean
           supports_editable_artwork?: boolean
           tenant_id?: string | null
         }
@@ -5363,6 +5371,9 @@ export type Database = {
           color_output?: string
           created_at?: string
           description?: string | null
+          expected_page_count?: number | null
+          expected_trim_height_mm?: number | null
+          expected_trim_width_mm?: number | null
           icon?: string | null
           id?: string
           image_url?: string | null
@@ -5376,6 +5387,7 @@ export type Database = {
           render_intent?: string
           slug?: string
           sort_order?: number
+          supplied_artwork_only?: boolean
           supports_editable_artwork?: boolean
           tenant_id?: string | null
         }
