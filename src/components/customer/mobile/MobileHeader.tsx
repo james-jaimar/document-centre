@@ -4,6 +4,7 @@ import { Menu, ShoppingCart, LogIn, MapPin } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useStorefrontNav } from "@/hooks/useStorefrontNav";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
@@ -26,6 +27,7 @@ export default function MobileHeader() {
   const isAuthenticated = !!user && !isAnonymousUser(user);
   const { activeBranch, isMultiBranch, openPicker } = useBranch();
   const { multiCurrency } = useRegionalPricing();
+  const { homePath } = useStorefrontNav();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
   let logoUrl = branding?.logo_url || tenant?.logo_url || "";
@@ -50,7 +52,7 @@ export default function MobileHeader() {
         </button>
 
         <Link
-          to={tenantPath("print-centre")}
+          to={homePath}
           className="flex flex-1 min-w-0 items-center justify-center"
         >
           {logoUrl ? (

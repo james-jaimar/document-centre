@@ -6,6 +6,7 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useStorefrontNav } from "@/hooks/useStorefrontNav";
 import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutPath } from "@/lib/tenantSignOut";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ export default function CustomerHeader() {
   const isAnon = isAnonymousUser(user);
   const { activeBranch, isMultiBranch, openPicker, loading: branchesLoading } = useBranch();
   const { multiCurrency } = useRegionalPricing();
+  const { homePath, shopPath, shopEnabled } = useStorefrontNav();
 
 
   const handleSignOut = async () => {
@@ -61,12 +63,14 @@ export default function CustomerHeader() {
 
   // Build nav items based on auth state
   const publicNavItems = [
-    { to: tenantPath("print-centre"), label: "Home", end: true },
+    { to: homePath, label: "Home", end: true },
+    ...(shopEnabled ? [{ to: shopPath, label: "Shop", end: false }] : []),
     { to: tenantPath("orders/new"), label: "Create", end: false },
     { to: tenantPath("cart"), label: "Cart", end: false },
   ];
   const authNavItems = [
-    { to: tenantPath("print-centre"), label: "Home", end: true },
+    { to: homePath, label: "Home", end: true },
+    ...(shopEnabled ? [{ to: shopPath, label: "Shop", end: false }] : []),
     { to: tenantPath("orders/new"), label: "Create", end: false },
     { to: tenantPath("orders"), label: "Orders", end: false },
     { to: tenantPath("quotes"), label: "Quotes", end: false },
@@ -177,7 +181,7 @@ export default function CustomerHeader() {
 
   return (
     <header className="print-topbar">
-      <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
+      <Link to={homePath} className="flex items-center shrink-0">
         {logoContent}
       </Link>
 

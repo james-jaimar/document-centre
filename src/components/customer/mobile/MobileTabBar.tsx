@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { Home, Plus, ClipboardList, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useStorefrontNav } from "@/hooks/useStorefrontNav";
 import { useAuth } from "@/hooks/useAuth";
 import { isAnonymousUser } from "@/lib/tenantSignOut";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
@@ -28,12 +29,13 @@ export default function MobileTabBar() {
   const { user } = useAuth();
   const isAuth = !!user && !isAnonymousUser(user);
   const hidden = useTabBarHidden();
+  const { homePath } = useStorefrontNav();
   const location = useLocation();
 
   if (hidden) return null;
 
   const tabs = [
-    { to: tenantPath("print-centre"), icon: Home, label: "Home", end: true },
+    { to: homePath, icon: Home, label: "Home", end: true },
     { to: tenantPath("orders/new"), icon: Plus, label: "Create", end: false, primary: true },
     {
       to: isAuth ? tenantPath("orders") : withAuthRedirect(tenantPath("auth"), location),
