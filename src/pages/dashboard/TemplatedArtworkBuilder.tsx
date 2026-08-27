@@ -197,9 +197,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         const blob = await downloadFromS3(template.base_pdf_path!);
         const rendered = await rasterisePdfPages(blob, {
           targetLongPx: 1400,
-          // Transparent base so "behind the template" placeholders show through.
-          knockoutWhite: template.base_knockout_white,
-          knockoutTolerance: template.base_knockout_tolerance,
         });
         if (!cancelled) setPages(rendered);
       } catch (err) {
@@ -215,8 +212,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [
     template?.id,
     template?.base_pdf_path,
-    template?.base_knockout_white,
-    template?.base_knockout_tolerance,
   ]);
 
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -71,8 +71,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         const blob = await downloadFromS3(selected.base_pdf_path!);
         const rendered = await rasterisePdfPages(blob, {
           targetLongPx: 1400,
-          knockoutWhite: selected.base_knockout_white,
-          knockoutTolerance: selected.base_knockout_tolerance,
         });
         if (!cancelled) setPages(rendered);
       } catch (err) {
@@ -88,8 +86,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   }, [
     selected?.id,
     selected?.base_pdf_path,
-    selected?.base_knockout_white,
-    selected?.base_knockout_tolerance,
   ]);
 
   const handleCreate = async () => {
@@ -121,8 +117,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       await uploadToS3(path, file);
       const rendered = await rasterisePdfPages(file, {
         targetLongPx: 1400,
-        knockoutWhite: selected.base_knockout_white,
-        knockoutTolerance: selected.base_knockout_tolerance,
       });
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       await upsertTemplate.mutateAsync({
@@ -168,8 +162,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       const blob = await downloadFromS3(selected.base_pdf_path);
       const rendered = await rasterisePdfPages(blob, {
         targetLongPx: 1400,
-        knockoutWhite: selected.base_knockout_white,
-        knockoutTolerance: selected.base_knockout_tolerance,
       });
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       await upsertTemplate.mutateAsync({
@@ -347,42 +339,6 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
             marks sit outside it). Placeholder positions are measured from the trim's top-left
             corner, so they match your Illustrator measurements.
           </p>
-
-          {/* Transparency — needed for placeholders that sit BEHIND the artwork. */}
-          <div className="flex flex-wrap items-center gap-4 rounded-lg border p-3">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={!!selected.base_knockout_white}
-                onCheckedChange={(v) => patchTemplate({ base_knockout_white: v } as any)}
-              />
-              <Label className="text-xs">Knock out white background</Label>
-            </div>
-            {selected.base_knockout_white && (
-              <div className="flex items-center gap-2">
-                <Label className="text-xs">Tolerance</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={60}
-                  className="h-9 w-24"
-                  key={`${selected.id}-knockout-tol`}
-                  defaultValue={selected.base_knockout_tolerance ?? 12}
-                  onBlur={(e) => {
-                    const n = Math.max(0, Math.min(60, Number(e.target.value) || 0));
-                    if (n !== selected.base_knockout_tolerance) {
-                      patchTemplate({ base_knockout_tolerance: n } as any);
-                    }
-                  }}
-                />
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Makes the template's white areas transparent so placeholders on the “behind the
-              template” layer show through. Use only when the artwork is line-work on white.
-            </p>
-          </div>
-
-
 
           {renderingPdf ? (
             <Skeleton className="h-96 w-full" />

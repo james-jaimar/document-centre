@@ -525,8 +525,7 @@ export default function TemplateBoxEditor({
             </div>
             {active.layer === "under" && (
               <p className="text-xs text-muted-foreground">
-                Behind-template boxes only show through where the template artwork is
-                transparent — enable “Knock out white background” on the template.
+                Behind-template boxes show through wherever the template artwork is transparent.
               </p>
             )}
 
