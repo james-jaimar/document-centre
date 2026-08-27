@@ -1,17 +1,19 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import ProductCard from "@/components/storefront/ProductCard";
+import CategoryCard from "@/components/storefront/CategoryCard";
 import ShopFilters, {
   type FilterOption,
   type ShopFilterState,
 } from "@/components/storefront/ShopFilters";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
