@@ -47,7 +47,7 @@ export function resolveTenantLanding(
     return buildAdminPath("/admin", membership.tenant_id);
   }
   // Default: customer storefront
-  if (targetSlug) return buildTenantPath(targetSlug, branchSlug, "print-centre");
+  if (targetSlug) return buildTenantPath(targetSlug, branchSlug, "");
   return "/dashboard";
 }
 

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useStorefrontNav } from "@/hooks/useStorefrontNav";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Phone, MapPin, ExternalLink } from "lucide-react";
@@ -13,6 +14,7 @@ export default function CustomerFooter() {
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
   const { activeBranch } = useBranch();
+  const { homePath, shopPath, shopEnabled } = useStorefrontNav();
 
   const { data: support } = useQuery({
     queryKey: ["tenant_support", tenant?.id],
@@ -40,7 +42,8 @@ export default function CustomerFooter() {
   const isDemo = slug === "demo" || tenantName.toLowerCase().includes("document centre");
 
   const navItems = [
-    { to: tenantPath("print-centre"), label: "Home" },
+    { to: homePath, label: "Home" },
+    ...(shopEnabled ? [{ to: shopPath, label: "Shop" }] : []),
     { to: tenantPath("orders/new"), label: "Create an Order" },
     { to: tenantPath("orders"), label: "My Orders" },
     { to: tenantPath("account"), label: "My Account" },

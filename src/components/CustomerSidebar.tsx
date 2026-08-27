@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
+  Store,
   Plus,
   ClipboardList,
   FileText,
@@ -18,6 +19,7 @@ import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useCartItemCount } from "@/hooks/useCart";
 import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useStorefrontNav } from "@/hooks/useStorefrontNav";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutPath } from "@/lib/tenantSignOut";
@@ -35,6 +37,7 @@ export default function CustomerSidebar() {
   const isAnon = isAnonymousUser(user);
   const isAuthenticated = !!user && !isAnon;
   const { activeBranch } = useBranch();
+  const { homePath, shopPath, shopEnabled } = useStorefrontNav();
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
@@ -46,11 +49,13 @@ export default function CustomerSidebar() {
   const cartCount = useCartItemCount();
 
   const publicNavItems = [
-    { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
+    { to: homePath, icon: Home, label: "Home", exact: true },
+    ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
     { to: tenantPath("orders/new"), icon: Plus, label: "Create", exact: false },
   ];
   const authNavItems = [
-    { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
+    { to: homePath, icon: Home, label: "Home", exact: true },
+    ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
     { to: tenantPath("orders/new"), icon: Plus, label: "Create", exact: false },
     { to: tenantPath("orders"), icon: ClipboardList, label: "Orders", exact: false },
     { to: tenantPath("quotes"), icon: FileText, label: "Quotes", exact: false },

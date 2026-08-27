@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
+  Store,
   Plus,
   ClipboardList,
   FileText,
@@ -15,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useAuth } from "@/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useStorefrontNav } from "@/hooks/useStorefrontNav";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
@@ -40,16 +42,19 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
   const isAuthenticated = !!user && !isAnon;
   const cartCount = useCartItemCount();
   const { activeBranch, isMultiBranch, openPicker } = useBranch();
+  const { homePath, shopPath, shopEnabled } = useStorefrontNav();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
 
   const publicNav = [
-    { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
+    { to: homePath, icon: Home, label: "Home", exact: true },
+    ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
     { to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false },
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true as const },
   ];
   const authNav = [
-    { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
+    { to: homePath, icon: Home, label: "Home", exact: true },
+    ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
     { to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false },
     { to: tenantPath("orders"), icon: ClipboardList, label: "My Orders", exact: false },
     { to: tenantPath("quotes"), icon: FileText, label: "My Quotes", exact: false },

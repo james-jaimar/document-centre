@@ -63,5 +63,5 @@ export function normaliseExternalUrl(u: string | null | undefined): string | nul
  */
 export function resolvePostSignOutPath(slug: string | null | undefined): string {
   if (!slug) return "/";
-  return `/t/${slug}/print-centre`;
+  return `/t/${slug}`;
 }

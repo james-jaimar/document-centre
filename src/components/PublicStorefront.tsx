@@ -20,7 +20,7 @@ export default function PublicStorefront() {
   }
 
   if (user) {
-    return <Navigate to={tenantPath("print-centre")} replace />;
+    return <Navigate to={tenantPath("")} replace />;
   }
 
   return <StorefrontLanding />;
