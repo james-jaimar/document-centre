@@ -309,6 +309,27 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         )}
       </div>
 
+      {templates.length > 0 && (
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setSelectedId(t.id)}
+              className={`w-32 shrink-0 rounded-lg border bg-background p-1.5 text-left transition hover:border-primary/60 ${
+                t.id === selectedId ? "border-primary ring-2 ring-primary/30" : ""
+              }`}
+            >
+              <TemplateThumb template={t} className="h-20 w-full" />
+              <p className="mt-1 truncate px-0.5 text-xs font-medium">{t.name}</p>
+              <p className="px-0.5 text-[11px] text-muted-foreground">
+                {t.status === "published" ? "Published" : "Draft"}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+
       {!selected ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           No customer templates yet. Create one, upload the multi-page base PDF, then draw the
@@ -350,6 +371,29 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               {selected.base_pdf_path && (
                 <Button variant="outline" onClick={handleRedetectSize} disabled={renderingPdf}>
                   Re-detect size
+                </Button>
+              )}
+              <input
+                ref={thumbRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleThumbnailUpload(f);
+                }}
+              />
+              <Button variant="outline" onClick={() => thumbRef.current?.click()} disabled={thumbBusy}>
+                {thumbBusy ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-4 w-4 mr-1.5" />
+                )}
+                Upload thumbnail
+              </Button>
+              {pages.length > 0 && (
+                <Button variant="ghost" onClick={handleResetThumbnail} disabled={thumbBusy}>
+                  Reset to auto
                 </Button>
               )}
               <Button onClick={handleSaveBoxes} disabled={savePlaceholders.isPending}>
