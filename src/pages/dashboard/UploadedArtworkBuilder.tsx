@@ -48,6 +48,7 @@ import type { ArtworkTemplate } from "@/lib/artworkTemplates/types";
 const TRIM_TOLERANCE_MM = 2;
 
 export interface UploadedArtworkSpec {
+  document_id?: string | null;
   storage_path: string;
   file_name: string;
   page_count: number;
@@ -253,10 +254,30 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         const path = `artwork-uploads/${itemId}/print-ready-${Date.now()}-${safeName}`;
         await uploadToS3(path, file);
 
+        // Register it as a normal document so the existing print-ready /
+        // imposition pipeline treats it like any other supplied artwork.
+        await supabase.from("documents").delete().eq("order_item_id", itemId);
+        const { data: doc } = await supabase
+          .from("documents")
+          .insert({
+            order_item_id: itemId,
+            file_name: file.name,
+            file_path: path,
+            file_size: file.size,
+            mime_type: "application/pdf",
+            document_status: "ready",
+            page_count: rendered.length,
+            page_width_mm: Math.round(first.widthMm),
+            page_height_mm: Math.round(first.heightMm),
+          })
+          .select("id")
+          .single();
+
         setPages(rendered);
         setPageIndex(0);
         setApproved(false);
         setSpec({
+          document_id: doc?.id ?? null,
           storage_path: path,
           file_name: file.name,
           page_count: rendered.length,
@@ -275,6 +296,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   );
 
   const clearFile = () => {
+    if (orderItem?.id) void supabase.from("documents").delete().eq("order_item_id", orderItem.id);
     setSpec(null);
     setPages([]);
     setPageImages({});
