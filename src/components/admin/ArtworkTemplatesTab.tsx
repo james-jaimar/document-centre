@@ -247,6 +247,31 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
     } as any);
   };
 
+  /** Swap a template with its neighbour and renumber sort_order sequentially. */
+  const handleMove = async (index: number, dir: -1 | 1) => {
+    const next = [...templates];
+    const target = index + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setReordering(true);
+    try {
+      for (let i = 0; i < next.length; i++) {
+        if (next[i].sort_order === i) continue;
+        await upsertTemplate.mutateAsync({
+          id: next[i].id,
+          product_family_id: productFamilyId,
+          name: next[i].name,
+          sort_order: i,
+        } as any);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not reorder the layouts.");
+    } finally {
+      setReordering(false);
+    }
+  };
+
+
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
 
