@@ -17,11 +17,7 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
   const copy = (
     <>
       {config.hero_eyebrow && (
-        <p
-          className={`mb-3 text-[11px] font-extrabold uppercase tracking-[0.16em] ${
-            full ? "text-primary-foreground/90" : "text-primary"
-          }`}
-        >
+        <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">
           {config.hero_eyebrow}
         </p>
       )}

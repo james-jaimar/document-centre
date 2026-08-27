@@ -49,13 +49,13 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
   const publicNav = [
     { to: homePath, icon: Home, label: "Home", exact: true },
     ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
-    { to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false },
+    ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false }]),
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true as const },
   ];
   const authNav = [
     { to: homePath, icon: Home, label: "Home", exact: true },
     ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
-    { to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false },
+    ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false }]),
     { to: tenantPath("orders"), icon: ClipboardList, label: "My Orders", exact: false },
     { to: tenantPath("quotes"), icon: FileText, label: "My Quotes", exact: false },
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true as const },

@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Plus, ClipboardList, User } from "lucide-react";
+import { Home, Plus, ClipboardList, User, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useStorefrontNav } from "@/hooks/useStorefrontNav";
@@ -29,14 +29,16 @@ export default function MobileTabBar() {
   const { user } = useAuth();
   const isAuth = !!user && !isAnonymousUser(user);
   const hidden = useTabBarHidden();
-  const { homePath } = useStorefrontNav();
+  const { homePath, shopPath, shopEnabled } = useStorefrontNav();
   const location = useLocation();
 
   if (hidden) return null;
 
   const tabs = [
     { to: homePath, icon: Home, label: "Home", end: true },
-    { to: tenantPath("orders/new"), icon: Plus, label: "Create", end: false, primary: true },
+    shopEnabled
+      ? { to: shopPath, icon: Store, label: "Shop", end: false, primary: true }
+      : { to: tenantPath("orders/new"), icon: Plus, label: "Create", end: false, primary: true },
     {
       to: isAuth ? tenantPath("orders") : withAuthRedirect(tenantPath("auth"), location),
       icon: ClipboardList,
