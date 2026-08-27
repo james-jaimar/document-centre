@@ -18,9 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { Image as ImageIcon, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
+import { uploadTemplateThumbnail } from "@/lib/artworkTemplates/thumbnails";
+import { TemplateThumb } from "@/components/artwork/TemplatePickerSheet";
 import TemplateBoxEditor from "@/components/artwork/TemplateBoxEditor";
 import {
   useArtworkPlaceholders,
@@ -51,6 +53,8 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   const [renderingPdf, setRenderingPdf] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const thumbRef = useRef<HTMLInputElement>(null);
+  const [thumbBusy, setThumbBusy] = useState(false);
 
   useEffect(() => {
     if (!selectedId && templates.length > 0) setSelectedId(templates[0].id);
@@ -119,11 +123,18 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         targetLongPx: 1400,
       });
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
+      let previewPath: string | null = null;
+      try {
+        previewPath = await uploadTemplateThumbnail(selected.id, rendered[0].dataUrl);
+      } catch (thumbErr) {
+        console.warn("[artwork] thumbnail generation failed", thumbErr);
+      }
       await upsertTemplate.mutateAsync({
         id: selected.id,
         product_family_id: productFamilyId,
         name: selected.name,
         base_pdf_path: path,
+        ...(previewPath ? { preview_path: previewPath } : {}),
         page_count: rendered.length,
         trim_width_mm: rendered[0].widthMm,
         trim_height_mm: rendered[0].heightMm,
@@ -140,6 +151,46 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const handleThumbnailUpload = async (file: File) => {
+    if (!selected) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("The thumbnail must be a PNG or JPG image.");
+      return;
+    }
+    setThumbBusy(true);
+    try {
+      const src = URL.createObjectURL(file);
+      const previewPath = await uploadTemplateThumbnail(selected.id, src);
+      URL.revokeObjectURL(src);
+      await patchTemplate({ preview_path: previewPath } as any);
+      toast.success("Thumbnail updated.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not upload the thumbnail.");
+    } finally {
+      setThumbBusy(false);
+      if (thumbRef.current) thumbRef.current.value = "";
+    }
+  };
+
+  const handleResetThumbnail = async () => {
+    if (!selected) return;
+    const page = pages[0];
+    if (!page) {
+      toast.error("Upload the base PDF first.");
+      return;
+    }
+    setThumbBusy(true);
+    try {
+      const previewPath = await uploadTemplateThumbnail(selected.id, page.dataUrl);
+      await patchTemplate({ preview_path: previewPath } as any);
+      toast.success("Thumbnail regenerated from page 1.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not regenerate the thumbnail.");
+    } finally {
+      setThumbBusy(false);
     }
   };
 
@@ -258,6 +309,27 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         )}
       </div>
 
+      {templates.length > 0 && (
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setSelectedId(t.id)}
+              className={`w-32 shrink-0 rounded-lg border bg-background p-1.5 text-left transition hover:border-primary/60 ${
+                t.id === selectedId ? "border-primary ring-2 ring-primary/30" : ""
+              }`}
+            >
+              <TemplateThumb template={t} className="h-20 w-full" />
+              <p className="mt-1 truncate px-0.5 text-xs font-medium">{t.name}</p>
+              <p className="px-0.5 text-[11px] text-muted-foreground">
+                {t.status === "published" ? "Published" : "Draft"}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+
       {!selected ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           No customer templates yet. Create one, upload the multi-page base PDF, then draw the
@@ -299,6 +371,29 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               {selected.base_pdf_path && (
                 <Button variant="outline" onClick={handleRedetectSize} disabled={renderingPdf}>
                   Re-detect size
+                </Button>
+              )}
+              <input
+                ref={thumbRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleThumbnailUpload(f);
+                }}
+              />
+              <Button variant="outline" onClick={() => thumbRef.current?.click()} disabled={thumbBusy}>
+                {thumbBusy ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-4 w-4 mr-1.5" />
+                )}
+                Upload thumbnail
+              </Button>
+              {pages.length > 0 && (
+                <Button variant="ghost" onClick={handleResetThumbnail} disabled={thumbBusy}>
+                  Reset to auto
                 </Button>
               )}
               <Button onClick={handleSaveBoxes} disabled={savePlaceholders.isPending}>

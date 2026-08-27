@@ -11,7 +11,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "r
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, LayoutTemplate, Loader2, ShoppingCart } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -29,6 +29,7 @@ import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
+import TemplatePickerSheet, { TemplateThumb } from "@/components/artwork/TemplatePickerSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,6 +154,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   // Debounced persist onto the order item.
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [proofOpen, setProofOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const persistTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!orderItem?.id || !templateId) return;
@@ -444,6 +446,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {templates.length > 1 && (
+            <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+              <LayoutTemplate className="mr-1.5 h-4 w-4" /> Change layout
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -471,20 +478,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
         {/* Left rail — layout + placeholder controls */}
         <div className="min-h-0 space-y-3 overflow-y-auto border-b bg-background p-3 lg:border-b-0 lg:border-r">
-          {templates.length > 1 && (
+          {templates.length > 1 && template && (
             <div className="space-y-1.5">
               <Label className="text-xs">Layout</Label>
-              <select
-                value={templateId ?? ""}
-                onChange={(e) => setTemplateId(e.target.value)}
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="flex w-full items-center gap-3 rounded-lg border bg-background p-2 text-left transition hover:border-primary/60"
               >
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} — {t.page_count} pages
-                  </option>
-                ))}
-              </select>
+                <TemplateThumb template={template} className="h-14 w-14 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{template.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {template.page_count} pages · Change layout
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
             </div>
           )}
 
@@ -629,6 +639,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           </div>
         </div>
       </div>
+
+      <TemplatePickerSheet
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        templates={templates}
+        selectedId={templateId}
+        onSelect={setTemplateId}
+        hasArtwork={Object.keys(values).length > 0}
+      />
 
       <ArtworkProofModal
         open={proofOpen}
