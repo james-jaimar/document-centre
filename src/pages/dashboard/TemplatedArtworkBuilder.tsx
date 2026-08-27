@@ -8,7 +8,7 @@
  * full-resolution uploads.
  */
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, LayoutTemplate, Loader2, ShoppingCart } from "lucide-react";
@@ -29,6 +29,7 @@ import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
+import UploadedArtworkBuilder from "@/pages/dashboard/UploadedArtworkBuilder";
 import TemplatePickerSheet, { TemplateThumb } from "@/components/artwork/TemplatePickerSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   ref,
 ) {
   const { id: orderIdParam, familyId: routeFamilyId } = useParams<{ id?: string; familyId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const modeParam = searchParams.get("mode") === "upload";
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -61,6 +64,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
   const effectiveOrderId = orderIdParam ?? createdOrderId ?? undefined;
   const { order, orderItem } = useOrderData(effectiveOrderId);
+  /** Upload route: explicit ?mode=upload, or an order that already holds a supplied PDF. */
+  const uploadMode = modeParam || !!(orderItem?.spec as any)?.uploaded_artwork;
   const selectedFamilyId = routeFamilyId ?? orderItem?.product_family_id ?? null;
 
   // Resolve the exact family selected by the customer (or stored on the order).
@@ -413,6 +418,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     return <Skeleton className="m-6 h-96" />;
   }
 
+  // "Upload my own artwork" route — the customer supplies a finished PDF.
+  if (uploadMode) {
+    return (
+      <UploadedArtworkBuilder
+        ref={ref}
+        family={family as any}
+        reference={(templates[0] as any) ?? null}
+        orderIdParam={orderIdParam}
+        onSwitchToDesign={
+          templates.length > 0 ? () => setSearchParams({}, { replace: true }) : undefined
+        }
+      />
+    );
+  }
+
   if (!familyId || templates.length === 0) {
     return (
       <div className="mx-auto max-w-3xl p-6">
@@ -425,6 +445,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       </div>
     );
   }
+
 
   const sizeCaption = template
     ? `${family?.name ?? "Artwork"} (${Math.round(template.trim_width_mm)} × ${Math.round(
