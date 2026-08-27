@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
+import { useProductCategories, type ProductCategory } from "@/hooks/useProductCategories";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import {
   fromPriceMajor,
@@ -11,12 +12,25 @@ import {
   type StorefrontFamily,
 } from "@/lib/storefront/catalogue";
 
+/** Bucket for families that have no category assigned yet. */
+export const UNCATEGORISED: ProductCategory = {
+  id: "uncategorised",
+  name: "Other products",
+  slug: "other",
+  description: null,
+  image_url: null,
+  sort_order: 9999,
+  is_active: true,
+};
+
 export interface StorefrontCatalogueEntry {
   family: StorefrontFamily;
   blocks: QuantityBlock[];
   fromPrice: number | null;
   sizes: string[];
+  category: ProductCategory;
 }
+
 
 /**
  * Visible product families plus their resolved pack-pricing blocks
