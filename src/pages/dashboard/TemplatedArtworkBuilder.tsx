@@ -11,7 +11,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "r
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, LayoutTemplate, Loader2, ShoppingCart } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -639,6 +639,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           </div>
         </div>
       </div>
+
+      <TemplatePickerSheet
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        templates={templates}
+        selectedId={templateId}
+        onSelect={setTemplateId}
+        hasArtwork={Object.keys(values).length > 0}
+      />
 
       <ArtworkProofModal
         open={proofOpen}
