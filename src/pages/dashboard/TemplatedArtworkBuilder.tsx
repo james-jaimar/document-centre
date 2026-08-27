@@ -462,7 +462,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         reference={uploadGeometry}
         orderIdParam={orderIdParam}
         onSwitchToDesign={
-          templates.length > 0 ? () => setSearchParams({}, { replace: true }) : undefined
+          templates.length > 0 && !(family as any)?.supplied_artwork_only
+            ? () => setSearchParams({}, { replace: true })
+            : undefined
         }
       />
     );
