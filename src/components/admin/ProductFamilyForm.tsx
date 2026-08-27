@@ -274,6 +274,123 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
               )}
             />
 
+            <div className="space-y-3 rounded-md border p-4">
+              <FormField
+                control={form.control}
+                name="supplied_artwork_only"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between gap-4">
+                    <div>
+                      <FormLabel>Supplied artwork only</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Skips the section-based upload builder. The customer uploads one print-ready PDF,
+                        previews every page and approves it before adding to cart.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {form.watch("supplied_artwork_only") && (
+                <div className="space-y-3 border-t pt-3">
+                  <div className="space-y-1.5">
+                    <FormLabel className="text-xs">Expected finished (trim) size</FormLabel>
+                    <Select
+                      value=""
+                      onValueChange={(v) => {
+                        const preset = TRIM_SIZE_PRESETS.find((p) => p.label === v);
+                        if (!preset) return;
+                        form.setValue("expected_trim_width_mm", preset.w);
+                        form.setValue("expected_trim_height_mm", preset.h);
+                      }}
+                    >
+                      <SelectTrigger className="w-56">
+                        <SelectValue placeholder="Pick a standard size…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TRIM_SIZE_PRESETS.map((p) => (
+                          <SelectItem key={p.label} value={p.label}>
+                            {p.label} — {p.w} × {p.h} mm
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-3">
+                    <FormField
+                      control={form.control}
+                      name="expected_trim_width_mm"
+                      render={({ field }) => (
+                        <FormItem className="w-32">
+                          <FormLabel className="text-xs">Width (mm)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={field.value ?? ""}
+                              onChange={(e) =>
+                                field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                              }
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="expected_trim_height_mm"
+                      render={({ field }) => (
+                        <FormItem className="w-32">
+                          <FormLabel className="text-xs">Height (mm)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={field.value ?? ""}
+                              onChange={(e) =>
+                                field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                              }
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="expected_page_count"
+                      render={({ field }) => (
+                        <FormItem className="w-40">
+                          <FormLabel className="text-xs">Expected pages</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              placeholder="Any"
+                              value={field.value ?? ""}
+                              onChange={(e) =>
+                                field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                              }
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Both checks are hard blocks: a file whose trim size differs by more than 2 mm, or whose
+                    page count doesn't match, is rejected with a message telling the customer what was
+                    expected and what we found. Leave pages blank to accept any page count.
+                  </p>
+                </div>
+              )}
+            </div>
+
+
+
             <FormField
               control={form.control}
               name="image_url"
