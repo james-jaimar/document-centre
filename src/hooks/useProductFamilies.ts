@@ -25,7 +25,10 @@ export type QuantityBlock = {
   sides: "single" | "double";
   qty: number;
   price_minor: number;
+  /** Optional trade (account customer) price. Blank/0 falls back to price_minor. */
+  trade_price_minor?: number;
   cost_minor?: number;
+
   /** Optional pricing-option slug (family-defined finishing axis).
    *  Empty/"*" means the row applies to every option. */
   option?: string;
