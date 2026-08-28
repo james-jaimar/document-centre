@@ -406,7 +406,17 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           quantity: Math.max(quantity, 1),
           is_color: true,
           is_duplex: false,
-          selected_options: {},
+          selected_options: {
+            ...(pricingOption
+              ? {
+                  "Finishing Option":
+                    pricingOptions.find((o) => o.slug === pricingOption)?.label ?? pricingOption,
+                }
+              : {}),
+            ...Object.fromEntries(priced.addonLines.map((l) => [l.label, "Yes"])),
+          },
+          pricing_option: pricingOption,
+          pricing_addons: priced.addonLines,
           uploaded_artwork: { ...spec, approved_at: new Date().toISOString() },
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
