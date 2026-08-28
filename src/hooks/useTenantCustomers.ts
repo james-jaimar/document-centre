@@ -16,6 +16,8 @@ export interface CustomerListRow {
   order_count: number;
   total_spent: number;
   last_order_at: string | null;
+  is_trade_customer: boolean;
+  mis_account_number: string | null;
 }
 
 export function useTenantCustomers() {
@@ -27,7 +29,7 @@ export function useTenantCustomers() {
     queryFn: async (): Promise<CustomerListRow[]> => {
       const { data: memberships, error: mErr } = await supabase
         .from("tenant_memberships")
-        .select("id, profile_id, is_active")
+        .select("id, profile_id, is_active, is_trade_customer, mis_account_number")
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("role", "customer");
@@ -70,6 +72,8 @@ export function useTenantCustomers() {
           profile_id: r.profile_id,
           membership_id: r.id,
           is_active: r.is_active,
+          is_trade_customer: !!r.is_trade_customer,
+          mis_account_number: r.mis_account_number ?? null,
           display_name: p?.display_name ?? null,
           first_name: p?.first_name ?? null,
           last_name: p?.last_name ?? null,
