@@ -106,14 +106,15 @@ export default function PackPricingMatrixEditor({
     setDirty(true);
   };
 
-  // ── group by (size, paper) ───────────────────────────────────────
+  // ── group by (option, size, paper) ───────────────────────────────
   const groups: Group[] = useMemo(() => {
     const byKey = new Map<GroupKey, Group>();
     blocks.forEach((b, index) => {
+      const option = (b.option ?? "*").toLowerCase();
       const size = (b.size ?? "*").toLowerCase();
       const paper = (b.paper ?? "*").toLowerCase();
-      const key = `${size}|${paper}`;
-      if (!byKey.has(key)) byKey.set(key, { key, size, paper, rows: [] });
+      const key = `${option}|${size}|${paper}`;
+      if (!byKey.has(key)) byKey.set(key, { key, option, size, paper, rows: [] });
       byKey.get(key)!.rows.push({ block: b, index });
     });
     // Sort rows: single before double, then qty ascending
@@ -132,6 +133,11 @@ export default function PackPricingMatrixEditor({
   const hasOverride = isOverrideScope && (initialBlocks?.length ?? 0) > 0;
   const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
 
+  const optionLabel = (slug: string) => {
+    if (!slug || slug === "*") return "All options";
+    return pricingOptions.find((o) => o.slug.toLowerCase() === slug.toLowerCase())?.label ?? slug;
+  };
+
   // ── group-level actions ──────────────────────────────────────────
   function updateBlockAt(idx: number, patch: Partial<QuantityBlock>) {
     const next = blocks.slice();
@@ -146,7 +152,14 @@ export default function PackPricingMatrixEditor({
     const nextQty = existingQtys.length ? Math.max(...existingQtys) * 2 : 100;
     commit([
       ...blocks,
-      { size: group.size, paper: group.paper, sides, qty: nextQty, price_minor: 0 },
+      {
+        size: group.size,
+        paper: group.paper,
+        option: group.option === "*" ? undefined : group.option,
+        sides,
+        qty: nextQty,
+        price_minor: 0,
+      },
     ]);
   }
   function duplicateSinglesToDouble(group: Group) {
@@ -160,16 +173,53 @@ export default function PackPricingMatrixEditor({
     if (additions.length === 0) return;
     commit([...blocks, ...additions]);
   }
+  /** Copy this whole ladder onto another pricing option (skips existing rows). */
+  function copyLadderToOption(group: Group, targetOption: string) {
+    const target = targetOption.toLowerCase();
+    const existing = new Set(
+      blocks
+        .filter(
+          (b) =>
+            (b.option ?? "*").toLowerCase() === target &&
+            (b.size ?? "*").toLowerCase() === group.size &&
+            (b.paper ?? "*").toLowerCase() === group.paper,
+        )
+        .map((b) => `${b.sides}|${b.qty}`),
+    );
+    const additions = group.rows
+      .map((r) => r.block)
+      .filter((b) => !existing.has(`${b.sides}|${b.qty}`))
+      .map((b) => ({ ...b, option: target === "*" ? undefined : target }));
+    if (additions.length === 0) return;
+    commit([...blocks, ...additions]);
+  }
   function deleteGroup(group: Group) {
-    if (!confirm(`Remove all pack rows for ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`)) return;
+    if (
+      !confirm(
+        `Remove all pack rows for ${optionLabel(group.option)} · ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`,
+      )
+    )
+      return;
     const idxs = new Set(group.rows.map((r) => r.index));
     commit(blocks.filter((_, i) => !idxs.has(i)));
   }
 
-  function seedPack(size: string, paper: string, qtys: number[], includeBothSides: boolean) {
+  function seedPack(
+    size: string,
+    paper: string,
+    qtys: number[],
+    includeBothSides: boolean,
+    option: string,
+  ) {
+    const opt = (option || "*").toLowerCase();
     const existing = new Set(
       blocks
-        .filter((b) => (b.size ?? "*") === size && (b.paper ?? "*") === paper)
+        .filter(
+          (b) =>
+            (b.size ?? "*") === size &&
+            (b.paper ?? "*") === paper &&
+            (b.option ?? "*").toLowerCase() === opt,
+        )
         .map((b) => `${b.sides}|${b.qty}`),
     );
     const additions: QuantityBlock[] = [];
@@ -177,7 +227,14 @@ export default function PackPricingMatrixEditor({
     for (const sides of sidesList) {
       for (const qty of qtys) {
         if (existing.has(`${sides}|${qty}`)) continue;
-        additions.push({ size, paper, sides, qty, price_minor: 0 });
+        additions.push({
+          size,
+          paper,
+          sides,
+          qty,
+          price_minor: 0,
+          ...(opt === "*" ? {} : { option: opt }),
+        });
       }
     }
     if (additions.length === 0) return;
@@ -187,14 +244,16 @@ export default function PackPricingMatrixEditor({
   const parentGroups: Group[] = useMemo(() => {
     const byKey = new Map<GroupKey, Group>();
     parentBlocks.forEach((b, index) => {
+      const option = (b.option ?? "*").toLowerCase();
       const size = (b.size ?? "*").toLowerCase();
       const paper = (b.paper ?? "*").toLowerCase();
-      const key = `${size}|${paper}`;
-      if (!byKey.has(key)) byKey.set(key, { key, size, paper, rows: [] });
+      const key = `${option}|${size}|${paper}`;
+      if (!byKey.has(key)) byKey.set(key, { key, option, size, paper, rows: [] });
       byKey.get(key)!.rows.push({ block: b, index });
     });
     return Array.from(byKey.values());
   }, [parentBlocks]);
+
 
   return (
     <div className="space-y-4">
