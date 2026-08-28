@@ -12,6 +12,8 @@ import { useTenantCustomers } from "@/hooks/useTenantCustomers";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
+import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
+
 import { resolveDisplayName } from "@/lib/displayName";
 import { formatPrice } from "@/lib/formatCurrency";
 
@@ -98,6 +100,8 @@ export default function AdminCustomers() {
                 <TableHead className="text-right">Spent</TableHead>
                 <TableHead>Last order</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-12" />
+
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -131,7 +135,15 @@ export default function AdminCustomers() {
                         {c.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-right">
+                      <CustomerRowActions
+                        customer={c}
+                        tenantId={tenantId}
+                        appId={appId}
+                      />
+                    </TableCell>
                   </TableRow>
+
                 );
               })}
             </TableBody>

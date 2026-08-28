@@ -13,12 +13,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  ArrowLeft, Building2, Mail, Pencil, Phone, Plus, Star, UserMinus, Globe,
+  ArrowLeft, Building2, Mail, Pencil, Phone, Plus, Star, UserMinus, Globe, UserPlus,
 } from "lucide-react";
 import {
   useCustomerCompany, useCompanyMembers, useCompanyMemberMutations, useUnlinkedCustomers,
 } from "@/hooks/useCustomerCompanies";
 import { CompanyFormDialog } from "@/components/customers/CompanyFormDialog";
+import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
+import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
+import { useTenantContext } from "@/hooks/useTenantContext";
 
 interface Props {
   companyId: string;
@@ -51,6 +54,8 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
   const { link, unlink, update } = useCompanyMemberMutations(companyId);
   const [editOpen, setEditOpen] = useState(false);
   const [pick, setPick] = useState<string>("");
+  const [addUserOpen, setAddUserOpen] = useState(false);
+  const { tenantId, appId } = useTenantContext();
 
   if (isLoading || !company) {
     return (
@@ -168,7 +173,25 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
               >
                 <Plus className="h-4 w-4 mr-1" /> Link
               </Button>
+              <Button
+                variant="default"
+                disabled={!tenantId || !appId}
+                onClick={() => setAddUserOpen(true)}
+              >
+                <UserPlus className="h-4 w-4 mr-1" /> Add user
+              </Button>
             </div>
+
+            {tenantId && appId && (
+              <AddCustomerDialog
+                open={addUserOpen}
+                onOpenChange={setAddUserOpen}
+                tenantId={tenantId}
+                appId={appId}
+                lockedCompanyId={company.id}
+                lockedCompanyName={company.name}
+              />
+            )}
 
             {members.length === 0 ? (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -227,14 +250,31 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
                         </Button>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-destructive"
-                          onClick={() => unlink.mutate(m.membership_id)}
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive"
+                            title="Remove from company"
+                            onClick={() => unlink.mutate(m.membership_id)}
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                          <CustomerRowActions
+                            customer={{
+                              profile_id: m.profile_id,
+                              membership_id: m.membership_id,
+                              email: m.email,
+                              is_active: m.is_active,
+                              first_name: m.first_name,
+                              last_name: m.last_name,
+                              display_name: m.display_name,
+                              phone: m.phone,
+                            }}
+                            tenantId={tenantId}
+                            appId={appId}
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
