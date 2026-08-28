@@ -413,7 +413,16 @@ export default function CheckoutAuth() {
               "Sign In & Continue"
             )}
           </Button>
+          <button
+            type="button"
+            onClick={handleResetPassword}
+            disabled={loading}
+            className="w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          >
+            Forgot your password?
+          </button>
         </form>
+
       )}
     </div>
   );
