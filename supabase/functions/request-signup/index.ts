@@ -135,7 +135,14 @@ Deno.serve(async (req) => {
         app_id: tenant.app_id,
         role: "customer",
       });
-      await admin.from("profiles").update({ tenant_id: tenant.id }).eq("id", profileId);
+      // Only set a "home" tenant when the profile has none — never rewrite it,
+      // so a customer shopping on a second tenant keeps their original one.
+      await admin
+        .from("profiles")
+        .update({ tenant_id: tenant.id })
+        .eq("id", profileId)
+        .is("tenant_id", null);
+
     }
 
     // Generate set-password link via app origin (skip if user provided their own password)
