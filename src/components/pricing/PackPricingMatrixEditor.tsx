@@ -366,6 +366,8 @@ export default function PackPricingMatrixEditor({
               onAddQty={addQtyRow}
               onDuplicateSingles={duplicateSinglesToDouble}
               onCopyToOption={copyLadderToOption}
+              onFillTrade={fillTradeFromConsumer}
+
               onDeleteGroup={deleteGroup}
             />
           ))}
