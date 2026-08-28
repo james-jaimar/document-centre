@@ -381,11 +381,21 @@ export default function Checkout() {
       // Persist PO / cost centre on the new order (best-effort).
       if (paymentMethod === "account") {
         try {
+          const { data: existing } = await supabase
+            .from("orders")
+            .select("metadata")
+            .eq("id", newOrderId)
+            .maybeSingle();
           await supabase
             .from("orders")
             .update({
-              payment_method: "account",
-              metadata_note: undefined,
+              metadata: {
+                ...((existing?.metadata as any) ?? {}),
+                payment_method: "account",
+                credit_account_id: credit?.id ?? null,
+                payment_terms_days: credit?.payment_terms_days ?? null,
+                mis_account_number: credit?.account_ref ?? null,
+              },
             } as any)
             .eq("id", newOrderId);
         } catch (e) {
