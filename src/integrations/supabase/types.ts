@@ -52,6 +52,7 @@ export type Database = {
           id: string
           is_locked: boolean
           is_required: boolean
+          is_watermark: boolean
           kind: string
           layer: string
           max_length: number | null
@@ -76,6 +77,7 @@ export type Database = {
           id?: string
           is_locked?: boolean
           is_required?: boolean
+          is_watermark?: boolean
           kind: string
           layer?: string
           max_length?: number | null
@@ -100,6 +102,7 @@ export type Database = {
           id?: string
           is_locked?: boolean
           is_required?: boolean
+          is_watermark?: boolean
           kind?: string
           layer?: string
           max_length?: number | null
