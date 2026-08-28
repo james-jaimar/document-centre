@@ -30,6 +30,7 @@ import { buildAdminPath } from "@/lib/adminRouting";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { CustomerAccountSettings } from "@/components/admin/CustomerAccountSettings";
+import { CustomerCompanySettings } from "@/components/admin/CustomerCompanySettings";
 import { CustomerTradeSettings } from "@/components/admin/CustomerTradeSettings";
 
 import { Input } from "@/components/ui/input";
@@ -433,6 +434,10 @@ export default function AdminCustomerDetail() {
                 customerProfileId={id}
                 isTradeCustomer={(membership as any)?.is_trade_customer}
                 misAccountNumber={(membership as any)?.mis_account_number}
+              />
+              <CustomerCompanySettings
+                customerProfileId={id}
+                companyId={(membership as any)?.company_id}
               />
               <CustomerAccountSettings customerProfileId={id} />
             </div>
