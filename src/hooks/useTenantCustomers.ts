@@ -42,10 +42,15 @@ export function useTenantCustomers() {
 
       const { data: profiles, error: pErr } = await supabase
         .from("profiles")
-        .select("id, display_name, first_name, last_name, email, phone")
+        .select("id, display_name, first_name, last_name, email, phone, is_anonymous")
         .in("id", profileIds);
       if (pErr) throw pErr;
-      const profileMap = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
+      const profileMap = new Map<string, any>(
+        (profiles ?? [])
+          .filter((p: any) => !p.is_anonymous && !!p.email)
+          .map((p: any) => [p.id, p]),
+      );
+
 
       const { data: orders } = await supabase
         .from("orders")
