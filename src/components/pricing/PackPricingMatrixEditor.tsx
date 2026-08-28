@@ -194,7 +194,23 @@ export default function PackPricingMatrixEditor({
     if (additions.length === 0) return;
     commit([...blocks, ...additions]);
   }
+  /** Fill the trade column for this ladder as consumer price minus a % */
+  function fillTradeFromConsumer(group: Group) {
+    const raw = prompt("Trade discount off the consumer price (%)", "15");
+    if (raw == null) return;
+    const pct = parseFloat(raw);
+    if (!Number.isFinite(pct) || pct < 0 || pct >= 100) return;
+    const idxs = new Set(group.rows.map((r) => r.index));
+    commit(
+      blocks.map((b, i) =>
+        idxs.has(i)
+          ? { ...b, trade_price_minor: Math.round((b.price_minor * (100 - pct)) / 100) }
+          : b,
+      ),
+    );
+  }
   function deleteGroup(group: Group) {
+
     if (
       !confirm(
         `Remove all pack rows for ${optionLabel(group.option)} · ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`,
