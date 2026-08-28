@@ -131,7 +131,15 @@ export default function AdminCustomers() {
                         {c.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-right">
+                      <CustomerRowActions
+                        customer={c}
+                        tenantId={tenantId}
+                        appId={appId}
+                      />
+                    </TableCell>
                   </TableRow>
+
                 );
               })}
             </TableBody>
