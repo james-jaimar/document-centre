@@ -97,30 +97,149 @@ def _to_cmyk(img: Image.Image) -> Image.Image:
     return img
 
 
-def _font_name(style: dict[str, Any]) -> str:
-    """Map the browser font style onto a PDF base-14 face.
+def _cmyk(hex_value: str | None, default_k: float = 1.0):
+    """Convert a hex colour to a DeviceCMYK colour.
 
-    Preview and print must agree, so we deliberately stay inside the fonts
-    every PDF reader (and our preview CSS stack) can render.
+    Text and flat fills must never leave as DeviceRGB — a press reading an
+    RGB "black" builds it out of all four inks. Pure/near black is forced to
+    100% K; every other colour is converted with the naive (and for flat
+    brand colours entirely adequate) RGB→CMYK formula, no ICC pass, so the
+    customer's own supplied artwork is untouched.
     """
+    raw = str(hex_value or "").strip()
+    try:
+        rgb = HexColor(raw)
+        r, g, b = rgb.red, rgb.green, rgb.blue
+    except Exception:  # noqa: BLE001 - bad colour is not fatal
+        return CMYKColor(0, 0, 0, default_k)
+    # Near-black (anything up to #1a1a1a) prints as 100% K, nothing else.
+    if max(r, g, b) <= 0.105:
+        return CMYKColor(0, 0, 0, 1)
+    k = 1.0 - max(r, g, b)
+    if k >= 0.999:
+        return CMYKColor(0, 0, 0, 1)
+    denom = 1.0 - k
+    return CMYKColor(
+        (1.0 - r - k) / denom,
+        (1.0 - g - k) / denom,
+        (1.0 - b - k) / denom,
+        k,
+    )
+
+
+# Embedded TrueType faces. Liberation is metrically identical to
+# Arial/Helvetica (and Times/Courier for the serif/mono branches), so the
+# on-screen proof, the line wrapping and the printed sheet all agree — and
+# unlike the PDF base-14 faces these are actually embedded in the output.
+_LIBERATION: dict[str, tuple[str, str]] = {
+    # registered name        (fontconfig pattern,                fallback file stem)
+    "DC-Sans": ("Liberation Sans:style=Regular", "LiberationSans-Regular"),
+    "DC-Sans-Bold": ("Liberation Sans:style=Bold", "LiberationSans-Bold"),
+    "DC-Sans-Italic": ("Liberation Sans:style=Italic", "LiberationSans-Italic"),
+    "DC-Sans-BoldItalic": ("Liberation Sans:style=Bold Italic", "LiberationSans-BoldItalic"),
+    "DC-Serif": ("Liberation Serif:style=Regular", "LiberationSerif-Regular"),
+    "DC-Serif-Bold": ("Liberation Serif:style=Bold", "LiberationSerif-Bold"),
+    "DC-Serif-Italic": ("Liberation Serif:style=Italic", "LiberationSerif-Italic"),
+    "DC-Serif-BoldItalic": ("Liberation Serif:style=Bold Italic", "LiberationSerif-BoldItalic"),
+    "DC-Mono": ("Liberation Mono:style=Regular", "LiberationMono-Regular"),
+    "DC-Mono-Bold": ("Liberation Mono:style=Bold", "LiberationMono-Bold"),
+    "DC-Mono-Italic": ("Liberation Mono:style=Italic", "LiberationMono-Italic"),
+    "DC-Mono-BoldItalic": ("Liberation Mono:style=Bold Italic", "LiberationMono-BoldItalic"),
+}
+
+_FONT_SEARCH_DIRS = (
+    "/usr/share/fonts/truetype/liberation",
+    "/usr/share/fonts/truetype/liberation2",
+    "/usr/share/fonts/liberation",
+)
+
+_fonts_registered = False
+
+
+def _resolve_font_file(pattern: str, stem: str) -> Path | None:
+    fc = shutil.which("fc-match")
+    if fc:
+        try:
+            out = subprocess.run(
+                [fc, "-f", "%{file}", pattern],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            path = Path(out)
+            # fc-match always returns *something*; only trust an exact family hit.
+            if path.is_file() and stem.split("-")[0].lower() in path.name.lower():
+                return path
+        except (subprocess.CalledProcessError, OSError):
+            pass
+    for d in _FONT_SEARCH_DIRS:
+        cand = Path(d) / f"{stem}.ttf"
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _register_fonts() -> None:
+    """Register the embedded faces once per worker process.
+
+    Raises when the fonts are missing rather than silently emitting an
+    unembedded base-14 face — un-embedded fonts cannot go to a press.
+    """
+    global _fonts_registered
+    if _fonts_registered:
+        return
+    missing: list[str] = []
+    for name, (pattern, stem) in _LIBERATION.items():
+        path = _resolve_font_file(pattern, stem)
+        if path is None:
+            missing.append(stem)
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont(name, str(path)))
+        except Exception as exc:  # noqa: BLE001
+            missing.append(f"{stem} ({exc})")
+    if missing:
+        raise RuntimeError(
+            "templated_artwork: embeddable fonts are missing from the image — "
+            f"cannot produce a press-safe PDF: {', '.join(missing)}"
+        )
+    for family, base in (
+        ("DC-Sans", "DC-Sans"),
+        ("DC-Serif", "DC-Serif"),
+        ("DC-Mono", "DC-Mono"),
+    ):
+        pdfmetrics.registerFontFamily(
+            family,
+            normal=base,
+            bold=f"{base}-Bold",
+            italic=f"{base}-Italic",
+            boldItalic=f"{base}-BoldItalic",
+        )
+    _fonts_registered = True
+    log.info("templated_artwork: registered embedded fonts %s", sorted(_LIBERATION))
+
+
+def _font_name(style: dict[str, Any]) -> str:
+    """Map the browser font style onto an embedded TrueType face."""
     family = str(style.get("fontFamily") or "Helvetica").lower()
     bold = str(style.get("fontWeight") or "").lower() == "bold"
     italic = str(style.get("fontStyle") or "").lower() == "italic"
 
     if "times" in family or ("serif" in family and "sans" not in family):
-        base, b, i, bi = "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic"
+        base = "DC-Serif"
     elif "courier" in family or "mono" in family:
-        base, b, i, bi = "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"
+        base = "DC-Mono"
     else:
-        base, b, i, bi = "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique"
+        base = "DC-Sans"
 
     if bold and italic:
-        return bi
+        return f"{base}-BoldItalic"
     if bold:
-        return b
+        return f"{base}-Bold"
     if italic:
-        return i
+        return f"{base}-Italic"
     return base
+
 
 
 def _wrap_lines(text: str, font: str, size_pt: float, max_width_pt: float) -> list[str]:
