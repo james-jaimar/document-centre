@@ -483,6 +483,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             ...Object.fromEntries(priced.addonLines.map((l) => [l.label, "Yes"])),
           },
           pricing_option: pricingOption,
+          pricing_tier: pricingTier,
           pricing_addons: priced.addonLines,
           templated_artwork: specForSave,
         } as any,

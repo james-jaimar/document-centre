@@ -419,6 +419,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
             ...Object.fromEntries(priced.addonLines.map((l) => [l.label, "Yes"])),
           },
           pricing_option: pricingOption,
+          pricing_tier: pricingTier,
           pricing_addons: priced.addonLines,
           uploaded_artwork: { ...spec, approved_at: new Date().toISOString() },
         } as any,
