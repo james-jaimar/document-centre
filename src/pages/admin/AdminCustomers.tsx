@@ -100,6 +100,8 @@ export default function AdminCustomers() {
                 <TableHead className="text-right">Spent</TableHead>
                 <TableHead>Last order</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-12" />
+
               </TableRow>
             </TableHeader>
             <TableBody>
