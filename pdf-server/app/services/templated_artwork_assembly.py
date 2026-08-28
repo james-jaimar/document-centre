@@ -40,6 +40,7 @@ from typing import Any
 
 from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import RectangleObject
 from reportlab.lib.colors import CMYKColor, HexColor
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
@@ -825,11 +826,8 @@ def assemble_templated_artwork(
             if needs_trim:
                 left = float(page.mediabox.left) + trim_x_pt
                 top = float(page.mediabox.bottom) + trim_top_pt
-                composed.trimbox = (
-                    left,
-                    top - trim_h_mm * mm,
-                    left + trim_w_mm * mm,
-                    top,
+                composed.trimbox = RectangleObject(
+                    (left, top - trim_h_mm * mm, left + trim_w_mm * mm, top)
                 )
 
         writer.add_page(composed)
@@ -863,6 +861,11 @@ def assemble_templated_artwork(
         "under_layer_count": len(under_defs),
         "over_layer_count": len(over_defs),
         "base_knockout_applied": knocked_out,
+        "base_geometry": base_geometry,
+        "page_size_mm": base_geometry.get("media_mm"),
+        "trim_size_mm": base_geometry.get("trim_mm") or base_geometry.get("spec_trim_mm"),
+        "base_has_bleed": base_geometry.get("has_bleed"),
+        "fonts": _audit_fonts(out_pdf),
         "storage_path": storage_path,
     }
     log.info("templated_artwork: assembled %s", report)
