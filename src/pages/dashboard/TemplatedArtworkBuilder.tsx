@@ -402,6 +402,29 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
   }, [pricingAddons]);
 
+  // A file placed in a box flagged as "watermark image" forces the paid
+  // watermark-printing extra on (extra ink), locked until the file is removed.
+  const watermarkPlaced = useMemo(
+    () => placeholders.some((p) => (p as any).is_watermark && !!values[p.id]),
+    [placeholders, values],
+  );
+  const watermarkAddonSlug = useMemo(() => {
+    const hit = pricingAddons.find(
+      (a) =>
+        a.slug.toLowerCase().includes("watermark") ||
+        (a.label ?? "").toLowerCase().includes("watermark"),
+    );
+    return hit?.slug ?? null;
+  }, [pricingAddons]);
+
+  useEffect(() => {
+    if (!watermarkAddonSlug || !watermarkPlaced) return;
+    setSelectedAddons((prev) =>
+      prev.includes(watermarkAddonSlug) ? prev : [...prev, watermarkAddonSlug],
+    );
+  }, [watermarkAddonSlug, watermarkPlaced]);
+
+
   const packOptions = useMemo(
     () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier),
     [packBlocks, pricingOption, pricingTier],
