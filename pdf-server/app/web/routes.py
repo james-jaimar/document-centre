@@ -768,8 +768,8 @@ def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends
 def op_render_job_ticket(payload: JobArtefactRequest, db: Session = Depends(get_db)):
     """Render a 1-page A4 operator ticket (header, specs, files, QR, sign-off)."""
     body = payload.model_dump(mode="json")
-    job_id = job_repo.create_job(db, None, "render_job_ticket", "documents", body)
-    task_id = enqueue("render_job_ticket_for_job", str(payload.job_id), job_id, queue="documents")
+    job_id = job_repo.create_job(db, None, "render_job_ticket", "tickets", body)
+    task_id = enqueue("render_job_ticket_for_job", str(payload.job_id), job_id, queue="tickets")
     job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
