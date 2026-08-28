@@ -313,7 +313,9 @@ def _render_overlay(
     sx = 1.0
     sy = 1.0
 
+    _register_fonts()
     c = rl_canvas.Canvas(str(out_pdf), pagesize=(page_w_pt, page_h_pt))
+
 
     for d in defs:
         pid = str(d.get("id") or "")
