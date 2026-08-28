@@ -601,6 +601,7 @@ function AddPackDialog({
   sizeOptions,
   allPapers,
   paperLabel,
+  pricingOptions,
   existingKeys,
   onSeed,
 }: {
@@ -609,11 +610,19 @@ function AddPackDialog({
   sizeOptions: Array<{ id: string; code: string; label: string }>;
   allPapers: Array<{ id: string; code: string; label: string; weight_gsm: number | null }>;
   paperLabel: (c: string) => string;
+  pricingOptions: PricingOption[];
   existingKeys: Set<GroupKey>;
-  onSeed: (size: string, paper: string, qtys: number[], includeBothSides: boolean) => void;
+  onSeed: (
+    size: string,
+    paper: string,
+    qtys: number[],
+    includeBothSides: boolean,
+    option: string,
+  ) => void;
 }) {
   const [size, setSize] = useState<string>("");
   const [paper, setPaper] = useState<string>("");
+  const [option, setOption] = useState<string>("*");
   const [tiersText, setTiersText] = useState<string>(DEFAULT_QTY_TIERS.join(", "));
   const [includeBothSides, setIncludeBothSides] = useState(true);
 
@@ -621,10 +630,11 @@ function AddPackDialog({
     if (open) {
       setSize("");
       setPaper("");
+      setOption(pricingOptions[0]?.slug ?? "*");
       setTiersText(DEFAULT_QTY_TIERS.join(", "));
       setIncludeBothSides(true);
     }
-  }, [open]);
+  }, [open, pricingOptions]);
 
   const parsedQtys = useMemo(
     () =>
@@ -635,7 +645,10 @@ function AddPackDialog({
     [tiersText],
   );
 
-  const duplicate = size && paper && existingKeys.has(`${size.toLowerCase()}|${paper.toLowerCase()}`);
+  const duplicate =
+    size &&
+    paper &&
+    existingKeys.has(`${(option || "*").toLowerCase()}|${size.toLowerCase()}|${paper.toLowerCase()}`);
   const canSubmit = size && paper && parsedQtys.length > 0;
 
   return (
@@ -645,6 +658,21 @@ function AddPackDialog({
           <DialogTitle>Add pack</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {pricingOptions.length > 0 && (
+            <div>
+              <Label className="text-xs">Pricing option</Label>
+              <Select value={option} onValueChange={setOption}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {pricingOptions.map((o) => (
+                    <SelectItem key={o.slug} value={o.slug}>{o.label}</SelectItem>
+                  ))}
+                  <SelectItem value="*">All options</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div>
             <Label className="text-xs">Size</Label>
             <Select value={size} onValueChange={setSize}>
