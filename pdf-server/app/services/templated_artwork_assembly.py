@@ -684,6 +684,43 @@ def assemble_templated_artwork(
             trim_x_pt = spec_off_x_mm * mm
             trim_top_pt = page_h_pt - spec_off_y_mm * mm
 
+        # Record page 1's geometry so the admin panel can see, without opening
+        # the PDF, whether the supplied base actually carries bleed.
+        if page_index == 0:
+            def _box_mm(getter) -> list[float] | None:
+                try:
+                    bx = getter()
+                    return [
+                        round(float(bx.width) / mm, 2),
+                        round(float(bx.height) / mm, 2),
+                    ]
+                except Exception:  # noqa: BLE001
+                    return None
+
+            base_geometry = {
+                "media_mm": _box_mm(lambda: page.mediabox),
+                "crop_mm": _box_mm(lambda: page.cropbox),
+                "trim_mm": _box_mm(lambda: page.trimbox),
+                "bleed_mm": _box_mm(lambda: page.bleedbox),
+                "spec_trim_mm": [trim_w_mm or None, trim_h_mm or None],
+            }
+            media = base_geometry["media_mm"] or [0, 0]
+            spec_trim_w = trim_w_mm or 0
+            spec_trim_h = trim_h_mm or 0
+            has_bleed = bool(
+                spec_trim_w
+                and spec_trim_h
+                and (media[0] > spec_trim_w + 0.5 or media[1] > spec_trim_h + 0.5)
+            )
+            base_geometry["has_bleed"] = has_bleed
+            if not has_bleed:
+                log.warning(
+                    "templated_artwork: base PDF %s carries no bleed — page is %s mm "
+                    "and the trim is %s mm; the output cannot invent bleed or crop marks",
+                    base_path, media, [spec_trim_w, spec_trim_h],
+                )
+
+
         # Collect vector placements once — geometry is identical on every page.
         if page_index == 0:
             for d in defs:
