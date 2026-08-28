@@ -806,7 +806,34 @@ def assemble_templated_artwork(
             )
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
 
+        # Belt and braces: whatever branch produced `composed`, the output page
+        # must be the supplied page — full media box, with every box copied
+        # through. Bleed and crop marks in the base survive untouched.
+        composed.mediabox = page.mediabox
+        for attr in ("cropbox", "trimbox", "bleedbox", "artbox"):
+            try:
+                setattr(composed, attr, getattr(page, attr))
+            except Exception:  # noqa: BLE001 - optional boxes
+                pass
+        # If the base carries bleed but no TrimBox, stamp one from the spec so
+        # imposition and the guillotine know where the sheet is cut.
+        if base_geometry.get("has_bleed") and trim_w_mm and trim_h_mm:
+            try:
+                needs_trim = float(composed.trimbox.width) >= page_w_pt - 0.5
+            except Exception:  # noqa: BLE001
+                needs_trim = True
+            if needs_trim:
+                left = float(page.mediabox.left) + trim_x_pt
+                top = float(page.mediabox.bottom) + trim_top_pt
+                composed.trimbox = (
+                    left,
+                    top - trim_h_mm * mm,
+                    left + trim_w_mm * mm,
+                    top,
+                )
+
         writer.add_page(composed)
+
 
     out_pdf = workspace.path("templated-artwork.pdf")
     with open(out_pdf, "wb") as fh:
