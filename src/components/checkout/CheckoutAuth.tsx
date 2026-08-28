@@ -19,6 +19,8 @@ type AuthTab = "register" | "login";
 
 export default function CheckoutAuth() {
   const { user } = useAuth();
+  const qc = useQueryClient();
+
   const { slug, tenantPath } = useTenantSlug();
   const [tab, setTab] = useState<AuthTab>("register");
   const [loading, setLoading] = useState(false);
