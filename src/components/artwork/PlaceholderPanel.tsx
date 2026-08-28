@@ -1,13 +1,14 @@
 /**
  * Customer-side controls for one placeholder (image upload + framing, or text).
  */
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageIcon, Type, Upload, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Loader2, ImageIcon, Type, Upload, Trash2, Check } from "lucide-react";
 import {
   GOOD_PLACEMENT_DPI,
   MIN_PLACEMENT_DPI,
@@ -18,16 +19,67 @@ import {
   type TemplatedTextValue,
 } from "@/lib/artworkTemplates/types";
 
-
 interface Props {
   placeholder: ArtworkPlaceholder;
   value: TemplatedPlaceholderValue | undefined;
   busy?: boolean;
   active?: boolean;
+  /** 1-based position, shown as a step chip so the eye has an entry point. */
+  step?: number;
   onFocus: () => void;
   onPickFile: (file: File) => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
+}
+
+/** Shell shared by the text and image cards — carries all the contrast cues. */
+function CardShell({
+  children,
+  active,
+  filled,
+  required,
+  onFocus,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  filled: boolean;
+  required: boolean;
+  onFocus?: () => void;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      onFocus={onFocus}
+      onClick={onClick}
+      className={cn(
+        "space-y-3 rounded-xl border-2 p-4 transition-colors",
+        filled
+          ? "border-border bg-card"
+          : required
+            ? "border-primary/50 bg-primary/5"
+            : "border-border bg-card",
+        active && "border-primary ring-2 ring-primary/25",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function StepChip({ step, done }: { step?: number; done: boolean }) {
+  if (done) {
+    return (
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+        <Check className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+      {step ?? "•"}
+    </span>
+  );
 }
 
 export default function PlaceholderPanel({
@@ -35,35 +87,49 @@ export default function PlaceholderPanel({
   value,
   busy,
   active,
+  step,
   onFocus,
   onPickFile,
   onChange,
   onClear,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   if (placeholder.kind === "text") {
     const v = value as TemplatedTextValue | undefined;
+    const text = v?.value ?? placeholder.default_value ?? "";
+    const filled = text.trim().length > 0;
+
     return (
-      <div
-        onFocus={onFocus}
-        className={`space-y-2 rounded-lg border p-3 ${active ? "border-primary" : ""}`}
-      >
-        <Label className="flex items-center gap-2 text-sm font-medium">
-          <Type className="h-4 w-4" /> {placeholder.name}
-          {placeholder.is_required && <Badge variant="outline" className="text-[10px]">Required</Badge>}
-        </Label>
+      <CardShell active={active} filled={filled} required={!!placeholder.is_required} onFocus={onFocus}>
+        <div className="flex items-center gap-2">
+          <StepChip step={step} done={filled} />
+          <Label className="flex flex-1 items-center gap-1.5 text-base font-semibold text-foreground">
+            <Type className="h-4 w-4 text-primary" />
+            {placeholder.name}
+          </Label>
+          {placeholder.is_required && !filled && (
+            <Badge className="bg-primary text-primary-foreground text-[10px]">Required</Badge>
+          )}
+        </div>
+
         <Input
-          value={v?.value ?? placeholder.default_value ?? ""}
+          value={text}
           maxLength={placeholder.max_length ?? undefined}
-          placeholder={placeholder.default_value ?? "Your text…"}
+          placeholder={placeholder.default_value ?? "Type your text here…"}
+          className={cn(
+            "h-11 border-2 text-base",
+            !filled && placeholder.is_required && "border-primary/50 bg-background",
+          )}
           onChange={(e) =>
             onChange({ placeholder_id: placeholder.id, kind: "text", value: e.target.value })
           }
         />
+
         <div className="space-y-1.5">
-          <Label className="text-xs">
-            Opacity ({Math.round(((v?.opacity ?? placeholder.opacity ?? 1)) * 100)}%)
+          <Label className="text-xs font-medium text-foreground">
+            Opacity ({Math.round((v?.opacity ?? placeholder.opacity ?? 1) * 100)}%)
           </Label>
           <Slider
             min={0.05}
@@ -74,18 +140,19 @@ export default function PlaceholderPanel({
               onChange({
                 placeholder_id: placeholder.id,
                 kind: "text",
-                value: v?.value ?? placeholder.default_value ?? "",
+                value: text,
                 opacity: o,
               })
             }
           />
         </div>
+
         {placeholder.max_length && (
           <p className="text-xs text-muted-foreground">
-            {(v?.value ?? "").length}/{placeholder.max_length} characters
+            {text.length}/{placeholder.max_length} characters
           </p>
         )}
-      </div>
+      </CardShell>
     );
   }
 
@@ -95,19 +162,19 @@ export default function PlaceholderPanel({
   const dpiTone =
     dpi >= GOOD_PLACEMENT_DPI ? "default" : dpi >= MIN_PLACEMENT_DPI ? "secondary" : "destructive";
 
-
   return (
-    <div
-      onClick={onFocus}
-      className={`space-y-3 rounded-lg border p-3 ${active ? "border-primary" : ""}`}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <Label className="flex items-center gap-2 text-sm font-medium">
-          <ImageIcon className="h-4 w-4" /> {placeholder.name}
-          {placeholder.is_required && <Badge variant="outline" className="text-[10px]">Required</Badge>}
+    <CardShell active={active} filled={!!v} required={!!placeholder.is_required} onClick={onFocus}>
+      <div className="flex items-center gap-2">
+        <StepChip step={step} done={!!v} />
+        <Label className="flex flex-1 items-center gap-1.5 text-base font-semibold text-foreground">
+          <ImageIcon className="h-4 w-4 text-primary" />
+          {placeholder.name}
         </Label>
+        {placeholder.is_required && !v && (
+          <Badge className="bg-primary text-primary-foreground text-[10px]">Required</Badge>
+        )}
         {v && (
-          <Button size="icon" variant="ghost" onClick={onClear}>
+          <Button size="icon" variant="ghost" onClick={onClear} aria-label="Remove image">
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         )}
@@ -125,17 +192,48 @@ export default function PlaceholderPanel({
         }}
       />
 
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>
-          {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
-          {v ? "Replace" : "Upload"}
-        </Button>
-      </div>
-
-      {v && (
+      {!v ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) onPickFile(f);
+          }}
+          className={cn(
+            "flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 transition-colors",
+            dragOver
+              ? "border-primary bg-primary/15"
+              : "border-primary/50 bg-primary/5 hover:border-primary hover:bg-primary/10",
+            busy && "opacity-60",
+          )}
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            {busy ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Upload className="h-5 w-5" />
+            )}
+          </span>
+          <span className="text-sm font-semibold text-foreground">
+            {busy ? "Uploading…" : "Click to upload your file"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            or drag &amp; drop · JPG, PNG, WEBP or PDF
+          </span>
+        </button>
+      ) : (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-xs text-muted-foreground">{v.file_name}</span>
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
+            <span className="truncate text-xs font-medium text-foreground">{v.file_name}</span>
             {isVector ? (
               <Badge variant="secondary" className="ml-auto text-[10px]">PDF · vector</Badge>
             ) : (
@@ -143,16 +241,30 @@ export default function PlaceholderPanel({
                 {dpi} DPI
               </Badge>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" />
+              )}
+              <span className="ml-1.5">Replace</span>
+            </Button>
           </div>
+
           {!isVector && dpi < MIN_PLACEMENT_DPI && (
-            <p className="text-xs text-destructive">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
               Low resolution at this size — the print may look soft. Zoom out or supply a larger file.
             </p>
           )}
 
-
           <div className="space-y-1.5">
-            <Label className="text-xs">
+            <Label className="text-xs font-medium text-foreground">
               Opacity ({Math.round((v.opacity ?? placeholder.opacity ?? 1) * 100)}%) — use ~10% for a
               watermark
             </Label>
@@ -165,7 +277,7 @@ export default function PlaceholderPanel({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Zoom</Label>
+            <Label className="text-xs font-medium text-foreground">Zoom</Label>
             <Slider
               min={1}
               max={3}
@@ -176,7 +288,7 @@ export default function PlaceholderPanel({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
-              <Label className="text-xs">Move ↔</Label>
+              <Label className="text-xs font-medium text-foreground">Move ↔</Label>
               <Slider
                 min={-1}
                 max={1}
@@ -186,7 +298,7 @@ export default function PlaceholderPanel({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Move ↕</Label>
+              <Label className="text-xs font-medium text-foreground">Move ↕</Label>
               <Slider
                 min={-1}
                 max={1}
@@ -214,6 +326,6 @@ export default function PlaceholderPanel({
           </div>
         </div>
       )}
-    </div>
+    </CardShell>
   );
 }
