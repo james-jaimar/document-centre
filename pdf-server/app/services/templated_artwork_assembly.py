@@ -40,11 +40,13 @@ from typing import Any
 
 from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
-from reportlab.lib.colors import HexColor
+from reportlab.lib.colors import CMYKColor, HexColor
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+
 
 from app.services.files import Workspace, unique_name
 from app.services.storage import StorageService
