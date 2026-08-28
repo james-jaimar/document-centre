@@ -10,6 +10,7 @@ import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
+import ArtworkAdminProof from "./ArtworkAdminProof";
 
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
