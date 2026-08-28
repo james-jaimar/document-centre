@@ -92,8 +92,15 @@ export default function CheckoutAuth() {
       if (claimErr) console.warn("Failed to claim anonymous orders:", claimErr);
     } catch (e) {
       console.warn("Failed to claim anonymous orders:", e);
+    } finally {
+      // The cart query re-keys to the new user id the moment the session
+      // swaps, which happens before the transfer finishes — refetch now so
+      // the claimed cart/draft actually appears instead of "cart is empty".
+      invalidateUserOrderCaches(qc);
+      await qc.refetchQueries({ queryKey: ["cart"] });
     }
   };
+
 
   // The email already has a login (possibly created on another tenant).
   // Sign them in with the password they typed and enrol them here.
