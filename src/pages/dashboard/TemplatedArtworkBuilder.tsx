@@ -34,10 +34,18 @@ import TemplatePickerSheet, { TemplateThumb } from "@/components/artwork/Templat
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
+import { useFamilyPackPricing } from "@/hooks/useFamilyPackBlocks";
+import {
+  computePackPrice,
+  packQuantitiesForOption,
+  snapQuantity,
+} from "@/lib/pricing/packOptions";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
   TemplatedArtworkSpec,
@@ -366,15 +374,66 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [ensureOrder, uploadPhoto, placeholders],
   );
 
-  // ── Pricing (v1: flat unit price configured on the product family)
+  // ── Pricing: pack ladder (with finishing options + paid extras) when the
+  // family defines one, otherwise the legacy flat unit price.
   const priceDisplay = usePriceDisplay();
   const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
+  const { blocks: packBlocks, options: pricingOptions, addons: pricingAddons } =
+    useFamilyPackPricing(family as any);
 
+  const [pricingOption, setPricingOption] = useState<string | null>(null);
+  useEffect(() => {
+    if (pricingOptions.length === 0) {
+      setPricingOption(null);
+      return;
+    }
+    setPricingOption((cur) =>
+      cur && pricingOptions.some((o) => o.slug === cur) ? cur : pricingOptions[0].slug,
+    );
+  }, [pricingOptions]);
+
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  useEffect(() => {
+    setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
+  }, [pricingAddons]);
+
+  const packOptions = useMemo(
+    () => packQuantitiesForOption(packBlocks, pricingOption),
+    [packBlocks, pricingOption],
+  );
+  const packMode = packOptions.length > 0;
+
+  useEffect(() => {
+    if (!packMode) return;
+    if (!packOptions.some((o) => o.qty === quantity)) {
+      setQuantity(snapQuantity(packOptions, quantity) ?? packOptions[0].qty);
+    }
+  }, [packMode, packOptions, quantity]);
+
+  const activePack = packMode
+    ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
+    : null;
   const baseUnit = Number((family?.printing_rules as any)?.templated_unit_price ?? 0);
-  const unitPrice = convert(baseUnit);
-  const netTotal = unitPrice * Math.max(quantity, 1);
+  const baseNet = activePack
+    ? convert(activePack.priceMinor / 100)
+    : convert(baseUnit) * Math.max(quantity, 1);
+  const priced = useMemo(
+    () =>
+      computePackPrice({
+        baseNet,
+        quantity: Math.max(quantity, 1),
+        // Fixed / per-unit extras are authored in the base currency.
+        addons: pricingAddons.map((a) =>
+          a.kind === "percent" ? a : { ...a, amount: convert(a.amount) },
+        ),
+        selected: selectedAddons,
+      }),
+    [baseNet, quantity, pricingAddons, selectedAddons, convert],
+  );
+  const netTotal = priced.netTotal;
+  const unitPrice = priced.unitPrice;
 
   // ── Validation + cart
   const missingRequired = placeholders.filter((p) => {
@@ -411,7 +470,17 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           quantity: Math.max(quantity, 1),
           is_color: true,
           is_duplex: false,
-          selected_options: {},
+          selected_options: {
+            ...(pricingOption
+              ? {
+                  "Finishing Option":
+                    pricingOptions.find((o) => o.slug === pricingOption)?.label ?? pricingOption,
+                }
+              : {}),
+            ...Object.fromEntries(priced.addonLines.map((l) => [l.label, "Yes"])),
+          },
+          pricing_option: pricingOption,
+          pricing_addons: priced.addonLines,
           templated_artwork: specForSave,
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
@@ -649,19 +718,100 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <span className="text-muted-foreground">Product</span>
             <span className="text-right font-medium">{family?.name ?? "—"}</span>
           </div>
+          {pricingOptions.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Finishing option</Label>
+              <Select value={pricingOption ?? ""} onValueChange={(v) => setPricingOption(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pricingOptions.map((o) => (
+                    <SelectItem key={o.slug} value={o.slug}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
-            <Input
-              type="number"
-              min={1}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-            />
+            {packMode ? (
+              <Select value={String(quantity)} onValueChange={(v) => setQuantity(Number(v))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {packOptions.map((o) => (
+                    <SelectItem key={o.qty} value={String(o.qty)}>
+                      {o.qty.toLocaleString()} —{" "}
+                      {formatPrice(
+                        priceDisplay.toGross(convert(o.priceMinor / 100)),
+                        activeCurrency,
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+              />
+            )}
           </div>
+
+          {pricingAddons.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Optional extras</Label>
+              <div className="space-y-1.5">
+                {pricingAddons.map((a) => {
+                  const line = priced.addonLines.find((l) => l.slug === a.slug);
+                  const preview =
+                    a.kind === "percent"
+                      ? `+${a.amount}%`
+                      : `+${formatPrice(
+                          priceDisplay.toGross(
+                            convert(a.amount) *
+                              (a.kind === "per_unit" ? Math.max(quantity, 1) : 1),
+                          ),
+                          activeCurrency,
+                        )}`;
+                  return (
+                    <label
+                      key={a.slug}
+                      className="flex cursor-pointer items-center justify-between gap-2 rounded-md border p-2 text-xs"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedAddons.includes(a.slug)}
+                          onCheckedChange={(v) =>
+                            setSelectedAddons((prev) =>
+                              v === true ? [...prev, a.slug] : prev.filter((s) => s !== a.slug),
+                            )
+                          }
+                        />
+                        {a.label}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {line
+                          ? `+${formatPrice(priceDisplay.toGross(line.amount), activeCurrency)}`
+                          : preview}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-baseline justify-between border-t pt-3">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-lg font-semibold">
-              {baseUnit > 0
+              {netTotal > 0
                 ? `${formatPrice(priceDisplay.toGross(netTotal), activeCurrency)} ${priceDisplay.inclSuffix}`.trim()
                 : "On request"}
             </span>
