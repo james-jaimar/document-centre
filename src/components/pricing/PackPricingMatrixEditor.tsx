@@ -53,6 +53,7 @@ export default function PackPricingMatrixEditor({
   parentBlocks = [],
   initialBlocks,
   allowedSizeCodes = [],
+  pricingOptions = [],
   saving = false,
   onSave,
   onRevertToParent,
