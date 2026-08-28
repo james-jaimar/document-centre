@@ -6,7 +6,6 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
-import PriceBreakTable from "@/components/storefront/PriceBreakTable";
 import ProductGallery from "@/components/storefront/ProductGallery";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Button } from "@/components/ui/button";
