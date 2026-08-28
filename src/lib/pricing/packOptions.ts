@@ -78,16 +78,31 @@ export interface PackQuantityOption {
   priceMinor: number;
 }
 
+/** Which price level a customer is entitled to. */
+export type PricingTier = "consumer" | "trade";
+
+/**
+ * The price (in minor units) of a single pack row for the given tier.
+ * Trade falls back to the consumer price when no trade price is captured.
+ */
+export function rowPriceMinor(block: QuantityBlock, tier: PricingTier = "consumer"): number {
+  const consumer = Number((block as any).price_minor) || 0;
+  if (tier !== "trade") return consumer;
+  const trade = Number((block as any).trade_price_minor) || 0;
+  return trade > 0 ? trade : consumer;
+}
+
 /** Distinct quantities priced for the given option, cheapest row per qty. */
 export function packQuantitiesForOption(
   blocks: QuantityBlock[],
   optionSlug: string | null,
+  tier: PricingTier = "consumer",
 ): PackQuantityOption[] {
   const byQty = new Map<number, number>();
   for (const b of blocks) {
     if (!blockMatchesOption(b, optionSlug)) continue;
     const qty = Number(b.qty) || 0;
-    const price = Number(b.price_minor) || 0;
+    const price = rowPriceMinor(b, tier);
     if (qty <= 0 || price <= 0) continue;
     const current = byQty.get(qty);
     if (current === undefined || price < current) byQty.set(qty, price);
@@ -96,6 +111,7 @@ export function packQuantitiesForOption(
     .map(([qty, priceMinor]) => ({ qty, priceMinor }))
     .sort((a, b) => a.qty - b.qty);
 }
+
 
 /** Pick the priced quantity closest to (and preferably >=) the requested one. */
 export function snapQuantity(options: PackQuantityOption[], qty: number): number | null {

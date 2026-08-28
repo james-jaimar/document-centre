@@ -30,6 +30,8 @@ import { buildAdminPath } from "@/lib/adminRouting";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { CustomerAccountSettings } from "@/components/admin/CustomerAccountSettings";
+import { CustomerTradeSettings } from "@/components/admin/CustomerTradeSettings";
+
 import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -426,10 +428,16 @@ export default function AdminCustomerDetail() {
 
         <TabsContent value="account">
           {id && (
-             <CustomerAccountSettings
-               customerProfileId={id}
-             />
+            <div className="space-y-4">
+              <CustomerTradeSettings
+                customerProfileId={id}
+                isTradeCustomer={(membership as any)?.is_trade_customer}
+                misAccountNumber={(membership as any)?.mis_account_number}
+              />
+              <CustomerAccountSettings customerProfileId={id} />
+            </div>
           )}
+
           <Card className="p-4 mt-4">
             <h3 className="text-sm font-semibold mb-3">Membership</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">

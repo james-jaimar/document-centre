@@ -194,7 +194,23 @@ export default function PackPricingMatrixEditor({
     if (additions.length === 0) return;
     commit([...blocks, ...additions]);
   }
+  /** Fill the trade column for this ladder as consumer price minus a % */
+  function fillTradeFromConsumer(group: Group) {
+    const raw = prompt("Trade discount off the consumer price (%)", "15");
+    if (raw == null) return;
+    const pct = parseFloat(raw);
+    if (!Number.isFinite(pct) || pct < 0 || pct >= 100) return;
+    const idxs = new Set(group.rows.map((r) => r.index));
+    commit(
+      blocks.map((b, i) =>
+        idxs.has(i)
+          ? { ...b, trade_price_minor: Math.round((b.price_minor * (100 - pct)) / 100) }
+          : b,
+      ),
+    );
+  }
   function deleteGroup(group: Group) {
+
     if (
       !confirm(
         `Remove all pack rows for ${optionLabel(group.option)} · ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`,
@@ -366,6 +382,8 @@ export default function PackPricingMatrixEditor({
               onAddQty={addQtyRow}
               onDuplicateSingles={duplicateSinglesToDouble}
               onCopyToOption={copyLadderToOption}
+              onFillTrade={fillTradeFromConsumer}
+
               onDeleteGroup={deleteGroup}
             />
           ))}
@@ -404,6 +422,7 @@ function GroupCard({
   onAddQty,
   onDuplicateSingles,
   onCopyToOption,
+  onFillTrade,
   onDeleteGroup,
 }: {
   group: Group;
@@ -416,7 +435,9 @@ function GroupCard({
   onAddQty: (group: Group, sides: "single" | "double") => void;
   onDuplicateSingles: (group: Group) => void;
   onCopyToOption: (group: Group, targetOption: string) => void;
+  onFillTrade: (group: Group) => void;
   onDeleteGroup: (group: Group) => void;
+
 }) {
   const singles = group.rows.filter((r) => r.block.sides === "single");
   const doubles = group.rows.filter((r) => r.block.sides === "double");
@@ -453,12 +474,23 @@ function GroupCard({
             variant="ghost"
             size="sm"
             className="h-7 text-[11px]"
+            onClick={() => onFillTrade(group)}
+            title="Set the trade prices in this ladder to the consumer price less a percentage"
+          >
+            Trade −%
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px]"
             onClick={() => onDuplicateSingles(group)}
             disabled={singles.length === 0}
           >
             <Copy className="h-3 w-3 mr-1" />
             Copy singles → double
           </Button>
+
           <Button
             type="button"
             variant="ghost"
@@ -517,14 +549,15 @@ function SidesColumn({
         <p className="text-[11px] text-muted-foreground italic">No qty tiers.</p>
       ) : (
         <>
-          <div className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+          <div className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
             <span>Qty</span>
-            <span>Sell</span>
+            <span>Consumer</span>
+            <span>Trade</span>
             <span>Cost</span>
             <span></span>
           </div>
           {rows.map(({ block, index }) => (
-            <div key={index} className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 items-center">
+            <div key={index} className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 items-center">
               <Input
                 type="number"
                 min={1}
@@ -543,6 +576,21 @@ function SidesColumn({
                     price_minor: Math.round(parseFloat(e.target.value || "0") * 100),
                   })
                 }
+              />
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8 text-xs"
+                placeholder="same"
+                title="Trade price — leave blank to charge the consumer price"
+                value={block.trade_price_minor != null ? (block.trade_price_minor / 100).toString() : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onUpdateBlock(index, {
+                    trade_price_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                  });
+                }}
               />
               <Input
                 type="number"
@@ -574,6 +622,7 @@ function SidesColumn({
     </div>
   );
 }
+
 
 function ParentGroupSummary({
   group,

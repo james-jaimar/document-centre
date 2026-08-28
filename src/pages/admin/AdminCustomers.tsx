@@ -27,7 +27,11 @@ export default function AdminCustomers() {
     if (!q) return data;
     return data.filter((c) => {
       const name = `${c.first_name ?? ""} ${c.last_name ?? ""} ${c.display_name ?? ""}`.toLowerCase();
-      return name.includes(q) || (c.email ?? "").toLowerCase().includes(q);
+      return (
+        name.includes(q) ||
+        (c.email ?? "").toLowerCase().includes(q) ||
+        (c.mis_account_number ?? "").toLowerCase().includes(q)
+      );
     });
   }, [data, search]);
 
@@ -88,6 +92,7 @@ export default function AdminCustomers() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Account no.</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead className="text-right">Orders</TableHead>
                 <TableHead className="text-right">Spent</TableHead>
@@ -107,8 +112,12 @@ export default function AdminCustomers() {
                       >
                         {name}
                       </Link>
+                      {c.is_trade_customer && (
+                        <Badge className="ml-2 text-[10px]">Trade</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{c.email ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.mis_account_number ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{c.phone ?? "—"}</TableCell>
                     <TableCell className="text-right">{c.order_count}</TableCell>
                     <TableCell className="text-right font-medium">{formatPrice(Number(c.total_spent ?? 0), (c as any).preferred_currency ?? "ZAR")}</TableCell>

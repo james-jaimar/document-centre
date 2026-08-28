@@ -24,6 +24,8 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { rowPriceMinor } from "@/lib/pricing/packOptions";
 
 type ProductOption = Tables<"product_options">;
 type PricingRule = Tables<"pricing_rules">;
@@ -117,6 +119,8 @@ export default function PriceSummary({
     );
   }, [blocksActive, sortedBlocks, spec.quantity]);
 
+  const { tier: pricingTier } = useCustomerPricingTier();
+
   const engineBreakdown: PriceBreakdown = useMemo(() => {
     if (recipe && rateCard) {
       const raw = calculatePriceFromRateCard(spec, recipe, rateCard, options);
@@ -137,7 +141,7 @@ export default function PriceSummary({
   // When blocks are active, the pack price replaces the engine total.
   const breakdown: PriceBreakdown = useMemo(() => {
     if (!blocksActive || !activeBlock) return engineBreakdown;
-    const total = convert(activeBlock.price_minor / 100);
+    const total = convert(rowPriceMinor(activeBlock, pricingTier) / 100);
     const perUnit = total / Math.max(1, activeBlock.qty);
     return {
       ...engineBreakdown,
@@ -154,7 +158,7 @@ export default function PriceSummary({
       ],
 
     };
-  }, [blocksActive, activeBlock, engineBreakdown]);
+  }, [blocksActive, activeBlock, engineBreakdown, pricingTier, convert]);
 
   return (
     <div className="border-t border-border pt-4 space-y-3">
@@ -172,7 +176,7 @@ export default function PriceSummary({
             <SelectContent>
               {sortedBlocks.map((b) => (
                 <SelectItem key={b.qty} value={String(b.qty)} className="text-xs">
-                  {b.qty.toLocaleString()} — {formatPrice(toGross(b.price_minor / 100), currency)}
+                  {b.qty.toLocaleString()} — {formatPrice(toGross(rowPriceMinor(b, pricingTier) / 100), currency)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -211,7 +215,7 @@ export default function PriceSummary({
 
       {blocksActive && activeBlock && (
         <p className="text-[11px] text-muted-foreground -mt-1">
-          {formatPrice(toGross(activeBlock.price_minor / activeBlock.qty / 100), currency)} each
+          {formatPrice(toGross(rowPriceMinor(activeBlock, pricingTier) / activeBlock.qty / 100), currency)} each
         </p>
       )}
 

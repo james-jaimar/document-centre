@@ -5,6 +5,9 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { rowPriceMinor } from "@/lib/pricing/packOptions";
+
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import ProductGallery from "@/components/storefront/ProductGallery";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
@@ -67,16 +70,19 @@ export default function StorefrontProduct() {
   const activeSides =
     sides && sidesOptions.includes(sides as any) ? sides : sidesOptions[0] ?? null;
 
+  const { tier: pricingTier } = useCustomerPricingTier();
+
   const rows = useMemo(
     () =>
       blocks
         .filter(
           (b) => b.size === activeSize && b.paper === activePaper && b.sides === activeSides,
         )
-        .map((b) => ({ qty: b.qty, priceMajor: b.price_minor / 100 }))
+        .map((b) => ({ qty: b.qty, priceMajor: rowPriceMinor(b, pricingTier) / 100 }))
         .sort((a, b) => a.qty - b.qty),
-    [blocks, activeSize, activePaper, activeSides],
+    [blocks, activeSize, activePaper, activeSides, pricingTier],
   );
+
 
   const [qty, setQty] = useState<number | null>(null);
   const activeQty = qty && rows.some((r) => r.qty === qty) ? qty : rows[0]?.qty ?? null;

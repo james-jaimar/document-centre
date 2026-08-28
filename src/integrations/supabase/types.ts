@@ -6769,7 +6769,9 @@ export type Database = {
           id: string
           is_active: boolean
           is_primary_branch: boolean
+          is_trade_customer: boolean
           metadata: Json
+          mis_account_number: string | null
           profile_id: string
           role: string
           tenant_id: string
@@ -6782,7 +6784,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_primary_branch?: boolean
+          is_trade_customer?: boolean
           metadata?: Json
+          mis_account_number?: string | null
           profile_id: string
           role: string
           tenant_id: string
@@ -6795,7 +6799,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_primary_branch?: boolean
+          is_trade_customer?: boolean
           metadata?: Json
+          mis_account_number?: string | null
           profile_id?: string
           role?: string
           tenant_id?: string
