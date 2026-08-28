@@ -1,6 +1,8 @@
 import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
+import TenantPackPricingEditor from "@/components/pricing/TenantPackPricingEditor";
 import { useTenantContext } from "@/hooks/useTenantContext";
+
 
 export default function AdminCatalogPricing() {
   const { tenantId } = useTenantContext();
