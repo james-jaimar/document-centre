@@ -145,6 +145,7 @@ const ADMIN_SECTIONS: NavSection[] = [
 
       { to: "/admin/delivery", icon: <Truck size={20} />, label: "Delivery" },
       { to: "/admin/customers", icon: <UserSquare2 size={20} />, label: "Customers" },
+      { to: "/admin/companies", icon: <Building2 size={20} />, label: "Companies" },
       { to: "/admin/users", icon: <Users size={20} />, label: "Users & Roles" },
     ],
   },

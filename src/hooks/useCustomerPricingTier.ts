@@ -36,7 +36,9 @@ export function useCustomerTradeMembership() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenant_memberships")
-        .select("id, is_trade_customer, mis_account_number, role, is_active")
+        .select(
+          "id, is_trade_customer, mis_account_number, role, is_active, company_id, company:company_id (id, name, is_active, is_trade_customer, mis_account_number, credit_limit, payment_terms_days, default_discount_pct)",
+        )
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("profile_id", profileId!)
@@ -49,6 +51,17 @@ export function useCustomerTradeMembership() {
             mis_account_number: string | null;
             role: string | null;
             is_active: boolean | null;
+            company_id: string | null;
+            company: {
+              id: string;
+              name: string;
+              is_active: boolean | null;
+              is_trade_customer: boolean | null;
+              mis_account_number: string | null;
+              credit_limit: number | null;
+              payment_terms_days: number | null;
+              default_discount_pct: number | null;
+            } | null;
           }
         | null;
     },
@@ -62,13 +75,36 @@ export function useCustomerPricingTier(): CustomerPricingTier {
   const { data: accounts = [] } = useCustomerCreditAccounts(user?.id);
 
   const isAnonymous = !!(user as any)?.is_anonymous;
-  const isTrade = !isAnonymous && !!membership?.is_trade_customer && membership?.is_active !== false;
+  const company = membership?.company?.is_active !== false ? membership?.company ?? null : null;
+
+  // A company's trade status applies to every user linked to it; an individual
+  // trade flag still stands on its own.
+  const isTrade =
+    !isAnonymous &&
+    membership?.is_active !== false &&
+    (!!membership?.is_trade_customer || !!company?.is_trade_customer);
+
+  const personalCredit = resolveCredit(accounts, activeBranch?.id ?? null);
+  const companyCredit: CreditAccount | null =
+    !personalCredit && company && Number(company.credit_limit ?? 0) > 0
+      ? ({
+          id: `company:${company.id}`,
+          is_active: true,
+          credit_limit: Number(company.credit_limit ?? 0),
+          payment_terms_days: company.payment_terms_days ?? 30,
+          default_discount_pct: Number(company.default_discount_pct ?? 0),
+          account_ref: company.mis_account_number,
+          branch_id: activeBranch?.id ?? null,
+          notes: null,
+        } as unknown as CreditAccount)
+      : null;
 
   return {
     tier: isTrade ? "trade" : "consumer",
     isTrade,
-    misAccountNumber: membership?.mis_account_number ?? null,
-    credit: isTrade ? resolveCredit(accounts, activeBranch?.id ?? null) : resolveCredit(accounts, activeBranch?.id ?? null),
+    misAccountNumber:
+      membership?.mis_account_number ?? company?.mis_account_number ?? null,
+    credit: personalCredit ?? companyCredit,
     isLoading,
   };
 }

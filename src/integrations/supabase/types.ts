@@ -1706,6 +1706,134 @@ export type Database = {
           },
         ]
       }
+      customer_companies: {
+        Row: {
+          app_id: string
+          billing_city: string | null
+          billing_country: string | null
+          billing_line1: string | null
+          billing_line2: string | null
+          billing_postal_code: string | null
+          billing_province: string | null
+          billing_suburb: string | null
+          branch_id: string | null
+          created_at: string
+          created_by: string | null
+          credit_limit: number
+          default_discount_pct: number
+          delivery_city: string | null
+          delivery_country: string | null
+          delivery_line1: string | null
+          delivery_line2: string | null
+          delivery_postal_code: string | null
+          delivery_province: string | null
+          delivery_same_as_billing: boolean
+          delivery_suburb: string | null
+          email: string | null
+          id: string
+          industry: string | null
+          is_active: boolean
+          is_trade_customer: boolean
+          mis_account_number: string | null
+          name: string
+          notes: string | null
+          payment_terms_days: number
+          phone: string | null
+          registration_number: string | null
+          tenant_id: string
+          trading_name: string | null
+          updated_at: string
+          vat_number: string | null
+          website: string | null
+        }
+        Insert: {
+          app_id: string
+          billing_city?: string | null
+          billing_country?: string | null
+          billing_line1?: string | null
+          billing_line2?: string | null
+          billing_postal_code?: string | null
+          billing_province?: string | null
+          billing_suburb?: string | null
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          credit_limit?: number
+          default_discount_pct?: number
+          delivery_city?: string | null
+          delivery_country?: string | null
+          delivery_line1?: string | null
+          delivery_line2?: string | null
+          delivery_postal_code?: string | null
+          delivery_province?: string | null
+          delivery_same_as_billing?: boolean
+          delivery_suburb?: string | null
+          email?: string | null
+          id?: string
+          industry?: string | null
+          is_active?: boolean
+          is_trade_customer?: boolean
+          mis_account_number?: string | null
+          name: string
+          notes?: string | null
+          payment_terms_days?: number
+          phone?: string | null
+          registration_number?: string | null
+          tenant_id: string
+          trading_name?: string | null
+          updated_at?: string
+          vat_number?: string | null
+          website?: string | null
+        }
+        Update: {
+          app_id?: string
+          billing_city?: string | null
+          billing_country?: string | null
+          billing_line1?: string | null
+          billing_line2?: string | null
+          billing_postal_code?: string | null
+          billing_province?: string | null
+          billing_suburb?: string | null
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          credit_limit?: number
+          default_discount_pct?: number
+          delivery_city?: string | null
+          delivery_country?: string | null
+          delivery_line1?: string | null
+          delivery_line2?: string | null
+          delivery_postal_code?: string | null
+          delivery_province?: string | null
+          delivery_same_as_billing?: boolean
+          delivery_suburb?: string | null
+          email?: string | null
+          id?: string
+          industry?: string | null
+          is_active?: boolean
+          is_trade_customer?: boolean
+          mis_account_number?: string | null
+          name?: string
+          notes?: string | null
+          payment_terms_days?: number
+          phone?: string | null
+          registration_number?: string | null
+          tenant_id?: string
+          trading_name?: string | null
+          updated_at?: string
+          vat_number?: string | null
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_companies_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_credit_accounts: {
         Row: {
           account_ref: string | null
@@ -6768,11 +6896,14 @@ export type Database = {
           app_id: string
           branch_id: string | null
           can_view_all_orders: boolean
+          company_id: string | null
           created_at: string
           id: string
           is_active: boolean
           is_primary_branch: boolean
+          is_primary_contact: boolean
           is_trade_customer: boolean
+          job_title: string | null
           metadata: Json
           mis_account_number: string | null
           profile_id: string
@@ -6783,11 +6914,14 @@ export type Database = {
           app_id: string
           branch_id?: string | null
           can_view_all_orders?: boolean
+          company_id?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           is_primary_branch?: boolean
+          is_primary_contact?: boolean
           is_trade_customer?: boolean
+          job_title?: string | null
           metadata?: Json
           mis_account_number?: string | null
           profile_id: string
@@ -6798,11 +6932,14 @@ export type Database = {
           app_id?: string
           branch_id?: string | null
           can_view_all_orders?: boolean
+          company_id?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           is_primary_branch?: boolean
+          is_primary_contact?: boolean
           is_trade_customer?: boolean
+          job_title?: string | null
           metadata?: Json
           mis_account_number?: string | null
           profile_id?: string
@@ -6822,6 +6959,13 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_memberships_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "customer_companies"
             referencedColumns: ["id"]
           },
           {
