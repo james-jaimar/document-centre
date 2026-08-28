@@ -6,7 +6,6 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
-import PriceBreakTable from "@/components/storefront/PriceBreakTable";
 import ProductGallery from "@/components/storefront/ProductGallery";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Button } from "@/components/ui/button";
@@ -215,31 +214,25 @@ export default function StorefrontProduct() {
                   )}
                 </div>
 
-                <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                  <PriceBreakTable
-                    rows={rows}
-                    activeQty={activeQty}
-                    format={(v) => format(v) ?? ""}
-                    onSelect={setQty}
-                  />
-
-                  {activeRow && (
-                    <div className="flex flex-col justify-center rounded-xl sf-accent-soft p-4">
+                {activeRow && (
+                  <div className="mt-5 flex flex-wrap items-end justify-between gap-4 rounded-xl sf-accent-soft p-4">
+                    <div>
                       <p className="text-xs">Your price</p>
                       <p className="text-3xl font-bold tabular-nums">
                         {format(activeRow.priceMajor)}
                       </p>
                       <p className="mt-1 text-xs">
-                        {activeQty?.toLocaleString()} units{" "}
-                        {config.pricing_note ? "· incl. VAT" : ""}
-                      </p>
-                      <p className="mt-3 flex items-center gap-1.5 text-xs">
-                        <Clock className="h-3.5 w-3.5" aria-hidden />
-                        {config.turnaround_note}
+                        {activeQty?.toLocaleString()} units ·{" "}
+                        {format(activeRow.priceMajor / Math.max(1, activeRow.qty))} each
+                        {config.pricing_note ? " · incl. VAT" : ""}
                       </p>
                     </div>
-                  )}
-                </div>
+                    <p className="flex items-center gap-1.5 text-xs">
+                      <Clock className="h-3.5 w-3.5" aria-hidden />
+                      {config.turnaround_note}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
