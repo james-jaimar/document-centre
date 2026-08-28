@@ -87,6 +87,8 @@ import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 import AdminProductionQueue from "@/pages/admin/AdminProductionQueue";
 import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
 import AdminCustomers from "@/pages/admin/AdminCustomers";
+import AdminCompanies from "@/pages/admin/AdminCompanies";
+import AdminCompanyDetail from "@/pages/admin/AdminCompanyDetail";
 import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
 import AdminSentMail from "@/pages/admin/AdminSentMail";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
@@ -109,6 +111,8 @@ import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
 import BranchQuoteSpecCreate from "@/pages/branch/BranchQuoteSpecCreate";
 import BranchSettings from "@/pages/branch/BranchSettings";
 import BranchCustomers from "@/pages/branch/BranchCustomers";
+import BranchCompanies from "@/pages/branch/BranchCompanies";
+import BranchCompanyDetail from "@/pages/branch/BranchCompanyDetail";
 import BranchSentMail from "@/pages/branch/BranchSentMail";
 import BranchReports from "@/pages/branch/Reports";
 import BranchDiscounts from "@/pages/branch/BranchDiscounts";
@@ -300,6 +304,8 @@ function AppRoutes() {
         <Route path="/branch/quotes/new-spec" element={<BranchQuoteSpecCreate />} />
         <Route path="/branch/quotes/:id" element={<BranchQuoteDetail />} />
         <Route path="/branch/customers" element={<BranchCustomers />} />
+        <Route path="/branch/companies" element={<BranchCompanies />} />
+        <Route path="/branch/companies/:id" element={<BranchCompanyDetail />} />
         <Route path="/branch/sent-mail" element={<BranchSentMail />} />
         <Route path="/branch/reports" element={<BranchReports />} />
         <Route path="/branch/settings" element={<BranchSettings />} />
@@ -408,6 +414,16 @@ function AppRoutes() {
         <Route path="/admin/customers/:id" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminCustomerDetail />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/companies" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminCompanies />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/companies/:id" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminCompanyDetail />
           </ProtectedRoute>
         } />
 
