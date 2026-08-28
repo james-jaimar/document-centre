@@ -10,13 +10,15 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, UserPlus } from "lucide-react";
+import { Building2, Loader2, UserPlus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import { useBranches } from "@/hooks/useBranches";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
+import { useCustomerCompanies } from "@/hooks/useCustomerCompanies";
+import { CompanyFormDialog } from "@/components/customers/CompanyFormDialog";
 
 interface Props {
   open: boolean;
@@ -26,11 +28,13 @@ interface Props {
 }
 
 const NO_BRANCH = "__none__";
+const NO_COMPANY = "__nocompany__";
 
 export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props) {
   const qc = useQueryClient();
   const { data: branches = [] } = useBranches(tenantId);
   const { startImpersonation } = useImpersonation();
+  const { data: companies = [] } = useCustomerCompanies();
 
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -41,11 +45,13 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
   const [accountNo, setAccountNo] = useState("");
   const [sendInvite, setSendInvite] = useState(true);
   const [impersonateAfter, setImpersonateAfter] = useState(false);
+  const [companyId, setCompanyId] = useState<string>(NO_COMPANY);
+  const [companyFormOpen, setCompanyFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
     setEmail(""); setFirstName(""); setLastName(""); setPhone("");
-    setBranchId(NO_BRANCH); setIsTrade(false); setAccountNo("");
+    setBranchId(NO_BRANCH); setIsTrade(false); setAccountNo(""); setCompanyId(NO_COMPANY);
     setSendInvite(true); setImpersonateAfter(false);
   };
 
@@ -74,13 +80,15 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
       }
       const payload = res.data;
 
-      // Trade status / MIS reference live on the customer membership row.
-      if (isTrade || accountNo.trim()) {
+      // Trade status / MIS reference / company link live on the membership row.
+      const linkedCompany = companyId === NO_COMPANY ? null : companyId;
+      if (isTrade || accountNo.trim() || linkedCompany) {
         const { error: mErr } = await (supabase as any)
           .from("tenant_memberships")
           .update({
             is_trade_customer: isTrade,
             mis_account_number: accountNo.trim() || null,
+            company_id: linkedCompany,
           })
           .eq("tenant_id", tenantId)
           .eq("app_id", appId)
@@ -187,6 +195,29 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
             </div>
           </div>
 
+          <div>
+            <Label>Company</Label>
+            <div className="flex gap-2">
+              <Select value={companyId} onValueChange={setCompanyId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="No company (individual)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_COMPANY}>No company (individual)</SelectItem>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" variant="outline" onClick={() => setCompanyFormOpen(true)}>
+                <Building2 className="h-4 w-4 mr-1" /> New
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Company trade status, account number and credit terms apply to every linked user.
+            </p>
+          </div>
+
           <div className="rounded-md border border-border p-3 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -217,6 +248,13 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
             <span>Log in as this customer after creating (to build an order on their behalf)</span>
           </label>
         </div>
+
+        <CompanyFormDialog
+          open={companyFormOpen}
+          onOpenChange={setCompanyFormOpen}
+          branchId={branchId === NO_BRANCH ? null : branchId}
+          onSaved={(c) => setCompanyId(c.id)}
+        />
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
