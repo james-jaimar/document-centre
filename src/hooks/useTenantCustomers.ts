@@ -70,7 +70,7 @@ export function useTenantCustomers() {
         stats.set(key, cur);
       }
 
-      return rows.map((r) => {
+      return rows.filter((r) => profileMap.has(r.profile_id)).map((r) => {
         const s = stats.get(r.profile_id) ?? { count: 0, total: 0, last: null };
         const p = profileMap.get(r.profile_id);
         return {
