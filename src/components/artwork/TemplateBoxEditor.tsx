@@ -62,6 +62,7 @@ export function makePlaceholder(
     default_value: null,
     is_required: kind === "image",
     is_locked: false,
+    is_watermark: false,
     sort_order: index,
     layer: "over",
     z_index: index,
@@ -646,6 +647,22 @@ export default function TemplateBoxEditor({
                 onCheckedChange={(v) => patch(active.id, { is_required: v })}
               />
             </div>
+
+            {active.kind === "image" && (
+              <div className="flex items-start justify-between gap-3 rounded-md border p-2">
+                <div>
+                  <Label className="text-xs">Watermark image</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    When the customer places a file here, the paid watermark printing extra is
+                    switched on and locked.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!active.is_watermark}
+                  onCheckedChange={(v) => patch(active.id, { is_watermark: v })}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

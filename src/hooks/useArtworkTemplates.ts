@@ -35,6 +35,7 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     layer: row.layer === "under" ? "under" : "over",
     z_index: Number(row.z_index ?? row.sort_order ?? 0),
     opacity: row.opacity == null ? 1 : Number(row.opacity),
+    is_watermark: !!row.is_watermark,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
   } as ArtworkPlaceholder;
 }
@@ -176,6 +177,7 @@ export function useSaveArtworkPlaceholders() {
           default_value: p.default_value,
           is_required: p.is_required,
           is_locked: p.is_locked,
+          is_watermark: !!p.is_watermark,
           sort_order: i,
           layer: p.layer === "under" ? "under" : "over",
           z_index: Number.isFinite(p.z_index) ? p.z_index : i,
