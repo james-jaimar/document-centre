@@ -422,6 +422,7 @@ function GroupCard({
   onAddQty,
   onDuplicateSingles,
   onCopyToOption,
+  onFillTrade,
   onDeleteGroup,
 }: {
   group: Group;
@@ -434,7 +435,9 @@ function GroupCard({
   onAddQty: (group: Group, sides: "single" | "double") => void;
   onDuplicateSingles: (group: Group) => void;
   onCopyToOption: (group: Group, targetOption: string) => void;
+  onFillTrade: (group: Group) => void;
   onDeleteGroup: (group: Group) => void;
+
 }) {
   const singles = group.rows.filter((r) => r.block.sides === "single");
   const doubles = group.rows.filter((r) => r.block.sides === "double");
