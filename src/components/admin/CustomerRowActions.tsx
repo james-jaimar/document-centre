@@ -58,12 +58,16 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
   };
 
   const run = (input: Parameters<typeof manage.mutate>[0], removed = false) =>
-    manage.mutate(input, {
-      onSuccess: () => {
-        refresh();
-        if (removed) onRemoved?.();
+    manage.mutate(
+      { tenant_id: tenantId ?? null, app_id: appId ?? null, ...input },
+      {
+        onSuccess: () => {
+          refresh();
+          if (removed) onRemoved?.();
+        },
       },
-    });
+    );
+
 
   return (
     <>
