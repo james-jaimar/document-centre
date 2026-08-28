@@ -404,9 +404,10 @@ def _render_overlay(
         path.rect(x_pt, y_pt, w_pt, h_pt)
         c.clipPath(path, stroke=0, fill=0)
         try:
-            c.setFillColor(HexColor(str(style.get("colorHex") or "#111111")))
+            c.setFillColor(_cmyk(str(style.get("colorHex") or "#111111")))
         except ValueError:
-            c.setFillColorRGB(0.07, 0.07, 0.07)
+            c.setFillColor(CMYKColor(0, 0, 0, 1))
+
         c.setFont(font, size_pt)
         for idx, line in enumerate(lines):
             # Baseline sits one ascent below the line's top edge; 0.8em is a
