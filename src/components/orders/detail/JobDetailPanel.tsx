@@ -201,6 +201,14 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         </div>
       </div>
 
+      {/* Templated / supplied artwork — admin proof (same render the customer approved) */}
+      {((config as any).templated_artwork || (config as any).uploaded_artwork) && (
+        <ArtworkAdminProof
+          templatedArtwork={(config as any).templated_artwork}
+          uploadedArtwork={(config as any).uploaded_artwork}
+        />
+      )}
+
       {/* Canvas Prints — admin proof gallery */}
       {(config as any).canvas_prints || job.product_category === "canvas-prints" ? (
         <CanvasPrintsAdminGallery canvasPrints={(config as any).canvas_prints} />
