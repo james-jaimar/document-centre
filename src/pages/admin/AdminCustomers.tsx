@@ -12,6 +12,8 @@ import { useTenantCustomers } from "@/hooks/useTenantCustomers";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
+import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
+
 import { resolveDisplayName } from "@/lib/displayName";
 import { formatPrice } from "@/lib/formatCurrency";
 
