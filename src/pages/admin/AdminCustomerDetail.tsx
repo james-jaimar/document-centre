@@ -30,6 +30,8 @@ import { buildAdminPath } from "@/lib/adminRouting";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { CustomerAccountSettings } from "@/components/admin/CustomerAccountSettings";
+import { CustomerTradeSettings } from "@/components/admin/CustomerTradeSettings";
+
 import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
