@@ -418,11 +418,17 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [pricingAddons]);
 
   useEffect(() => {
-    if (!watermarkAddonSlug || !watermarkPlaced) return;
-    setSelectedAddons((prev) =>
-      prev.includes(watermarkAddonSlug) ? prev : [...prev, watermarkAddonSlug],
-    );
-  }, [watermarkAddonSlug, watermarkPlaced]);
+    if (!watermarkAddonSlug) return;
+    setSelectedAddons((prev) => {
+      if (watermarkPlaced) {
+        return prev.includes(watermarkAddonSlug) ? prev : [...prev, watermarkAddonSlug];
+      }
+      const isDefault = pricingAddons.find((a) => a.slug === watermarkAddonSlug)?.default_on;
+      if (isDefault) return prev;
+      return prev.filter((s) => s !== watermarkAddonSlug);
+    });
+  }, [watermarkAddonSlug, watermarkPlaced, pricingAddons]);
+
 
 
   const packOptions = useMemo(
