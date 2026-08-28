@@ -718,19 +718,100 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <span className="text-muted-foreground">Product</span>
             <span className="text-right font-medium">{family?.name ?? "—"}</span>
           </div>
+          {pricingOptions.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Finishing option</Label>
+              <Select value={pricingOption ?? ""} onValueChange={(v) => setPricingOption(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pricingOptions.map((o) => (
+                    <SelectItem key={o.slug} value={o.slug}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
-            <Input
-              type="number"
-              min={1}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-            />
+            {packMode ? (
+              <Select value={String(quantity)} onValueChange={(v) => setQuantity(Number(v))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {packOptions.map((o) => (
+                    <SelectItem key={o.qty} value={String(o.qty)}>
+                      {o.qty.toLocaleString()} —{" "}
+                      {formatPrice(
+                        priceDisplay.toGross(convert(o.priceMinor / 100)),
+                        activeCurrency,
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+              />
+            )}
           </div>
+
+          {pricingAddons.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Optional extras</Label>
+              <div className="space-y-1.5">
+                {pricingAddons.map((a) => {
+                  const line = priced.addonLines.find((l) => l.slug === a.slug);
+                  const preview =
+                    a.kind === "percent"
+                      ? `+${a.amount}%`
+                      : `+${formatPrice(
+                          priceDisplay.toGross(
+                            convert(a.amount) *
+                              (a.kind === "per_unit" ? Math.max(quantity, 1) : 1),
+                          ),
+                          activeCurrency,
+                        )}`;
+                  return (
+                    <label
+                      key={a.slug}
+                      className="flex cursor-pointer items-center justify-between gap-2 rounded-md border p-2 text-xs"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedAddons.includes(a.slug)}
+                          onCheckedChange={(v) =>
+                            setSelectedAddons((prev) =>
+                              v === true ? [...prev, a.slug] : prev.filter((s) => s !== a.slug),
+                            )
+                          }
+                        />
+                        {a.label}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {line
+                          ? `+${formatPrice(priceDisplay.toGross(line.amount), activeCurrency)}`
+                          : preview}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-baseline justify-between border-t pt-3">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-lg font-semibold">
-              {baseUnit > 0
+              {netTotal > 0
                 ? `${formatPrice(priceDisplay.toGross(netTotal), activeCurrency)} ${priceDisplay.inclSuffix}`.trim()
                 : "On request"}
             </span>
