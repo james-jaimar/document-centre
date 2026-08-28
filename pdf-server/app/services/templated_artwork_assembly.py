@@ -659,6 +659,8 @@ def assemble_templated_artwork(
     vector_ids = set(vector_sources)
     placements: list[dict[str, Any]] = []
     knocked_out = False
+    base_geometry: dict[str, Any] = {}
+
 
     writer = PdfWriter()
     for page_index, page in enumerate(reader.pages):
