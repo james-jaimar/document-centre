@@ -7,6 +7,7 @@ import { useCart, usePlaceOrder } from "@/hooks/useCart";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranch, branchUrlSlug } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,6 +61,7 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
+  const { credit, isTrade } = useCustomerPricingTier();
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
@@ -305,6 +307,11 @@ export default function Checkout() {
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
   const total = Math.max(0, subtotal - discountAmount + deliveryFee);
 
+  // Pay on account: an active credit facility, with room for this order.
+  const creditLimit = credit?.is_active ? credit.credit_limit : null;
+  const withinCreditLimit = creditLimit == null || total <= Number(creditLimit);
+  const canPayOnAccount = !!credit?.is_active && withinCreditLimit;
+
   const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
 
   const handlePlaceOrder = async () => {
@@ -330,6 +337,11 @@ export default function Checkout() {
       return;
     }
 
+
+    if (paymentMethod === "account" && !canPayOnAccount) {
+      toast.error("This order can't be placed on account. Please choose another payment method.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -367,6 +379,20 @@ export default function Checkout() {
 
 
       // Persist PO / cost centre on the new order (best-effort).
+      if (paymentMethod === "account") {
+        try {
+          await supabase
+            .from("orders")
+            .update({
+              payment_method: "account",
+              metadata_note: undefined,
+            } as any)
+            .eq("id", newOrderId);
+        } catch (e) {
+          console.warn("Failed to flag on-account payment:", e);
+        }
+      }
+
       if (poNumber.trim() || costCentre.trim()) {
         try {
           await supabase
@@ -748,6 +774,29 @@ export default function Checkout() {
                     </Label>
                   </div>
                 ))}
+                {credit?.is_active && (
+                  <div className="flex items-start space-x-2">
+                    <RadioGroupItem
+                      value="account"
+                      id="pm-account"
+                      disabled={!canPayOnAccount}
+                      className="mt-1"
+                    />
+                    <Label htmlFor="pm-account" className="cursor-pointer">
+                      Pay on account
+                      {credit.payment_terms_days != null && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({credit.payment_terms_days} day terms)
+                        </span>
+                      )}
+                      {!withinCreditLimit && (
+                        <span className="block text-xs text-destructive">
+                          This order exceeds your available credit limit.
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                )}
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="offline" id="pm-offline" />
                   <Label htmlFor="pm-offline" className="cursor-pointer">
