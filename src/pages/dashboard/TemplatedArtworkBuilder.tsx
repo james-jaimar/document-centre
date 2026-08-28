@@ -634,13 +634,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               This layout has no editable areas — it prints exactly as designed.
             </p>
           ) : (
-            placeholders.map((p) => (
+            placeholders.map((p, i) => (
               <PlaceholderPanel
                 key={p.id}
                 placeholder={p}
                 value={values[p.id]}
                 busy={busyId === p.id}
+                step={i + 1}
                 active={activeId === p.id}
+
                 onFocus={() => setActiveId(p.id)}
                 onPickFile={(file) => handlePickFile(p.id, file)}
                 onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: v }))}
