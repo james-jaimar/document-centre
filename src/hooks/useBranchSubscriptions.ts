@@ -167,8 +167,12 @@ export function useBranchSubscriptionGate(branchId?: string) {
 /** Customer storefront gate — checkout is blocked the moment payment fails (past_due / restricted / cancelled). */
 export function useBranchStorefrontGate(branchId?: string) {
   const { data, isLoading } = useBranchEntitlement(branchId);
+  // No branch id at all → tenant has no branches configured yet. That's a
+  // configuration state, not a suspended store, so don't block checkout.
+  if (!branchId) return { checkoutBlocked: false, reason: null as string | null, loading: false };
   if (isLoading) return { checkoutBlocked: false, reason: null as string | null, loading: true };
-  if (!data) return { checkoutBlocked: true, reason: "Branch unavailable.", loading: false };
+  if (!data) return { checkoutBlocked: false, reason: null as string | null, loading: false };
+
   const s = data.state;
   if (s === "active" || s === "trialing") return { checkoutBlocked: false, reason: null, loading: false };
   return {
