@@ -14,7 +14,7 @@ Group=root
 WorkingDirectory=/opt/document-centre-api
 EnvironmentFile=/opt/document-centre-api/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q default,documents,thumbnails,imposition,pdf
+ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q default,documents,thumbnails,imposition,pdf,tickets
 Restart=always
 RestartSec=5
 TimeoutStartSec=60

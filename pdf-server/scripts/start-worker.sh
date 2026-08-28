@@ -5,7 +5,7 @@ set -e
 # and start-worker-light.sh, installed as separate systemd units.
 exec celery -A app.worker.celery_app worker \
   -l info \
-  -Q default,documents,thumbnails,imposition,pdf \
+  -Q default,documents,thumbnails,imposition,pdf,tickets \
   -P prefork \
   --concurrency=4 \
   --max-tasks-per-child=50 \
