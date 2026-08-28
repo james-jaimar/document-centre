@@ -315,7 +315,14 @@ def _render_overlay(
     sy = 1.0
 
     _register_fonts()
-    c = rl_canvas.Canvas(str(out_pdf), pagesize=(page_w_pt, page_h_pt))
+    # initialFontName keeps reportlab from seeding an unembedded base-14
+    # Helvetica resource on the page.
+    c = rl_canvas.Canvas(
+        str(out_pdf),
+        pagesize=(page_w_pt, page_h_pt),
+        initialFontName="DC-Sans",
+        initialFontSize=12,
+    )
 
 
     for d in defs:
