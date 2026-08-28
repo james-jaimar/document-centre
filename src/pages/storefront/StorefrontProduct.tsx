@@ -67,16 +67,19 @@ export default function StorefrontProduct() {
   const activeSides =
     sides && sidesOptions.includes(sides as any) ? sides : sidesOptions[0] ?? null;
 
+  const { tier: pricingTier } = useCustomerPricingTier();
+
   const rows = useMemo(
     () =>
       blocks
         .filter(
           (b) => b.size === activeSize && b.paper === activePaper && b.sides === activeSides,
         )
-        .map((b) => ({ qty: b.qty, priceMajor: b.price_minor / 100 }))
+        .map((b) => ({ qty: b.qty, priceMajor: rowPriceMinor(b, pricingTier) / 100 }))
         .sort((a, b) => a.qty - b.qty),
-    [blocks, activeSize, activePaper, activeSides],
+    [blocks, activeSize, activePaper, activeSides, pricingTier],
   );
+
 
   const [qty, setQty] = useState<number | null>(null);
   const activeQty = qty && rows.some((r) => r.qty === qty) ? qty : rows[0]?.qty ?? null;
