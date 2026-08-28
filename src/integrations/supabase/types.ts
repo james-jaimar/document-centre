@@ -5367,7 +5367,9 @@ export type Database = {
           is_active: boolean
           kind: string | null
           name: string
+          pricing_addons: Json
           pricing_engine: string
+          pricing_options: Json
           printing_rules: Json
           quantity_blocks: Json
           quantity_mode: string
@@ -5393,7 +5395,9 @@ export type Database = {
           is_active?: boolean
           kind?: string | null
           name: string
+          pricing_addons?: Json
           pricing_engine?: string
+          pricing_options?: Json
           printing_rules?: Json
           quantity_blocks?: Json
           quantity_mode?: string
@@ -5419,7 +5423,9 @@ export type Database = {
           is_active?: boolean
           kind?: string | null
           name?: string
+          pricing_addons?: Json
           pricing_engine?: string
+          pricing_options?: Json
           printing_rules?: Json
           quantity_blocks?: Json
           quantity_mode?: string
@@ -5546,6 +5552,7 @@ export type Database = {
         Row: {
           branch_id: string | null
           id: string
+          pricing_addons: Json | null
           product_family_id: string
           quantity_blocks: Json
           tenant_id: string
@@ -5556,6 +5563,7 @@ export type Database = {
         Insert: {
           branch_id?: string | null
           id?: string
+          pricing_addons?: Json | null
           product_family_id: string
           quantity_blocks?: Json
           tenant_id: string
@@ -5566,6 +5574,7 @@ export type Database = {
         Update: {
           branch_id?: string | null
           id?: string
+          pricing_addons?: Json | null
           product_family_id?: string
           quantity_blocks?: Json
           tenant_id?: string

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useProductFamilies, useUpdateProductFamily } from "@/hooks/useProductFamilies";
 import type { ProductFamily, QuantityBlock } from "@/hooks/useProductFamilies";
 import PackPricingMatrixEditor from "@/components/pricing/PackPricingMatrixEditor";
+import FamilyPricingOptionsEditor from "@/components/pricing/FamilyPricingOptionsEditor";
+import { normalizeAddons, normalizeOptions } from "@/lib/pricing/packOptions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +47,25 @@ export default function MasterPackPricingEditor() {
     try {
       await update.mutateAsync({ id: family.id, quantity_blocks: blocks });
       toast({ title: "Pack pricing saved", description: `${family.name} — master ladder updated.` });
+    } catch (e: any) {
+      toast({ title: "Save failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleSaveOptions(
+    family: ProductFamily,
+    next: { options: unknown; addons: unknown },
+  ) {
+    setSavingId(family.id);
+    try {
+      await update.mutateAsync({
+        id: family.id,
+        pricing_options: next.options,
+        pricing_addons: next.addons,
+      } as any);
+      toast({ title: "Options saved", description: `${family.name} — options & extras updated.` });
     } catch (e: any) {
       toast({ title: "Save failed", description: e.message, variant: "destructive" });
     } finally {
@@ -101,11 +122,18 @@ export default function MasterPackPricingEditor() {
                   </Badge>
                 </div>
               </AccordionTrigger>
-              <AccordionContent className="px-4 pb-4">
+              <AccordionContent className="px-4 pb-4 space-y-4">
+                <FamilyPricingOptionsEditor
+                  options={normalizeOptions((family as any).pricing_options)}
+                  addons={normalizeAddons((family as any).pricing_addons)}
+                  saving={savingId === family.id}
+                  onSave={(next) => handleSaveOptions(family, next)}
+                />
                 <PackPricingMatrixEditor
                   scope="master"
                   initialBlocks={blocks}
                   allowedSizeCodes={allowedSizes}
+                  pricingOptions={normalizeOptions((family as any).pricing_options)}
                   saving={savingId === family.id}
                   onSave={(b) => handleSave(family, b)}
                 />

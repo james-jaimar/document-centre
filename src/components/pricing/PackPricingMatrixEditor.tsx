@@ -14,6 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
+import type { PricingOption } from "@/lib/pricing/packOptions";
 
 export type PackScope = "master" | "tenant" | "branch";
 
@@ -25,6 +26,8 @@ interface Props {
   initialBlocks: QuantityBlock[];
   /** Allowed size codes for this family — restricts the "Add pack" picker. */
   allowedSizeCodes?: string[];
+  /** Family-defined pricing option axis (e.g. finishing options). */
+  pricingOptions?: PricingOption[];
   saving?: boolean;
   onSave: (blocks: QuantityBlock[]) => Promise<void> | void;
   /** Only meaningful for tenant/branch scopes — clears the override row. */
@@ -34,20 +37,23 @@ interface Props {
 
 const DEFAULT_QTY_TIERS = [100, 250, 500, 1000];
 
-type GroupKey = string; // `${size}|${paper}`
+type GroupKey = string; // `${option}|${size}|${paper}`
 
 interface Group {
   key: GroupKey;
+  option: string;
   size: string;
   paper: string;
   rows: { block: QuantityBlock; index: number }[];
 }
+
 
 export default function PackPricingMatrixEditor({
   scope,
   parentBlocks = [],
   initialBlocks,
   allowedSizeCodes = [],
+  pricingOptions = [],
   saving = false,
   onSave,
   onRevertToParent,
@@ -101,14 +107,15 @@ export default function PackPricingMatrixEditor({
     setDirty(true);
   };
 
-  // ── group by (size, paper) ───────────────────────────────────────
+  // ── group by (option, size, paper) ───────────────────────────────
   const groups: Group[] = useMemo(() => {
     const byKey = new Map<GroupKey, Group>();
     blocks.forEach((b, index) => {
+      const option = (b.option ?? "*").toLowerCase();
       const size = (b.size ?? "*").toLowerCase();
       const paper = (b.paper ?? "*").toLowerCase();
-      const key = `${size}|${paper}`;
-      if (!byKey.has(key)) byKey.set(key, { key, size, paper, rows: [] });
+      const key = `${option}|${size}|${paper}`;
+      if (!byKey.has(key)) byKey.set(key, { key, option, size, paper, rows: [] });
       byKey.get(key)!.rows.push({ block: b, index });
     });
     // Sort rows: single before double, then qty ascending
@@ -127,6 +134,11 @@ export default function PackPricingMatrixEditor({
   const hasOverride = isOverrideScope && (initialBlocks?.length ?? 0) > 0;
   const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
 
+  const optionLabel = (slug: string) => {
+    if (!slug || slug === "*") return "All options";
+    return pricingOptions.find((o) => o.slug.toLowerCase() === slug.toLowerCase())?.label ?? slug;
+  };
+
   // ── group-level actions ──────────────────────────────────────────
   function updateBlockAt(idx: number, patch: Partial<QuantityBlock>) {
     const next = blocks.slice();
@@ -141,7 +153,14 @@ export default function PackPricingMatrixEditor({
     const nextQty = existingQtys.length ? Math.max(...existingQtys) * 2 : 100;
     commit([
       ...blocks,
-      { size: group.size, paper: group.paper, sides, qty: nextQty, price_minor: 0 },
+      {
+        size: group.size,
+        paper: group.paper,
+        option: group.option === "*" ? undefined : group.option,
+        sides,
+        qty: nextQty,
+        price_minor: 0,
+      },
     ]);
   }
   function duplicateSinglesToDouble(group: Group) {
@@ -155,16 +174,53 @@ export default function PackPricingMatrixEditor({
     if (additions.length === 0) return;
     commit([...blocks, ...additions]);
   }
+  /** Copy this whole ladder onto another pricing option (skips existing rows). */
+  function copyLadderToOption(group: Group, targetOption: string) {
+    const target = targetOption.toLowerCase();
+    const existing = new Set(
+      blocks
+        .filter(
+          (b) =>
+            (b.option ?? "*").toLowerCase() === target &&
+            (b.size ?? "*").toLowerCase() === group.size &&
+            (b.paper ?? "*").toLowerCase() === group.paper,
+        )
+        .map((b) => `${b.sides}|${b.qty}`),
+    );
+    const additions = group.rows
+      .map((r) => r.block)
+      .filter((b) => !existing.has(`${b.sides}|${b.qty}`))
+      .map((b) => ({ ...b, option: target === "*" ? undefined : target }));
+    if (additions.length === 0) return;
+    commit([...blocks, ...additions]);
+  }
   function deleteGroup(group: Group) {
-    if (!confirm(`Remove all pack rows for ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`)) return;
+    if (
+      !confirm(
+        `Remove all pack rows for ${optionLabel(group.option)} · ${sizeLabel(group.size)} · ${paperLabel(group.paper)}?`,
+      )
+    )
+      return;
     const idxs = new Set(group.rows.map((r) => r.index));
     commit(blocks.filter((_, i) => !idxs.has(i)));
   }
 
-  function seedPack(size: string, paper: string, qtys: number[], includeBothSides: boolean) {
+  function seedPack(
+    size: string,
+    paper: string,
+    qtys: number[],
+    includeBothSides: boolean,
+    option: string,
+  ) {
+    const opt = (option || "*").toLowerCase();
     const existing = new Set(
       blocks
-        .filter((b) => (b.size ?? "*") === size && (b.paper ?? "*") === paper)
+        .filter(
+          (b) =>
+            (b.size ?? "*") === size &&
+            (b.paper ?? "*") === paper &&
+            (b.option ?? "*").toLowerCase() === opt,
+        )
         .map((b) => `${b.sides}|${b.qty}`),
     );
     const additions: QuantityBlock[] = [];
@@ -172,7 +228,14 @@ export default function PackPricingMatrixEditor({
     for (const sides of sidesList) {
       for (const qty of qtys) {
         if (existing.has(`${sides}|${qty}`)) continue;
-        additions.push({ size, paper, sides, qty, price_minor: 0 });
+        additions.push({
+          size,
+          paper,
+          sides,
+          qty,
+          price_minor: 0,
+          ...(opt === "*" ? {} : { option: opt }),
+        });
       }
     }
     if (additions.length === 0) return;
@@ -182,14 +245,16 @@ export default function PackPricingMatrixEditor({
   const parentGroups: Group[] = useMemo(() => {
     const byKey = new Map<GroupKey, Group>();
     parentBlocks.forEach((b, index) => {
+      const option = (b.option ?? "*").toLowerCase();
       const size = (b.size ?? "*").toLowerCase();
       const paper = (b.paper ?? "*").toLowerCase();
-      const key = `${size}|${paper}`;
-      if (!byKey.has(key)) byKey.set(key, { key, size, paper, rows: [] });
+      const key = `${option}|${size}|${paper}`;
+      if (!byKey.has(key)) byKey.set(key, { key, option, size, paper, rows: [] });
       byKey.get(key)!.rows.push({ block: b, index });
     });
     return Array.from(byKey.values());
   }, [parentBlocks]);
+
 
   return (
     <div className="space-y-4">
@@ -294,10 +359,13 @@ export default function PackPricingMatrixEditor({
               group={g}
               sizeLabel={sizeLabel}
               paperLabel={paperLabel}
+              optionLabel={optionLabel}
+              pricingOptions={pricingOptions}
               onUpdateBlock={updateBlockAt}
               onDeleteBlock={deleteBlockAt}
               onAddQty={addQtyRow}
               onDuplicateSingles={duplicateSinglesToDouble}
+              onCopyToOption={copyLadderToOption}
               onDeleteGroup={deleteGroup}
             />
           ))}
@@ -311,12 +379,14 @@ export default function PackPricingMatrixEditor({
         sizeOptions={sizeOptions}
         allPapers={allPapers}
         paperLabel={paperLabel}
+        pricingOptions={pricingOptions}
         existingKeys={new Set(groups.map((g) => g.key))}
-        onSeed={(size, paper, qtys, both) => {
-          seedPack(size, paper, qtys, both);
+        onSeed={(size, paper, qtys, both, option) => {
+          seedPack(size, paper, qtys, both, option);
           setAddOpen(false);
         }}
       />
+
     </div>
   );
 }
@@ -327,31 +397,57 @@ function GroupCard({
   group,
   sizeLabel,
   paperLabel,
+  optionLabel,
+  pricingOptions,
   onUpdateBlock,
   onDeleteBlock,
   onAddQty,
   onDuplicateSingles,
+  onCopyToOption,
   onDeleteGroup,
 }: {
   group: Group;
   sizeLabel: (c: string) => string;
   paperLabel: (c: string) => string;
+  optionLabel: (slug: string) => string;
+  pricingOptions: PricingOption[];
   onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
   onDeleteBlock: (idx: number) => void;
   onAddQty: (group: Group, sides: "single" | "double") => void;
   onDuplicateSingles: (group: Group) => void;
+  onCopyToOption: (group: Group, targetOption: string) => void;
   onDeleteGroup: (group: Group) => void;
 }) {
   const singles = group.rows.filter((r) => r.block.sides === "single");
   const doubles = group.rows.filter((r) => r.block.sides === "double");
+  const copyTargets = pricingOptions.filter(
+    (o) => o.slug.toLowerCase() !== group.option.toLowerCase(),
+  );
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted/40 rounded-t-lg">
         <div className="flex items-center gap-2 min-w-0">
+          {pricingOptions.length > 0 && (
+            <Badge className="text-[11px]">{optionLabel(group.option)}</Badge>
+          )}
           <Badge variant="secondary" className="text-[11px]">{sizeLabel(group.size)}</Badge>
           <span className="text-sm font-medium truncate">{paperLabel(group.paper)}</span>
         </div>
-        <div className="flex gap-1 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          {copyTargets.length > 0 && (
+            <Select value="" onValueChange={(v) => onCopyToOption(group, v)}>
+              <SelectTrigger className="h-7 w-[170px] text-[11px]">
+                <SelectValue placeholder="Copy ladder to…" />
+              </SelectTrigger>
+              <SelectContent>
+                {copyTargets.map((o) => (
+                  <SelectItem key={o.slug} value={o.slug} className="text-xs">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -369,12 +465,13 @@ function GroupCard({
             size="icon"
             className="h-7 w-7"
             onClick={() => onDeleteGroup(group)}
-            title="Delete this Size × Paper group"
+            title="Delete this group"
           >
             <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </Button>
         </div>
       </div>
+
       <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
         <SidesColumn
           heading="Single-sided"
@@ -504,6 +601,7 @@ function AddPackDialog({
   sizeOptions,
   allPapers,
   paperLabel,
+  pricingOptions,
   existingKeys,
   onSeed,
 }: {
@@ -512,11 +610,19 @@ function AddPackDialog({
   sizeOptions: Array<{ id: string; code: string; label: string }>;
   allPapers: Array<{ id: string; code: string; label: string; weight_gsm: number | null }>;
   paperLabel: (c: string) => string;
+  pricingOptions: PricingOption[];
   existingKeys: Set<GroupKey>;
-  onSeed: (size: string, paper: string, qtys: number[], includeBothSides: boolean) => void;
+  onSeed: (
+    size: string,
+    paper: string,
+    qtys: number[],
+    includeBothSides: boolean,
+    option: string,
+  ) => void;
 }) {
   const [size, setSize] = useState<string>("");
   const [paper, setPaper] = useState<string>("");
+  const [option, setOption] = useState<string>("*");
   const [tiersText, setTiersText] = useState<string>(DEFAULT_QTY_TIERS.join(", "));
   const [includeBothSides, setIncludeBothSides] = useState(true);
 
@@ -524,10 +630,11 @@ function AddPackDialog({
     if (open) {
       setSize("");
       setPaper("");
+      setOption(pricingOptions[0]?.slug ?? "*");
       setTiersText(DEFAULT_QTY_TIERS.join(", "));
       setIncludeBothSides(true);
     }
-  }, [open]);
+  }, [open, pricingOptions]);
 
   const parsedQtys = useMemo(
     () =>
@@ -538,7 +645,10 @@ function AddPackDialog({
     [tiersText],
   );
 
-  const duplicate = size && paper && existingKeys.has(`${size.toLowerCase()}|${paper.toLowerCase()}`);
+  const duplicate =
+    size &&
+    paper &&
+    existingKeys.has(`${(option || "*").toLowerCase()}|${size.toLowerCase()}|${paper.toLowerCase()}`);
   const canSubmit = size && paper && parsedQtys.length > 0;
 
   return (
@@ -548,6 +658,21 @@ function AddPackDialog({
           <DialogTitle>Add pack</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {pricingOptions.length > 0 && (
+            <div>
+              <Label className="text-xs">Pricing option</Label>
+              <Select value={option} onValueChange={setOption}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {pricingOptions.map((o) => (
+                    <SelectItem key={o.slug} value={o.slug}>{o.label}</SelectItem>
+                  ))}
+                  <SelectItem value="*">All options</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div>
             <Label className="text-xs">Size</Label>
             <Select value={size} onValueChange={setSize}>
@@ -607,7 +732,7 @@ function AddPackDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             disabled={!canSubmit}
-            onClick={() => onSeed(size, paper, parsedQtys, includeBothSides)}
+            onClick={() => onSeed(size, paper, parsedQtys, includeBothSides, option || "*")}
           >
             Add pack
           </Button>

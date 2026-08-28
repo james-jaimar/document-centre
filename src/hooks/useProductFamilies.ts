@@ -26,7 +26,11 @@ export type QuantityBlock = {
   qty: number;
   price_minor: number;
   cost_minor?: number;
+  /** Optional pricing-option slug (family-defined finishing axis).
+   *  Empty/"*" means the row applies to every option. */
+  option?: string;
 };
+
 
 /** Match helper: `'*'` is a wildcard, comparison is case-insensitive. */
 export function blockMatchesField(blockField: string, specField: string | undefined | null) {

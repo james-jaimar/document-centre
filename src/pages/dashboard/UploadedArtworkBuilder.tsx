@@ -43,7 +43,12 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useFamilyPackBlocks } from "@/hooks/useFamilyPackBlocks";
+import { useFamilyPackPricing } from "@/hooks/useFamilyPackBlocks";
+import {
+  computePackPrice,
+  packQuantitiesForOption,
+  snapQuantity,
+} from "@/lib/pricing/packOptions";
 
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
@@ -319,38 +324,63 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
-  const packBlocks = useFamilyPackBlocks(family as any);
-  /** Distinct pack quantities, cheapest block per quantity. */
-  const packOptions = useMemo(() => {
-    const byQty = new Map<number, number>();
-    for (const b of packBlocks) {
-      const qty = Number(b.qty) || 0;
-      const price = Number(b.price_minor) || 0;
-      if (qty <= 0 || price <= 0) continue;
-      const current = byQty.get(qty);
-      if (current === undefined || price < current) byQty.set(qty, price);
+  const { blocks: packBlocks, options: pricingOptions, addons: pricingAddons } =
+    useFamilyPackPricing(family as any);
+
+  const [pricingOption, setPricingOption] = useState<string | null>(null);
+  useEffect(() => {
+    if (pricingOptions.length === 0) {
+      setPricingOption(null);
+      return;
     }
-    return [...byQty.entries()]
-      .map(([qty, priceMinor]) => ({ qty, priceMinor }))
-      .sort((a, b) => a.qty - b.qty);
-  }, [packBlocks]);
+    setPricingOption((cur) =>
+      cur && pricingOptions.some((o) => o.slug === cur) ? cur : pricingOptions[0].slug,
+    );
+  }, [pricingOptions]);
+
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  useEffect(() => {
+    setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
+  }, [pricingAddons]);
+
+  /** Distinct pack quantities for the chosen option, cheapest block per quantity. */
+  const packOptions = useMemo(
+    () => packQuantitiesForOption(packBlocks, pricingOption),
+    [packBlocks, pricingOption],
+  );
   const packMode = packOptions.length > 0;
 
   // Snap the quantity onto a valid pack as soon as pack pricing is available.
   useEffect(() => {
     if (!packMode) return;
-    if (!packOptions.some((o) => o.qty === quantity)) setQuantity(packOptions[0].qty);
+    if (!packOptions.some((o) => o.qty === quantity)) {
+      setQuantity(snapQuantity(packOptions, quantity) ?? packOptions[0].qty);
+    }
   }, [packMode, packOptions, quantity]);
 
   const activePack = packMode
     ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
     : null;
   const flatUnit = Number((family as any)?.printing_rules?.templated_unit_price ?? 0);
-  const baseUnit = activePack ? activePack.priceMinor / 100 / activePack.qty : flatUnit;
-  const unitPrice = convert(baseUnit);
-  const netTotal = activePack
+  const baseNet = activePack
     ? convert(activePack.priceMinor / 100)
-    : unitPrice * Math.max(quantity, 1);
+    : convert(flatUnit) * Math.max(quantity, 1);
+  const priced = useMemo(
+    () =>
+      computePackPrice({
+        baseNet,
+        quantity: Math.max(quantity, 1),
+        // Fixed / per-unit extras are authored in the base currency.
+        addons: pricingAddons.map((a) =>
+          a.kind === "percent" ? a : { ...a, amount: convert(a.amount) },
+        ),
+        selected: selectedAddons,
+      }),
+    [baseNet, quantity, pricingAddons, selectedAddons, convert],
+  );
+  const netTotal = priced.netTotal;
+  const unitPrice = priced.unitPrice;
+
 
   const pageLabels = useMemo(() => pages.map((p) => `Page ${p.index + 1}`), [pages]);
 
@@ -376,7 +406,17 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           quantity: Math.max(quantity, 1),
           is_color: true,
           is_duplex: false,
-          selected_options: {},
+          selected_options: {
+            ...(pricingOption
+              ? {
+                  "Finishing Option":
+                    pricingOptions.find((o) => o.slug === pricingOption)?.label ?? pricingOption,
+                }
+              : {}),
+            ...Object.fromEntries(priced.addonLines.map((l) => [l.label, "Yes"])),
+          },
+          pricing_option: pricingOption,
+          pricing_addons: priced.addonLines,
           uploaded_artwork: { ...spec, approved_at: new Date().toISOString() },
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
@@ -582,6 +622,26 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
             <span className="text-muted-foreground">Product</span>
             <span className="text-right font-medium">{family?.name ?? "—"}</span>
           </div>
+          {pricingOptions.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Finishing option</Label>
+              <Select
+                value={pricingOption ?? ""}
+                onValueChange={(v) => setPricingOption(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pricingOptions.map((o) => (
+                    <SelectItem key={o.slug} value={o.slug}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
             {packMode ? (
@@ -610,14 +670,56 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
               />
             )}
           </div>
+
+          {pricingAddons.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Optional extras</Label>
+              <div className="space-y-1.5">
+                {pricingAddons.map((a) => {
+                  const line = priced.addonLines.find((l) => l.slug === a.slug);
+                  const preview =
+                    a.kind === "percent"
+                      ? `+${a.amount}%`
+                      : `+${formatPrice(priceDisplay.toGross(convert(a.amount) * (a.kind === "per_unit" ? Math.max(quantity, 1) : 1)), activeCurrency)}`;
+                  return (
+                    <label
+                      key={a.slug}
+                      className="flex cursor-pointer items-center justify-between gap-2 rounded-md border p-2 text-xs"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedAddons.includes(a.slug)}
+                          onCheckedChange={(v) =>
+                            setSelectedAddons((prev) =>
+                              v === true
+                                ? [...prev, a.slug]
+                                : prev.filter((s) => s !== a.slug),
+                            )
+                          }
+                        />
+                        {a.label}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {line
+                          ? `+${formatPrice(priceDisplay.toGross(line.amount), activeCurrency)}`
+                          : preview}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-baseline justify-between border-t pt-3">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-lg font-semibold">
-              {baseUnit > 0
+              {netTotal > 0
                 ? `${formatPrice(priceDisplay.toGross(netTotal), activeCurrency)} ${priceDisplay.inclSuffix}`.trim()
                 : "On request"}
             </span>
           </div>
+
 
           <Button
             variant="outline"
