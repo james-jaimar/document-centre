@@ -1,14 +1,22 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { toast } from "sonner";
-import { Search, UserPlus, Mail } from "lucide-react";
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Loader2, UserPlus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
+import { useBranches } from "@/hooks/useBranches";
+import { useImpersonation } from "@/contexts/ImpersonationContext";
 
 interface Props {
   open: boolean;
@@ -17,143 +25,206 @@ interface Props {
   appId: string;
 }
 
-interface FoundProfile {
-  id: string;
-  display_name: string | null;
-  email: string | null;
-  first_name: string | null;
-  last_name: string | null;
-}
+const NO_BRANCH = "__none__";
 
 export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props) {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
+  const { data: branches = [] } = useBranches(tenantId);
+  const { startImpersonation } = useImpersonation();
 
   const [email, setEmail] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [foundProfile, setFoundProfile] = useState<FoundProfile | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [branchId, setBranchId] = useState<string>(NO_BRANCH);
+  const [isTrade, setIsTrade] = useState(false);
+  const [accountNo, setAccountNo] = useState("");
+  const [sendInvite, setSendInvite] = useState(true);
+  const [impersonateAfter, setImpersonateAfter] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
-    setEmail("");
-    setFoundProfile(null);
-    setNotFound(false);
-    setSubmitting(false);
+    setEmail(""); setFirstName(""); setLastName(""); setPhone("");
+    setBranchId(NO_BRANCH); setIsTrade(false); setAccountNo("");
+    setSendInvite(true); setImpersonateAfter(false);
   };
 
-  const handleSearch = async () => {
-    if (!email.trim()) return;
-    setSearching(true);
-    setFoundProfile(null);
-    setNotFound(false);
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, display_name, email, first_name, last_name")
-      .ilike("email", email.trim())
-      .limit(1)
-      .maybeSingle();
-
-    setSearching(false);
-    if (error) {
-      toast.error(error.message);
+  const submit = async () => {
+    const e = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) {
+      toast.error("Enter a valid email address");
       return;
     }
-    if (data) setFoundProfile(data);
-    else setNotFound(true);
-  };
-
-  const handleSubmit = async () => {
-    const targetEmail = (foundProfile?.email ?? email).trim();
-    if (!targetEmail) return;
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("invite-member", {
-        body: {
-          email: targetEmail,
-          tenant_id: tenantId,
-          app_id: appId,
-          role: "customer",
-          branch_id: null,
-          can_view_all_orders: false,
-        },
+      const targetBranch = branchId === NO_BRANCH ? null : branchId;
+      const res = await invokeEdgeFunctionVerbose<{
+        ok: boolean; profile_id: string; created: boolean; warning?: string;
+      }>("create-customer", {
+        email: e,
+        tenant_id: tenantId,
+        branch_id: targetBranch,
+        first_name: firstName.trim() || null,
+        last_name: lastName.trim() || null,
+        phone: phone.trim() || null,
+        send_invite: sendInvite,
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success(data?.invited ? "Invitation sent" : "Customer added");
-      queryClient.invalidateQueries({ queryKey: ["tenant-customers"] });
+      if (!res.ok || !res.data?.profile_id) {
+        throw new Error(res.error || "Customer creation failed");
+      }
+      const payload = res.data;
+
+      // Trade status / MIS reference live on the customer membership row.
+      if (isTrade || accountNo.trim()) {
+        const { error: mErr } = await (supabase as any)
+          .from("tenant_memberships")
+          .update({
+            is_trade_customer: isTrade,
+            mis_account_number: accountNo.trim() || null,
+          })
+          .eq("tenant_id", tenantId)
+          .eq("app_id", appId)
+          .eq("profile_id", payload.profile_id)
+          .eq("role", "customer");
+        if (mErr) toast.error(`Customer saved, but trade settings failed: ${mErr.message}`);
+      }
+
+      toast.success(
+        payload.created ? "Customer created" : "Existing customer linked to this tenant",
+        {
+          description: sendInvite
+            ? (payload.warning
+                ? `Saved, but invite email failed: ${payload.warning}`
+                : "A 'set your password' email has been sent.")
+            : "No invite email sent.",
+        },
+      );
+
+      qc.invalidateQueries({ queryKey: ["tenant-customers"] });
+      qc.invalidateQueries({ queryKey: ["branchCustomers"] });
+
+      if (impersonateAfter) {
+        try {
+          await startImpersonation({
+            target_profile_id: payload.profile_id,
+            tenant_id: tenantId,
+            branch_id: targetBranch,
+            return_to: window.location.pathname + window.location.search,
+            redirect_to: "/",
+          });
+        } catch (err: any) {
+          toast.error(err?.message ?? "Could not log in as customer");
+        }
+      }
+
       reset();
       onOpenChange(false);
     } catch (err: any) {
-      toast.error(err.message || "Failed to add customer");
+      toast.error(err?.message ?? "Failed to add customer");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const profileName = foundProfile
-    ? [foundProfile.first_name, foundProfile.last_name].filter(Boolean).join(" ") ||
-      foundProfile.display_name ||
-      foundProfile.email ||
-      "Unknown"
-    : "";
-
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
-      <DialogContent aria-describedby={undefined}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => { if (!submitting) { if (!v) reset(); onOpenChange(v); } }}
+    >
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus size={18} /> Add Customer
+            <UserPlus className="h-5 w-5" /> Add customer
           </DialogTitle>
+          <DialogDescription>
+            Create a customer account for this tenant. You can set them up fully
+            manually, or send them a "set your password" email.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-3 py-1">
           <div>
-            <Label>Email address</Label>
-            <div className="flex gap-2 mt-1">
-              <Input
-                placeholder="customer@example.com"
-                type="email"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setFoundProfile(null); setNotFound(false); }}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-              <Button variant="outline" size="icon" onClick={handleSearch} disabled={searching || !email.trim()}>
-                <Search size={16} />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Search by email. If they don't have an account, we'll send them an invite.
-            </p>
+            <Label htmlFor="ac-email">Email *</Label>
+            <Input
+              id="ac-email"
+              type="email"
+              placeholder="customer@example.com"
+              value={email}
+              onChange={(ev) => setEmail(ev.target.value)}
+              autoFocus
+            />
           </div>
 
-          {notFound && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-md p-3">
-              <Mail size={16} className="shrink-0 text-primary" />
-              <span>
-                No account found. An invitation email will be sent to <strong>{email.trim()}</strong>.
-              </span>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="ac-first">First name</Label>
+              <Input id="ac-first" value={firstName} onChange={(ev) => setFirstName(ev.target.value)} />
             </div>
-          )}
+            <div>
+              <Label htmlFor="ac-last">Last name</Label>
+              <Input id="ac-last" value={lastName} onChange={(ev) => setLastName(ev.target.value)} />
+            </div>
+          </div>
 
-          {foundProfile && (
-            <div className="bg-muted rounded-md p-3 text-sm">
-              <p className="font-medium text-foreground">{profileName}</p>
-              <p className="text-muted-foreground">{foundProfile.email}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="ac-phone">Phone</Label>
+              <Input id="ac-phone" value={phone} onChange={(ev) => setPhone(ev.target.value)} />
             </div>
-          )}
+            <div>
+              <Label>Branch</Label>
+              <Select value={branchId} onValueChange={setBranchId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tenant-wide" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_BRANCH}>Tenant-wide (no branch)</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Trade customer</p>
+                <p className="text-xs text-muted-foreground">
+                  Shows trade pack prices instead of consumer prices.
+                </p>
+              </div>
+              <Switch checked={isTrade} onCheckedChange={setIsTrade} />
+            </div>
+            <div>
+              <Label htmlFor="ac-acc">Account number (MIS)</Label>
+              <Input
+                id="ac-acc"
+                placeholder="e.g. IMP0421"
+                value={accountNo}
+                onChange={(ev) => setAccountNo(ev.target.value)}
+              />
+            </div>
+          </div>
+
+          <label className="flex items-start gap-2 text-sm cursor-pointer pt-1">
+            <Checkbox checked={sendInvite} onCheckedChange={(v) => setSendInvite(v === true)} />
+            <span>Send "set your password" email now</span>
+          </label>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <Checkbox checked={impersonateAfter} onCheckedChange={(v) => setImpersonateAfter(v === true)} />
+            <span>Log in as this customer after creating (to build an order on their behalf)</span>
+          </label>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting || searching || !email.trim()}>
-            {submitting
-              ? "Saving…"
-              : foundProfile
-                ? "Add Customer"
-                : notFound
-                  ? "Send Invite"
-                  : "Add / Invite Customer"}
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={submitting || !email.trim()}>
+            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Add customer
           </Button>
         </DialogFooter>
       </DialogContent>
