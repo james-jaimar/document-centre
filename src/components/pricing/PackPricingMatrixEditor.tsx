@@ -359,10 +359,13 @@ export default function PackPricingMatrixEditor({
               group={g}
               sizeLabel={sizeLabel}
               paperLabel={paperLabel}
+              optionLabel={optionLabel}
+              pricingOptions={pricingOptions}
               onUpdateBlock={updateBlockAt}
               onDeleteBlock={deleteBlockAt}
               onAddQty={addQtyRow}
               onDuplicateSingles={duplicateSinglesToDouble}
+              onCopyToOption={copyLadderToOption}
               onDeleteGroup={deleteGroup}
             />
           ))}
@@ -376,12 +379,14 @@ export default function PackPricingMatrixEditor({
         sizeOptions={sizeOptions}
         allPapers={allPapers}
         paperLabel={paperLabel}
+        pricingOptions={pricingOptions}
         existingKeys={new Set(groups.map((g) => g.key))}
-        onSeed={(size, paper, qtys, both) => {
-          seedPack(size, paper, qtys, both);
+        onSeed={(size, paper, qtys, both, option) => {
+          seedPack(size, paper, qtys, both, option);
           setAddOpen(false);
         }}
       />
+
     </div>
   );
 }
