@@ -151,6 +151,10 @@ Deno.serve(async (req) => {
     const { job_id: pdfJobId } = await dispatchRes.json();
     if (!pdfJobId) return json({ error: "pdf-server returned no job id" }, 502);
 
+    if (!waitForResult) {
+      return json({ ok: true, queued: true, pdf_job_id: pdfJobId, action });
+    }
+
     // Poll up to 90s
     let storagePath: string | null = null;
     let lastError: string | null = null;
