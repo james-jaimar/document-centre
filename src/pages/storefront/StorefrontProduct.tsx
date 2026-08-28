@@ -5,6 +5,9 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { rowPriceMinor } from "@/lib/pricing/packOptions";
+
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import ProductGallery from "@/components/storefront/ProductGallery";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
