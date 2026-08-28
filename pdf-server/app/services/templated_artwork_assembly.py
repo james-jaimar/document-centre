@@ -351,11 +351,10 @@ def _render_overlay(
                 path.rect(x_pt, y_pt, w_pt, h_pt)
             c.clipPath(path, stroke=0, fill=0)
             if bg:
-                try:
-                    c.setFillColor(HexColor(bg))
-                    c.rect(x_pt, y_pt, w_pt, h_pt, fill=1, stroke=0)
-                except ValueError:
-                    log.warning("templated_artwork: bad background colour %r", bg)
+                # DeviceCMYK, never DeviceRGB — see _cmyk().
+                c.setFillColor(_cmyk(bg))
+                c.rect(x_pt, y_pt, w_pt, h_pt, fill=1, stroke=0)
+
             if img is not None:
                 dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, img.width, img.height, value)
                 buf = io.BytesIO()
