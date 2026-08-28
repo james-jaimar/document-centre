@@ -474,12 +474,23 @@ function GroupCard({
             variant="ghost"
             size="sm"
             className="h-7 text-[11px]"
+            onClick={() => onFillTrade(group)}
+            title="Set the trade prices in this ladder to the consumer price less a percentage"
+          >
+            Trade −%
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px]"
             onClick={() => onDuplicateSingles(group)}
             disabled={singles.length === 0}
           >
             <Copy className="h-3 w-3 mr-1" />
             Copy singles → double
           </Button>
+
           <Button
             type="button"
             variant="ghost"
