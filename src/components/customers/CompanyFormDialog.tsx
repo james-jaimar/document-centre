@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Building2, Loader2 } from "lucide-react";
+import { CompanyUsersPanel } from "@/components/customers/CompanyUsersPanel";
 import {
   useSaveCustomerCompany,
   type CustomerCompany,
@@ -283,6 +284,21 @@ export function CompanyFormDialog({ open, onOpenChange, company, branchId, onSav
                   {field("default_discount_pct", "Default discount %", { type: "number" })}
                 </div>
               </div>
+            </section>
+
+            <Separator />
+
+            <Separator />
+
+            <section className="space-y-4">
+              <h3 className="text-sm font-semibold">Users</h3>
+              {company?.id ? (
+                <CompanyUsersPanel companyId={company.id} companyName={company.name} />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Save the company first — you can then add or link users here.
+                </p>
+              )}
             </section>
 
             <Separator />
