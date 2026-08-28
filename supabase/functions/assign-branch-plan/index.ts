@@ -90,20 +90,50 @@ Deno.serve(async (req) => {
   }
   const isFree = effectivePrice <= 0;
 
-  const upsert = {
+  // Existing subscription — used to avoid restarting a trial that already ran.
+  const { data: existing } = await sb
+    .from("branch_subscriptions" as any)
+    .select("trial_started_at, trial_ends_at, trial_status")
+    .eq("branch_id", branch.id)
+    .maybeSingle();
+
+  const trialDays = Number(body.trial_days ?? 0);
+  const alreadyTrialed = !!(existing as any)?.trial_started_at;
+  const startTrial = !isFree && trialDays > 0 && !alreadyTrialed;
+
+  const nowIso = new Date().toISOString();
+  const trialEndsIso = startTrial
+    ? new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  const upsert: Record<string, unknown> = {
     branch_id: branch.id,
     tenant_id: branch.tenant_id,
     region_id: body.region_id ?? null,
     assigned_plan_slug: body.assigned_plan_slug,
-    assigned_at: new Date().toISOString(),
+    assigned_at: nowIso,
     assigned_by: user.id,
     discount_type: body.discount_type ?? null,
     discount_value: body.discount_value ?? null,
     trial_days: body.trial_days ?? null,
     promo_code_id: body.promo_code_id ?? null,
     billing_status: isFree ? "free" : "pending_payment",
-    status: isFree ? "active" : "incomplete",
+    status: isFree ? "active" : startTrial ? "trialing" : "incomplete",
   };
+
+  if (startTrial) {
+    upsert.trial_started_at = nowIso;
+    upsert.trial_ends_at = trialEndsIso;
+    upsert.trial_status = "active";
+    upsert.trial_started_via = "no_card_14";
+  } else if (alreadyTrialed) {
+    // Preserve the existing trial window / status untouched.
+    const ends = (existing as any)?.trial_ends_at as string | null;
+    if (!isFree && ends && new Date(ends).getTime() > Date.now()) {
+      upsert.status = "trialing";
+    }
+  }
+
 
   const { data, error } = await sb
     .from("branch_subscriptions" as any)
