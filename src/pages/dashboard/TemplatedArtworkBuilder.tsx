@@ -374,15 +374,66 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [ensureOrder, uploadPhoto, placeholders],
   );
 
-  // ── Pricing (v1: flat unit price configured on the product family)
+  // ── Pricing: pack ladder (with finishing options + paid extras) when the
+  // family defines one, otherwise the legacy flat unit price.
   const priceDisplay = usePriceDisplay();
   const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
+  const { blocks: packBlocks, options: pricingOptions, addons: pricingAddons } =
+    useFamilyPackPricing(family as any);
 
+  const [pricingOption, setPricingOption] = useState<string | null>(null);
+  useEffect(() => {
+    if (pricingOptions.length === 0) {
+      setPricingOption(null);
+      return;
+    }
+    setPricingOption((cur) =>
+      cur && pricingOptions.some((o) => o.slug === cur) ? cur : pricingOptions[0].slug,
+    );
+  }, [pricingOptions]);
+
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  useEffect(() => {
+    setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
+  }, [pricingAddons]);
+
+  const packOptions = useMemo(
+    () => packQuantitiesForOption(packBlocks, pricingOption),
+    [packBlocks, pricingOption],
+  );
+  const packMode = packOptions.length > 0;
+
+  useEffect(() => {
+    if (!packMode) return;
+    if (!packOptions.some((o) => o.qty === quantity)) {
+      setQuantity(snapQuantity(packOptions, quantity) ?? packOptions[0].qty);
+    }
+  }, [packMode, packOptions, quantity]);
+
+  const activePack = packMode
+    ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
+    : null;
   const baseUnit = Number((family?.printing_rules as any)?.templated_unit_price ?? 0);
-  const unitPrice = convert(baseUnit);
-  const netTotal = unitPrice * Math.max(quantity, 1);
+  const baseNet = activePack
+    ? convert(activePack.priceMinor / 100)
+    : convert(baseUnit) * Math.max(quantity, 1);
+  const priced = useMemo(
+    () =>
+      computePackPrice({
+        baseNet,
+        quantity: Math.max(quantity, 1),
+        // Fixed / per-unit extras are authored in the base currency.
+        addons: pricingAddons.map((a) =>
+          a.kind === "percent" ? a : { ...a, amount: convert(a.amount) },
+        ),
+        selected: selectedAddons,
+      }),
+    [baseNet, quantity, pricingAddons, selectedAddons, convert],
+  );
+  const netTotal = priced.netTotal;
+  const unitPrice = priced.unitPrice;
 
   // ── Validation + cart
   const missingRequired = placeholders.filter((p) => {
