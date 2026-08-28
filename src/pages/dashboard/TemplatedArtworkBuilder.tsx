@@ -402,6 +402,35 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
   }, [pricingAddons]);
 
+  // A file placed in a box flagged as "watermark image" forces the paid
+  // watermark-printing extra on (extra ink), locked until the file is removed.
+  const watermarkPlaced = useMemo(
+    () => placeholders.some((p) => (p as any).is_watermark && !!values[p.id]),
+    [placeholders, values],
+  );
+  const watermarkAddonSlug = useMemo(() => {
+    const hit = pricingAddons.find(
+      (a) =>
+        a.slug.toLowerCase().includes("watermark") ||
+        (a.label ?? "").toLowerCase().includes("watermark"),
+    );
+    return hit?.slug ?? null;
+  }, [pricingAddons]);
+
+  useEffect(() => {
+    if (!watermarkAddonSlug) return;
+    setSelectedAddons((prev) => {
+      if (watermarkPlaced) {
+        return prev.includes(watermarkAddonSlug) ? prev : [...prev, watermarkAddonSlug];
+      }
+      const isDefault = pricingAddons.find((a) => a.slug === watermarkAddonSlug)?.default_on;
+      if (isDefault) return prev;
+      return prev.filter((s) => s !== watermarkAddonSlug);
+    });
+  }, [watermarkAddonSlug, watermarkPlaced, pricingAddons]);
+
+
+
   const packOptions = useMemo(
     () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier),
     [packBlocks, pricingOption, pricingTier],
@@ -786,21 +815,32 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                           ),
                           activeCurrency,
                         )}`;
+                  const locked = watermarkPlaced && a.slug === watermarkAddonSlug;
                   return (
                     <label
                       key={a.slug}
-                      className="flex cursor-pointer items-center justify-between gap-2 rounded-md border p-2 text-xs"
+                      className={`flex items-center justify-between gap-2 rounded-md border p-2 text-xs ${
+                        locked ? "cursor-default bg-muted/50" : "cursor-pointer"
+                      }`}
                     >
                       <span className="flex items-center gap-2">
                         <Checkbox
                           checked={selectedAddons.includes(a.slug)}
+                          disabled={locked}
                           onCheckedChange={(v) =>
                             setSelectedAddons((prev) =>
                               v === true ? [...prev, a.slug] : prev.filter((s) => s !== a.slug),
                             )
                           }
                         />
-                        {a.label}
+                        <span>
+                          {a.label}
+                          {locked && (
+                            <span className="ml-1.5 text-[11px] text-muted-foreground">
+                              (required — watermark image supplied)
+                            </span>
+                          )}
+                        </span>
                       </span>
                       <span className="font-mono text-muted-foreground">
                         {line

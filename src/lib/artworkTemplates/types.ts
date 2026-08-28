@@ -99,6 +99,9 @@ export interface ArtworkPlaceholder {
   default_value: string | null;
   is_required: boolean;
   is_locked: boolean;
+  /** Marks this box as the customer's watermark image (triggers the paid
+   *  "watermark printing" extra while a file is placed in it). */
+  is_watermark: boolean;
   sort_order: number;
   /** Behind or on top of the template artwork. */
   layer: PlaceholderLayer;
