@@ -28,6 +28,7 @@ import { useManageUser } from "@/hooks/useManageUser";
 import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
+import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { CustomerAccountSettings } from "@/components/admin/CustomerAccountSettings";
 import { CustomerCompanySettings } from "@/components/admin/CustomerCompanySettings";
@@ -158,32 +159,31 @@ export default function AdminCustomerDetail() {
           <Button variant="outline" size="sm" onClick={() => setResetOpen(true)} disabled={!profile?.email}>
             <KeyRound className="h-4 w-4 mr-1" /> Send reset link
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm"><MoreHorizontal className="h-4 w-4" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => { setNewEmail(profile?.email ?? ""); setEmailOpen(true); }}>
-                <AtSign className="h-4 w-4 mr-2" /> Change email
-              </DropdownMenuItem>
-              {membership && (
-                <DropdownMenuItem
-                  onClick={() => toggleMembership.mutate(!membership.is_active)}
-                  disabled={toggleMembership.isPending}
-                >
-                  {membership.is_active ? (
-                    <><UserX className="h-4 w-4 mr-2" /> Deactivate</>
-                  ) : (
-                    <><UserCheck className="h-4 w-4 mr-2" /> Activate</>
-                  )}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive" onClick={() => setRemoveOpen(true)}>
-                <Trash2 className="h-4 w-4 mr-2" /> Remove from tenant
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {profile && (
+            <CustomerRowActions
+              customer={{
+                profile_id: profile.id,
+                membership_id: membership?.id ?? null,
+                email: profile.email,
+                is_active: membership?.is_active !== false,
+                first_name: profile.first_name,
+                last_name: profile.last_name,
+                display_name: profile.display_name,
+                phone: profile.phone,
+              }}
+              tenantId={tenantId}
+              appId={appId}
+              onRemoved={() => navigate(buildAdminPath("/admin/customers", tenantId))}
+              extraItems={
+                <>
+                  <DropdownMenuItem onClick={() => { setNewEmail(profile?.email ?? ""); setEmailOpen(true); }}>
+                    <AtSign className="h-4 w-4 mr-2" /> Change email
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              }
+            />
+          )}
         </div>
       </div>
 

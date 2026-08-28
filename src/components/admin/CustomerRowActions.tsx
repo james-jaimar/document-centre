@@ -38,9 +38,11 @@ interface Props {
   /** Called after a destructive action that removes the customer from view. */
   onRemoved?: () => void;
   trigger?: React.ReactNode;
+  /** Extra menu items rendered at the top of the menu. */
+  extraItems?: React.ReactNode;
 }
 
-export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigger }: Props) {
+export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigger, extraItems }: Props) {
   const qc = useQueryClient();
   const manage = useManageUser();
   const [editOpen, setEditOpen] = useState(false);
@@ -80,6 +82,7 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
           )}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
+          {extraItems}
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-2" /> Edit details
           </DropdownMenuItem>
