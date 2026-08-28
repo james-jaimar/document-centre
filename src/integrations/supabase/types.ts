@@ -5713,6 +5713,7 @@ export type Database = {
           global_role: string
           id: string
           is_active: boolean
+          is_anonymous: boolean
           is_demo: boolean
           last_name: string | null
           phone: string | null
@@ -5729,6 +5730,7 @@ export type Database = {
           global_role?: string
           id: string
           is_active?: boolean
+          is_anonymous?: boolean
           is_demo?: boolean
           last_name?: string | null
           phone?: string | null
@@ -5745,6 +5747,7 @@ export type Database = {
           global_role?: string
           id?: string
           is_active?: boolean
+          is_anonymous?: boolean
           is_demo?: boolean
           last_name?: string | null
           phone?: string | null

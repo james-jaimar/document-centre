@@ -42,10 +42,15 @@ export function useTenantCustomers() {
 
       const { data: profiles, error: pErr } = await supabase
         .from("profiles")
-        .select("id, display_name, first_name, last_name, email, phone")
+        .select("id, display_name, first_name, last_name, email, phone, is_anonymous")
         .in("id", profileIds);
       if (pErr) throw pErr;
-      const profileMap = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
+      const profileMap = new Map<string, any>(
+        (profiles ?? [])
+          .filter((p: any) => !p.is_anonymous && !!p.email)
+          .map((p: any) => [p.id, p]),
+      );
+
 
       const { data: orders } = await supabase
         .from("orders")
@@ -65,7 +70,7 @@ export function useTenantCustomers() {
         stats.set(key, cur);
       }
 
-      return rows.map((r) => {
+      return rows.filter((r) => profileMap.has(r.profile_id)).map((r) => {
         const s = stats.get(r.profile_id) ?? { count: 0, total: 0, last: null };
         const p = profileMap.get(r.profile_id);
         return {
