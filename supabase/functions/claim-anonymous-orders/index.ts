@@ -48,7 +48,29 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, serviceKey);
 
-    // Transfer draft and cart orders
+    // Carts the signed-in user already had, per tenant — used to merge
+    // instead of ending up with two carts where the empty one can win.
+    const { data: ownCarts } = await admin
+      .from("orders")
+      .select("id, tenant_id")
+      .eq("user_id", user.id)
+      .eq("order_status", "cart");
+
+    const { data: anonCarts } = await admin
+      .from("orders")
+      .select("id, tenant_id")
+      .eq("user_id", anonUserId)
+      .eq("order_status", "cart");
+
+    for (const anonCart of anonCarts ?? []) {
+      const target = (ownCarts ?? []).find((c: any) => c.tenant_id === anonCart.tenant_id);
+      if (!target) continue;
+      await admin.from("order_items").update({ order_id: target.id }).eq("order_id", anonCart.id);
+      await admin.from("order_documents").update({ order_id: target.id }).eq("order_id", anonCart.id);
+      await admin.from("orders").delete().eq("id", anonCart.id);
+    }
+
+    // Transfer remaining draft and cart orders
     const { data: orders, error: updErr } = await admin
       .from("orders")
       .update({
@@ -63,6 +85,7 @@ Deno.serve(async (req) => {
       console.error("claim-anonymous-orders: update failed", updErr);
       return json({ error: updErr.message }, 500);
     }
+
 
     // Clean up: delete the anonymous user's membership and profile
     // (they're no longer needed)

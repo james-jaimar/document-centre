@@ -11,11 +11,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, CheckCircle2, Loader2, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+
 
 type AuthTab = "register" | "login";
 
 export default function CheckoutAuth() {
   const { user } = useAuth();
+  const qc = useQueryClient();
+
   const { slug, tenantPath } = useTenantSlug();
   const [tab, setTab] = useState<AuthTab>("register");
   const [loading, setLoading] = useState(false);
@@ -89,8 +94,15 @@ export default function CheckoutAuth() {
       if (claimErr) console.warn("Failed to claim anonymous orders:", claimErr);
     } catch (e) {
       console.warn("Failed to claim anonymous orders:", e);
+    } finally {
+      // The cart query re-keys to the new user id the moment the session
+      // swaps, which happens before the transfer finishes — refetch now so
+      // the claimed cart/draft actually appears instead of "cart is empty".
+      invalidateUserOrderCaches(qc);
+      await qc.refetchQueries({ queryKey: ["cart"] });
     }
   };
+
 
   // The email already has a login (possibly created on another tenant).
   // Sign them in with the password they typed and enrol them here.
