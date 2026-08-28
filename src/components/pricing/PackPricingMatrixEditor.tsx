@@ -397,31 +397,57 @@ function GroupCard({
   group,
   sizeLabel,
   paperLabel,
+  optionLabel,
+  pricingOptions,
   onUpdateBlock,
   onDeleteBlock,
   onAddQty,
   onDuplicateSingles,
+  onCopyToOption,
   onDeleteGroup,
 }: {
   group: Group;
   sizeLabel: (c: string) => string;
   paperLabel: (c: string) => string;
+  optionLabel: (slug: string) => string;
+  pricingOptions: PricingOption[];
   onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
   onDeleteBlock: (idx: number) => void;
   onAddQty: (group: Group, sides: "single" | "double") => void;
   onDuplicateSingles: (group: Group) => void;
+  onCopyToOption: (group: Group, targetOption: string) => void;
   onDeleteGroup: (group: Group) => void;
 }) {
   const singles = group.rows.filter((r) => r.block.sides === "single");
   const doubles = group.rows.filter((r) => r.block.sides === "double");
+  const copyTargets = pricingOptions.filter(
+    (o) => o.slug.toLowerCase() !== group.option.toLowerCase(),
+  );
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted/40 rounded-t-lg">
         <div className="flex items-center gap-2 min-w-0">
+          {pricingOptions.length > 0 && (
+            <Badge className="text-[11px]">{optionLabel(group.option)}</Badge>
+          )}
           <Badge variant="secondary" className="text-[11px]">{sizeLabel(group.size)}</Badge>
           <span className="text-sm font-medium truncate">{paperLabel(group.paper)}</span>
         </div>
-        <div className="flex gap-1 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          {copyTargets.length > 0 && (
+            <Select value="" onValueChange={(v) => onCopyToOption(group, v)}>
+              <SelectTrigger className="h-7 w-[170px] text-[11px]">
+                <SelectValue placeholder="Copy ladder to…" />
+              </SelectTrigger>
+              <SelectContent>
+                {copyTargets.map((o) => (
+                  <SelectItem key={o.slug} value={o.slug} className="text-xs">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -439,12 +465,13 @@ function GroupCard({
             size="icon"
             className="h-7 w-7"
             onClick={() => onDeleteGroup(group)}
-            title="Delete this Size × Paper group"
+            title="Delete this group"
           >
             <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </Button>
         </div>
       </div>
+
       <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
         <SidesColumn
           heading="Single-sided"
