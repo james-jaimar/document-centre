@@ -51,6 +51,88 @@ export default function CheckoutAuth() {
     );
   }
 
+  const isEmailTakenError = (msg: string) => {
+    const m = (msg || "").toLowerCase();
+    return (
+      m.includes("already been registered") ||
+      m.includes("already registered") ||
+      m.includes("user already exists") ||
+      m.includes("email address is already") ||
+      m.includes("email_exists")
+    );
+  };
+
+  // Attach the signed-in login to this tenant as a customer (safe to call repeatedly)
+  const ensureMembership = async () => {
+    if (!slug) return;
+    try {
+      const { error: memErr } = await supabase.functions.invoke("ensure-tenant-membership", {
+        body: {
+          tenant_slug: slug,
+          first_name: firstName.trim() || null,
+          last_name: lastName.trim() || null,
+          phone: phone.trim() || null,
+        },
+      });
+      if (memErr) console.warn("Failed to attach account to tenant:", memErr);
+    } catch (e) {
+      console.warn("Failed to attach account to tenant:", e);
+    }
+  };
+
+  const claimAnonOrders = async (anonUserId: string | null) => {
+    if (!anonUserId) return;
+    try {
+      const { error: claimErr } = await supabase.functions.invoke("claim-anonymous-orders", {
+        body: { anonymous_user_id: anonUserId },
+      });
+      if (claimErr) console.warn("Failed to claim anonymous orders:", claimErr);
+    } catch (e) {
+      console.warn("Failed to claim anonymous orders:", e);
+    }
+  };
+
+  // The email already has a login (possibly created on another tenant).
+  // Sign them in with the password they typed and enrol them here.
+  const recoverExistingLogin = async (anonUserId: string | null) => {
+    const { error: signInErr } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (signInErr) {
+      setLoginEmail(email.trim());
+      setTab("login");
+      setError(
+        "You already have a login for this email. Enter your password to continue, or reset it below.",
+      );
+      return false;
+    }
+    await claimAnonOrders(anonUserId);
+    await ensureMembership();
+    toast.success("Signed in — you're ready to place your order.");
+    return true;
+  };
+
+  const handleResetPassword = async () => {
+    const target = (loginEmail || email).trim();
+    if (!target) {
+      setError("Enter your email address first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error: resetErr } = await supabase.functions.invoke("request-password-reset", {
+        body: { email: target, tenant_slug: slug ?? null },
+      });
+      if (resetErr) throw resetErr;
+      toast.success("Password reset email sent.");
+    } catch (err: any) {
+      setError(err.message || "Could not send reset email.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Convert anonymous user to a real account
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +148,7 @@ export default function CheckoutAuth() {
     setLoading(true);
     try {
       if (isAnonymous) {
+        const anonUserId = user!.id;
         // Convert the anonymous user to a permanent account
         const { error: updateErr } = await supabase.auth.updateUser({
           email: email.trim(),
@@ -77,7 +160,13 @@ export default function CheckoutAuth() {
             tenant_slug: slug,
           },
         });
-        if (updateErr) throw updateErr;
+        if (updateErr) {
+          if (isEmailTakenError(updateErr.message)) {
+            await recoverExistingLogin(anonUserId);
+            return;
+          }
+          throw updateErr;
+        }
 
         // Update the profile with name/email
         await supabase
@@ -92,6 +181,7 @@ export default function CheckoutAuth() {
           })
           .eq("id", user!.id);
 
+        await ensureMembership();
         toast.success("Account created! You can now place your order.");
       } else {
         // No session at all — create via request-signup + auto sign-in
@@ -106,6 +196,11 @@ export default function CheckoutAuth() {
             password: password,
           },
         });
+        const fnMessage = (fnErr as any)?.message || (data as any)?.error || "";
+        if (fnMessage && isEmailTakenError(String(fnMessage))) {
+          await recoverExistingLogin(null);
+          return;
+        }
         if (fnErr) throw fnErr;
         if ((data as any)?.error) throw new Error((data as any).error);
 
@@ -113,7 +208,16 @@ export default function CheckoutAuth() {
           email: email.trim(),
           password,
         });
-        if (signInErr) throw signInErr;
+        if (signInErr) {
+          // Account exists with a different password
+          setLoginEmail(email.trim());
+          setTab("login");
+          setError(
+            "You already have a login for this email. Enter your password to continue, or reset it below.",
+          );
+          return;
+        }
+        await ensureMembership();
         toast.success("Account created!");
       }
     } catch (err: any) {
@@ -145,14 +249,10 @@ export default function CheckoutAuth() {
       if (signInErr) throw signInErr;
 
       // Transfer draft orders from anonymous user to the real user
-      if (anonUserId) {
-        const { error: claimErr } = await supabase.functions.invoke("claim-anonymous-orders", {
-          body: { anonymous_user_id: anonUserId },
-        });
-        if (claimErr) {
-          console.warn("Failed to claim anonymous orders:", claimErr);
-        }
-      }
+      await claimAnonOrders(anonUserId);
+
+      // Enrol this login on the current tenant if it hasn't shopped here before
+      await ensureMembership();
 
       toast.success("Signed in!");
     } catch (err: any) {
@@ -161,6 +261,7 @@ export default function CheckoutAuth() {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-4">
@@ -312,7 +413,16 @@ export default function CheckoutAuth() {
               "Sign In & Continue"
             )}
           </Button>
+          <button
+            type="button"
+            onClick={handleResetPassword}
+            disabled={loading}
+            className="w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          >
+            Forgot your password?
+          </button>
         </form>
+
       )}
     </div>
   );
