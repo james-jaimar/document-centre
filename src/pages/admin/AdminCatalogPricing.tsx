@@ -1,6 +1,8 @@
 import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
+import TenantPackPricingEditor from "@/components/pricing/TenantPackPricingEditor";
 import { useTenantContext } from "@/hooks/useTenantContext";
+
 
 export default function AdminCatalogPricing() {
   const { tenantId } = useTenantContext();
@@ -21,6 +23,11 @@ export default function AdminCatalogPricing() {
           description="Your tenant rate card for click charges, photo prints and business cards. Use 'Pull missing from master' to bring in any new items the platform has added."
         />
       </div>
+
+      <div className="border-t border-border pt-6">
+        <TenantPackPricingEditor tenantId={tenantId} />
+      </div>
     </div>
+
   );
 }
