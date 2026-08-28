@@ -720,8 +720,20 @@ def assemble_templated_artwork(
         except Exception:  # noqa: BLE001 - malformed boxes are not fatal
             trim_x_pt = None
         if trim_x_pt is None or trim_top_pt is None:
-            trim_x_pt = spec_off_x_mm * mm
-            trim_top_pt = page_h_pt - spec_off_y_mm * mm
+            # The template editor measures offsets in the *crop* box space
+            # (that's what pdf.js renders), so anchor the fallback there —
+            # otherwise a page whose CropBox is inset from the MediaBox would
+            # shift every placement by the bleed.
+            try:
+                cb = page.cropbox
+                ref_left = float(cb.left)
+                ref_top = float(cb.top)
+            except Exception:  # noqa: BLE001 - optional box
+                ref_left = float(box.left)
+                ref_top = float(box.top)
+            trim_x_pt = (ref_left - float(box.left)) + spec_off_x_mm * mm
+            trim_top_pt = (ref_top - float(box.bottom)) - spec_off_y_mm * mm
+
 
         # Record page 1's geometry so the admin panel can see, without opening
         # the PDF, whether the supplied base actually carries bleed.
