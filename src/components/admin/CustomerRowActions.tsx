@@ -169,7 +169,14 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
               disabled={password.trim().length < 8 || manage.isPending}
               onClick={() =>
                 manage.mutate(
-                  { action: "set_password", target_profile_id: customer.profile_id, new_password: password },
+                  {
+                    action: "set_password",
+                    target_profile_id: customer.profile_id,
+                    new_password: password,
+                    tenant_id: tenantId ?? null,
+                    app_id: appId ?? null,
+                  },
+
                   { onSuccess: () => { setPwOpen(false); refresh(); } },
                 )
               }
