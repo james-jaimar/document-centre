@@ -428,6 +428,35 @@ def _render_overlay(
     c.save()
 
 
+def _audit_fonts(pdf_path: Path) -> dict[str, Any]:
+    """List the fonts in the finished PDF and whether each one is embedded.
+
+    Un-embedded fonts cannot go to a press, so this lands in the assembly
+    report where production can see it at a glance.
+    """
+    tool = shutil.which("pdffonts")
+    if not tool:
+        return {"checked": False}
+    try:
+        out = subprocess.run(
+            [tool, str(pdf_path)], check=True, capture_output=True, text=True
+        ).stdout
+    except (subprocess.CalledProcessError, OSError) as exc:  # noqa: BLE001
+        log.warning("templated_artwork: pdffonts failed: %s", exc)
+        return {"checked": False}
+
+    rows: list[dict[str, Any]] = []
+    for line in out.splitlines()[2:]:
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        rows.append({"name": parts[0], "embedded": parts[3].lower() == "yes"})
+    unembedded = [r["name"] for r in rows if not r["embedded"]]
+    if unembedded:
+        log.warning("templated_artwork: UNEMBEDDED fonts in output: %s", unembedded)
+    return {"checked": True, "fonts": rows, "unembedded": unembedded}
+
+
 # ---------------------------------------------------------------------------
 # Layering helpers
 # ---------------------------------------------------------------------------
