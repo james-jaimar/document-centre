@@ -3,25 +3,14 @@ import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import {
-  ArrowLeft, Building2, Mail, Pencil, Phone, Plus, Star, UserMinus, Globe, UserPlus,
+  ArrowLeft, Building2, Mail, Pencil, Phone, Globe,
 } from "lucide-react";
-import {
-  useCustomerCompany, useCompanyMembers, useCompanyMemberMutations, useUnlinkedCustomers,
-} from "@/hooks/useCustomerCompanies";
+import { useCustomerCompany, useCompanyMembers } from "@/hooks/useCustomerCompanies";
 import { CompanyFormDialog } from "@/components/customers/CompanyFormDialog";
-import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
-import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
-import { useTenantContext } from "@/hooks/useTenantContext";
+import { CompanyUsersPanel } from "@/components/customers/CompanyUsersPanel";
 
 interface Props {
   companyId: string;
@@ -50,12 +39,7 @@ function AddressBlock({
 export function CompanyDetailView({ companyId, backPath, customerPath }: Props) {
   const { data: company, isLoading } = useCustomerCompany(companyId);
   const { data: members = [] } = useCompanyMembers(companyId);
-  const { data: unlinked = [] } = useUnlinkedCustomers();
-  const { link, unlink, update } = useCompanyMemberMutations(companyId);
   const [editOpen, setEditOpen] = useState(false);
-  const [pick, setPick] = useState<string>("");
-  const [addUserOpen, setAddUserOpen] = useState(false);
-  const { tenantId, appId } = useTenantContext();
 
   if (isLoading || !company) {
     return (
@@ -145,142 +129,12 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
         </TabsContent>
 
         <TabsContent value="users">
-          <Card className="p-4 space-y-4">
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="flex-1 min-w-[220px]">
-                <div className="text-sm font-semibold">Link an existing customer</div>
-                <p className="text-xs text-muted-foreground">
-                  Customers not already attached to a company.
-                </p>
-              </div>
-              <Select value={pick} onValueChange={setPick}>
-                <SelectTrigger className="w-[280px]">
-                  <SelectValue placeholder="Choose a customer…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {unlinked.length === 0 ? (
-                    <SelectItem value="none" disabled>No unlinked customers</SelectItem>
-                  ) : unlinked.map((u) => (
-                    <SelectItem key={u.membership_id} value={u.membership_id}>
-                      {u.name} · {u.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                disabled={!pick || pick === "none" || link.isPending}
-                onClick={() => link.mutate(pick, { onSuccess: () => setPick("") })}
-              >
-                <Plus className="h-4 w-4 mr-1" /> Link
-              </Button>
-              <Button
-                variant="default"
-                disabled={!tenantId || !appId}
-                onClick={() => setAddUserOpen(true)}
-              >
-                <UserPlus className="h-4 w-4 mr-1" /> Add user
-              </Button>
-            </div>
-
-            {tenantId && appId && (
-              <AddCustomerDialog
-                open={addUserOpen}
-                onOpenChange={setAddUserOpen}
-                tenantId={tenantId}
-                appId={appId}
-                lockedCompanyId={company.id}
-                lockedCompanyName={company.name}
-              />
-            )}
-
-            {members.length === 0 ? (
-              <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                No users linked to this company yet.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Job title</TableHead>
-                    <TableHead>Primary</TableHead>
-                    <TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {members.map((m) => (
-                    <TableRow key={m.membership_id}>
-                      <TableCell className="font-medium">
-                        {customerPath ? (
-                          <Link to={customerPath(m.profile_id)} className="hover:underline">
-                            {m.display_name || [m.first_name, m.last_name].filter(Boolean).join(" ") || "—"}
-                          </Link>
-                        ) : (
-                          m.display_name || [m.first_name, m.last_name].filter(Boolean).join(" ") || "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{m.email ?? "—"}</TableCell>
-                      <TableCell>
-                        <Input
-                          className="h-8"
-                          defaultValue={m.job_title ?? ""}
-                          placeholder="e.g. Marketing manager"
-                          onBlur={(e) => {
-                            const v = e.target.value.trim() || null;
-                            if (v !== (m.job_title ?? null)) {
-                              update.mutate({ membershipId: m.membership_id, job_title: v });
-                            }
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant={m.is_primary_contact ? "default" : "outline"}
-                          onClick={() =>
-                            update.mutate({
-                              membershipId: m.membership_id,
-                              is_primary_contact: !m.is_primary_contact,
-                            })
-                          }
-                        >
-                          <Star className="h-3.5 w-3.5 mr-1" />
-                          {m.is_primary_contact ? "Primary" : "Set primary"}
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 text-destructive"
-                            title="Remove from company"
-                            onClick={() => unlink.mutate(m.membership_id)}
-                          >
-                            <UserMinus className="h-4 w-4" />
-                          </Button>
-                          <CustomerRowActions
-                            customer={{
-                              profile_id: m.profile_id,
-                              membership_id: m.membership_id,
-                              email: m.email,
-                              is_active: m.is_active,
-                              first_name: m.first_name,
-                              last_name: m.last_name,
-                              display_name: m.display_name,
-                              phone: m.phone,
-                            }}
-                            tenantId={tenantId}
-                            appId={appId}
-                          />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+          <Card className="p-4">
+            <CompanyUsersPanel
+              companyId={company.id}
+              companyName={company.name}
+              customerPath={customerPath}
+            />
           </Card>
         </TabsContent>
 
