@@ -40,11 +40,14 @@ from typing import Any
 
 from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
-from reportlab.lib.colors import HexColor
+from pypdf.generic import RectangleObject
+from reportlab.lib.colors import CMYKColor, HexColor
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+
 
 from app.services.files import Workspace, unique_name
 from app.services.storage import StorageService
@@ -97,30 +100,149 @@ def _to_cmyk(img: Image.Image) -> Image.Image:
     return img
 
 
-def _font_name(style: dict[str, Any]) -> str:
-    """Map the browser font style onto a PDF base-14 face.
+def _cmyk(hex_value: str | None, default_k: float = 1.0):
+    """Convert a hex colour to a DeviceCMYK colour.
 
-    Preview and print must agree, so we deliberately stay inside the fonts
-    every PDF reader (and our preview CSS stack) can render.
+    Text and flat fills must never leave as DeviceRGB — a press reading an
+    RGB "black" builds it out of all four inks. Pure/near black is forced to
+    100% K; every other colour is converted with the naive (and for flat
+    brand colours entirely adequate) RGB→CMYK formula, no ICC pass, so the
+    customer's own supplied artwork is untouched.
     """
+    raw = str(hex_value or "").strip()
+    try:
+        rgb = HexColor(raw)
+        r, g, b = rgb.red, rgb.green, rgb.blue
+    except Exception:  # noqa: BLE001 - bad colour is not fatal
+        return CMYKColor(0, 0, 0, default_k)
+    # Near-black (anything up to #1a1a1a) prints as 100% K, nothing else.
+    if max(r, g, b) <= 0.105:
+        return CMYKColor(0, 0, 0, 1)
+    k = 1.0 - max(r, g, b)
+    if k >= 0.999:
+        return CMYKColor(0, 0, 0, 1)
+    denom = 1.0 - k
+    return CMYKColor(
+        (1.0 - r - k) / denom,
+        (1.0 - g - k) / denom,
+        (1.0 - b - k) / denom,
+        k,
+    )
+
+
+# Embedded TrueType faces. Liberation is metrically identical to
+# Arial/Helvetica (and Times/Courier for the serif/mono branches), so the
+# on-screen proof, the line wrapping and the printed sheet all agree — and
+# unlike the PDF base-14 faces these are actually embedded in the output.
+_LIBERATION: dict[str, tuple[str, str]] = {
+    # registered name        (fontconfig pattern,                fallback file stem)
+    "DC-Sans": ("Liberation Sans:style=Regular", "LiberationSans-Regular"),
+    "DC-Sans-Bold": ("Liberation Sans:style=Bold", "LiberationSans-Bold"),
+    "DC-Sans-Italic": ("Liberation Sans:style=Italic", "LiberationSans-Italic"),
+    "DC-Sans-BoldItalic": ("Liberation Sans:style=Bold Italic", "LiberationSans-BoldItalic"),
+    "DC-Serif": ("Liberation Serif:style=Regular", "LiberationSerif-Regular"),
+    "DC-Serif-Bold": ("Liberation Serif:style=Bold", "LiberationSerif-Bold"),
+    "DC-Serif-Italic": ("Liberation Serif:style=Italic", "LiberationSerif-Italic"),
+    "DC-Serif-BoldItalic": ("Liberation Serif:style=Bold Italic", "LiberationSerif-BoldItalic"),
+    "DC-Mono": ("Liberation Mono:style=Regular", "LiberationMono-Regular"),
+    "DC-Mono-Bold": ("Liberation Mono:style=Bold", "LiberationMono-Bold"),
+    "DC-Mono-Italic": ("Liberation Mono:style=Italic", "LiberationMono-Italic"),
+    "DC-Mono-BoldItalic": ("Liberation Mono:style=Bold Italic", "LiberationMono-BoldItalic"),
+}
+
+_FONT_SEARCH_DIRS = (
+    "/usr/share/fonts/truetype/liberation",
+    "/usr/share/fonts/truetype/liberation2",
+    "/usr/share/fonts/liberation",
+)
+
+_fonts_registered = False
+
+
+def _resolve_font_file(pattern: str, stem: str) -> Path | None:
+    fc = shutil.which("fc-match")
+    if fc:
+        try:
+            out = subprocess.run(
+                [fc, "-f", "%{file}", pattern],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            path = Path(out)
+            # fc-match always returns *something*; only trust an exact family hit.
+            if path.is_file() and stem.split("-")[0].lower() in path.name.lower():
+                return path
+        except (subprocess.CalledProcessError, OSError):
+            pass
+    for d in _FONT_SEARCH_DIRS:
+        cand = Path(d) / f"{stem}.ttf"
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _register_fonts() -> None:
+    """Register the embedded faces once per worker process.
+
+    Raises when the fonts are missing rather than silently emitting an
+    unembedded base-14 face — un-embedded fonts cannot go to a press.
+    """
+    global _fonts_registered
+    if _fonts_registered:
+        return
+    missing: list[str] = []
+    for name, (pattern, stem) in _LIBERATION.items():
+        path = _resolve_font_file(pattern, stem)
+        if path is None:
+            missing.append(stem)
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont(name, str(path)))
+        except Exception as exc:  # noqa: BLE001
+            missing.append(f"{stem} ({exc})")
+    if missing:
+        raise RuntimeError(
+            "templated_artwork: embeddable fonts are missing from the image — "
+            f"cannot produce a press-safe PDF: {', '.join(missing)}"
+        )
+    for family, base in (
+        ("DC-Sans", "DC-Sans"),
+        ("DC-Serif", "DC-Serif"),
+        ("DC-Mono", "DC-Mono"),
+    ):
+        pdfmetrics.registerFontFamily(
+            family,
+            normal=base,
+            bold=f"{base}-Bold",
+            italic=f"{base}-Italic",
+            boldItalic=f"{base}-BoldItalic",
+        )
+    _fonts_registered = True
+    log.info("templated_artwork: registered embedded fonts %s", sorted(_LIBERATION))
+
+
+def _font_name(style: dict[str, Any]) -> str:
+    """Map the browser font style onto an embedded TrueType face."""
     family = str(style.get("fontFamily") or "Helvetica").lower()
     bold = str(style.get("fontWeight") or "").lower() == "bold"
     italic = str(style.get("fontStyle") or "").lower() == "italic"
 
     if "times" in family or ("serif" in family and "sans" not in family):
-        base, b, i, bi = "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic"
+        base = "DC-Serif"
     elif "courier" in family or "mono" in family:
-        base, b, i, bi = "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"
+        base = "DC-Mono"
     else:
-        base, b, i, bi = "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique"
+        base = "DC-Sans"
 
     if bold and italic:
-        return bi
+        return f"{base}-BoldItalic"
     if bold:
-        return b
+        return f"{base}-Bold"
     if italic:
-        return i
+        return f"{base}-Italic"
     return base
+
 
 
 def _wrap_lines(text: str, font: str, size_pt: float, max_width_pt: float) -> list[str]:
@@ -192,7 +314,16 @@ def _render_overlay(
     sx = 1.0
     sy = 1.0
 
-    c = rl_canvas.Canvas(str(out_pdf), pagesize=(page_w_pt, page_h_pt))
+    _register_fonts()
+    # initialFontName keeps reportlab from seeding an unembedded base-14
+    # Helvetica resource on the page.
+    c = rl_canvas.Canvas(
+        str(out_pdf),
+        pagesize=(page_w_pt, page_h_pt),
+        initialFontName="DC-Sans",
+        initialFontSize=12,
+    )
+
 
     for d in defs:
         pid = str(d.get("id") or "")
@@ -230,11 +361,10 @@ def _render_overlay(
                 path.rect(x_pt, y_pt, w_pt, h_pt)
             c.clipPath(path, stroke=0, fill=0)
             if bg:
-                try:
-                    c.setFillColor(HexColor(bg))
-                    c.rect(x_pt, y_pt, w_pt, h_pt, fill=1, stroke=0)
-                except ValueError:
-                    log.warning("templated_artwork: bad background colour %r", bg)
+                # DeviceCMYK, never DeviceRGB — see _cmyk().
+                c.setFillColor(_cmyk(bg))
+                c.rect(x_pt, y_pt, w_pt, h_pt, fill=1, stroke=0)
+
             if img is not None:
                 dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, img.width, img.height, value)
                 buf = io.BytesIO()
@@ -284,9 +414,10 @@ def _render_overlay(
         path.rect(x_pt, y_pt, w_pt, h_pt)
         c.clipPath(path, stroke=0, fill=0)
         try:
-            c.setFillColor(HexColor(str(style.get("colorHex") or "#111111")))
+            c.setFillColor(_cmyk(str(style.get("colorHex") or "#111111")))
         except ValueError:
-            c.setFillColorRGB(0.07, 0.07, 0.07)
+            c.setFillColor(CMYKColor(0, 0, 0, 1))
+
         c.setFont(font, size_pt)
         for idx, line in enumerate(lines):
             # Baseline sits one ascent below the line's top edge; 0.8em is a
@@ -302,6 +433,35 @@ def _render_overlay(
 
     c.showPage()
     c.save()
+
+
+def _audit_fonts(pdf_path: Path) -> dict[str, Any]:
+    """List the fonts in the finished PDF and whether each one is embedded.
+
+    Un-embedded fonts cannot go to a press, so this lands in the assembly
+    report where production can see it at a glance.
+    """
+    tool = shutil.which("pdffonts")
+    if not tool:
+        return {"checked": False}
+    try:
+        out = subprocess.run(
+            [tool, str(pdf_path)], check=True, capture_output=True, text=True
+        ).stdout
+    except (subprocess.CalledProcessError, OSError) as exc:  # noqa: BLE001
+        log.warning("templated_artwork: pdffonts failed: %s", exc)
+        return {"checked": False}
+
+    rows: list[dict[str, Any]] = []
+    for line in out.splitlines()[2:]:
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        rows.append({"name": parts[0], "embedded": parts[3].lower() == "yes"})
+    unembedded = [r["name"] for r in rows if not r["embedded"]]
+    if unembedded:
+        log.warning("templated_artwork: UNEMBEDDED fonts in output: %s", unembedded)
+    return {"checked": True, "fonts": rows, "unembedded": unembedded}
 
 
 # ---------------------------------------------------------------------------
@@ -536,6 +696,8 @@ def assemble_templated_artwork(
     vector_ids = set(vector_sources)
     placements: list[dict[str, Any]] = []
     knocked_out = False
+    base_geometry: dict[str, Any] = {}
+
 
     writer = PdfWriter()
     for page_index, page in enumerate(reader.pages):
@@ -558,8 +720,57 @@ def assemble_templated_artwork(
         except Exception:  # noqa: BLE001 - malformed boxes are not fatal
             trim_x_pt = None
         if trim_x_pt is None or trim_top_pt is None:
-            trim_x_pt = spec_off_x_mm * mm
-            trim_top_pt = page_h_pt - spec_off_y_mm * mm
+            # The template editor measures offsets in the *crop* box space
+            # (that's what pdf.js renders), so anchor the fallback there —
+            # otherwise a page whose CropBox is inset from the MediaBox would
+            # shift every placement by the bleed.
+            try:
+                cb = page.cropbox
+                ref_left = float(cb.left)
+                ref_top = float(cb.top)
+            except Exception:  # noqa: BLE001 - optional box
+                ref_left = float(box.left)
+                ref_top = float(box.top)
+            trim_x_pt = (ref_left - float(box.left)) + spec_off_x_mm * mm
+            trim_top_pt = (ref_top - float(box.bottom)) - spec_off_y_mm * mm
+
+
+        # Record page 1's geometry so the admin panel can see, without opening
+        # the PDF, whether the supplied base actually carries bleed.
+        if page_index == 0:
+            def _box_mm(getter) -> list[float] | None:
+                try:
+                    bx = getter()
+                    return [
+                        round(float(bx.width) / mm, 2),
+                        round(float(bx.height) / mm, 2),
+                    ]
+                except Exception:  # noqa: BLE001
+                    return None
+
+            base_geometry = {
+                "media_mm": _box_mm(lambda: page.mediabox),
+                "crop_mm": _box_mm(lambda: page.cropbox),
+                "trim_mm": _box_mm(lambda: page.trimbox),
+                "bleed_mm": _box_mm(lambda: page.bleedbox),
+                "spec_trim_mm": [trim_w_mm or None, trim_h_mm or None],
+            }
+            media = base_geometry["media_mm"] or [0, 0]
+            spec_trim_w = trim_w_mm or 0
+            spec_trim_h = trim_h_mm or 0
+            has_bleed = bool(
+                spec_trim_w
+                and spec_trim_h
+                and (media[0] > spec_trim_w + 0.5 or media[1] > spec_trim_h + 0.5)
+            )
+            base_geometry["has_bleed"] = has_bleed
+            if not has_bleed:
+                log.warning(
+                    "templated_artwork: base PDF %s carries no bleed — page is %s mm "
+                    "and the trim is %s mm; the output cannot invent bleed or crop marks",
+                    base_path, media, [spec_trim_w, spec_trim_h],
+                )
+
 
         # Collect vector placements once — geometry is identical on every page.
         if page_index == 0:
@@ -644,7 +855,31 @@ def assemble_templated_artwork(
             )
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
 
+        # Belt and braces: whatever branch produced `composed`, the output page
+        # must be the supplied page — full media box, with every box copied
+        # through. Bleed and crop marks in the base survive untouched.
+        composed.mediabox = page.mediabox
+        for attr in ("cropbox", "trimbox", "bleedbox", "artbox"):
+            try:
+                setattr(composed, attr, getattr(page, attr))
+            except Exception:  # noqa: BLE001 - optional boxes
+                pass
+        # If the base carries bleed but no TrimBox, stamp one from the spec so
+        # imposition and the guillotine know where the sheet is cut.
+        if base_geometry.get("has_bleed") and trim_w_mm and trim_h_mm:
+            try:
+                needs_trim = float(composed.trimbox.width) >= page_w_pt - 0.5
+            except Exception:  # noqa: BLE001
+                needs_trim = True
+            if needs_trim:
+                left = float(page.mediabox.left) + trim_x_pt
+                top = float(page.mediabox.bottom) + trim_top_pt
+                composed.trimbox = RectangleObject(
+                    (left, top - trim_h_mm * mm, left + trim_w_mm * mm, top)
+                )
+
         writer.add_page(composed)
+
 
     out_pdf = workspace.path("templated-artwork.pdf")
     with open(out_pdf, "wb") as fh:
@@ -674,6 +909,11 @@ def assemble_templated_artwork(
         "under_layer_count": len(under_defs),
         "over_layer_count": len(over_defs),
         "base_knockout_applied": knocked_out,
+        "base_geometry": base_geometry,
+        "page_size_mm": base_geometry.get("media_mm"),
+        "trim_size_mm": base_geometry.get("trim_mm") or base_geometry.get("spec_trim_mm"),
+        "base_has_bleed": base_geometry.get("has_bleed"),
+        "fonts": _audit_fonts(out_pdf),
         "storage_path": storage_path,
     }
     log.info("templated_artwork: assembled %s", report)

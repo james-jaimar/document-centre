@@ -491,6 +491,25 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
             corner, so they match your Illustrator measurements.
           </p>
 
+          {pages[0] && (
+            pages[0].pageWidthMm > (selected.trim_width_mm || pages[0].widthMm) + 0.5 ||
+            pages[0].pageHeightMm > (selected.trim_height_mm || pages[0].heightMm) + 0.5 ? (
+              <p className="text-xs text-muted-foreground">
+                Supplied page is {pages[0].pageWidthMm.toFixed(1)} ×{" "}
+                {pages[0].pageHeightMm.toFixed(1)} mm — bleed and crop marks outside the trim are
+                carried through to the production PDF untouched.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 dark:text-amber-500">
+                This base PDF is trim-sized ({pages[0].pageWidthMm.toFixed(1)} ×{" "}
+                {pages[0].pageHeightMm.toFixed(1)} mm) with no bleed or crop marks. The production
+                PDF cannot invent them — re-upload the base exported with bleed and marks if the
+                press needs them.
+              </p>
+            )
+          )}
+
+
           {renderingPdf ? (
             <Skeleton className="h-96 w-full" />
           ) : (
