@@ -6,7 +6,7 @@ set -e
 # moved off the heavy `documents` queue have plenty of headroom.
 exec celery -A app.worker.celery_app worker \
   -l info \
-  -Q default,thumbnails \
+  -Q default,thumbnails,tickets \
   -n "light@%h" \
   -P prefork \
   --concurrency=8 \

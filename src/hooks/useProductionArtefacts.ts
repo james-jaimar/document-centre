@@ -162,17 +162,42 @@ export function useProductionArtefacts(jobId: string | null) {
     }
   }, [jobId, qc, toast]);
 
+  /**
+   * Job tickets are queued (own Celery queue) and polled, so asking for a
+   * ticket never blocks — or gets blocked by — print-ready assembly.
+   */
   const generateJobTicket = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
     setGenerating("ticket");
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "ticket", job_id: jobId, force: !!opts?.force },
+        body: { action: "ticket", job_id: jobId, force: !!opts?.force, wait: false },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      toast({ title: "Job ticket generated" });
+      toast({ title: "Job ticket queued", description: "It will appear here shortly." });
+
+      // Poll order_jobs for the ticket path (up to ~2 minutes).
+      const before = query.data?.job_ticket_pdf_path ?? null;
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const { data: row } = await supabase
+          .from("order_jobs")
+          .select("job_ticket_pdf_path")
+          .eq("id", jobId)
+          .maybeSingle();
+        const path = (row as any)?.job_ticket_pdf_path ?? null;
+        if (path && (opts?.force ? true : path !== before)) {
+          qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
+          toast({ title: "Job ticket ready" });
+          return;
+        }
+      }
       qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
+      toast({
+        title: "Job ticket still generating",
+        description: "Refresh in a moment to download it.",
+      });
     } catch (e: any) {
       toast({
         title: "Could not generate job ticket",
@@ -182,7 +207,7 @@ export function useProductionArtefacts(jobId: string | null) {
     } finally {
       setGenerating(null);
     }
-  }, [jobId, qc, toast]);
+  }, [jobId, qc, toast, query.data?.job_ticket_pdf_path]);
 
   /** Sign a storage path (S3) so the operator can download it. */
   const signedUrl = useCallback(async (path: string | null): Promise<string | null> => {

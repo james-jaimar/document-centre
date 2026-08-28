@@ -1464,7 +1464,10 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
 
 
 
-@shared_task(bind=True, queue="documents")
+# Job tickets are tiny 1-page renders. They live on their own queue so an
+# operator asking for a ticket never sits behind (or in front of) a heavy
+# print-ready assembly on the `documents` queue.
+@shared_task(bind=True, queue="tickets")
 def render_job_ticket_for_job(self, job_id: str, pdf_job_id: str):
     db = _db()
     try:

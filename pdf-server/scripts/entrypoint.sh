@@ -64,7 +64,7 @@ case "$ROLE" in
         ;;
       worker-light)
         exec celery -A app.worker.celery_app worker \
-          -Q default,thumbnails -n "light@%h" -P prefork \
+          -Q default,thumbnails,tickets -n "light@%h" -P prefork \
           --concurrency="${CELERY_LIGHT_CONCURRENCY:-4}" \
           --max-tasks-per-child=200 --max-memory-per-child=600000 \
           --loglevel="${LOG_LEVEL:-INFO}"

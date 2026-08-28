@@ -52,7 +52,10 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey);
 
     const body = await req.json();
-    const { action, job_id, imposition_template_id, force, component } = body ?? {};
+    const { action, job_id, imposition_template_id, force, component, wait } = body ?? {};
+    // `wait: false` → dispatch and return immediately. The caller polls
+    // order_jobs for the artefact path instead of holding the request open.
+    const waitForResult = wait !== false;
     if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
     if (action === "impose" && !imposition_template_id) {
       return json({ error: "imposition_template_id is required for impose action" }, 400);
@@ -147,6 +150,10 @@ Deno.serve(async (req) => {
     }
     const { job_id: pdfJobId } = await dispatchRes.json();
     if (!pdfJobId) return json({ error: "pdf-server returned no job id" }, 502);
+
+    if (!waitForResult) {
+      return json({ ok: true, queued: true, pdf_job_id: pdfJobId, action });
+    }
 
     // Poll up to 90s
     let storagePath: string | null = null;

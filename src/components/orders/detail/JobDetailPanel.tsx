@@ -10,6 +10,7 @@ import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
+import ArtworkAdminProof from "./ArtworkAdminProof";
 
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -199,6 +200,14 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
           )}
         </div>
       </div>
+
+      {/* Templated / supplied artwork — admin proof (same render the customer approved) */}
+      {((config as any).templated_artwork || (config as any).uploaded_artwork) && (
+        <ArtworkAdminProof
+          templatedArtwork={(config as any).templated_artwork}
+          uploadedArtwork={(config as any).uploaded_artwork}
+        />
+      )}
 
       {/* Canvas Prints — admin proof gallery */}
       {(config as any).canvas_prints || job.product_category === "canvas-prints" ? (
