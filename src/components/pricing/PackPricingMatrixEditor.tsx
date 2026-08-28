@@ -732,7 +732,7 @@ function AddPackDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             disabled={!canSubmit}
-            onClick={() => onSeed(size, paper, parsedQtys, includeBothSides)}
+            onClick={() => onSeed(size, paper, parsedQtys, includeBothSides, option || "*")}
           >
             Add pack
           </Button>
