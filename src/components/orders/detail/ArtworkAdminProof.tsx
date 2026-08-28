@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Image as ImageIcon, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { downloadFromS3 } from "@/lib/s3Storage";
-import { getCachedBlobUrl, registerBlob } from "@/lib/pdfBlobCache";
+import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import {
   rasterisePdfPages,
   loadImage,
