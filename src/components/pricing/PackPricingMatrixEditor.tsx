@@ -14,6 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
+import type { PricingOption } from "@/lib/pricing/packOptions";
 
 export type PackScope = "master" | "tenant" | "branch";
 
@@ -25,6 +26,8 @@ interface Props {
   initialBlocks: QuantityBlock[];
   /** Allowed size codes for this family — restricts the "Add pack" picker. */
   allowedSizeCodes?: string[];
+  /** Family-defined pricing option axis (e.g. finishing options). */
+  pricingOptions?: PricingOption[];
   saving?: boolean;
   onSave: (blocks: QuantityBlock[]) => Promise<void> | void;
   /** Only meaningful for tenant/branch scopes — clears the override row. */
@@ -34,14 +37,16 @@ interface Props {
 
 const DEFAULT_QTY_TIERS = [100, 250, 500, 1000];
 
-type GroupKey = string; // `${size}|${paper}`
+type GroupKey = string; // `${option}|${size}|${paper}`
 
 interface Group {
   key: GroupKey;
+  option: string;
   size: string;
   paper: string;
   rows: { block: QuantityBlock; index: number }[];
 }
+
 
 export default function PackPricingMatrixEditor({
   scope,
