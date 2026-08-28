@@ -43,7 +43,12 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useFamilyPackBlocks } from "@/hooks/useFamilyPackBlocks";
+import { useFamilyPackPricing } from "@/hooks/useFamilyPackBlocks";
+import {
+  computePackPrice,
+  packQuantitiesForOption,
+  snapQuantity,
+} from "@/lib/pricing/packOptions";
 
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
