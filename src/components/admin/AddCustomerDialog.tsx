@@ -25,12 +25,18 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   tenantId: string;
   appId: string;
+  /** When set, the customer is created directly against this company and the picker is hidden. */
+  lockedCompanyId?: string | null;
+  lockedCompanyName?: string | null;
+  onCreated?: (profileId: string) => void;
 }
 
 const NO_BRANCH = "__none__";
 const NO_COMPANY = "__nocompany__";
 
-export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props) {
+export function AddCustomerDialog({
+  open, onOpenChange, tenantId, appId, lockedCompanyId, lockedCompanyName, onCreated,
+}: Props) {
   const qc = useQueryClient();
   const { data: branches = [] } = useBranches(tenantId);
   const { startImpersonation } = useImpersonation();
@@ -81,7 +87,7 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
       const payload = res.data;
 
       // Trade status / MIS reference / company link live on the membership row.
-      const linkedCompany = companyId === NO_COMPANY ? null : companyId;
+      const linkedCompany = lockedCompanyId ?? (companyId === NO_COMPANY ? null : companyId);
       if (isTrade || accountNo.trim() || linkedCompany) {
         const { error: mErr } = await (supabase as any)
           .from("tenant_memberships")
@@ -110,6 +116,8 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
 
       qc.invalidateQueries({ queryKey: ["tenant-customers"] });
       qc.invalidateQueries({ queryKey: ["branchCustomers"] });
+      qc.invalidateQueries({ queryKey: ["customer-companies"] });
+      onCreated?.(payload.profile_id);
 
       if (impersonateAfter) {
         try {
@@ -195,6 +203,12 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
             </div>
           </div>
 
+          {lockedCompanyId ? (
+            <div className="rounded-md border border-border p-3 text-sm">
+              <span className="text-muted-foreground">Company: </span>
+              <span className="font-medium">{lockedCompanyName ?? "Selected company"}</span>
+            </div>
+          ) : (
           <div>
             <Label>Company</Label>
             <div className="flex gap-2">
@@ -217,6 +231,7 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
               Company trade status, account number and credit terms apply to every linked user.
             </p>
           </div>
+          )}
 
           <div className="rounded-md border border-border p-3 space-y-3">
             <div className="flex items-center justify-between gap-3">
