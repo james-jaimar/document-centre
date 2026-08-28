@@ -46,6 +46,7 @@ import {
   packQuantitiesForOption,
   snapQuantity,
 } from "@/lib/pricing/packOptions";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
   TemplatedArtworkSpec,
@@ -394,14 +395,16 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     );
   }, [pricingOptions]);
 
+  const { tier: pricingTier } = useCustomerPricingTier();
+
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   useEffect(() => {
     setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
   }, [pricingAddons]);
 
   const packOptions = useMemo(
-    () => packQuantitiesForOption(packBlocks, pricingOption),
-    [packBlocks, pricingOption],
+    () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier),
+    [packBlocks, pricingOption, pricingTier],
   );
   const packMode = packOptions.length > 0;
 

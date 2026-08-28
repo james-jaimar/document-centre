@@ -49,6 +49,7 @@ import {
   packQuantitiesForOption,
   snapQuantity,
 } from "@/lib/pricing/packOptions";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
@@ -338,6 +339,8 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
     );
   }, [pricingOptions]);
 
+  const { tier: pricingTier } = useCustomerPricingTier();
+
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   useEffect(() => {
     setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
@@ -345,8 +348,8 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
 
   /** Distinct pack quantities for the chosen option, cheapest block per quantity. */
   const packOptions = useMemo(
-    () => packQuantitiesForOption(packBlocks, pricingOption),
-    [packBlocks, pricingOption],
+    () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier),
+    [packBlocks, pricingOption, pricingTier],
   );
   const packMode = packOptions.length > 0;
 
