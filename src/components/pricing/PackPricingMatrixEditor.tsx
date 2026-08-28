@@ -517,14 +517,15 @@ function SidesColumn({
         <p className="text-[11px] text-muted-foreground italic">No qty tiers.</p>
       ) : (
         <>
-          <div className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+          <div className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
             <span>Qty</span>
-            <span>Sell</span>
+            <span>Consumer</span>
+            <span>Trade</span>
             <span>Cost</span>
             <span></span>
           </div>
           {rows.map(({ block, index }) => (
-            <div key={index} className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 items-center">
+            <div key={index} className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 items-center">
               <Input
                 type="number"
                 min={1}
@@ -543,6 +544,21 @@ function SidesColumn({
                     price_minor: Math.round(parseFloat(e.target.value || "0") * 100),
                   })
                 }
+              />
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8 text-xs"
+                placeholder="same"
+                title="Trade price — leave blank to charge the consumer price"
+                value={block.trade_price_minor != null ? (block.trade_price_minor / 100).toString() : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onUpdateBlock(index, {
+                    trade_price_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                  });
+                }}
               />
               <Input
                 type="number"
@@ -574,6 +590,7 @@ function SidesColumn({
     </div>
   );
 }
+
 
 function ParentGroupSummary({
   group,
