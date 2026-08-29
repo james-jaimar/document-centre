@@ -417,7 +417,13 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
               <div className="text-[11px] text-muted-foreground">Reused uploaded PDF — no work needed.</div>
             )}
             {artefacts.assembly_report.reused_cache && (
-              <div className="text-[11px] text-muted-foreground">Served from cache (spec unchanged).</div>
+              <div className="text-[11px] text-muted-foreground">
+                This job's print-ready PDF was already assembled
+                {artefacts.print_ready_assembled_at
+                  ? ` on ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
+                  : ""}
+                , so the same file was returned. Use Force rebuild to re-render it.
+              </div>
             )}
             {!!artefacts.assembly_report.steps?.length && (
               <>
