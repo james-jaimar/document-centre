@@ -259,6 +259,14 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
           generateLabel="Assemble"
         />
+        {artefacts?.print_ready_pdf_path && (
+          <div className="-mt-3 pl-1 text-[10px] text-muted-foreground">
+            {artefacts.print_ready_assembled_at
+              ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
+              : "Assembly timestamp unknown"}
+          </div>
+        )}
+
 
         {/* Multi-component output — printed cover on heavyweight stock is a
             separate physical component from the body text. */}
