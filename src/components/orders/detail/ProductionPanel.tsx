@@ -5,6 +5,8 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
+import { useToast } from "@/hooks/use-toast";
+
 import { useTemplatesForProductFamily } from "@/hooks/useImpositionTemplates";
 import { format } from "date-fns";
 import { sizesMatch, type ResolvedJobSize } from "@/lib/orders/jobSize";
@@ -48,7 +50,9 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   } = useProductionArtefacts(jobId);
   const { data: templates = [], isLoading: loadingTemplates } =
     useTemplatesForProductFamily(productFamilyId);
+  const { toast } = useToast();
   const [openingPath, setOpeningPath] = useState<string | null>(null);
+
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   /** Per-component template overrides (multi-component jobs only). */
   const [componentTemplates, setComponentTemplates] = useState<Record<string, string | null>>({});
@@ -100,13 +104,22 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       const url = await signedUrl(path);
-      if (!url) return;
+      if (!url) {
+        toast({
+          title: "Could not prepare the download",
+          description: "The file could not be signed. Try regenerating the PDF.",
+          variant: "destructive",
+        });
+        return;
+      }
       const filename = filenameFor(suffix);
       let triggered = false;
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: controller.signal });
         if (res.ok) {
           const blob = await res.blob();
           const blobUrl = URL.createObjectURL(blob);
@@ -119,14 +132,28 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
           triggered = true;
         }
-      } catch {
-        // CORS fallback
+      } catch (err) {
+        // Aborted (slow/hung S3 GET) or blocked by CORS — fall back to a tab.
+        if ((err as Error)?.name === "AbortError") {
+          toast({
+            title: "Download is taking too long",
+            description: "Opening the file in a new tab instead.",
+          });
+        }
       }
       if (!triggered) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast({
+        title: "Download failed",
+        description: (e as Error)?.message ?? "Unknown error",
+        variant: "destructive",
+      });
     } finally {
+      clearTimeout(timer);
       setOpeningPath(null);
     }
   };
+
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
   const noTemplatesAssigned = !loadingTemplates && templates.length === 0;
@@ -232,6 +259,14 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
           generateLabel="Assemble"
         />
+        {artefacts?.print_ready_pdf_path && (
+          <div className="-mt-3 pl-1 text-[10px] text-muted-foreground">
+            {artefacts.print_ready_assembled_at
+              ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
+              : "Assembly timestamp unknown"}
+          </div>
+        )}
+
 
         {/* Multi-component output — printed cover on heavyweight stock is a
             separate physical component from the body text. */}
