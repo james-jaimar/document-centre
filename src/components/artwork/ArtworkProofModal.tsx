@@ -3,9 +3,11 @@
  * customer can step through every page before adding to cart.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
+import { buildProofPdf } from "@/lib/artworkTemplates/proofPdf";
 import type { RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import type {
   ArtworkPlaceholder,
