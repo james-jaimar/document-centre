@@ -938,8 +938,15 @@ def assemble_templated_artwork(
 
 
     out_pdf = workspace.path("templated-artwork.pdf")
+    # merge_page copies the layer's resources into each page; collapsing the
+    # identical image/font streams keeps a multi-page job to one copy.
+    try:
+        writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
+    except Exception as exc:  # noqa: BLE001 - optimisation only
+        log.warning("templated_artwork: object de-duplication skipped: %s", exc)
     with open(out_pdf, "wb") as fh:
         writer.write(fh)
+
 
     # Customer PDFs go in last, straight from their originals (vector, with a
     # real PDF transparency group when the opacity is below 100%).
