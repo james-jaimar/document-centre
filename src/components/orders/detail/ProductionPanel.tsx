@@ -332,18 +332,35 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           opening={openingPath === artefacts?.print_ready_pdf_path}
           onGenerate={() => generatePrintReady()}
           onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
-          generateLabel="Assemble"
+          generateLabel={artefacts?.print_ready_pdf_path ? "Re-assemble" : "Assemble"}
         />
         {artefacts?.print_ready_pdf_path && (
-          <div className="-mt-3 pl-1 text-[10px] text-muted-foreground">
-            {artefacts.print_ready_assembled_at
-              ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
-              : "Assembly timestamp unknown"}
-            {sizes[artefacts.print_ready_pdf_path]
-              ? ` · ${formatBytes(sizes[artefacts.print_ready_pdf_path])}`
-              : ""}
+          <div className="-mt-3 pl-1 space-y-0.5 text-[10px] text-muted-foreground">
+            <div>
+              {artefacts.print_ready_assembled_at
+                ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
+                : "Assembly timestamp unknown"}
+              {sizes[artefacts.print_ready_pdf_path]
+                ? ` · ${formatBytes(sizes[artefacts.print_ready_pdf_path])}`
+                : ""}
+            </div>
+            {/* Provenance — makes it obvious the file belongs to THIS job. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground/70">
+                {artefactJobNumber ?? "job file"}
+              </span>
+              {artefacts.print_ready_spec_hash && (
+                <span
+                  className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground/70"
+                  title={`Spec fingerprint for this job: ${artefacts.print_ready_spec_hash}`}
+                >
+                  spec {artefacts.print_ready_spec_hash.slice(0, 8)}
+                </span>
+              )}
+            </div>
           </div>
         )}
+
 
 
 
