@@ -449,10 +449,20 @@ const CustomerOrderDetail = () => {
                         </div>
                       )}
 
+                      {/* Templated / supplied artwork — same proof the admin sees */}
+                      {(config.templated_artwork || config.uploaded_artwork) && (
+                        <ArtworkAdminProof
+                          templatedArtwork={config.templated_artwork}
+                          uploadedArtwork={config.uploaded_artwork}
+                          heading="Your artwork proof"
+                        />
+                      )}
+
                       {/* Photo Prints — visual tile grid (same component as admin) */}
                       {(config.photo_prints || job.product_category === "photo-prints") && (
                         <PhotoPrintsAdminGallery photoPrints={config.photo_prints} />
                       )}
+
 
                       {/* Files for this job — hidden for photo prints (gallery shows them visually) */}
                       {jobDocs.length > 0 && !config.photo_prints && job.product_category !== "photo-prints" && (
