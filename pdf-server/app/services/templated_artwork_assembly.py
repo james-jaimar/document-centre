@@ -855,13 +855,24 @@ def assemble_templated_artwork(
 
         composed = page
 
+        # Placeholder geometry is identical on every page with the same size and
+        # trim origin, so the rendered layer is built once and reused — without
+        # this the customer's photo is re-encoded onto all 12 pages.
+        geo_key = (
+            round(page_w_pt, 2), round(page_h_pt, 2),
+            round(trim_x_pt, 2), round(trim_top_pt, 2),
+        )
+
         # 1. Boxes that sit BEHIND the template artwork.
         if under_defs:
-            under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
-            _render_overlay(
-                under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                under_defs, values, images, vector_ids,
-            )
+            under_path = layer_cache.get(("under", *geo_key))
+            if under_path is None:
+                under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
+                _render_overlay(
+                    under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
+                    under_defs, values, images, vector_ids, jpeg_cache,
+                )
+                layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
 
             base_layer = page
@@ -885,12 +896,16 @@ def assemble_templated_artwork(
 
         # 2. Boxes in front of the template artwork.
         if over_defs:
-            overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
-            _render_overlay(
-                overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                over_defs, values, images, vector_ids,
-            )
+            overlay_path = layer_cache.get(("over", *geo_key))
+            if overlay_path is None:
+                overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
+                _render_overlay(
+                    overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
+                    over_defs, values, images, vector_ids, jpeg_cache,
+                )
+                layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
+
 
         # Belt and braces: whatever branch produced `composed`, the output page
         # must be the supplied page — full media box, with every box copied
