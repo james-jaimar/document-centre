@@ -132,6 +132,11 @@ async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise
   throw lastError ?? new Error(`${label} failed`);
 }
 
+/** Thrown when even a session refresh couldn't restore a usable token. */
+export class StorageSessionError extends Error {
+  readonly name = "StorageSessionError";
+}
+
 /** Convert internal error wording into customer-friendly text, with a ref tag. */
 function userFacingError(action: string, err: unknown, ref: string): Error {
   const inner = err instanceof Error ? err.message : String(err);
@@ -139,6 +144,12 @@ function userFacingError(action: string, err: unknown, ref: string): Error {
   if (isTransient) {
     return new Error(
       `Storage is temporarily unavailable while ${action}. Please try again in a moment. (ref: ${ref})`,
+    );
+  }
+  if (isAuthError(err)) {
+    console.error(`[s3-storage] ${action} failed after session refresh (ref: ${ref}):`, inner);
+    return new StorageSessionError(
+      `Your session expired while ${action}. Please reload the page. (ref: ${ref})`,
     );
   }
   // Permanent errors — keep diagnostic detail in console, surface a clean
