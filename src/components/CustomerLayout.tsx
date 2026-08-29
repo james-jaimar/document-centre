@@ -111,15 +111,20 @@ function CustomerLayoutInner() {
 
   // --- Anonymous session bootstrap ---
   const bootstrapAttempted = useRef(false);
+  // Bumped when a deferred bootstrap becomes eligible again, so the effect
+  // re-runs instead of the page browsing with no session at all.
+  const [bootstrapTick, setBootstrapTick] = useState(0);
 
   useEffect(() => {
     // Only run on tenant portal routes, not /try or /dashboard
     if (!slug || authLoading || bootstrapAttempted.current) return;
 
-    // If the user just signed out, do NOT recreate an anonymous session
+    // If the user just signed out, DEFER (don't latch) — the suppression
+    // window is short, and once it lapses we still need an anonymous session
+    // for signed storage URLs, template previews, uploads, etc.
     if (hasTenantSignOutFlag(slug)) {
-      bootstrapAttempted.current = true;
-      return;
+      const t = setTimeout(() => setBootstrapTick((n) => n + 1), 2000);
+      return () => clearTimeout(t);
     }
 
     // If already signed in (non-anonymous or anonymous), no need to bootstrap
@@ -158,7 +163,7 @@ function CustomerLayoutInner() {
         console.error("Anonymous session bootstrap failed:", e);
       }
     })();
-  }, [slug, user, authLoading]);
+  }, [slug, user, authLoading, bootstrapTick]);
 
 
   // Inject tenant colour + font CSS variables for the print centre
