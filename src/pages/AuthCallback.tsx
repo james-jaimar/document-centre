@@ -136,7 +136,7 @@ const AuthCallback = () => {
         await supabase.auth.signOut();
         if (targetSlug) {
           toast.info("Please sign in via your organisation's portal.");
-          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+          const returnPath = peekReturnPath();
           const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
           navigate(buildTenantPath(targetSlug, branchFromReturn, "auth"), { replace: true });
         } else {
@@ -165,7 +165,7 @@ const AuthCallback = () => {
             <Button
               className="w-full"
               onClick={() => {
-                const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+                const returnPath = peekReturnPath();
                 const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
                 navigate(tenantSlug ? buildTenantPath(tenantSlug, branchFromReturn, "auth") : "/auth", { replace: true });
               }}
