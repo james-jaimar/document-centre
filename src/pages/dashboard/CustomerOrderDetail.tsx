@@ -33,6 +33,8 @@ import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
+import ArtworkAdminProof from "@/components/orders/detail/ArtworkAdminProof";
+
 import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
 import { useBranch } from "@/contexts/BranchContext";
 import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
