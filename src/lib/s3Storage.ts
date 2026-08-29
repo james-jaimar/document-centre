@@ -321,24 +321,33 @@ export async function downloadFromS3(objectPath: string): Promise<Blob> {
   try {
     return await withRetry(
       async () => {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) throw new Error("No active session");
+        const attempt = async (token: string) => {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              apikey: SUPABASE_PUBLISHABLE_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action: "download", object_path: objectPath }),
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(`download failed [${res.status}]: ${text}`);
+          }
+          return await res.blob();
+        };
 
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_PUBLISHABLE_KEY,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ action: "download", object_path: objectPath }),
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`download failed [${res.status}]: ${text}`);
+        const token = await ensureSession();
+        if (!token) throw new Error("No active session");
+        try {
+          return await attempt(token);
+        } catch (err) {
+          if (!looksUnauthorised(err)) throw err;
+          const fresh = await ensureSession();
+          if (!fresh || fresh === token) throw err;
+          return await attempt(fresh);
         }
-        return await res.blob();
       },
       { label: "download" },
     );
