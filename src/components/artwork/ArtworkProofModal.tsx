@@ -143,6 +143,7 @@ export default function ArtworkProofModal({
               {generating ? "Preparing…" : "Download PDF proof"}
             </Button>
             <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close proof">
+              <X className="h-4 w-4" />
 
             </Button>
           </div>
