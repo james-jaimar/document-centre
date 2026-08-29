@@ -3,9 +3,11 @@
  * customer can step through every page before adding to cart.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
+import { buildProofPdf } from "@/lib/artworkTemplates/proofPdf";
 import type { RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import type {
   ArtworkPlaceholder,
@@ -40,7 +42,31 @@ export default function ArtworkProofModal({
   title,
 }: Props) {
   const [index, setIndex] = useState(initialPage);
+  const [generating, setGenerating] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const handleDownloadProof = useCallback(async () => {
+    if (!pages.length || generating) return;
+    setGenerating(true);
+    try {
+      const { doc, fileName } = await buildProofPdf({
+        pages,
+        pageImages,
+        placedImages,
+        placeholders,
+        values,
+        trimWidthMm,
+        title,
+      });
+      doc.save(fileName);
+    } catch (e) {
+      console.error("[proof-pdf] failed", e);
+      toast.error("Could not generate the PDF proof. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }, [pages, pageImages, placedImages, placeholders, values, trimWidthMm, title, generating]);
+
 
   useEffect(() => {
     if (open) setIndex(Math.min(initialPage, Math.max(pages.length - 1, 0)));
@@ -102,8 +128,23 @@ export default function ArtworkProofModal({
             <span className="text-xs text-muted-foreground">
               Page {index + 1} of {pages.length || 1}
             </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={handleDownloadProof}
+              disabled={generating || pages.length === 0}
+            >
+              {generating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {generating ? "Preparing…" : "Download PDF proof"}
+            </Button>
             <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close proof">
               <X className="h-4 w-4" />
+
             </Button>
           </div>
         </div>
