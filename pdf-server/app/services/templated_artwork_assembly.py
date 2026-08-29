@@ -290,6 +290,40 @@ def _image_draw_rect(
 
 
 # ---------------------------------------------------------------------------
+# Raster encoding
+# ---------------------------------------------------------------------------
+# Anything beyond 300 dpi at the *placed* size is invisible on press and only
+# inflates the artefact — a 12-page calendar was shipping at 279 MB because the
+# full-resolution camera original was re-encoded onto every page.
+MAX_PLACED_DPI = 300
+
+
+def _encoded_jpeg(
+    img: Image.Image,
+    pid: str,
+    draw_w_pt: float,
+    draw_h_pt: float,
+    cache: dict[tuple[str, int, int], bytes],
+) -> bytes:
+    """CMYK JPEG bytes for this image at the placed size, encoded once."""
+    target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
+    target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
+    key = (pid, target_w, target_h)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    src = img
+    if src.width > target_w or src.height > target_h:
+        src = src.copy()
+        src.thumbnail((target_w, target_h), Image.LANCZOS)
+    buf = io.BytesIO()
+    _to_cmyk(src).save(buf, format="JPEG", quality=92, optimize=True)
+    data = buf.getvalue()
+    cache[key] = data
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Overlay rendering
 # ---------------------------------------------------------------------------
 def _render_overlay(
@@ -302,7 +336,9 @@ def _render_overlay(
     values: dict[str, dict[str, Any]],
     images: dict[str, Image.Image],
     skip_ids: set[str] | None = None,
+    jpeg_cache: dict[tuple[str, int, int], bytes] | None = None,
 ) -> None:
+
     """Draw every placeholder onto a transparent single-page PDF that is
     later merged over the base template page.
 
