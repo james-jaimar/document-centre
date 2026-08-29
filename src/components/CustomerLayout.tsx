@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
-import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
+import { hasTenantSignOutFlag, clearTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
