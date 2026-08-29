@@ -172,7 +172,41 @@ Deno.serve(async (req) => {
       return json({ url: data.url, expires_in: data.expires_in, method: data.method });
     }
 
+    // Object metadata (size / content-type) without downloading the body.
+    // Used by the admin download UI to decide between an in-memory blob
+    // download and streaming the presigned URL straight to disk.
+    if (action === "stat") {
+      const { object_paths } = body;
+      if (!Array.isArray(object_paths) || object_paths.length === 0) {
+        return json({ error: "object_paths array required" }, 400);
+      }
+      const sizes: Record<string, number | null> = {};
+      await Promise.all(
+        object_paths.map(async (path: string) => {
+          try {
+            const res = await resilientFetch(
+              `${GATEWAY_URL}/aws_s3/${path.replace(/^\/+/, "")}`,
+              { method: "HEAD", headers: gatewayHeaders },
+              { label: `stat(${path})`, maxRetries: 2 },
+            );
+            if (!res.ok) {
+              console.error(`[s3-storage] stat ${path} [${res.status}]`);
+              sizes[path] = null;
+              return;
+            }
+            const len = res.headers.get("content-length");
+            sizes[path] = len ? Number(len) : null;
+          } catch (err) {
+            console.error(`[s3-storage] stat ${path} threw:`, err);
+            sizes[path] = null;
+          }
+        }),
+      );
+      return json({ sizes });
+    }
+
     if (action === "sign-download") {
+
       const { object_paths } = body;
       if (!Array.isArray(object_paths) || object_paths.length === 0) {
         return json({ error: "object_paths array required" }, 400);
