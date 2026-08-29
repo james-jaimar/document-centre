@@ -339,8 +339,12 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
             {artefacts.print_ready_assembled_at
               ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
               : "Assembly timestamp unknown"}
+            {sizes[artefacts.print_ready_pdf_path]
+              ? ` · ${formatBytes(sizes[artefacts.print_ready_pdf_path])}`
+              : ""}
           </div>
         )}
+
 
 
         {/* Multi-component output — printed cover on heavyweight stock is a
