@@ -107,8 +107,9 @@ const AuthCallback = () => {
           toast.success("Signed in");
 
           // Return to the page the user was on before OAuth (e.g. checkout/cart)
-          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
-          localStorage.removeItem(RETURN_PATH_KEY);
+          const stored = takeReturnPath();
+          const nextParam = params.get("next");
+          const returnPath = isSafeReturnPath(nextParam) ? nextParam : stored;
           // Recover branch from returnPath so post-login lands on /t/:slug/:branchSlug/...
           const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
           const destination = returnPath && returnPath.startsWith(`/t/${tenantSlug}`)
