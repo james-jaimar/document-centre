@@ -131,7 +131,13 @@ export function useProductionArtefacts(jobId: string | null) {
       const after = (row as any)?.print_ready_assembled_at ?? null;
       qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
 
-      if (after && after !== before) {
+      if ((data as any)?.reused_cache) {
+        toast({
+          title: "Existing PDF reused",
+          description:
+            "The job spec hasn't changed, so the PDF server returned the previously assembled file. Use Force rebuild to re-assemble.",
+        });
+      } else if (after && after !== before) {
         toast({ title: "Print-ready PDF generated", description: "Available for download below." });
       } else {
         toast({
@@ -140,6 +146,7 @@ export function useProductionArtefacts(jobId: string | null) {
             "The PDF server hasn't finished yet — the download below is still the previous version. Refresh in a moment.",
         });
       }
+
     } catch (e: any) {
       toast({
         title: "Could not generate print-ready PDF",
