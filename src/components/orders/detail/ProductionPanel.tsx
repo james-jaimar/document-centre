@@ -29,6 +29,18 @@ function safeFilenamePart(s: string | null | undefined, fallback: string): strin
   return v || fallback;
 }
 
+/** Human-readable byte size, e.g. "279 MB". */
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+
 type Tone = "primary" | "success" | "warning";
 
 const TONE_ICON_BG: Record<Tone, string> = {
