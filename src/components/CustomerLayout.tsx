@@ -163,7 +163,7 @@ function CustomerLayoutInner() {
         console.error("Anonymous session bootstrap failed:", e);
       }
     })();
-  }, [slug, user, authLoading]);
+  }, [slug, user, authLoading, bootstrapTick]);
 
 
   // Inject tenant colour + font CSS variables for the print centre
