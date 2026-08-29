@@ -113,14 +113,33 @@ export function useProductionArtefacts(jobId: string | null) {
   const generatePrintReady = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
     setGenerating("print_ready");
+    const before = query.data?.print_ready_assembled_at ?? null;
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
         body: { action: "assemble", job_id: jobId, force: !!opts?.force },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      toast({ title: "Print-ready PDF generated", description: "Available for download below." });
+
+      // Confirm the worker actually wrote a new artefact — a slow assemble
+      // returns ok while the job row still points at the previous PDF.
+      const { data: row } = await supabase
+        .from("order_jobs")
+        .select("print_ready_assembled_at")
+        .eq("id", jobId)
+        .maybeSingle();
+      const after = (row as any)?.print_ready_assembled_at ?? null;
       qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
+
+      if (after && after !== before) {
+        toast({ title: "Print-ready PDF generated", description: "Available for download below." });
+      } else {
+        toast({
+          title: "Still generating",
+          description:
+            "The PDF server hasn't finished yet — the download below is still the previous version. Refresh in a moment.",
+        });
+      }
     } catch (e: any) {
       toast({
         title: "Could not generate print-ready PDF",
@@ -130,7 +149,8 @@ export function useProductionArtefacts(jobId: string | null) {
     } finally {
       setGenerating(null);
     }
-  }, [jobId, qc, toast]);
+  }, [jobId, qc, toast, query.data?.print_ready_assembled_at]);
+
 
   const generateImposition = useCallback(async (
     impositionTemplateId?: string | null,
