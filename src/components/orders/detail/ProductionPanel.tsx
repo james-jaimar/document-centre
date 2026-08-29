@@ -5,6 +5,8 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
+import { getObjectSizes } from "@/lib/s3Storage";
+
 import { useToast } from "@/hooks/use-toast";
 
 import { useTemplatesForProductFamily } from "@/hooks/useImpositionTemplates";
