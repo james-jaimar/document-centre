@@ -80,6 +80,18 @@ function CustomerLayoutInner() {
   );
   const chromeless = storefrontMode || editorMode;
 
+  // The portal sidebar is an *account* navigation surface: it only belongs to
+  // signed-in customers looking at their orders/quotes/account. It must never
+  // appear for anonymous visitors, nor on the shop, landing page or cart.
+  const accountArea = useMemo(() => {
+    const rest = slug ? pathname.replace(new RegExp(`^/t/${slug}`), "") : pathname;
+    const path = rest.replace(/^\//, "").replace(/\/$/, "");
+    return /^(orders|quotes|account|invoices|addresses|documents)(\/|$)/.test(path);
+  }, [pathname, slug]);
+  const isAnon = isAnonymousUser(user);
+  const showSidebar = !chromeless && !!user && !isAnon && accountArea;
+
+
   useTenantGA(integrations.ga_property_id as string | undefined);
 
   // True once both the tenant lookup AND branding fetch have settled. When a
