@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
-import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
+import { hasTenantSignOutFlag, clearTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -79,6 +79,18 @@ function CustomerLayoutInner() {
     [pathname],
   );
   const chromeless = storefrontMode || editorMode;
+
+  // The portal sidebar is an *account* navigation surface: it only belongs to
+  // signed-in customers looking at their orders/quotes/account. It must never
+  // appear for anonymous visitors, nor on the shop, landing page or cart.
+  const accountArea = useMemo(() => {
+    const rest = slug ? pathname.replace(new RegExp(`^/t/${slug}`), "") : pathname;
+    const path = rest.replace(/^\//, "").replace(/\/$/, "");
+    return /^(orders|quotes|account|invoices|addresses|documents)(\/|$)/.test(path);
+  }, [pathname, slug]);
+  const isAnon = isAnonymousUser(user);
+  const showSidebar = !chromeless && !!user && !isAnon && accountArea;
+
 
   useTenantGA(integrations.ga_property_id as string | undefined);
 
@@ -224,17 +236,19 @@ function CustomerLayoutInner() {
 
       {/* Sidebar + main content row */}
       <div className="flex flex-1 w-full min-h-0">
-        {/* Desktop sidebar — animated collapse */}
-        <div
-          className={`${chromeless ? "hidden" : "hidden lg:flex"} transition-all duration-300 ease-in-out overflow-hidden ${
-            collapsed ? "w-0" : "w-64"
-          } ${brandingReady ? "opacity-100" : "opacity-0"}`}
-        >
-          <CustomerSidebar />
-        </div>
+        {/* Desktop sidebar — account areas only, signed-in customers only */}
+        {showSidebar && (
+          <div
+            className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+              collapsed ? "w-0" : "w-64"
+            } ${brandingReady ? "opacity-100" : "opacity-0"}`}
+          >
+            <CustomerSidebar />
+          </div>
+        )}
 
         {/* Collapse toggle tab — visible when sidebar is collapsed */}
-        {collapsed && !chromeless && (
+        {showSidebar && collapsed && (
           <button
             onClick={toggle}
             className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
@@ -243,6 +257,7 @@ function CustomerLayoutInner() {
             <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-foreground transition-colors" />
           </button>
         )}
+
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Content */}
