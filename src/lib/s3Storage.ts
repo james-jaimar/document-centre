@@ -302,28 +302,32 @@ export async function getObjectSizes(
 export async function downloadFromS3(objectPath: string): Promise<Blob> {
   const ref = newRefId();
   try {
-    return await withRetry(
-      async () => {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) throw new Error("No active session");
+    return await withAuthRecovery(
+      () =>
+        withRetry(
+          async () => {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token;
+            if (!token) throw new Error("No active session");
 
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_PUBLISHABLE_KEY,
-            "Content-Type": "application/json",
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                apikey: SUPABASE_PUBLISHABLE_KEY,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ action: "download", object_path: objectPath }),
+            });
+            if (!res.ok) {
+              const text = await res.text().catch(() => "");
+              throw new Error(`download failed [${res.status}]: ${text}`);
+            }
+            return await res.blob();
           },
-          body: JSON.stringify({ action: "download", object_path: objectPath }),
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`download failed [${res.status}]: ${text}`);
-        }
-        return await res.blob();
-      },
-      { label: "download" },
+          { label: "download" },
+        ),
+      "download",
     );
   } catch (err) {
     throw userFacingError("loading previews", err, ref);
