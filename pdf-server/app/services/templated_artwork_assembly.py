@@ -734,6 +734,10 @@ def assemble_templated_artwork(
     placements: list[dict[str, Any]] = []
     knocked_out = False
     base_geometry: dict[str, Any] = {}
+    # Encode each placed raster once, and render each distinct page layer once.
+    jpeg_cache: dict[tuple[str, int, int], bytes] = {}
+    layer_cache: dict[tuple[Any, ...], Path] = {}
+
 
 
     writer = PdfWriter()
