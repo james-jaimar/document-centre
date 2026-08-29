@@ -158,6 +158,7 @@ Deno.serve(async (req) => {
     // Poll up to 90s
     let storagePath: string | null = null;
     let lastError: string | null = null;
+    let reusedCache = false;
     for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       const statusRes = await fetch(`${apiUrl}/v1/jobs/${pdfJobId}`, {
@@ -167,6 +168,7 @@ Deno.serve(async (req) => {
       const statusData = await statusRes.json();
       if (statusData.status === "completed") {
         storagePath = statusData.result?.storage_path ?? null;
+        reusedCache = !!statusData.result?.reused_cache;
         break;
       }
       if (statusData.status === "failed") {
@@ -189,7 +191,14 @@ Deno.serve(async (req) => {
         .eq("id", job_id);
     }
 
-    return json({ ok: true, path: storagePath, action, component: component ?? null });
+    return json({
+      ok: true,
+      path: storagePath,
+      action,
+      component: component ?? null,
+      reused_cache: reusedCache,
+    });
+
   } catch (e) {
     console.error("[production-pdf] error", e);
     return json({ error: (e as Error).message ?? "Internal error" }, 500);
