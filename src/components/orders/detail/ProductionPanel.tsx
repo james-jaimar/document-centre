@@ -101,11 +101,19 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     return `${order}-${job}-${suffix}.pdf`;
   };
 
+  /**
+   * Large artefacts (print-ready PDFs are routinely hundreds of MB) must never
+   * be buffered into a Blob — that stalls the tab and blows memory. For those
+   * we hand the presigned URL to the browser's own downloader via a hidden
+   * anchor, which streams straight to disk and never trips the pop-up blocker.
+   */
+  const BLOB_DOWNLOAD_LIMIT = 25 * 1024 * 1024;
+
   const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    const timer = setTimeout(() => controller.abort(), 120_000);
     try {
       const url = await signedUrl(path);
       if (!url) {
@@ -117,6 +125,28 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
         return;
       }
       const filename = filenameFor(suffix);
+      const knownSize = sizes[path];
+      const big = knownSize == null ? false : knownSize > BLOB_DOWNLOAD_LIMIT;
+
+      const streamToDisk = () => {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+
+      if (big) {
+        toast({
+          title: "Download started",
+          description: `${filename} (${formatBytes(knownSize)}) — this is a large file, check your browser downloads.`,
+        });
+        streamToDisk();
+        return;
+      }
+
       let triggered = false;
       try {
         const res = await fetch(url, { signal: controller.signal });
@@ -133,15 +163,15 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           triggered = true;
         }
       } catch (err) {
-        // Aborted (slow/hung S3 GET) or blocked by CORS — fall back to a tab.
+        // Aborted (slow/hung S3 GET) or blocked by CORS — stream instead.
         if ((err as Error)?.name === "AbortError") {
           toast({
             title: "Download is taking too long",
-            description: "Opening the file in a new tab instead.",
+            description: "Handing it to the browser downloader instead.",
           });
         }
       }
-      if (!triggered) window.open(url, "_blank", "noopener,noreferrer");
+      if (!triggered) streamToDisk();
     } catch (e) {
       toast({
         title: "Download failed",
@@ -153,6 +183,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
       setOpeningPath(null);
     }
   };
+
 
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
