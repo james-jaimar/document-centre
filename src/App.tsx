@@ -595,6 +595,7 @@ const App = () => (
         <GAPageViewTracker />
         <SubdomainWrapper>
           <AuthProvider>
+            <OAuthReturnRedirect />
             <TenantProvider>
               <ImpersonationProvider>
                 <AppRoutes />
