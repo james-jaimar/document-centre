@@ -9,7 +9,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
-import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -110,60 +109,48 @@ function CustomerLayoutInner() {
   }, [branding?.favicon_url]);
 
   // --- Anonymous session bootstrap ---
-  const bootstrapAttempted = useRef(false);
-  // Bumped when a deferred bootstrap becomes eligible again, so the effect
-  // re-runs instead of the page browsing with no session at all.
-  const [bootstrapTick, setBootstrapTick] = useState(0);
+  const bootstrapInFlight = useRef(false);
+  const [bootstrapComplete, setBootstrapComplete] = useState(false);
 
   useEffect(() => {
-    // Only run on tenant portal routes, not /try or /dashboard
-    if (!slug || authLoading || bootstrapAttempted.current) return;
+    if (!slug || authLoading) return;
 
-    // If the user just signed out, DEFER (don't latch) — the suppression
-    // window is short, and once it lapses we still need an anonymous session
-    // for signed storage URLs, template previews, uploads, etc.
-    if (hasTenantSignOutFlag(slug)) {
-      const t = setTimeout(() => setBootstrapTick((n) => n + 1), 2000);
-      return () => clearTimeout(t);
-    }
-
-    // If already signed in (non-anonymous or anonymous), no need to bootstrap
     if (user) {
-      bootstrapAttempted.current = true;
-      // Clear any stale sign-out flag since user is actively signed in
-      clearTenantSignOutFlag(slug);
+      if (!bootstrapInFlight.current) setBootstrapComplete(true);
       return;
     }
 
-    bootstrapAttempted.current = true;
+    setBootstrapComplete(false);
+    if (bootstrapInFlight.current) return;
+    bootstrapInFlight.current = true;
 
     (async () => {
       try {
-        // Check for existing session first
         const { data: { session: existing } } = await supabase.auth.getSession();
         if (existing?.user) {
-          // Already have a session — call tenant-bootstrap as fallback
           await supabase.functions.invoke("tenant-bootstrap", {
             body: { tenant_slug: slug },
           }).catch(() => null);
+          setBootstrapComplete(true);
           return;
         }
 
-        // Create anonymous session scoped to this tenant
         const { error: signInErr } = await supabase.auth.signInAnonymously({
           options: { data: { tenant_slug: slug } },
         });
         if (signInErr) throw signInErr;
 
-        // Belt-and-braces: ensure membership via edge function
         await supabase.functions.invoke("tenant-bootstrap", {
           body: { tenant_slug: slug },
         }).catch((e) => console.warn("tenant-bootstrap warning:", e));
-      } catch (e: any) {
+        setBootstrapComplete(true);
+      } catch (e: unknown) {
         console.error("Anonymous session bootstrap failed:", e);
+      } finally {
+        bootstrapInFlight.current = false;
       }
     })();
-  }, [slug, user, authLoading, bootstrapTick]);
+  }, [slug, user, authLoading]);
 
 
   // Inject tenant colour + font CSS variables for the print centre
@@ -183,7 +170,9 @@ function CustomerLayoutInner() {
 
   // Branded splash while tenant CSS variables / logo are still loading,
   // so customers never see the default Document Centre theme flash.
-  if (!brandingReady) {
+  const sessionReady = !slug || (!authLoading && !!user && bootstrapComplete);
+
+  if (!brandingReady || !sessionReady) {
     const splashLogo = tenant?.logo_url || null;
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">

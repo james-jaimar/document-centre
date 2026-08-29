@@ -107,90 +107,23 @@ function userFacingError(action: string, err: unknown, ref: string): Error {
   return new Error(`Couldn't ${action}. Please try again. (ref: ${ref})`);
 }
 
-// ── Session self-healing ────────────────────────────────────────────
-//
-// The s3-storage edge function requires a Supabase user (anonymous users
-// count). Storefront visitors normally get an anonymous session from
-// CustomerLayout, but if that ever hasn't happened yet — or the session
-// expired mid-session — every signing call would 401 and the customer would
-// see red toasts. Recover in place by minting an anonymous session once.
-
-/** Tenant slug from the URL, so the anonymous user is tagged correctly. */
-function currentTenantSlug(): string | null {
-  if (typeof window === "undefined") return null;
-  const m = window.location.pathname.match(/^\/t\/([^/]+)/);
-  return m ? m[1] : null;
-}
-
-let anonSignInPromise: Promise<boolean> | null = null;
-
-/** Ensure there's an access token; mint an anonymous session if not. */
-async function ensureSession(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (token) return token;
-
-  if (!anonSignInPromise) {
-    const slug = currentTenantSlug();
-    anonSignInPromise = supabase.auth
-      .signInAnonymously(slug ? { options: { data: { tenant_slug: slug } } } : undefined)
-      .then(({ error }) => {
-        if (error) {
-          console.warn("[s3-storage] anonymous sign-in failed:", error.message);
-          return false;
-        }
-        return true;
-      })
-      .catch(() => false)
-      .finally(() => {
-        // Allow a fresh attempt later (e.g. after a network blip).
-        setTimeout(() => {
-          anonSignInPromise = null;
-        }, 5000);
-      });
-  }
-  await anonSignInPromise;
-  const { data: after } = await supabase.auth.getSession();
-  return after.session?.access_token ?? null;
-}
-
-function looksUnauthorised(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err ?? "");
-  return /\[401\]|401|Unauthorized|No active session/i.test(msg);
-}
-
 // ── Edge-function plumbing ──────────────────────────────────────────
-
-async function invokeOnce(body: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke("s3-storage", { body });
-  if (error) {
-    // supabase.functions.invoke wraps non-2xx responses + network errors.
-    // Re-throw so withRetry can classify (most are transient).
-    throw new Error(`storage call failed: ${error.message}`);
-  }
-  if (data?.error) {
-    // The function returned 200 with a body { error }. Treat platform-style
-    // strings as transient so we keep retrying through Supabase hiccups.
-    throw new Error(data.error);
-  }
-  return data;
-}
 
 async function callS3Function(body: Record<string, unknown>) {
   return withRetry(
     async () => {
-      // Make sure we're carrying a user token before we even ask.
-      await ensureSession();
-      try {
-        return await invokeOnce(body);
-      } catch (err) {
-        if (!looksUnauthorised(err)) throw err;
-        // Session went stale between the check and the call — mint one and
-        // retry exactly once before surfacing anything to the customer.
-        const token = await ensureSession();
-        if (!token) throw err;
-        return await invokeOnce(body);
+      const { data, error } = await supabase.functions.invoke("s3-storage", { body });
+      if (error) {
+        // supabase.functions.invoke wraps non-2xx responses + network errors.
+        // Re-throw so withRetry can classify (most are transient).
+        throw new Error(`storage call failed: ${error.message}`);
       }
+      if (data?.error) {
+        // The function returned 200 with a body { error }. Treat platform-style
+        // strings as transient so we keep retrying through Supabase hiccups.
+        throw new Error(data.error);
+      }
+      return data;
     },
     { label: `invoke(${body.action ?? "?"})` },
   );
@@ -321,33 +254,24 @@ export async function downloadFromS3(objectPath: string): Promise<Blob> {
   try {
     return await withRetry(
       async () => {
-        const attempt = async (token: string) => {
-          const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              apikey: SUPABASE_PUBLISHABLE_KEY,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ action: "download", object_path: objectPath }),
-          });
-          if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`download failed [${res.status}]: ${text}`);
-          }
-          return await res.blob();
-        };
-
-        const token = await ensureSession();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
         if (!token) throw new Error("No active session");
-        try {
-          return await attempt(token);
-        } catch (err) {
-          if (!looksUnauthorised(err)) throw err;
-          const fresh = await ensureSession();
-          if (!fresh || fresh === token) throw err;
-          return await attempt(fresh);
+
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_PUBLISHABLE_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "download", object_path: objectPath }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`download failed [${res.status}]: ${text}`);
         }
+        return await res.blob();
       },
       { label: "download" },
     );

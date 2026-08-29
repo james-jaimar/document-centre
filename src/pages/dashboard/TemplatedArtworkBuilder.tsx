@@ -230,11 +230,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (!cancelled) setPages(rendered);
       } catch (err) {
         console.error("[templated-artwork] template render failed", err);
-        if (!cancelled) {
-          toast.error("Couldn't load this layout — your session may have expired.", {
-            action: { label: "Reload", onClick: () => window.location.reload() },
-          });
-        }
+        if (!cancelled) toast.error("Could not load this layout. Please try another.");
       } finally {
         if (!cancelled) setPagesLoading(false);
       }
