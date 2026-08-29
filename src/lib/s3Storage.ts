@@ -56,6 +56,46 @@ function isTransientError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Heuristic: did this failure come from an expired / not-yet-refreshed access
+ * token rather than a real permission problem?
+ *
+ * A tab left open past token expiry fires its next storage request with a dead
+ * JWT, so `s3-storage` (which validates via `supabase.auth.getUser()`) replies
+ * 401. That is recoverable — refresh the session and try again once.
+ */
+function isAuthError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/No active session/i.test(msg)) return true;
+  if (/\[(401|403)\]/.test(msg)) return true;
+  if (/Unauthorized|invalid claim|JWT expired|token is expired|bad_jwt/i.test(msg)) return true;
+  return false;
+}
+
+/**
+ * Run a storage operation; if it fails purely because the access token was
+ * stale, refresh the session once and retry. Never creates a user — session
+ * ownership stays with CustomerLayout.
+ */
+async function withAuthRecovery<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isAuthError(err)) throw err;
+    console.warn(
+      `[s3-storage] ${label} hit an auth failure, refreshing session and retrying once:`,
+      err instanceof Error ? err.message : err,
+    );
+    const { data, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr || !data.session?.access_token) {
+      console.warn("[s3-storage] session refresh failed", refreshErr?.message);
+      throw err;
+    }
+    return await fn();
+  }
+}
+
 /** Short opaque ref id (8 chars) included in user-facing errors for log lookup. */
 function newRefId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -92,6 +132,11 @@ async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise
   throw lastError ?? new Error(`${label} failed`);
 }
 
+/** Thrown when even a session refresh couldn't restore a usable token. */
+export class StorageSessionError extends Error {
+  readonly name = "StorageSessionError";
+}
+
 /** Convert internal error wording into customer-friendly text, with a ref tag. */
 function userFacingError(action: string, err: unknown, ref: string): Error {
   const inner = err instanceof Error ? err.message : String(err);
@@ -99,6 +144,12 @@ function userFacingError(action: string, err: unknown, ref: string): Error {
   if (isTransient) {
     return new Error(
       `Storage is temporarily unavailable while ${action}. Please try again in a moment. (ref: ${ref})`,
+    );
+  }
+  if (isAuthError(err)) {
+    console.error(`[s3-storage] ${action} failed after session refresh (ref: ${ref}):`, inner);
+    return new StorageSessionError(
+      `Your session expired while ${action}. Please reload the page. (ref: ${ref})`,
     );
   }
   // Permanent errors — keep diagnostic detail in console, surface a clean
@@ -110,22 +161,32 @@ function userFacingError(action: string, err: unknown, ref: string): Error {
 // ── Edge-function plumbing ──────────────────────────────────────────
 
 async function callS3Function(body: Record<string, unknown>) {
-  return withRetry(
-    async () => {
-      const { data, error } = await supabase.functions.invoke("s3-storage", { body });
-      if (error) {
-        // supabase.functions.invoke wraps non-2xx responses + network errors.
-        // Re-throw so withRetry can classify (most are transient).
-        throw new Error(`storage call failed: ${error.message}`);
-      }
-      if (data?.error) {
-        // The function returned 200 with a body { error }. Treat platform-style
-        // strings as transient so we keep retrying through Supabase hiccups.
-        throw new Error(data.error);
-      }
-      return data;
-    },
-    { label: `invoke(${body.action ?? "?"})` },
+  return withAuthRecovery(
+    () =>
+      withRetry(
+        async () => {
+          const { data, error } = await supabase.functions.invoke("s3-storage", { body });
+          if (error) {
+            // supabase.functions.invoke wraps non-2xx responses + network errors.
+            // Surface the HTTP status when we have it so the auth-recovery and
+            // transient classifiers can both see it.
+            const status = (error as { context?: { status?: number } })?.context?.status;
+            throw new Error(
+              status
+                ? `storage call failed [${status}]: ${error.message}`
+                : `storage call failed: ${error.message}`,
+            );
+          }
+          if (data?.error) {
+            // The function returned 200 with a body { error }. Treat platform-style
+            // strings as transient so we keep retrying through Supabase hiccups.
+            throw new Error(data.error);
+          }
+          return data;
+        },
+        { label: `invoke(${body.action ?? "?"})` },
+      ),
+    `invoke(${body.action ?? "?"})`,
   );
 }
 
@@ -252,28 +313,32 @@ export async function getObjectSizes(
 export async function downloadFromS3(objectPath: string): Promise<Blob> {
   const ref = newRefId();
   try {
-    return await withRetry(
-      async () => {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) throw new Error("No active session");
+    return await withAuthRecovery(
+      () =>
+        withRetry(
+          async () => {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token;
+            if (!token) throw new Error("No active session");
 
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_PUBLISHABLE_KEY,
-            "Content-Type": "application/json",
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/s3-storage`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                apikey: SUPABASE_PUBLISHABLE_KEY,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ action: "download", object_path: objectPath }),
+            });
+            if (!res.ok) {
+              const text = await res.text().catch(() => "");
+              throw new Error(`download failed [${res.status}]: ${text}`);
+            }
+            return await res.blob();
           },
-          body: JSON.stringify({ action: "download", object_path: objectPath }),
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`download failed [${res.status}]: ${text}`);
-        }
-        return await res.blob();
-      },
-      { label: "download" },
+          { label: "download" },
+        ),
+      "download",
     );
   } catch (err) {
     throw userFacingError("loading previews", err, ref);

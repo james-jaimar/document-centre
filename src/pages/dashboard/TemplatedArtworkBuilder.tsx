@@ -230,7 +230,16 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (!cancelled) setPages(rendered);
       } catch (err) {
         console.error("[templated-artwork] template render failed", err);
-        if (!cancelled) toast.error("Could not load this layout. Please try another.");
+        if (!cancelled) {
+          if ((err as Error)?.name === "StorageSessionError") {
+            toast.error("Your session timed out. Reload to continue.", {
+              action: { label: "Reload", onClick: () => window.location.reload() },
+              duration: 10000,
+            });
+          } else {
+            toast.error("Could not load this layout. Please try another.");
+          }
+        }
       } finally {
         if (!cancelled) setPagesLoading(false);
       }
