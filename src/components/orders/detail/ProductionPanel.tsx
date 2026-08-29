@@ -81,6 +81,16 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const jobW = Number(jobTarget?.width_mm) || Number(jobSize?.width_mm) || 0;
   const jobH = Number(jobTarget?.height_mm) || Number(jobSize?.height_mm) || 0;
 
+  // The print-ready path embeds the job number it was built for
+  // (production/print-ready/<job-number>/…) — surface it so a cache hit can
+  // never be mistaken for another order's file.
+  const artefactJobNumber = (() => {
+    const p = artefacts?.print_ready_pdf_path ?? "";
+    const m = p.match(/print-ready\/([^/]+)\//);
+    return m?.[1] ?? jobNumber ?? null;
+  })();
+
+
 
   useEffect(() => {
     if (artefacts?.imposition_template_id) {
@@ -332,18 +342,35 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           opening={openingPath === artefacts?.print_ready_pdf_path}
           onGenerate={() => generatePrintReady()}
           onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
-          generateLabel="Assemble"
+          generateLabel={artefacts?.print_ready_pdf_path ? "Re-assemble" : "Assemble"}
         />
         {artefacts?.print_ready_pdf_path && (
-          <div className="-mt-3 pl-1 text-[10px] text-muted-foreground">
-            {artefacts.print_ready_assembled_at
-              ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
-              : "Assembly timestamp unknown"}
-            {sizes[artefacts.print_ready_pdf_path]
-              ? ` · ${formatBytes(sizes[artefacts.print_ready_pdf_path])}`
-              : ""}
+          <div className="-mt-3 pl-1 space-y-0.5 text-[10px] text-muted-foreground">
+            <div>
+              {artefacts.print_ready_assembled_at
+                ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
+                : "Assembly timestamp unknown"}
+              {sizes[artefacts.print_ready_pdf_path]
+                ? ` · ${formatBytes(sizes[artefacts.print_ready_pdf_path])}`
+                : ""}
+            </div>
+            {/* Provenance — makes it obvious the file belongs to THIS job. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground/70">
+                {artefactJobNumber ?? "job file"}
+              </span>
+              {artefacts.print_ready_spec_hash && (
+                <span
+                  className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground/70"
+                  title={`Spec fingerprint for this job: ${artefacts.print_ready_spec_hash}`}
+                >
+                  spec {artefacts.print_ready_spec_hash.slice(0, 8)}
+                </span>
+              )}
+            </div>
           </div>
         )}
+
 
 
 
@@ -390,7 +417,13 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
               <div className="text-[11px] text-muted-foreground">Reused uploaded PDF — no work needed.</div>
             )}
             {artefacts.assembly_report.reused_cache && (
-              <div className="text-[11px] text-muted-foreground">Served from cache (spec unchanged).</div>
+              <div className="text-[11px] text-muted-foreground">
+                This job's print-ready PDF was already assembled
+                {artefacts.print_ready_assembled_at
+                  ? ` on ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
+                  : ""}
+                , so the same file was returned. Use Force rebuild to re-render it.
+              </div>
             )}
             {!!artefacts.assembly_report.steps?.length && (
               <>
