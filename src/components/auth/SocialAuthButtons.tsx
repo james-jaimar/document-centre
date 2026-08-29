@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { rememberReturnPath, isSafeReturnPath } from "@/lib/auth/oauthReturn";
 
 type Provider = "google";
 
