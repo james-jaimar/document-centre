@@ -6,7 +6,7 @@ import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } f
 import { buildAdminPath } from "@/lib/adminRouting";
 import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 
-const RETURN_PATH_KEY = "dc_return_path";
+import { takeReturnPath, peekReturnPath, isSafeReturnPath } from "@/lib/auth/oauthReturn";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
