@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronDown, ChevronUp, FolderTree, Plus, Trash2 } from "lucide-react";
+import { HeroImageUpload } from "@/components/admin/ProductFamilyForm";
 import { toast } from "sonner";
 
 const slugify = (t: string) =>
