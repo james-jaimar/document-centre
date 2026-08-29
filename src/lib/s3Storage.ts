@@ -150,22 +150,32 @@ function userFacingError(action: string, err: unknown, ref: string): Error {
 // ── Edge-function plumbing ──────────────────────────────────────────
 
 async function callS3Function(body: Record<string, unknown>) {
-  return withRetry(
-    async () => {
-      const { data, error } = await supabase.functions.invoke("s3-storage", { body });
-      if (error) {
-        // supabase.functions.invoke wraps non-2xx responses + network errors.
-        // Re-throw so withRetry can classify (most are transient).
-        throw new Error(`storage call failed: ${error.message}`);
-      }
-      if (data?.error) {
-        // The function returned 200 with a body { error }. Treat platform-style
-        // strings as transient so we keep retrying through Supabase hiccups.
-        throw new Error(data.error);
-      }
-      return data;
-    },
-    { label: `invoke(${body.action ?? "?"})` },
+  return withAuthRecovery(
+    () =>
+      withRetry(
+        async () => {
+          const { data, error } = await supabase.functions.invoke("s3-storage", { body });
+          if (error) {
+            // supabase.functions.invoke wraps non-2xx responses + network errors.
+            // Surface the HTTP status when we have it so the auth-recovery and
+            // transient classifiers can both see it.
+            const status = (error as { context?: { status?: number } })?.context?.status;
+            throw new Error(
+              status
+                ? `storage call failed [${status}]: ${error.message}`
+                : `storage call failed: ${error.message}`,
+            );
+          }
+          if (data?.error) {
+            // The function returned 200 with a body { error }. Treat platform-style
+            // strings as transient so we keep retrying through Supabase hiccups.
+            throw new Error(data.error);
+          }
+          return data;
+        },
+        { label: `invoke(${body.action ?? "?"})` },
+      ),
+    `invoke(${body.action ?? "?"})`,
   );
 }
 
