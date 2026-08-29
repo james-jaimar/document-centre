@@ -110,6 +110,33 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     setSelectedTemplateId(chosen.id);
   }, [artefacts?.imposition_template_id, templates, jobW, jobH]);
 
+  // Look up artefact sizes so the operator sees how big a file is before
+  // clicking, and so the download picks the right strategy.
+  useEffect(() => {
+    const paths = [
+      artefacts?.print_ready_pdf_path,
+      artefacts?.imposed_pdf_path,
+      artefacts?.job_ticket_pdf_path,
+      ...(artefacts?.assembly_report?.components ?? []).map((c) => c.storage_path),
+      ...(artefacts?.imposed_components ?? []).map((c) => c.storage_path),
+    ].filter((p): p is string => !!p);
+    if (paths.length === 0) return;
+    let cancelled = false;
+    getObjectSizes(paths).then((res) => {
+      if (!cancelled) setSizes((prev) => ({ ...prev, ...res }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    artefacts?.print_ready_pdf_path,
+    artefacts?.imposed_pdf_path,
+    artefacts?.job_ticket_pdf_path,
+    artefacts?.assembly_report,
+    artefacts?.imposed_components,
+  ]);
+
+
   const filenameFor = (suffix: string): string => {
     const order = safeFilenamePart(orderNumber, "order");
     const job = safeFilenamePart(jobNumber, "job");
