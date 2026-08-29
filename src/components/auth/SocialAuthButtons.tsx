@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { rememberReturnPath, isSafeReturnPath } from "@/lib/auth/oauthReturn";
 
 type Provider = "google";
 
@@ -45,10 +46,12 @@ export const SocialAuthButtons = ({
       }
 
       // Save current path so AuthCallback can return the user here after OAuth
-      localStorage.setItem("dc_return_path", window.location.pathname + window.location.search);
+      const returnPath = window.location.pathname + window.location.search;
+      rememberReturnPath(returnPath);
 
       const callback = new URL("/auth/callback", window.location.origin);
       if (tenantSlug) callback.searchParams.set("tenant", tenantSlug);
+      if (isSafeReturnPath(returnPath)) callback.searchParams.set("next", returnPath);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider,

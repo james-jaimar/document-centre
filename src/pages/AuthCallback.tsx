@@ -6,7 +6,7 @@ import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } f
 import { buildAdminPath } from "@/lib/adminRouting";
 import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 
-const RETURN_PATH_KEY = "dc_return_path";
+import { takeReturnPath, peekReturnPath, isSafeReturnPath } from "@/lib/auth/oauthReturn";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -107,8 +107,9 @@ const AuthCallback = () => {
           toast.success("Signed in");
 
           // Return to the page the user was on before OAuth (e.g. checkout/cart)
-          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
-          localStorage.removeItem(RETURN_PATH_KEY);
+          const stored = takeReturnPath();
+          const nextParam = params.get("next");
+          const returnPath = isSafeReturnPath(nextParam) ? nextParam : stored;
           // Recover branch from returnPath so post-login lands on /t/:slug/:branchSlug/...
           const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
           const destination = returnPath && returnPath.startsWith(`/t/${tenantSlug}`)
@@ -135,7 +136,7 @@ const AuthCallback = () => {
         await supabase.auth.signOut();
         if (targetSlug) {
           toast.info("Please sign in via your organisation's portal.");
-          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+          const returnPath = peekReturnPath();
           const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
           navigate(buildTenantPath(targetSlug, branchFromReturn, "auth"), { replace: true });
         } else {
@@ -164,7 +165,7 @@ const AuthCallback = () => {
             <Button
               className="w-full"
               onClick={() => {
-                const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+                const returnPath = peekReturnPath();
                 const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
                 navigate(tenantSlug ? buildTenantPath(tenantSlug, branchFromReturn, "auth") : "/auth", { replace: true });
               }}
