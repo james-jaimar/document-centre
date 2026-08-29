@@ -236,17 +236,19 @@ function CustomerLayoutInner() {
 
       {/* Sidebar + main content row */}
       <div className="flex flex-1 w-full min-h-0">
-        {/* Desktop sidebar — animated collapse */}
-        <div
-          className={`${chromeless ? "hidden" : "hidden lg:flex"} transition-all duration-300 ease-in-out overflow-hidden ${
-            collapsed ? "w-0" : "w-64"
-          } ${brandingReady ? "opacity-100" : "opacity-0"}`}
-        >
-          <CustomerSidebar />
-        </div>
+        {/* Desktop sidebar — account areas only, signed-in customers only */}
+        {showSidebar && (
+          <div
+            className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+              collapsed ? "w-0" : "w-64"
+            } ${brandingReady ? "opacity-100" : "opacity-0"}`}
+          >
+            <CustomerSidebar />
+          </div>
+        )}
 
         {/* Collapse toggle tab — visible when sidebar is collapsed */}
-        {collapsed && !chromeless && (
+        {showSidebar && collapsed && (
           <button
             onClick={toggle}
             className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
@@ -255,6 +257,7 @@ function CustomerLayoutInner() {
             <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-foreground transition-colors" />
           </button>
         )}
+
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Content */}
