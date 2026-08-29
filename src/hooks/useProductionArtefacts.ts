@@ -132,10 +132,12 @@ export function useProductionArtefacts(jobId: string | null) {
       qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
 
       if ((data as any)?.reused_cache) {
+        const at = before ? new Date(before).toLocaleString() : null;
         toast({
-          title: "Existing PDF reused",
-          description:
-            "The job spec hasn't changed, so the PDF server returned the previously assembled file. Use Force rebuild to re-assemble.",
+          title: "Already assembled for this job",
+          description: at
+            ? `This job's print-ready PDF was built on ${at} and is up to date. Use Force rebuild to re-render it.`
+            : "This job's print-ready PDF is already up to date. Use Force rebuild to re-render it.",
         });
       } else if (after && after !== before) {
         toast({ title: "Print-ready PDF generated", description: "Available for download below." });
