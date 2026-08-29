@@ -81,6 +81,16 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const jobW = Number(jobTarget?.width_mm) || Number(jobSize?.width_mm) || 0;
   const jobH = Number(jobTarget?.height_mm) || Number(jobSize?.height_mm) || 0;
 
+  // The print-ready path embeds the job number it was built for
+  // (production/print-ready/<job-number>/…) — surface it so a cache hit can
+  // never be mistaken for another order's file.
+  const artefactJobNumber = (() => {
+    const p = artefacts?.print_ready_pdf_path ?? "";
+    const m = p.match(/print-ready\/([^/]+)\//);
+    return m?.[1] ?? jobNumber ?? null;
+  })();
+
+
 
   useEffect(() => {
     if (artefacts?.imposition_template_id) {
