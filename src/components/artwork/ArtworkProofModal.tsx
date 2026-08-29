@@ -128,8 +128,22 @@ export default function ArtworkProofModal({
             <span className="text-xs text-muted-foreground">
               Page {index + 1} of {pages.length || 1}
             </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={handleDownloadProof}
+              disabled={generating || pages.length === 0}
+            >
+              {generating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {generating ? "Preparing…" : "Download PDF proof"}
+            </Button>
             <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close proof">
-              <X className="h-4 w-4" />
+
             </Button>
           </div>
         </div>
