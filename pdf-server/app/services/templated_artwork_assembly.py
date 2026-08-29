@@ -403,11 +403,11 @@ def _render_overlay(
 
             if img is not None:
                 dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, img.width, img.height, value)
-                buf = io.BytesIO()
-                _to_cmyk(img).save(buf, format="JPEG", quality=92, optimize=True)
-                buf.seek(0)
+                data = _encoded_jpeg(
+                    img, pid, dw, dh, jpeg_cache if jpeg_cache is not None else {}
+                )
                 c.drawImage(
-                    ImageReader(buf),
+                    ImageReader(io.BytesIO(data)),
                     x_pt + dx,
                     # dy is measured downwards from the box top.
                     y_pt + h_pt - dy - dh,
@@ -417,6 +417,7 @@ def _render_overlay(
                     anchor="c",
                     mask=None,
                 )
+
             c.restoreState()
             continue
 
