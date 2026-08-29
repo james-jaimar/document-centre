@@ -42,7 +42,31 @@ export default function ArtworkProofModal({
   title,
 }: Props) {
   const [index, setIndex] = useState(initialPage);
+  const [generating, setGenerating] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const handleDownloadProof = useCallback(async () => {
+    if (!pages.length || generating) return;
+    setGenerating(true);
+    try {
+      const { doc, fileName } = await buildProofPdf({
+        pages,
+        pageImages,
+        placedImages,
+        placeholders,
+        values,
+        trimWidthMm,
+        title,
+      });
+      doc.save(fileName);
+    } catch (e) {
+      console.error("[proof-pdf] failed", e);
+      toast.error("Could not generate the PDF proof. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }, [pages, pageImages, placedImages, placeholders, values, trimWidthMm, title, generating]);
+
 
   useEffect(() => {
     if (open) setIndex(Math.min(initialPage, Math.max(pages.length - 1, 0)));
