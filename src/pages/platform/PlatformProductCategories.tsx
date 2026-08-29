@@ -274,11 +274,11 @@ export default function PlatformProductCategories() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Image URL</Label>
-              <Input
+              <Label>Category image</Label>
+              <HeroImageUpload
                 value={draft.image_url}
-                onChange={(e) => setDraft((d) => ({ ...d, image_url: e.target.value }))}
-                placeholder="https://…"
+                onChange={(v) => setDraft((d) => ({ ...d, image_url: v }))}
+                slug={draft.slug || slugify(draft.name) || "category"}
               />
             </div>
             <div className="flex items-center justify-between rounded-md border p-3">
