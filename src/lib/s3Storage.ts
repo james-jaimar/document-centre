@@ -56,6 +56,46 @@ function isTransientError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Heuristic: did this failure come from an expired / not-yet-refreshed access
+ * token rather than a real permission problem?
+ *
+ * A tab left open past token expiry fires its next storage request with a dead
+ * JWT, so `s3-storage` (which validates via `supabase.auth.getUser()`) replies
+ * 401. That is recoverable — refresh the session and try again once.
+ */
+function isAuthError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/No active session/i.test(msg)) return true;
+  if (/\[(401|403)\]/.test(msg)) return true;
+  if (/Unauthorized|invalid claim|JWT expired|token is expired|bad_jwt/i.test(msg)) return true;
+  return false;
+}
+
+/**
+ * Run a storage operation; if it fails purely because the access token was
+ * stale, refresh the session once and retry. Never creates a user — session
+ * ownership stays with CustomerLayout.
+ */
+async function withAuthRecovery<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isAuthError(err)) throw err;
+    console.warn(
+      `[s3-storage] ${label} hit an auth failure, refreshing session and retrying once:`,
+      err instanceof Error ? err.message : err,
+    );
+    const { data, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr || !data.session?.access_token) {
+      console.warn("[s3-storage] session refresh failed", refreshErr?.message);
+      throw err;
+    }
+    return await fn();
+  }
+}
+
 /** Short opaque ref id (8 chars) included in user-facing errors for log lookup. */
 function newRefId(): string {
   return Math.random().toString(36).slice(2, 10);
