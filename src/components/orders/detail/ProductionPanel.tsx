@@ -100,13 +100,22 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       const url = await signedUrl(path);
-      if (!url) return;
+      if (!url) {
+        toast({
+          title: "Could not prepare the download",
+          description: "The file could not be signed. Try regenerating the PDF.",
+          variant: "destructive",
+        });
+        return;
+      }
       const filename = filenameFor(suffix);
       let triggered = false;
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: controller.signal });
         if (res.ok) {
           const blob = await res.blob();
           const blobUrl = URL.createObjectURL(blob);
@@ -119,14 +128,28 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
           triggered = true;
         }
-      } catch {
-        // CORS fallback
+      } catch (err) {
+        // Aborted (slow/hung S3 GET) or blocked by CORS — fall back to a tab.
+        if ((err as Error)?.name === "AbortError") {
+          toast({
+            title: "Download is taking too long",
+            description: "Opening the file in a new tab instead.",
+          });
+        }
       }
       if (!triggered) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast({
+        title: "Download failed",
+        description: (e as Error)?.message ?? "Unknown error",
+        variant: "destructive",
+      });
     } finally {
+      clearTimeout(timer);
       setOpeningPath(null);
     }
   };
+
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
   const noTemplatesAssigned = !loadingTemplates && templates.length === 0;
