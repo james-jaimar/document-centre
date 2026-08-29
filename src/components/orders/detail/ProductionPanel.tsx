@@ -50,7 +50,9 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   } = useProductionArtefacts(jobId);
   const { data: templates = [], isLoading: loadingTemplates } =
     useTemplatesForProductFamily(productFamilyId);
+  const { toast } = useToast();
   const [openingPath, setOpeningPath] = useState<string | null>(null);
+
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   /** Per-component template overrides (multi-component jobs only). */
   const [componentTemplates, setComponentTemplates] = useState<Record<string, string | null>>({});
