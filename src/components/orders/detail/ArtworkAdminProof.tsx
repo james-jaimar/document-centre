@@ -32,9 +32,11 @@ interface Props {
   templatedArtwork?: any;
   /** `configuration.uploaded_artwork` snapshot, if present. */
   uploadedArtwork?: any;
+  /** Heading prefix — defaults to the admin wording. */
+  heading?: string;
 }
 
-export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork }: Props) {
+export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, heading = "Customer proof" }: Props) {
   const isTemplated = !!templatedArtwork?.base_pdf_path;
   const isUploaded = !isTemplated && !!uploadedArtwork?.storage_path;
 
@@ -167,7 +169,7 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork }:
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold flex items-center gap-1.5">
           <ImageIcon className="h-3.5 w-3.5" />
-          Customer proof — {label}
+          {heading} — {label}
         </h3>
         <div className="flex items-center gap-2">
           {pages.length > 1 && (
