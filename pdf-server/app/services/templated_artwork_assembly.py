@@ -290,6 +290,40 @@ def _image_draw_rect(
 
 
 # ---------------------------------------------------------------------------
+# Raster encoding
+# ---------------------------------------------------------------------------
+# Anything beyond 300 dpi at the *placed* size is invisible on press and only
+# inflates the artefact — a 12-page calendar was shipping at 279 MB because the
+# full-resolution camera original was re-encoded onto every page.
+MAX_PLACED_DPI = 300
+
+
+def _encoded_jpeg(
+    img: Image.Image,
+    pid: str,
+    draw_w_pt: float,
+    draw_h_pt: float,
+    cache: dict[tuple[str, int, int], bytes],
+) -> bytes:
+    """CMYK JPEG bytes for this image at the placed size, encoded once."""
+    target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
+    target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
+    key = (pid, target_w, target_h)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    src = img
+    if src.width > target_w or src.height > target_h:
+        src = src.copy()
+        src.thumbnail((target_w, target_h), Image.LANCZOS)
+    buf = io.BytesIO()
+    _to_cmyk(src).save(buf, format="JPEG", quality=92, optimize=True)
+    data = buf.getvalue()
+    cache[key] = data
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Overlay rendering
 # ---------------------------------------------------------------------------
 def _render_overlay(
@@ -302,7 +336,9 @@ def _render_overlay(
     values: dict[str, dict[str, Any]],
     images: dict[str, Image.Image],
     skip_ids: set[str] | None = None,
+    jpeg_cache: dict[tuple[str, int, int], bytes] | None = None,
 ) -> None:
+
     """Draw every placeholder onto a transparent single-page PDF that is
     later merged over the base template page.
 
@@ -367,11 +403,11 @@ def _render_overlay(
 
             if img is not None:
                 dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, img.width, img.height, value)
-                buf = io.BytesIO()
-                _to_cmyk(img).save(buf, format="JPEG", quality=92, optimize=True)
-                buf.seek(0)
+                data = _encoded_jpeg(
+                    img, pid, dw, dh, jpeg_cache if jpeg_cache is not None else {}
+                )
                 c.drawImage(
-                    ImageReader(buf),
+                    ImageReader(io.BytesIO(data)),
                     x_pt + dx,
                     # dy is measured downwards from the box top.
                     y_pt + h_pt - dy - dh,
@@ -381,6 +417,7 @@ def _render_overlay(
                     anchor="c",
                     mask=None,
                 )
+
             c.restoreState()
             continue
 
@@ -697,6 +734,10 @@ def assemble_templated_artwork(
     placements: list[dict[str, Any]] = []
     knocked_out = False
     base_geometry: dict[str, Any] = {}
+    # Encode each placed raster once, and render each distinct page layer once.
+    jpeg_cache: dict[tuple[str, int, int], bytes] = {}
+    layer_cache: dict[tuple[Any, ...], Path] = {}
+
 
 
     writer = PdfWriter()
@@ -818,13 +859,24 @@ def assemble_templated_artwork(
 
         composed = page
 
+        # Placeholder geometry is identical on every page with the same size and
+        # trim origin, so the rendered layer is built once and reused — without
+        # this the customer's photo is re-encoded onto all 12 pages.
+        geo_key = (
+            round(page_w_pt, 2), round(page_h_pt, 2),
+            round(trim_x_pt, 2), round(trim_top_pt, 2),
+        )
+
         # 1. Boxes that sit BEHIND the template artwork.
         if under_defs:
-            under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
-            _render_overlay(
-                under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                under_defs, values, images, vector_ids,
-            )
+            under_path = layer_cache.get(("under", *geo_key))
+            if under_path is None:
+                under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
+                _render_overlay(
+                    under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
+                    under_defs, values, images, vector_ids, jpeg_cache,
+                )
+                layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
 
             base_layer = page
@@ -848,12 +900,16 @@ def assemble_templated_artwork(
 
         # 2. Boxes in front of the template artwork.
         if over_defs:
-            overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
-            _render_overlay(
-                overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                over_defs, values, images, vector_ids,
-            )
+            overlay_path = layer_cache.get(("over", *geo_key))
+            if overlay_path is None:
+                overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
+                _render_overlay(
+                    overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
+                    over_defs, values, images, vector_ids, jpeg_cache,
+                )
+                layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
+
 
         # Belt and braces: whatever branch produced `composed`, the output page
         # must be the supplied page — full media box, with every box copied
@@ -882,8 +938,15 @@ def assemble_templated_artwork(
 
 
     out_pdf = workspace.path("templated-artwork.pdf")
+    # merge_page copies the layer's resources into each page; collapsing the
+    # identical image/font streams keeps a multi-page job to one copy.
+    try:
+        writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
+    except Exception as exc:  # noqa: BLE001 - optimisation only
+        log.warning("templated_artwork: object de-duplication skipped: %s", exc)
     with open(out_pdf, "wb") as fh:
         writer.write(fh)
+
 
     # Customer PDFs go in last, straight from their originals (vector, with a
     # real PDF transparency group when the opacity is below 100%).

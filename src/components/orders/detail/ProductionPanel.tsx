@@ -5,6 +5,8 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
+import { getObjectSizes } from "@/lib/s3Storage";
+
 import { useToast } from "@/hooks/use-toast";
 
 import { useTemplatesForProductFamily } from "@/hooks/useImpositionTemplates";
@@ -29,6 +31,18 @@ function safeFilenamePart(s: string | null | undefined, fallback: string): strin
   return v || fallback;
 }
 
+/** Human-readable byte size, e.g. "279 MB". */
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+
 type Tone = "primary" | "success" | "warning";
 
 const TONE_ICON_BG: Record<Tone, string> = {
@@ -52,6 +66,9 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     useTemplatesForProductFamily(productFamilyId);
   const { toast } = useToast();
   const [openingPath, setOpeningPath] = useState<string | null>(null);
+  /** objectPath → size in bytes (null = unknown). */
+  const [sizes, setSizes] = useState<Record<string, number | null>>({});
+
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   /** Per-component template overrides (multi-component jobs only). */
@@ -95,17 +112,52 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     setSelectedTemplateId(chosen.id);
   }, [artefacts?.imposition_template_id, templates, jobW, jobH]);
 
+  // Look up artefact sizes so the operator sees how big a file is before
+  // clicking, and so the download picks the right strategy.
+  useEffect(() => {
+    const paths = [
+      artefacts?.print_ready_pdf_path,
+      artefacts?.imposed_pdf_path,
+      artefacts?.job_ticket_pdf_path,
+      ...(artefacts?.assembly_report?.components ?? []).map((c) => c.storage_path),
+      ...(artefacts?.imposed_components ?? []).map((c) => c.storage_path),
+    ].filter((p): p is string => !!p);
+    if (paths.length === 0) return;
+    let cancelled = false;
+    getObjectSizes(paths).then((res) => {
+      if (!cancelled) setSizes((prev) => ({ ...prev, ...res }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    artefacts?.print_ready_pdf_path,
+    artefacts?.imposed_pdf_path,
+    artefacts?.job_ticket_pdf_path,
+    artefacts?.assembly_report,
+    artefacts?.imposed_components,
+  ]);
+
+
   const filenameFor = (suffix: string): string => {
     const order = safeFilenamePart(orderNumber, "order");
     const job = safeFilenamePart(jobNumber, "job");
     return `${order}-${job}-${suffix}.pdf`;
   };
 
+  /**
+   * Large artefacts (print-ready PDFs are routinely hundreds of MB) must never
+   * be buffered into a Blob — that stalls the tab and blows memory. For those
+   * we hand the presigned URL to the browser's own downloader via a hidden
+   * anchor, which streams straight to disk and never trips the pop-up blocker.
+   */
+  const BLOB_DOWNLOAD_LIMIT = 25 * 1024 * 1024;
+
   const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    const timer = setTimeout(() => controller.abort(), 120_000);
     try {
       const url = await signedUrl(path);
       if (!url) {
@@ -117,6 +169,28 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
         return;
       }
       const filename = filenameFor(suffix);
+      const knownSize = sizes[path];
+      const big = knownSize == null ? false : knownSize > BLOB_DOWNLOAD_LIMIT;
+
+      const streamToDisk = () => {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+
+      if (big) {
+        toast({
+          title: "Download started",
+          description: `${filename} (${formatBytes(knownSize)}) — this is a large file, check your browser downloads.`,
+        });
+        streamToDisk();
+        return;
+      }
+
       let triggered = false;
       try {
         const res = await fetch(url, { signal: controller.signal });
@@ -133,15 +207,15 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           triggered = true;
         }
       } catch (err) {
-        // Aborted (slow/hung S3 GET) or blocked by CORS — fall back to a tab.
+        // Aborted (slow/hung S3 GET) or blocked by CORS — stream instead.
         if ((err as Error)?.name === "AbortError") {
           toast({
             title: "Download is taking too long",
-            description: "Opening the file in a new tab instead.",
+            description: "Handing it to the browser downloader instead.",
           });
         }
       }
-      if (!triggered) window.open(url, "_blank", "noopener,noreferrer");
+      if (!triggered) streamToDisk();
     } catch (e) {
       toast({
         title: "Download failed",
@@ -153,6 +227,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
       setOpeningPath(null);
     }
   };
+
 
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
@@ -264,8 +339,12 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
             {artefacts.print_ready_assembled_at
               ? `Assembled ${format(new Date(artefacts.print_ready_assembled_at), "d MMM HH:mm")}`
               : "Assembly timestamp unknown"}
+            {sizes[artefacts.print_ready_pdf_path]
+              ? ` · ${formatBytes(sizes[artefacts.print_ready_pdf_path])}`
+              : ""}
           </div>
         )}
+
 
 
         {/* Multi-component output — printed cover on heavyweight stock is a

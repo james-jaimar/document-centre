@@ -227,6 +227,24 @@ export async function getDownloadUrls(objectPaths: string[]): Promise<Record<str
 }
 
 /**
+ * Get object sizes (bytes) for one or more S3 paths without downloading them.
+ * Returns a map of objectPath → size (null when unknown).
+ */
+export async function getObjectSizes(
+  objectPaths: string[],
+): Promise<Record<string, number | null>> {
+  if (objectPaths.length === 0) return {};
+  try {
+    const data = await callS3Function({ action: "stat", object_paths: objectPaths });
+    return data?.sizes ?? {};
+  } catch (err) {
+    console.warn("[s3-storage] stat failed", err);
+    return {};
+  }
+}
+
+
+/**
  * Download an object through our Edge Function rather than directly from S3.
  * This avoids browser S3 CORS when the caller needs to draw the image into a
  * canvas/WebGL texture (canvas prints editor + proof renderer).
