@@ -213,7 +213,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 "trim_height_mm": (cfg_ta or {}).get("trim_height_mm"),
                 "placeholder_defs": (cfg_ta or {}).get("placeholder_defs"),
                 "placeholders": (cfg_ta or {}).get("placeholders"),
-                "templated_artwork_pipeline_version": 2,
+                "templated_artwork_pipeline_version": 3,
             }
             ta_hash = pdf_ops.spec_hash(ta_spec_inputs)
             existing_hash = bundle.job.get("print_ready_spec_hash")
