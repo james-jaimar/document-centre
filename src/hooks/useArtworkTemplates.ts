@@ -183,6 +183,9 @@ export function useSaveArtworkPlaceholders() {
           is_required: p.is_required,
           is_locked: p.is_locked,
           is_watermark: !!p.is_watermark,
+          default_cmyk: p.kind === "colour" ? normaliseCmyk(p.default_cmyk) : null,
+          customer_editable_colour: p.customer_editable_colour !== false,
+
           sort_order: i,
           layer: p.layer === "under" ? "under" : "over",
           z_index: Number.isFinite(p.z_index) ? p.z_index : i,
