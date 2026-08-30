@@ -4,6 +4,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ArtworkPlaceholder, ArtworkTemplate } from "@/lib/artworkTemplates/types";
+import { normaliseCmyk } from "@/lib/artworkTemplates/types";
+
 
 const TEMPLATES_KEY = "artwork_templates";
 const PLACEHOLDERS_KEY = "artwork_template_placeholders";
@@ -36,7 +38,10 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     z_index: Number(row.z_index ?? row.sort_order ?? 0),
     opacity: row.opacity == null ? 1 : Number(row.opacity),
     is_watermark: !!row.is_watermark,
+    default_cmyk: row.default_cmyk ? normaliseCmyk(row.default_cmyk) : null,
+    customer_editable_colour: row.customer_editable_colour !== false,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
+
   } as ArtworkPlaceholder;
 }
 
@@ -178,6 +183,9 @@ export function useSaveArtworkPlaceholders() {
           is_required: p.is_required,
           is_locked: p.is_locked,
           is_watermark: !!p.is_watermark,
+          default_cmyk: p.kind === "colour" ? normaliseCmyk(p.default_cmyk) : null,
+          customer_editable_colour: p.customer_editable_colour !== false,
+
           sort_order: i,
           layer: p.layer === "under" ? "under" : "over",
           z_index: Number.isFinite(p.z_index) ? p.z_index : i,

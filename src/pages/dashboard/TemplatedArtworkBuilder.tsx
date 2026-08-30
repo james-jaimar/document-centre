@@ -55,6 +55,9 @@ import type {
   TemplatedImageValue,
   TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
+import { DEFAULT_CMYK, normaliseCmyk } from "@/lib/artworkTemplates/types";
+
+
 
 const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArtworkBuilder(
   _props,
@@ -172,8 +175,22 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       bleed_mm: template?.bleed_mm,
 
       placeholders: placeholders
-        .map((p) => values[p.id])
+        .map((p) => {
+          const v = values[p.id];
+          if (v) return v;
+          // Colour boxes always ship a value so the composer paints the default.
+          if (p.kind === "colour") {
+            return {
+              placeholder_id: p.id,
+              kind: "colour" as const,
+              cmyk: normaliseCmyk(p.default_cmyk ?? DEFAULT_CMYK),
+              opacity: p.opacity ?? 1,
+            };
+          }
+          return null;
+        })
         .filter(Boolean) as TemplatedPlaceholderValue[],
+
       // Geometry snapshot for the print-ready composer.
       placeholder_defs: placeholders,
     }),
@@ -487,11 +504,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   // ── Validation + cart
   const missingRequired = placeholders.filter((p) => {
     if (!p.is_required) return false;
+    // Colour boxes always carry a default ink build, so they can't be "missing".
+    if (p.kind === "colour") return false;
     const v = values[p.id];
     if (!v) return true;
     if (v.kind === "text") return !v.value.trim();
+    if (v.kind === "colour") return false;
     return !v.storage_path;
   });
+
 
   const [submitting, setSubmitting] = useState(false);
   const handleAddToCart = async () => {

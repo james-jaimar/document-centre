@@ -15,13 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ImageIcon, Type, Trash2, Copy, ChevronUp, ChevronDown } from "lucide-react";
+import { ImageIcon, Type, Trash2, Copy, ChevronUp, ChevronDown, Palette } from "lucide-react";
 import {
   ARTWORK_FONTS,
+  DEFAULT_CMYK,
   DEFAULT_TEXT_STYLE,
+  cmykToHex,
+  normaliseCmyk,
+  type ArtworkCmyk,
   type ArtworkPlaceholder,
   type PlaceholderKind,
 } from "@/lib/artworkTemplates/types";
+
 
 interface Props {
   pageImageUrl: string | null;
@@ -52,7 +57,12 @@ export function makePlaceholder(
     id: makeId(),
     template_id: "",
     kind,
-    name: kind === "image" ? `Image ${index + 1}` : `Text ${index + 1}`,
+    name:
+      kind === "image"
+        ? `Image ${index + 1}`
+        : kind === "colour"
+          ? `Colour ${index + 1}`
+          : `Text ${index + 1}`,
     ...geom,
     fit_mode: "fill",
     corner_radius_mm: 0,
@@ -63,6 +73,8 @@ export function makePlaceholder(
     is_required: kind === "image",
     is_locked: false,
     is_watermark: false,
+    default_cmyk: kind === "colour" ? { ...DEFAULT_CMYK } : null,
+    customer_editable_colour: kind === "colour",
     sort_order: index,
     layer: "over",
     z_index: index,
@@ -70,6 +82,7 @@ export function makePlaceholder(
   };
 
 }
+
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -268,12 +281,23 @@ export default function TemplateBoxEditor({
           >
             <Type className="h-4 w-4 mr-1.5" /> Draw text box
           </Button>
+          <Button
+            size="sm"
+            variant={drawKind === "colour" ? "default" : "outline"}
+            onClick={() => setDrawKind(drawKind === "colour" ? null : "colour")}
+          >
+            <Palette className="h-4 w-4 mr-1.5" /> Draw colour box
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => addDefault("image")}>
             + Image
           </Button>
           <Button size="sm" variant="ghost" onClick={() => addDefault("text")}>
             + Text
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => addDefault("colour")}>
+            + Colour
+          </Button>
+
           {drawKind && (
             <span className="text-xs text-muted-foreground">
               Drag on the page to draw the box.
@@ -337,6 +361,10 @@ export default function TemplateBoxEditor({
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
                 // Under-template boxes sit below the artwork image (zIndex 5).
                 zIndex: p.layer === "under" ? 1 : 10 + i,
+                // Colour boxes preview their actual ink build.
+                background:
+                  p.kind === "colour" ? cmykToHex(p.default_cmyk ?? DEFAULT_CMYK) : undefined,
+                opacity: p.kind === "colour" ? (p.opacity ?? 1) : undefined,
               }}
             >
               <span
@@ -346,10 +374,11 @@ export default function TemplateBoxEditor({
                     : "bg-primary text-primary-foreground"
                 }`}
               >
-                {p.kind === "text" ? "T" : "IMG"} · {p.name}
+                {p.kind === "text" ? "T" : p.kind === "colour" ? "CLR" : "IMG"} · {p.name}
                 {p.layer === "under" ? " · behind" : ""}
                 {(p.opacity ?? 1) < 1 ? ` · ${Math.round((p.opacity ?? 1) * 100)}%` : ""}
               </span>
+
 
               <div
                 onPointerDown={(e) => {
@@ -408,9 +437,12 @@ export default function TemplateBoxEditor({
                 >
                   {p.kind === "text" ? (
                     <Type className="h-3.5 w-3.5 shrink-0" />
+                  ) : p.kind === "colour" ? (
+                    <Palette className="h-3.5 w-3.5 shrink-0" />
                   ) : (
                     <ImageIcon className="h-3.5 w-3.5 shrink-0" />
                   )}
+
                   <span className="truncate">{p.name}</span>
                   {p.layer === "under" && (
                     <Badge variant="secondary" className="shrink-0 text-[10px]">behind</Badge>
@@ -531,7 +563,69 @@ export default function TemplateBoxEditor({
             )}
 
 
-            {active.kind === "image" ? (
+            {active.kind === "colour" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Default colour (CMYK %)</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["c", "m", "y", "k"] as const).map((ch) => (
+                      <div key={ch} className="space-y-1">
+                        <Label className="text-[10px] uppercase text-muted-foreground">{ch}</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={(active.default_cmyk ?? DEFAULT_CMYK)[ch]}
+                          onChange={(e) =>
+                            patch(active.id, {
+                              default_cmyk: normaliseCmyk({
+                                ...(active.default_cmyk ?? DEFAULT_CMYK),
+                                [ch]: Number(e.target.value),
+                              } as ArtworkCmyk),
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <span
+                      className="h-6 w-10 rounded border"
+                      style={{ background: cmykToHex(active.default_cmyk ?? DEFAULT_CMYK) }}
+                    />
+                    <span className="text-[11px] text-muted-foreground">
+                      Screen approximation — the PDF prints the exact ink build.
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Corner radius (mm)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    value={active.corner_radius_mm}
+                    onChange={(e) =>
+                      patch(active.id, { corner_radius_mm: Number(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-3 rounded-md border p-2">
+                  <div>
+                    <Label className="text-xs">Customer can change colour</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Off means the block always prints the default build. Position and size are
+                      always fixed.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={active.customer_editable_colour !== false}
+                    onCheckedChange={(v) => patch(active.id, { customer_editable_colour: v })}
+                  />
+                </div>
+              </>
+            ) : active.kind === "image" ? (
+
               <>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Default fit</Label>

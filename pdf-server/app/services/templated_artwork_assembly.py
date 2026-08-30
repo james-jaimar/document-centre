@@ -381,7 +381,35 @@ def _render_overlay(
         if w_pt <= 0 or h_pt <= 0:
             continue
 
-        if (d.get("kind") or "image") == "image":
+        kind = d.get("kind") or "image"
+
+        if kind == "colour":
+            # Fixed-geometry colour block: paint the exact ink build the
+            # customer (or the template default) specified — no RGB round trip.
+            raw_cmyk = value.get("cmyk") or d.get("default_cmyk") or {}
+            def _chan(key: str) -> float:
+                try:
+                    n = float(raw_cmyk.get(key) or 0)
+                except (TypeError, ValueError):
+                    n = 0.0
+                return max(0.0, min(100.0, n)) / 100.0
+
+            c.saveState()
+            c.setFillAlpha(alpha)
+            c.setStrokeAlpha(alpha)
+            path = c.beginPath()
+            if radius:
+                path.roundRect(x_pt, y_pt, w_pt, h_pt, radius)
+            else:
+                path.rect(x_pt, y_pt, w_pt, h_pt)
+            c.clipPath(path, stroke=0, fill=0)
+            c.setFillColor(CMYKColor(_chan("c"), _chan("m"), _chan("y"), _chan("k")))
+            c.rect(x_pt, y_pt, w_pt, h_pt, fill=1, stroke=0)
+            c.restoreState()
+            continue
+
+        if kind == "image":
+
             bg = value.get("background_hex") or d.get("background_hex")
             # Vector uploads are stamped later, straight from their PDF.
             img = None if (skip_ids and pid in skip_ids) else images.get(pid)

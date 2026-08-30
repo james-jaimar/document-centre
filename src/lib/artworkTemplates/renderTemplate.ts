@@ -7,13 +7,16 @@
  */
 
 import {
+  DEFAULT_CMYK,
   DEFAULT_TEXT_STYLE,
+  cmykToHex,
   fontCss,
   splitByLayer,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
   type TemplatedPlaceholderValue,
 } from "./types";
+
 
 
 export interface BoxRectPx {
@@ -131,7 +134,17 @@ function drawPlaceholder(
   const value = opts.values[p.id];
   const alpha = Math.max(0, Math.min(1, value?.opacity ?? p.opacity ?? 1));
 
-  if (p.kind === "image") {
+  if (p.kind === "colour") {
+    const cmyk =
+      value && value.kind === "colour" ? value.cmyk : (p.default_cmyk ?? DEFAULT_CMYK);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    roundedPath(ctx, box);
+    ctx.clip();
+    ctx.fillStyle = cmykToHex(cmyk);
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.restore();
+  } else if (p.kind === "image") {
     const img = opts.images[p.id];
     const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
     ctx.save();
@@ -148,6 +161,7 @@ function drawPlaceholder(
     }
     ctx.restore();
   } else {
+
     const style = { ...DEFAULT_TEXT_STYLE, ...(p.text_style ?? {}) };
     const raw = (value && value.kind === "text" ? value.value : "") || p.default_value || "";
     const text = style.uppercase ? raw.toUpperCase() : raw;
