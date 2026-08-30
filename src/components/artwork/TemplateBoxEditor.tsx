@@ -52,7 +52,12 @@ export function makePlaceholder(
     id: makeId(),
     template_id: "",
     kind,
-    name: kind === "image" ? `Image ${index + 1}` : `Text ${index + 1}`,
+    name:
+      kind === "image"
+        ? `Image ${index + 1}`
+        : kind === "colour"
+          ? `Colour ${index + 1}`
+          : `Text ${index + 1}`,
     ...geom,
     fit_mode: "fill",
     corner_radius_mm: 0,
@@ -63,6 +68,8 @@ export function makePlaceholder(
     is_required: kind === "image",
     is_locked: false,
     is_watermark: false,
+    default_cmyk: kind === "colour" ? { ...DEFAULT_CMYK } : null,
+    customer_editable_colour: kind === "colour",
     sort_order: index,
     layer: "over",
     z_index: index,
@@ -70,6 +77,7 @@ export function makePlaceholder(
   };
 
 }
+
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
