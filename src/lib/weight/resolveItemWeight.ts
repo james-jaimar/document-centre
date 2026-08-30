@@ -157,15 +157,15 @@ export function resolveItemWeight(input: ResolveWeightInput): ResolvedWeight {
     };
   }
 
-  // 2. Pack ladder row weight — keyed per pack, already the finished pack.
+  // 2. Pack ladder row weight — the admin keyed the finished, packed weight of
+  //    this exact pack, so it is used verbatim (no packaging uplift).
   const packRow = num(input.packRowGrams, 0);
   if (input.packRowGrams != null && packRow > 0) {
-    const pack = packRow + packaging(packRow);
     return {
-      grams: pack,
-      perCopyGrams: pack / qty,
+      grams: packRow,
+      perCopyGrams: packRow / qty,
       source: "pack_row",
-      breakdown: { ...EMPTY_BREAKDOWN, paperGrams: packRow, packagingGrams: pack - packRow },
+      breakdown: { ...EMPTY_BREAKDOWN, paperGrams: packRow },
       isEstimate: false,
     };
   }
