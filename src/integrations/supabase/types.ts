@@ -46,6 +46,8 @@ export type Database = {
           background_hex: string | null
           corner_radius_mm: number
           created_at: string
+          customer_editable_colour: boolean
+          default_cmyk: Json | null
           default_value: string | null
           fit_mode: string
           height_mm: number
@@ -71,6 +73,8 @@ export type Database = {
           background_hex?: string | null
           corner_radius_mm?: number
           created_at?: string
+          customer_editable_colour?: boolean
+          default_cmyk?: Json | null
           default_value?: string | null
           fit_mode?: string
           height_mm?: number
@@ -96,6 +100,8 @@ export type Database = {
           background_hex?: string | null
           corner_radius_mm?: number
           created_at?: string
+          customer_editable_colour?: boolean
+          default_cmyk?: Json | null
           default_value?: string | null
           fit_mode?: string
           height_mm?: number
