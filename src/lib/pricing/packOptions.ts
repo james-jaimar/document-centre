@@ -47,10 +47,12 @@ export function normalizeOptions(raw: unknown): PricingOption[] {
       slug: String(o.slug ?? slugify(String(o.label ?? ""))),
       label: String(o.label ?? o.slug ?? ""),
       sort: Number.isFinite(Number(o.sort)) ? Number(o.sort) : i,
+      trade_only: !!o.trade_only,
     }))
     .filter((o) => !!o.slug && !!o.label)
     .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 }
+
 
 export function normalizeAddons(raw: unknown): PricingAddon[] {
   if (!Array.isArray(raw)) return [];
