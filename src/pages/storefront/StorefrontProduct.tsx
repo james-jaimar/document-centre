@@ -40,7 +40,7 @@ export default function StorefrontProduct() {
   const { tenantId } = useTenantContext();
   const { config } = useStorefrontPages(tenantId);
   const { entries, isLoading } = useStorefrontCatalogue();
-  const { format } = useStorefrontPrice();
+  const { format, inclSuffix } = useStorefrontPrice();
 
   const entry = entries.find((e) => e.family.slug === familySlug);
   const blocks = entry?.blocks ?? [];
@@ -230,7 +230,7 @@ export default function StorefrontProduct() {
                       <p className="mt-1 text-xs">
                         {activeQty?.toLocaleString()} units ·{" "}
                         {format(activeRow.priceMajor / Math.max(1, activeRow.qty))} each
-                        {config.pricing_note ? " · incl. VAT" : ""}
+                        {inclSuffix ? ` · ${inclSuffix}` : ""}
                       </p>
                     </div>
                     <p className="flex items-center gap-1.5 text-xs">
