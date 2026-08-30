@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.enable_family_for_tenant_branches(uuid, uuid, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.enable_family_for_tenant_branches(uuid, uuid, boolean) TO authenticated;
