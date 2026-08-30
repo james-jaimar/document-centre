@@ -207,8 +207,14 @@ export const MIN_BILLABLE_KG = DEFAULT_WEIGHT_SETTINGS.minBillableKg;
 export async function quoteShipping(req: ShippingQuoteRequest): Promise<ShippingQuoteResult> {
   const currency = req.currency ?? "ZAR";
   const settings = req.settings ?? (await fetchWeightSettings(req.branchId, req.tenantId));
-  const weights = aggregateCartWeight(req.items, settings);
-  const chargeableKg = Math.max(weights.billableKg, settings.minBillableKg);
+  const weights = await resolveCartWeight(req.items, settings, {
+    tenantId: req.tenantId,
+    branchId: req.branchId,
+  });
+  const chargeableKg = Math.max(
+    finite(weights.billableKg, 0),
+    finite(settings.minBillableKg, 1),
+  );
 
 
   const baseResult: ShippingQuoteResult = {
@@ -313,8 +319,14 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
 }> {
   const currency = req.currency ?? "ZAR";
   const settings = req.settings ?? (await fetchWeightSettings(req.branchId, req.tenantId));
-  const weights = aggregateCartWeight(req.items, settings);
-  const chargeableKg = Math.max(weights.billableKg, settings.minBillableKg);
+  const weights = await resolveCartWeight(req.items, settings, {
+    tenantId: req.tenantId,
+    branchId: req.branchId,
+  });
+  const chargeableKg = Math.max(
+    finite(weights.billableKg, 0),
+    finite(settings.minBillableKg, 1),
+  );
 
   if (!req.address?.city && !req.address?.postal_code && !req.address?.province) {
     return { zoneId: null, zoneLabel: null, zoneCode: null, billableKg: chargeableKg, options: [] };
