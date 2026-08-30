@@ -604,6 +604,10 @@ export function usePlaceOrder() {
           preview: previewSnapshot,
         };
 
+        // Weight stamped at add-to-cart time (grams) → kg on the job row so
+        // production and courier bookings read the quoted number.
+        const stampedGrams = Number(item.spec?.weight?.grams);
+
         return {
           product_name: item.product_families?.name || item.title || "Document",
           product_category,
@@ -617,6 +621,12 @@ export function usePlaceOrder() {
           configuration: configurationWithPreview,
           product_snapshot,
           production_specs,
+          ...(Number.isFinite(stampedGrams) && stampedGrams > 0
+            ? {
+                weight_kg: stampedGrams / 1000,
+                weight_source: item.spec?.weight?.source ?? "calculated",
+              }
+            : {}),
         };
       });
 
