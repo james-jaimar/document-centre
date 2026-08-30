@@ -970,7 +970,11 @@ export default function Checkout() {
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading}
+            disabled={
+              isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading ||
+              (deliveryMethod === "delivery" && (quotingShipping || !shippingQuote || shippingQuote.price == null))
+            }
+
           >
             {isSubmitting ? (
               <>
