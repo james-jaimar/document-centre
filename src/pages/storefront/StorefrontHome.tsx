@@ -68,7 +68,7 @@ export default function StorefrontHome() {
                   imageUrl={category.image_url ?? categoryImage(category.id)}
                   count={category.count}
                   onClick={() =>
-                    navigate(tenantPath(shopEnabled ? `shop/${category.slug}` : "orders/new"))
+                    navigate(tenantPath(shopEnabled ? `shop/c/${category.slug}` : "orders/new"))
                   }
                 />
               ))}
