@@ -48,6 +48,9 @@ const AdminProductCatalogue = () => {
     null,
   );
 
+  const { data: branchSummary } = useTenantBranchCapabilitySummary(tenantId);
+  const enableOnBranches = useEnableFamilyOnTenantBranches();
+
   const disabled = buildDisabledFamilySet(toggles);
   const [openFamilyId, setOpenFamilyId] = useState<string | null>(null);
   const [openFamilyName, setOpenFamilyName] = useState<string>("");
@@ -67,10 +70,36 @@ const AdminProductCatalogue = () => {
         product_family_id: familyId,
         is_enabled: next,
       });
+      // Turning a product ON at tenant level should reach the storefront:
+      // enable it on branches that have never been set explicitly.
+      if (next) {
+        await enableOnBranches.mutateAsync({
+          tenant_id: tenantId,
+          product_family_id: familyId,
+          only_untouched: true,
+        });
+      }
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
   }
+
+  async function handleEnableAllBranches(familyId: string, familyName: string) {
+    if (!tenantId) return;
+    try {
+      const n = await enableOnBranches.mutateAsync({
+        tenant_id: tenantId,
+        product_family_id: familyId,
+      });
+      toast({
+        title: "Branches updated",
+        description: `${familyName} enabled on ${n} branch${n === 1 ? "" : "es"}.`,
+      });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  }
+
 
   const overrideCounts = tenantOverrides.reduce<Record<string, number>>(
     (acc, o) => {
