@@ -725,12 +725,11 @@ export function usePlaceOrder() {
       const deliveryAmount = input.deliveryMethod === "delivery"
         ? Math.max(0, Number(input.deliveryAmount ?? 0))
         : 0;
-      // Inclusive VAT is already part of subtotal; exclusive VAT is added on top.
-      // Delivery is taxable only when exclusive (mirrors how the order tab edits it).
-      const taxableBase = subtotal + (taxCfg.inclusive ? 0 : deliveryAmount);
-      const vatAmount = taxCfg.inclusive
-        ? computeVat(taxableBase, taxCfg)
-        : computeVat(taxableBase, taxCfg);
+      // Delivery is always taxable. Inclusive: the VAT is embedded in the
+      // gross figures (extract it). Exclusive: VAT is added on top of both.
+      const taxableBase = subtotal + deliveryAmount;
+      const vatAmount = computeVat(taxableBase, taxCfg);
+
       const totalAmount = taxCfg.inclusive
         ? subtotal + deliveryAmount
         : subtotal + deliveryAmount + vatAmount;
