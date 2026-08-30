@@ -361,6 +361,10 @@ export default function TemplateBoxEditor({
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
                 // Under-template boxes sit below the artwork image (zIndex 5).
                 zIndex: p.layer === "under" ? 1 : 10 + i,
+                // Colour boxes preview their actual ink build.
+                background:
+                  p.kind === "colour" ? cmykToHex(p.default_cmyk ?? DEFAULT_CMYK) : undefined,
+                opacity: p.kind === "colour" ? (p.opacity ?? 1) : undefined,
               }}
             >
               <span
@@ -370,10 +374,11 @@ export default function TemplateBoxEditor({
                     : "bg-primary text-primary-foreground"
                 }`}
               >
-                {p.kind === "text" ? "T" : "IMG"} · {p.name}
+                {p.kind === "text" ? "T" : p.kind === "colour" ? "CLR" : "IMG"} · {p.name}
                 {p.layer === "under" ? " · behind" : ""}
                 {(p.opacity ?? 1) < 1 ? ` · ${Math.round((p.opacity ?? 1) * 100)}%` : ""}
               </span>
+
 
               <div
                 onPointerDown={(e) => {
