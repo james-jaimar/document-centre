@@ -7,6 +7,10 @@ import {
   buildDisabledFamilySet,
 } from "@/hooks/useTenantProductToggles";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
+import {
+  useTenantBranchCapabilitySummary,
+  useEnableFamilyOnTenantBranches,
+} from "@/hooks/useTenantBranchCapabilitySummary";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Images, Settings2, SlidersHorizontal } from "lucide-react";
+import { Images, Settings2, SlidersHorizontal, Store } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
 import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
@@ -43,6 +47,9 @@ const AdminProductCatalogue = () => {
     "ZAR",
     null,
   );
+
+  const { data: branchSummary } = useTenantBranchCapabilitySummary(tenantId);
+  const enableOnBranches = useEnableFamilyOnTenantBranches();
 
   const disabled = buildDisabledFamilySet(toggles);
   const [openFamilyId, setOpenFamilyId] = useState<string | null>(null);
@@ -63,10 +70,36 @@ const AdminProductCatalogue = () => {
         product_family_id: familyId,
         is_enabled: next,
       });
+      // Turning a product ON at tenant level should reach the storefront:
+      // enable it on branches that have never been set explicitly.
+      if (next) {
+        await enableOnBranches.mutateAsync({
+          tenant_id: tenantId,
+          product_family_id: familyId,
+          only_untouched: true,
+        });
+      }
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
   }
+
+  async function handleEnableAllBranches(familyId: string, familyName: string) {
+    if (!tenantId) return;
+    try {
+      const n = await enableOnBranches.mutateAsync({
+        tenant_id: tenantId,
+        product_family_id: familyId,
+      });
+      toast({
+        title: "Branches updated",
+        description: `${familyName} enabled on ${n} branch${n === 1 ? "" : "es"}.`,
+      });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  }
+
 
   const overrideCounts = tenantOverrides.reduce<Record<string, number>>(
     (acc, o) => {
@@ -102,6 +135,7 @@ const AdminProductCatalogue = () => {
                 <TableHead>Slug</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Tenant Enabled</TableHead>
+                <TableHead>Branches</TableHead>
                 <TableHead>Price Overrides</TableHead>
                 <TableHead className="w-56">Actions</TableHead>
               </TableRow>
@@ -128,6 +162,48 @@ const AdminProductCatalogue = () => {
                         disabled={!f.is_active || setToggle.isPending}
                         onCheckedChange={(v) => handleToggle(f.id, v)}
                       />
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const total = branchSummary?.total ?? 0;
+                        const enabledCount =
+                          branchSummary?.byFamily[f.id]?.enabled ?? 0;
+                        if (!total) {
+                          return (
+                            <span className="text-xs text-muted-foreground">
+                              No branches
+                            </span>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                enabledCount === 0
+                                  ? "destructive"
+                                  : enabledCount === total
+                                    ? "default"
+                                    : "secondary"
+                              }
+                            >
+                              {enabledCount}/{total} on
+                            </Badge>
+                            {enabledCount < total && isEnabled && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={enableOnBranches.isPending}
+                                onClick={() =>
+                                  handleEnableAllBranches(f.id, f.name)
+                                }
+                              >
+                                <Store className="h-3 w-3 mr-1" />
+                                Enable all
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{oc} override{oc !== 1 ? "s" : ""}</Badge>

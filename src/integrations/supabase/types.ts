@@ -7742,6 +7742,14 @@ export type Database = {
         Args: { p_secret_id: string }
         Returns: undefined
       }
+      enable_family_for_tenant_branches: {
+        Args: {
+          p_only_untouched?: boolean
+          p_product_family_id: string
+          p_tenant_id: string
+        }
+        Returns: number
+      }
       ensure_branch_pricing_seeded: {
         Args: { _branch_id: string }
         Returns: boolean
