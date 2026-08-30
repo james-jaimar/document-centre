@@ -182,7 +182,11 @@ export async function resolveCartWeight(
   const repaired: CartItemLike[] = await Promise.all(
     items.map(async (item) => {
       const stamped = Number((item.spec as any)?.weight?.grams);
-      if (Number.isFinite(stamped) && stamped > 0) return item;
+      const source = (item.spec as any)?.weight?.source;
+      // A manual override is final. Everything else is re-resolved at quote
+      // time so a freshly keyed pack-ladder weight is used straight away
+      // instead of the number stamped when the line was added.
+      if (source === "override" && Number.isFinite(stamped) && stamped > 0) return item;
       try {
         const { resolveOrderItemWeight, toSpecWeight } = await import("@/lib/weight/itemWeight");
         const resolved = await resolveOrderItemWeight({
