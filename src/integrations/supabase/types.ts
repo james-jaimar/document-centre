@@ -1187,6 +1187,7 @@ export type Database = {
           unit_system: string
           updated_at: string
           variant: string | null
+          weight_grams: number | null
         }
         Insert: {
           binding_method?: string | null
@@ -1209,6 +1210,7 @@ export type Database = {
           unit_system?: string
           updated_at?: string
           variant?: string | null
+          weight_grams?: number | null
         }
         Update: {
           binding_method?: string | null
@@ -1231,6 +1233,7 @@ export type Database = {
           unit_system?: string
           updated_at?: string
           variant?: string | null
+          weight_grams?: number | null
         }
         Relationships: []
       }
@@ -3886,7 +3889,9 @@ export type Database = {
           updated_at: string
           urgency: string
           vat_rate: number
+          weight_grams_override: number | null
           weight_kg: number | null
+          weight_source: string | null
         }
         Insert: {
           app_id: string
@@ -3938,7 +3943,9 @@ export type Database = {
           updated_at?: string
           urgency?: string
           vat_rate?: number
+          weight_grams_override?: number | null
           weight_kg?: number | null
+          weight_source?: string | null
         }
         Update: {
           app_id?: string
@@ -3990,7 +3997,9 @@ export type Database = {
           updated_at?: string
           urgency?: string
           vat_rate?: number
+          weight_grams_override?: number | null
           weight_kg?: number | null
+          weight_source?: string | null
         }
         Relationships: [
           {
