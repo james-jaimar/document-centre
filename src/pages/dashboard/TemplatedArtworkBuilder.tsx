@@ -54,9 +54,9 @@ import type {
   TemplatedArtworkSpec,
   TemplatedImageValue,
   TemplatedPlaceholderValue,
-  DEFAULT_CMYK,
-  normaliseCmyk,
 } from "@/lib/artworkTemplates/types";
+import { DEFAULT_CMYK, normaliseCmyk } from "@/lib/artworkTemplates/types";
+
 
 
 const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArtworkBuilder(
