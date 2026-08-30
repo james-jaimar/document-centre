@@ -209,6 +209,30 @@ export default function PackPricingMatrixEditor({
       ),
     );
   }
+  /**
+   * Estimate the pack weights for this ladder from the real trim size and
+   * paper gsm, so the courier bands have something sensible to match on.
+   * Admins can still type over any row afterwards.
+   */
+  function autoWeighGroup(group: Group) {
+    const size = allSizes.find((s) => s.code.toLowerCase() === group.size);
+    const paper = allPapers.find((p) => p.code.toLowerCase() === group.paper);
+    if (!size || !paper?.weight_gsm) return;
+    const perSheet = sheetWeightGrams(
+      Number(size.width_mm) || 210,
+      Number(size.height_mm) || 297,
+      Number(paper.weight_gsm),
+    );
+    const idxs = new Set(group.rows.map((r) => r.index));
+    commit(
+      blocks.map((b, i) => {
+        if (!idxs.has(i)) return b;
+        // Double-sided still uses one sheet per item; sides changes ink, not paper.
+        return { ...b, weight_grams: Math.max(1, Math.round(perSheet * (Number(b.qty) || 0))) };
+      }),
+    );
+  }
+
   function deleteGroup(group: Group) {
 
     if (
