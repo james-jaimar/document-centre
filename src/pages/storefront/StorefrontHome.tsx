@@ -15,6 +15,7 @@ import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip
 import { Skeleton } from "@/components/ui/skeleton";
 import { familyImage } from "@/lib/storefront/productImages";
 import { startOrderPath, type StorefrontFamily } from "@/lib/storefront/catalogue";
+import { useShowCategoryCounts } from "@/hooks/useShowCategoryCounts";
 
 export default function StorefrontHome() {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ export default function StorefrontHome() {
   const { data: branding } = useTenantBranding(tenantId ?? null);
   const { entries, categories, isLoading } = useStorefrontCatalogue();
   const { format } = useStorefrontPrice();
+  const showCategoryCounts = useShowCategoryCounts();
 
   const shopEnabled = isPageEnabled("shop");
   const featured = entries.slice(0, 6);
@@ -67,6 +69,7 @@ export default function StorefrontHome() {
                   description={category.description}
                   imageUrl={category.image_url ?? categoryImage(category.id)}
                   count={category.count}
+                  showCount={showCategoryCounts}
                   onClick={() =>
                     navigate(tenantPath(shopEnabled ? `shop/c/${category.slug}` : "orders/new"))
                   }

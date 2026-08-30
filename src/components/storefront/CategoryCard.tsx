@@ -6,6 +6,7 @@ interface Props {
   description?: string | null;
   imageUrl?: string | null;
   count: number;
+  showCount?: boolean;
   onClick: () => void;
   className?: string;
 }
@@ -16,6 +17,7 @@ export default function CategoryCard({
   description,
   imageUrl,
   count,
+  showCount = true,
   onClick,
   className,
 }: Props) {
@@ -41,9 +43,11 @@ export default function CategoryCard({
             <FileText className="h-9 w-9 text-muted-foreground/40" aria-hidden />
           </span>
         )}
-        <span className="sf-accent-bg absolute right-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold">
-          {count}
-        </span>
+        {showCount && (
+          <span className="sf-accent-bg absolute right-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold">
+            {count}
+          </span>
+        )}
       </span>
       <span className="flex flex-1 flex-col gap-1 px-4 py-3">
         <span className="text-sm font-semibold text-foreground">{name}</span>

@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { familyImage } from "@/lib/storefront/productImages";
 import { isEditableFamily, startOrderPath } from "@/lib/storefront/catalogue";
 import { getFamilyKind } from "@/lib/products/familyKind";
+import { useShowCategoryCounts } from "@/hooks/useShowCategoryCounts";
 
 type SortKey = "featured" | "price_asc" | "price_desc" | "name";
 
@@ -50,6 +51,7 @@ export default function StorefrontShop() {
   const { config, isPageEnabled } = useStorefrontPages(tenantId);
   const { entries: allEntries, categories, isLoading } = useStorefrontCatalogue();
   const { format } = useStorefrontPrice();
+  const showCategoryCounts = useShowCategoryCounts();
   const [sort, setSort] = useState<SortKey>("featured");
   const [view, setView] = useState<"grid" | "list">("grid");
 
@@ -160,6 +162,7 @@ export default function StorefrontShop() {
                   description={c.description}
                   imageUrl={c.image_url}
                   count={c.count}
+                  showCount={showCategoryCounts}
                   onClick={() => navigate(tenantPath(`shop/c/${c.slug}`))}
                 />
               ))}
