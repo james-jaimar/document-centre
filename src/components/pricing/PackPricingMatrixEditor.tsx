@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, RotateCcw, Save, Copy } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Save, Copy, Scale } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import type { PricingOption } from "@/lib/pricing/packOptions";
+import { sheetWeightGrams } from "@/lib/weightCalculation";
 
 export type PackScope = "master" | "tenant" | "branch";
 
@@ -209,6 +210,30 @@ export default function PackPricingMatrixEditor({
       ),
     );
   }
+  /**
+   * Estimate the pack weights for this ladder from the real trim size and
+   * paper gsm, so the courier bands have something sensible to match on.
+   * Admins can still type over any row afterwards.
+   */
+  function autoWeighGroup(group: Group) {
+    const size = allSizes.find((s) => s.code.toLowerCase() === group.size);
+    const paper = allPapers.find((p) => p.code.toLowerCase() === group.paper);
+    if (!size || !paper?.weight_gsm) return;
+    const perSheet = sheetWeightGrams(
+      Number(size.width_mm) || 210,
+      Number(size.height_mm) || 297,
+      Number(paper.weight_gsm),
+    );
+    const idxs = new Set(group.rows.map((r) => r.index));
+    commit(
+      blocks.map((b, i) => {
+        if (!idxs.has(i)) return b;
+        // Double-sided still uses one sheet per item; sides changes ink, not paper.
+        return { ...b, weight_grams: Math.max(1, Math.round(perSheet * (Number(b.qty) || 0))) };
+      }),
+    );
+  }
+
   function deleteGroup(group: Group) {
 
     if (
@@ -383,6 +408,7 @@ export default function PackPricingMatrixEditor({
               onDuplicateSingles={duplicateSinglesToDouble}
               onCopyToOption={copyLadderToOption}
               onFillTrade={fillTradeFromConsumer}
+              onAutoWeigh={autoWeighGroup}
 
               onDeleteGroup={deleteGroup}
             />
@@ -423,6 +449,7 @@ function GroupCard({
   onDuplicateSingles,
   onCopyToOption,
   onFillTrade,
+  onAutoWeigh,
   onDeleteGroup,
 }: {
   group: Group;
@@ -436,6 +463,7 @@ function GroupCard({
   onDuplicateSingles: (group: Group) => void;
   onCopyToOption: (group: Group, targetOption: string) => void;
   onFillTrade: (group: Group) => void;
+  onAutoWeigh: (group: Group) => void;
   onDeleteGroup: (group: Group) => void;
 
 }) {
@@ -478,6 +506,17 @@ function GroupCard({
             title="Set the trade prices in this ladder to the consumer price less a percentage"
           >
             Trade −%
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => onAutoWeigh(group)}
+            title="Estimate each pack's weight from the trim size and paper gsm"
+          >
+            <Scale className="h-3 w-3 mr-1" />
+            Auto weight
           </Button>
           <Button
             type="button"
@@ -549,15 +588,16 @@ function SidesColumn({
         <p className="text-[11px] text-muted-foreground italic">No qty tiers.</p>
       ) : (
         <>
-          <div className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+          <div className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
             <span>Qty</span>
             <span>Consumer</span>
             <span>Trade</span>
             <span>Cost</span>
+            <span title="Finished weight of the whole pack, grams">Weight g</span>
             <span></span>
           </div>
           {rows.map(({ block, index }) => (
-            <div key={index} className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 items-center">
+            <div key={index} className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 items-center">
               <Input
                 type="number"
                 min={1}
@@ -606,6 +646,21 @@ function SidesColumn({
                   });
                 }}
               />
+              <Input
+                type="number"
+                min={0}
+                step="1"
+                className="h-8 text-xs"
+                placeholder="auto"
+                title="Finished weight of this pack in grams. Leave blank to let the system calculate it from the paper."
+                value={block.weight_grams != null ? String(block.weight_grams) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onUpdateBlock(index, {
+                    weight_grams: raw === "" ? undefined : Math.max(0, Math.round(parseFloat(raw))),
+                  });
+                }}
+              />
               <Button
                 type="button"
                 variant="ghost"
@@ -618,6 +673,7 @@ function SidesColumn({
             </div>
           ))}
         </>
+
       )}
     </div>
   );

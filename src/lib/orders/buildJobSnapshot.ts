@@ -575,6 +575,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
     configuration: {
       summary,
       sections: groupedSections,
+      // Shipping weight stamped when the item entered the cart, so production
+      // and courier bookings read the same number the customer was quoted on.
+      ...(spec?.weight?.grams ? { weight: spec.weight } : {}),
       // Surface the full photo_prints block so PhotoPrintsAdminGallery can render
       // cropped tile previews + the print-ready PDF download button.
       ...(isPhotoPrints && spec?.photo_prints

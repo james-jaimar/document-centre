@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DeliveryEditor from "@/components/delivery/DeliveryEditor";
+import PackagingWeightCard from "@/components/delivery/PackagingWeightCard";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +82,7 @@ export default function AdminDelivery() {
           </CardContent>
         </Card>
       )}
+      <PackagingWeightCard tenantId={tenantId} />
       <DeliveryEditor
         scope="tenant"
         tenantId={tenantId}

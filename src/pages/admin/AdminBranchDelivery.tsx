@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranches } from "@/hooks/useBranches";
 import DeliveryEditor from "@/components/delivery/DeliveryEditor";
+import PackagingWeightCard from "@/components/delivery/PackagingWeightCard";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
@@ -20,6 +21,7 @@ export default function AdminBranchDelivery() {
       <Link to={buildAdminPath(`/admin/branches/${id}`)}>
         <Button variant="ghost" size="sm"><ArrowLeft className="size-4 mr-1" />Back to branch</Button>
       </Link>
+      <PackagingWeightCard tenantId={tenantId} branchId={id} />
       <DeliveryEditor
         scope="branch"
         tenantId={tenantId}

@@ -9,6 +9,7 @@ import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import { buildPreviewSnapshot } from "@/lib/orders/buildPreviewSnapshot";
 import { resolveBranchTax, computeVat } from "@/lib/tax/resolveBranchTax";
+import { resolveOrderItemWeight, toSpecWeight } from "@/lib/weight/itemWeight";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
@@ -126,6 +127,31 @@ export function useAddItemToCart() {
           .is("submitted_at", null); // only on still-open cart
       }
 
+      // Stamp the shipping weight on the spec now, while the sections and
+      // pack ladder are still to hand. Delivery quoting reads this instead of
+      // guessing at checkout.
+      const { data: itemRow } = await supabase
+        .from("order_items")
+        .select("product_family_id")
+        .eq("id", input.orderItemId)
+        .maybeSingle();
+
+      const resolvedWeight = await resolveOrderItemWeight({
+        orderItemId: input.orderItemId,
+        productFamilyId: itemRow?.product_family_id ?? null,
+        tenantId,
+        branchId: activeBranch?.id ?? null,
+        spec: input.spec,
+        quantity: input.quantity,
+      });
+      const specWithWeight = {
+        ...(input.spec ?? {}),
+        weight: {
+          ...((input.spec as any)?.weight ?? {}),
+          ...toSpecWeight(resolvedWeight),
+        },
+      };
+
       // Update the order item: set it as ready and move to cart order
       const { error: itemError } = await supabase
         .from("order_items")
@@ -135,7 +161,7 @@ export function useAddItemToCart() {
           unit_price: input.unitPrice,
           quantity: input.quantity,
           build_status: "ready" as any,
-          spec: input.spec,
+          spec: specWithWeight,
         })
         .eq("id", input.orderItemId);
       if (itemError) throw itemError;
@@ -578,6 +604,10 @@ export function usePlaceOrder() {
           preview: previewSnapshot,
         };
 
+        // Weight stamped at add-to-cart time (grams) → kg on the job row so
+        // production and courier bookings read the quoted number.
+        const stampedGrams = Number(item.spec?.weight?.grams);
+
         return {
           product_name: item.product_families?.name || item.title || "Document",
           product_category,
@@ -591,6 +621,12 @@ export function usePlaceOrder() {
           configuration: configurationWithPreview,
           product_snapshot,
           production_specs,
+          ...(Number.isFinite(stampedGrams) && stampedGrams > 0
+            ? {
+                weight_kg: stampedGrams / 1000,
+                weight_source: item.spec?.weight?.source ?? "calculated",
+              }
+            : {}),
         };
       });
 

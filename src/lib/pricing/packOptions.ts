@@ -164,3 +164,40 @@ export function computePackPrice(input: {
 export function defaultSelectedAddons(addons: PricingAddon[]): string[] {
   return addons.filter((a) => a.default_on).map((a) => a.slug);
 }
+
+/**
+ * The keyed weight (grams) of the pack row that matches a spec selection.
+ * Returns null when no row matches or the admin left the weight blank — the
+ * caller then falls back to calculating from paper/binding.
+ */
+export function packRowWeightGrams(
+  blocks: QuantityBlock[],
+  sel: {
+    size?: string | null;
+    paper?: string | null;
+    sides?: "single" | "double" | null;
+    option?: string | null;
+    qty: number;
+  },
+): number | null {
+  const matches = (b: QuantityBlock) => {
+    if ((Number(b.qty) || 0) !== sel.qty) return false;
+    if (!blockMatchesOption(b, sel.option ?? null)) return false;
+    if (sel.sides && b.sides && b.sides !== sel.sides) return false;
+    if (!fieldMatches(b.size, sel.size)) return false;
+    if (!fieldMatches(b.paper, sel.paper)) return false;
+    return true;
+  };
+  for (const b of blocks) {
+    if (!matches(b)) continue;
+    const g = Number((b as any).weight_grams);
+    if (Number.isFinite(g) && g > 0) return g;
+  }
+  return null;
+}
+
+function fieldMatches(blockField: string | undefined, specField: string | null | undefined) {
+  if (!blockField || blockField === "*") return true;
+  if (!specField) return false;
+  return blockField.toLowerCase() === String(specField).toLowerCase();
+}

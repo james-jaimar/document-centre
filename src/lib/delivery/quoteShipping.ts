@@ -10,6 +10,11 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { sheetWeightGrams } from "@/lib/weightCalculation";
+import { fetchWeightSettings } from "@/hooks/useWeightSettings";
+import {
+  DEFAULT_WEIGHT_SETTINGS,
+  type WeightSettings,
+} from "@/lib/weight/resolveItemWeight";
 
 export interface CartItemLike {
   id?: string;
@@ -44,6 +49,8 @@ export interface ShippingQuoteRequest {
    * shopping in another currency.
    */
   convertFromBase?: (amount: number) => number;
+  /** Pre-resolved packaging rules; fetched from branch settings when omitted. */
+  settings?: WeightSettings;
 }
 
 export interface ShippingQuoteResult {
@@ -60,9 +67,6 @@ export interface ShippingQuoteResult {
   reason?: string;
 }
 
-const DEFAULT_PACKAGING_GRAMS = 8; // small bag/sleeve per item
-const VOLUMETRIC_DIVISOR = 5000;
-
 /** Look up size dimensions from a spec object (best effort). */
 function readSizeMm(spec: any): { w: number; h: number } {
   const size = spec?.size ?? {};
@@ -71,43 +75,61 @@ function readSizeMm(spec: any): { w: number; h: number } {
   return { w: isFinite(w) ? w : 210, h: isFinite(h) ? h : 297 };
 }
 
-/** Per-item weight + volume estimate. Each cart item is treated as its own packed parcel. */
-export function estimateItemWeight(item: CartItemLike): ItemWeight {
+/**
+ * Per-item weight + volume. Uses the weight stamped on the spec when the item
+ * was added to the cart (pack-ladder or calculated); only falls back to the
+ * old heuristics for legacy items that predate weight stamping.
+ */
+export function estimateItemWeight(
+  item: CartItemLike,
+  settings: WeightSettings = DEFAULT_WEIGHT_SETTINGS,
+): ItemWeight {
   const spec = item.spec ?? {};
   const qty = Math.max(1, Number(item.quantity ?? 1));
   const familySlug = (item.product_families?.slug ?? "").toLowerCase();
+  const { w, h } = readSizeMm(spec);
+  const packagingGrams = settings.packagingGrams;
+  const divisor = settings.volumetricDivisor || 5000;
+
+  // Stamped weight — authoritative.
+  const stamped = Number(spec?.weight?.grams);
+  if (Number.isFinite(stamped) && stamped > 0) {
+    const physicalKg = stamped / 1000;
+    const pageCount = Number(spec?.page_count ?? 1) || 1;
+    const thicknessCm = Math.max(0.4, pageCount * qty * 0.012);
+    const volKg = ((w / 10) * (h / 10) * thicknessCm) / divisor;
+    return { physicalKg, volumetricKg: volKg, billableKg: Math.max(physicalKg, volKg) };
+  }
 
   // Fixed-weight products
   if (familySlug.includes("business-card")) {
     const grams = qty * 5; // ~5g per card
-    const physicalKg = (grams + DEFAULT_PACKAGING_GRAMS) / 1000;
+    const physicalKg = (grams + packagingGrams) / 1000;
     // Tiny stack: ~9x5.5cm × (qty * 0.3mm thickness)
     const thicknessCm = Math.max(0.3, (qty * 0.03));
-    const volKg = (9 * 5.5 * thicknessCm) / VOLUMETRIC_DIVISOR;
+    const volKg = (9 * 5.5 * thicknessCm) / divisor;
     return { physicalKg, volumetricKg: volKg, billableKg: Math.max(physicalKg, volKg) };
   }
   if (familySlug.includes("photo")) {
-    const { w, h } = readSizeMm(spec);
     const sheet = sheetWeightGrams(w, h, 250); // photo paper ~250gsm
-    const grams = sheet * qty + DEFAULT_PACKAGING_GRAMS;
+    const grams = sheet * qty + packagingGrams;
     const physicalKg = grams / 1000;
     const thicknessCm = Math.max(0.2, qty * 0.025);
-    const volKg = ((w / 10) * (h / 10) * thicknessCm) / VOLUMETRIC_DIVISOR;
+    const volKg = ((w / 10) * (h / 10) * thicknessCm) / divisor;
     return { physicalKg, volumetricKg: volKg, billableKg: Math.max(physicalKg, volKg) };
   }
 
   // Generic / document-like
-  const { w, h } = readSizeMm(spec);
   const gsm = Number(spec?.paper_gsm ?? spec?.gsm ?? 80);
   const pageCount = Number(spec?.page_count ?? spec?.total_pages ?? 1);
   const isDuplex = !!(spec?.is_duplex ?? spec?.duplex);
   const sheets = isDuplex ? Math.ceil(pageCount / 2) : pageCount;
-  const perCopyGrams = sheetWeightGrams(w, h, gsm) * sheets + DEFAULT_PACKAGING_GRAMS;
+  const perCopyGrams = sheetWeightGrams(w, h, gsm) * sheets + packagingGrams;
   const physicalKg = (perCopyGrams * qty) / 1000;
 
   // Volumetric per item parcel — approximate stack height: sheets * 0.12mm
   const thicknessCm = Math.max(0.4, (sheets * 0.012));
-  const volPerCopy = ((w / 10) * (h / 10) * thicknessCm) / VOLUMETRIC_DIVISOR;
+  const volPerCopy = ((w / 10) * (h / 10) * thicknessCm) / divisor;
   const volumetricKg = volPerCopy * qty;
 
   return {
@@ -118,12 +140,15 @@ export function estimateItemWeight(item: CartItemLike): ItemWeight {
 }
 
 /** Sum across the cart. */
-export function aggregateCartWeight(items: CartItemLike[]) {
+export function aggregateCartWeight(
+  items: CartItemLike[],
+  settings: WeightSettings = DEFAULT_WEIGHT_SETTINGS,
+) {
   let physicalKg = 0;
   let volumetricKg = 0;
   let billableKg = 0;
   for (const item of items) {
-    const w = estimateItemWeight(item);
+    const w = estimateItemWeight(item, settings);
     physicalKg += w.physicalKg;
     volumetricKg += w.volumetricKg;
     billableKg += w.billableKg;
@@ -136,13 +161,15 @@ export function aggregateCartWeight(items: CartItemLike[]) {
 }
 
 /** Minimum billable weight (kg) — courier minimums apply even to tiny parcels. */
-export const MIN_BILLABLE_KG = 1.0;
+export const MIN_BILLABLE_KG = DEFAULT_WEIGHT_SETTINGS.minBillableKg;
 
 /** Main entry point. Returns a quote (price may be null if no rate found). */
 export async function quoteShipping(req: ShippingQuoteRequest): Promise<ShippingQuoteResult> {
   const currency = req.currency ?? "ZAR";
-  const weights = aggregateCartWeight(req.items);
-  const chargeableKg = Math.max(weights.billableKg, MIN_BILLABLE_KG);
+  const settings = req.settings ?? (await fetchWeightSettings(req.branchId, req.tenantId));
+  const weights = aggregateCartWeight(req.items, settings);
+  const chargeableKg = Math.max(weights.billableKg, settings.minBillableKg);
+
 
   const baseResult: ShippingQuoteResult = {
     zoneId: null,
@@ -245,8 +272,9 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
   options: ShippingMethodOption[];
 }> {
   const currency = req.currency ?? "ZAR";
-  const weights = aggregateCartWeight(req.items);
-  const chargeableKg = Math.max(weights.billableKg, MIN_BILLABLE_KG);
+  const settings = req.settings ?? (await fetchWeightSettings(req.branchId, req.tenantId));
+  const weights = aggregateCartWeight(req.items, settings);
+  const chargeableKg = Math.max(weights.billableKg, settings.minBillableKg);
 
   if (!req.address?.city && !req.address?.postal_code && !req.address?.province) {
     return { zoneId: null, zoneLabel: null, zoneCode: null, billableKg: chargeableKg, options: [] };
