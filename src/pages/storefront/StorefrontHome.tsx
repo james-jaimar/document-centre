@@ -10,6 +10,7 @@ import HeroSection from "@/components/storefront/HeroSection";
 import HowItWorks from "@/components/storefront/HowItWorks";
 import TradeBand from "@/components/storefront/TradeBand";
 import ProductStrip from "@/components/storefront/ProductStrip";
+import CategoryCard from "@/components/storefront/CategoryCard";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { familyImage } from "@/lib/storefront/productImages";
@@ -21,7 +22,7 @@ export default function StorefrontHome() {
   const { tenantId } = useTenantContext();
   const { config, isPageEnabled } = useStorefrontPages(tenantId);
   const { data: branding } = useTenantBranding(tenantId ?? null);
-  const { entries, isLoading } = useStorefrontCatalogue();
+  const { entries, categories, isLoading } = useStorefrontCatalogue();
   const { format } = useStorefrontPrice();
 
   const shopEnabled = isPageEnabled("shop");
@@ -31,6 +32,12 @@ export default function StorefrontHome() {
     navigate(
       tenantPath(isPageEnabled("product") ? `shop/${family.slug}` : startOrderPath(family)),
     );
+
+  /** Category tile image: category image, else first product image in it. */
+  const categoryImage = (categoryId: string) => {
+    const entry = entries.find((e) => e.category.id === categoryId);
+    return entry ? familyImage(entry.family, config.images) : null;
+  };
 
   return (
     <div className="dc-storefront">
@@ -46,9 +53,24 @@ export default function StorefrontHome() {
       <section className="border-t py-3">
         <div className="sf-container">
           {isLoading ? (
-            <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-[166px] rounded-lg" />
+            <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-4">
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                <Skeleton key={i} className="h-[214px] rounded-xl" />
+              ))}
+            </div>
+          ) : categories.length ? (
+            <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-4">
+              {categories.map((category) => (
+                <CategoryCard
+                  key={category.id}
+                  name={category.name}
+                  description={category.description}
+                  imageUrl={category.image_url ?? categoryImage(category.id)}
+                  count={category.count}
+                  onClick={() =>
+                    navigate(tenantPath(shopEnabled ? `shop/${category.slug}` : "orders/new"))
+                  }
+                />
               ))}
             </div>
           ) : (
