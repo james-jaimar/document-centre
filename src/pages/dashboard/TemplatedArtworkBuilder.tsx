@@ -45,7 +45,9 @@ import {
   computePackPrice,
   packQuantitiesForOption,
   snapQuantity,
+  visibleOptions,
 } from "@/lib/pricing/packOptions";
+
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
