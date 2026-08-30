@@ -409,7 +409,7 @@ function ZoneCard({
         <RateLadder
           methods={methods}
           rates={rates}
-          onSaveRate={onSaveRate}
+          onSaveRate={(r) => onSaveRate({ zone_id: zone.id, ...r })}
           onDeleteRate={onDeleteRate}
         />
 
