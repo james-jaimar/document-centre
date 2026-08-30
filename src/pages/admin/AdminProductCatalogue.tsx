@@ -7,6 +7,10 @@ import {
   buildDisabledFamilySet,
 } from "@/hooks/useTenantProductToggles";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
+import {
+  useTenantBranchCapabilitySummary,
+  useEnableFamilyOnTenantBranches,
+} from "@/hooks/useTenantBranchCapabilitySummary";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Images, Settings2, SlidersHorizontal } from "lucide-react";
+import { Images, Settings2, SlidersHorizontal, Store } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
 import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
