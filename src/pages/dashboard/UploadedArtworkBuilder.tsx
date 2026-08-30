@@ -325,8 +325,14 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
-  const { blocks: packBlocks, options: pricingOptions, addons: pricingAddons } =
+  const { blocks: packBlocks, options: allPricingOptions, addons: pricingAddons } =
     useFamilyPackPricing(family as any);
+
+  const { tier: pricingTier } = useCustomerPricingTier();
+  const pricingOptions = useMemo(
+    () => visibleOptions(allPricingOptions, pricingTier),
+    [allPricingOptions, pricingTier],
+  );
 
   const [pricingOption, setPricingOption] = useState<string | null>(null);
   useEffect(() => {
@@ -339,8 +345,6 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
     );
   }, [pricingOptions]);
 
-  const { tier: pricingTier } = useCustomerPricingTier();
-
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   useEffect(() => {
     setSelectedAddons(pricingAddons.filter((a) => a.default_on).map((a) => a.slug));
@@ -348,9 +352,10 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
 
   /** Distinct pack quantities for the chosen option, cheapest block per quantity. */
   const packOptions = useMemo(
-    () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier),
-    [packBlocks, pricingOption, pricingTier],
+    () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier, allPricingOptions),
+    [packBlocks, pricingOption, pricingTier, allPricingOptions],
   );
+
   const packMode = packOptions.length > 0;
 
   // Snap the quantity onto a valid pack as soon as pack pricing is available.
