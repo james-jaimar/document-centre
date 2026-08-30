@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import type { PricingOption } from "@/lib/pricing/packOptions";
+import { sheetWeightGrams } from "@/lib/weightCalculation";
 
 export type PackScope = "master" | "tenant" | "branch";
 
