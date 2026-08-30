@@ -95,6 +95,12 @@ export function estimateItemWeight(
   const stamped = Number(spec?.weight?.grams);
   if (Number.isFinite(stamped) && stamped > 0) {
     const physicalKg = stamped / 1000;
+    const source = spec?.weight?.source;
+    // A weight typed by a human (pack-ladder row or job override) is the real
+    // finished weight of the parcel — never inflate it with a guessed volume.
+    if (source === "pack_row" || source === "override") {
+      return { physicalKg, volumetricKg: 0, billableKg: physicalKg };
+    }
     const pageCount = Number(spec?.page_count ?? 1) || 1;
     const thicknessCm = Math.max(0.4, pageCount * qty * 0.012);
     const volKg = ((w / 10) * (h / 10) * thicknessCm) / divisor;
@@ -176,7 +182,11 @@ export async function resolveCartWeight(
   const repaired: CartItemLike[] = await Promise.all(
     items.map(async (item) => {
       const stamped = Number((item.spec as any)?.weight?.grams);
-      if (Number.isFinite(stamped) && stamped > 0) return item;
+      const source = (item.spec as any)?.weight?.source;
+      // A manual override is final. Everything else is re-resolved at quote
+      // time so a freshly keyed pack-ladder weight is used straight away
+      // instead of the number stamped when the line was added.
+      if (source === "override" && Number.isFinite(stamped) && stamped > 0) return item;
       try {
         const { resolveOrderItemWeight, toSpecWeight } = await import("@/lib/weight/itemWeight");
         const resolved = await resolveOrderItemWeight({
