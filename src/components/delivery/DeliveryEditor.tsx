@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, MapPin, Truck, RotateCw } from "lucide-react";
+import { Plus, Trash2, MapPin, Truck, RotateCw, Globe } from "lucide-react";
 
 type Scope = "tenant" | "branch" | "platform";
 
@@ -365,13 +365,33 @@ function ZoneCard({
         {/* Locations */}
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium text-sm flex items-center gap-2"><MapPin className="size-4" /> Locations</h4>
-            <LocationDialog onAdd={onAddLocation} />
+            <h4 className="font-medium text-sm flex items-center gap-2"><MapPin className="size-4" /> Coverage</h4>
+            <div className="flex gap-2">
+              {!zone.is_default_fallback && (
+                <Button size="sm" variant="outline" onClick={() => onUpdateZone({ ...zone, is_default_fallback: true })}>
+                  <Globe className="size-4 mr-1" />Make countrywide
+                </Button>
+              )}
+              <LocationDialog onAdd={onAddLocation} />
+            </div>
           </div>
-          {locations.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No locations — this zone won't match unless it's the fallback.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
+          {zone.is_default_fallback ? (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Countrywide catch-all.</span> Every address that doesn't
+              match a more specific zone is quoted from this zone's weight tiers
+              {locations.length > 0 ? " (the listed locations still match it first)." : "."}
+              {" "}
+              <button className="underline" onClick={() => onUpdateZone({ ...zone, is_default_fallback: false })}>
+                Restrict to listed locations
+              </button>
+            </p>
+          ) : locations.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No locations — this zone will never match. Add a city / postcode / province, or make it countrywide.
+            </p>
+          ) : null}
+          {locations.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
               {locations.map((l) => (
                 <Badge key={l.id} variant="secondary" className="gap-1 pl-2 pr-1">
                   <span className="text-[10px] uppercase opacity-70">{l.match_type.replace("_", " ")}</span>
@@ -386,51 +406,202 @@ function ZoneCard({
         </section>
 
         {/* Rates */}
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium text-sm">Weight tiers</h4>
-            <RateDialog methods={methods} onSave={onSaveRate} />
-          </div>
-          {rates.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No rates yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Weight (kg)</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Currency</TableHead>
-                  <TableHead className="w-[100px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rates.map((r) => {
-                  const m = methods.find((mm) => mm.id === r.method_id);
-                  return (
-                    <TableRow key={r.id}>
-                      <TableCell>{m?.label ?? r.method_id}</TableCell>
-                      <TableCell>{r.min_weight_kg} – {r.max_weight_kg ?? "∞"}</TableCell>
-                      <TableCell>{r.price.toFixed(2)}</TableCell>
-                      <TableCell>{r.currency_code}</TableCell>
-                      <TableCell className="flex gap-1 justify-end">
-                        <RateDialog methods={methods} rate={r} onSave={(rr) => onSaveRate({ ...rr, id: r.id })}
-                          trigger={<Button variant="ghost" size="sm">Edit</Button>} />
-                        <Button variant="ghost" size="icon" onClick={() => onDeleteRate(r.id)}>
-                          <Trash2 className="size-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </section>
+        <RateLadder
+          methods={methods}
+          rates={rates}
+          onSaveRate={onSaveRate}
+          onDeleteRate={onDeleteRate}
+        />
+
       </CardContent>
     </Card>
   );
 }
+
+// ---------- Weight tier ladder (PrintJob-style) ----------
+function RateLadder({ methods, rates, onSaveRate, onDeleteRate }: {
+  methods: Method[];
+  rates: Rate[];
+  onSaveRate: (r: Partial<Rate> & { id?: string }) => void;
+  onDeleteRate: (id: string) => void;
+}) {
+  const shippingMethods = methods.filter((m) => m.is_active);
+  const firstWithRates = shippingMethods.find((m) => rates.some((r) => r.method_id === m.id));
+  const [methodId, setMethodId] = useState<string | undefined>(firstWithRates?.id ?? shippingMethods[0]?.id);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+
+  const currency = rates[0]?.currency_code ?? "ZAR";
+  const ladder = rates
+    .filter((r) => r.method_id === methodId)
+    .slice()
+    .sort((a, b) => (a.max_weight_kg ?? Infinity) - (b.max_weight_kg ?? Infinity));
+
+  /** Persist a row and keep the min of the row below in step with it. */
+  const commit = (row: Rate, patch: Partial<Rate>) => {
+    const next = { ...row, ...patch };
+    onSaveRate({ ...next, id: row.id });
+    const idx = ladder.findIndex((r) => r.id === row.id);
+    const below = ladder[idx + 1];
+    if (below && patch.max_weight_kg !== undefined && below.min_weight_kg !== patch.max_weight_kg) {
+      onSaveRate({ ...below, min_weight_kg: patch.max_weight_kg ?? below.min_weight_kg, id: below.id });
+    }
+  };
+
+  const addRow = () => {
+    if (!methodId) return;
+    const last = ladder[ladder.length - 1];
+    const min = last ? (last.max_weight_kg ?? last.min_weight_kg) : 0;
+    onSaveRate({
+      method_id: methodId,
+      min_weight_kg: min,
+      max_weight_kg: Number(min) + 5,
+      price: 0,
+      currency_code: currency,
+      is_active: true,
+    });
+  };
+
+  const applyPaste = () => {
+    if (!methodId) return;
+    const lines = pasteText.split("\n").map((l) => l.trim()).filter(Boolean);
+    let prev = 0;
+    let added = 0;
+    for (const line of lines) {
+      const parts = line.split(/[\s,;\t]+/).filter(Boolean);
+      if (parts.length < 2) continue;
+      const upTo = Number(parts[0].replace(/[^\d.]/g, ""));
+      const price = Number(parts[1].replace(/[^\d.]/g, ""));
+      if (!Number.isFinite(upTo) || !Number.isFinite(price)) continue;
+      onSaveRate({
+        method_id: methodId,
+        min_weight_kg: prev,
+        max_weight_kg: upTo,
+        price,
+        currency_code: currency,
+        is_active: true,
+      });
+      prev = upTo;
+      added += 1;
+    }
+    if (added === 0) toast.error("Nothing recognised — use one 'weight price' pair per line.");
+    setPasteOpen(false);
+    setPasteText("");
+  };
+
+  return (
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h4 className="font-medium text-sm">Weight tiers</h4>
+        <div className="flex items-center gap-2">
+          <Select value={methodId} onValueChange={setMethodId}>
+            <SelectTrigger className="h-8 w-[190px]"><SelectValue placeholder="Shipping method" /></SelectTrigger>
+            <SelectContent>
+              {shippingMethods.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
+            <DialogTrigger asChild><Button size="sm" variant="ghost">Paste ladder</Button></DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Paste a rate ladder</DialogTitle></DialogHeader>
+              <p className="text-xs text-muted-foreground">
+                One line per tier: weight up to, then price. e.g.<br />
+                <code>3 50<br />10 165<br />20 175</code>
+              </p>
+              <textarea
+                className="w-full h-40 rounded-md border bg-background p-2 text-sm font-mono"
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder={"3 50\n10 165\n20 175"}
+              />
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setPasteOpen(false)}>Cancel</Button>
+                <Button onClick={applyPaste} disabled={!methodId}>Add tiers</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button size="sm" variant="outline" onClick={addRow} disabled={!methodId}>
+            <Plus className="size-4 mr-1" />Add tier
+          </Button>
+        </div>
+      </div>
+
+      {!methodId ? (
+        <p className="text-xs text-muted-foreground">Add a shipping method first (Methods tab).</p>
+      ) : ladder.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No tiers for this method yet — add them one by one, or paste a ladder.
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[140px]">From (kg)</TableHead>
+              <TableHead className="w-[180px]">Weight up to (kg)</TableHead>
+              <TableHead className="w-[180px]">Price ({currency})</TableHead>
+              <TableHead className="w-[60px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ladder.map((r) => (
+              <LadderRow key={r.id} rate={r} onCommit={(patch) => commit(r, patch)} onDelete={() => onDeleteRate(r.id)} />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <p className="text-[11px] text-muted-foreground mt-2">
+        Leave the top tier's “up to” blank for unlimited. Orders heavier than the last tier won't be quoted for this method.
+      </p>
+    </section>
+  );
+}
+
+function LadderRow({ rate, onCommit, onDelete }: {
+  rate: Rate;
+  onCommit: (patch: Partial<Rate>) => void;
+  onDelete: () => void;
+}) {
+  const [maxKg, setMaxKg] = useState(rate.max_weight_kg === null ? "" : String(rate.max_weight_kg));
+  const [price, setPrice] = useState(String(rate.price));
+
+  return (
+    <TableRow>
+      <TableCell className="text-muted-foreground text-sm">{rate.min_weight_kg}</TableCell>
+      <TableCell>
+        <Input
+          className="h-8"
+          type="number"
+          step="0.01"
+          value={maxKg}
+          placeholder="∞"
+          onChange={(e) => setMaxKg(e.target.value)}
+          onBlur={() => {
+            const v = maxKg === "" ? null : Number(maxKg);
+            if (v !== rate.max_weight_kg) onCommit({ max_weight_kg: v });
+          }}
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          className="h-8"
+          type="number"
+          step="0.01"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          onBlur={() => {
+            const v = Number(price);
+            if (Number.isFinite(v) && v !== rate.price) onCommit({ price: v });
+          }}
+        />
+      </TableCell>
+      <TableCell className="text-right">
+        <Button variant="ghost" size="icon" onClick={onDelete}><Trash2 className="size-4 text-destructive" /></Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+
 
 // ---------- Zone Dialog ----------
 function ZoneDialog({ zone, onSave, trigger }: { zone?: Zone; onSave: (z: Partial<Zone>) => void; trigger?: React.ReactNode }) {
