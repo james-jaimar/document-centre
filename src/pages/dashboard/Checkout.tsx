@@ -134,6 +134,7 @@ export default function Checkout() {
   const collectionBranch = activeBranch;
 
   // Delivery address fields
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [address, setAddress] = useState({
     contact_name: "",
     company_name: "",
@@ -145,6 +146,7 @@ export default function Checkout() {
     phone: "",
     email: "",
   });
+
 
   const items = (cart?.order_items as any[]) ?? [];
   const subtotal = items.reduce(
