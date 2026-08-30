@@ -794,12 +794,15 @@ function MethodsPanel({ methods, tenantId, branchId, scope, onChanged }: { metho
           .eq("method_id", m.id);
         if (error) { toast.error(error.message); return; }
       } else {
+        await supabase
+          .from("tenant_delivery_method_overrides")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .is("branch_id", null)
+          .eq("method_id", m.id);
         const { error } = await supabase
           .from("tenant_delivery_method_overrides")
-          .upsert(
-            { tenant_id: tenantId, branch_id: null, method_id: m.id, is_enabled: false },
-            { onConflict: "tenant_id,method_id" },
-          );
+          .insert({ tenant_id: tenantId, branch_id: null, method_id: m.id, is_enabled: false });
         if (error) { toast.error(error.message); return; }
       }
       overridesQuery.refetch();
