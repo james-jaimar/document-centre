@@ -48,7 +48,9 @@ import {
   computePackPrice,
   packQuantitiesForOption,
   snapQuantity,
+  visibleOptions,
 } from "@/lib/pricing/packOptions";
+
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 
 /** How far the uploaded trim may differ from the expected trim, in mm. */
