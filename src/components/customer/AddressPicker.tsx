@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,21 @@ export default function AddressPicker({ selectedId, onSelect, addressType = "del
     return a.address_type === addressType;
   });
 
+  // Auto-select a sensible default so customers can't silently check out with
+  // no delivery address chosen (which skips the delivery fee).
+  const autoPickedRef = useRef(false);
+  useEffect(() => {
+    if (autoPickedRef.current || selectedId || filtered.length === 0) return;
+    const pick = filtered.find((a) => a.is_default) ?? (filtered.length === 1 ? filtered[0] : null);
+    if (pick) {
+      autoPickedRef.current = true;
+      onSelect(pick);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered.length, selectedId]);
+
   if (!user) return null;
+
 
   if (isLoading) {
     return <div className="text-xs text-muted-foreground">Loading saved addresses…</div>;

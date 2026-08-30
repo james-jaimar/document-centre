@@ -134,6 +134,7 @@ export default function Checkout() {
   const collectionBranch = activeBranch;
 
   // Delivery address fields
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [address, setAddress] = useState({
     contact_name: "",
     company_name: "",
@@ -145,6 +146,7 @@ export default function Checkout() {
     phone: "",
     email: "",
   });
+
 
   const items = (cart?.order_items as any[]) ?? [];
   const subtotal = items.reduce(
@@ -328,10 +330,15 @@ export default function Checkout() {
       toast.error("Please enter a delivery address");
       return;
     }
-    if (deliveryMethod === "delivery" && shippingQuote && shippingQuote.price == null) {
-      toast.error("We couldn't quote delivery to that address. Please check the city / postal code.");
+    if (deliveryMethod === "delivery" && quotingShipping) {
+      toast.error("Still calculating delivery — one moment.");
       return;
     }
+    if (deliveryMethod === "delivery" && (!shippingQuote || shippingQuote.price == null)) {
+      toast.error("Please choose a delivery address and option so we can add the delivery fee.");
+      return;
+    }
+
     if (!legalAccept) {
       toast.error("Please accept the Terms & Conditions and Privacy Policy to continue.");
       return;
@@ -618,7 +625,9 @@ export default function Checkout() {
               <h3 className="font-semibold text-foreground">Delivery Address</h3>
               {user && (
                 <AddressPicker
+                  selectedId={selectedAddressId}
                   onSelect={(addr) => {
+                    setSelectedAddressId(addr.id);
                     setAddress({
                       contact_name: addr.contact_name ?? "",
                       company_name: addr.company_name ?? "",
@@ -634,6 +643,7 @@ export default function Checkout() {
                   }}
                 />
               )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Contact Name</Label>
@@ -960,7 +970,11 @@ export default function Checkout() {
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading}
+            disabled={
+              isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading ||
+              (deliveryMethod === "delivery" && (quotingShipping || !shippingQuote || shippingQuote.price == null))
+            }
+
           >
             {isSubmitting ? (
               <>
