@@ -618,7 +618,9 @@ export default function Checkout() {
               <h3 className="font-semibold text-foreground">Delivery Address</h3>
               {user && (
                 <AddressPicker
+                  selectedId={selectedAddressId}
                   onSelect={(addr) => {
+                    setSelectedAddressId(addr.id);
                     setAddress({
                       contact_name: addr.contact_name ?? "",
                       company_name: addr.company_name ?? "",
@@ -634,6 +636,7 @@ export default function Checkout() {
                   }}
                 />
               )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Contact Name</Label>
