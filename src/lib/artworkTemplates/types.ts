@@ -198,7 +198,18 @@ export interface TemplatedTextValue {
 }
 
 
-export type TemplatedPlaceholderValue = TemplatedImageValue | TemplatedTextValue;
+export interface TemplatedColourValue {
+  placeholder_id: string;
+  kind: "colour";
+  cmyk: ArtworkCmyk;
+  opacity?: number;
+}
+
+export type TemplatedPlaceholderValue =
+  | TemplatedImageValue
+  | TemplatedTextValue
+  | TemplatedColourValue;
+
 
 export interface TemplatedArtworkSpec {
   template_id: string;
