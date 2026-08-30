@@ -30,18 +30,27 @@ export default function AddressPicker({ selectedId, onSelect, addressType = "del
     return a.address_type === addressType;
   });
 
-  // Auto-select a sensible default so customers can't silently check out with
+  // Auto-select a sensible address so customers can't silently check out with
   // no delivery address chosen (which skips the delivery fee).
-  const autoPickedRef = useRef(false);
+  // - On load: the default address, or the only one.
+  // - After the customer adds a new address: select that new one.
+  const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
-    if (autoPickedRef.current || selectedId || filtered.length === 0) return;
-    const pick = filtered.find((a) => a.is_default) ?? (filtered.length === 1 ? filtered[0] : null);
-    if (pick) {
-      autoPickedRef.current = true;
-      onSelect(pick);
-    }
+    const prev = prevCountRef.current;
+    prevCountRef.current = filtered.length;
+    if (selectedId || filtered.length === 0) return;
+
+    const grew = prev !== null && filtered.length > prev;
+    // Rows come back ordered default-first then oldest-first, so the newest
+    // non-default addition is the last row.
+    const newest = filtered[filtered.length - 1];
+    const pick = grew
+      ? newest
+      : (filtered.find((a) => a.is_default) ?? (filtered.length === 1 ? filtered[0] : null));
+    if (pick) onSelect(pick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered.length, selectedId]);
+
 
   if (!user) return null;
 
