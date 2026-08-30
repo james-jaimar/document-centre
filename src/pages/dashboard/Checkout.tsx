@@ -894,9 +894,13 @@ export default function Checkout() {
                 deliveryMethod === "delivery" && shippingQuote && (
                   <div className="text-[11px] text-muted-foreground">
                     Billable weight: {shippingQuote.billableKg.toFixed(2)}kg
-                    {shippingQuote.volumetricKg > shippingQuote.physicalKg
-                      ? ` (volumetric — parcel weighs ${shippingQuote.physicalKg.toFixed(2)}kg)`
-                      : " (actual weight incl. packaging)"}
+                    {shippingQuote.weightSource === "pack_row"
+                      ? " (from pack price row)"
+                      : shippingQuote.weightSource === "override"
+                        ? " (manually set weight)"
+                        : shippingQuote.volumetricKg > shippingQuote.physicalKg
+                          ? ` (volumetric — parcel weighs ${shippingQuote.physicalKg.toFixed(2)}kg)`
+                          : " (actual weight incl. packaging)"}
                     {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
                   </div>
                 )

@@ -227,20 +227,32 @@ export function packRowWeightGrams(
     qty: number;
   },
 ): number | null {
-  const matches = (b: QuantityBlock) => {
+  // Qty + option are hard requirements (same rule the price lookup uses).
+  // size / paper / sides are only enforced when the spec actually carries
+  // them — many products (templated artwork, single-size families) never
+  // stamp a size or paper code, and requiring one silently discarded the
+  // admin-keyed pack weight.
+  const candidates = blocks.filter((b) => {
     if ((Number(b.qty) || 0) !== sel.qty) return false;
     if (!blockMatchesOption(b, sel.option ?? null)) return false;
-    if (sel.sides && b.sides && b.sides !== sel.sides) return false;
-    if (!fieldMatches(b.size, sel.size)) return false;
-    if (!fieldMatches(b.paper, sel.paper)) return false;
-    return true;
-  };
-  for (const b of blocks) {
-    if (!matches(b)) continue;
+    if (sel.sides && b.sides && String(b.sides) !== "*" && b.sides !== sel.sides) return false;
+    if (sel.size && !fieldMatches(b.size, sel.size)) return false;
+    if (sel.paper && !fieldMatches(b.paper, sel.paper)) return false;
     const g = Number((b as any).weight_grams);
-    if (Number.isFinite(g) && g > 0) return g;
-  }
-  return null;
+    return Number.isFinite(g) && g > 0;
+  });
+  if (candidates.length === 0) return null;
+
+  // Prefer the row that agrees most closely with whatever the spec did specify.
+  const score = (b: QuantityBlock) => {
+    let s = 0;
+    if (sel.size && b.size && b.size !== "*" && fieldMatches(b.size, sel.size)) s += 2;
+    if (sel.paper && b.paper && b.paper !== "*" && fieldMatches(b.paper, sel.paper)) s += 2;
+    if (sel.sides && b.sides && b.sides === sel.sides) s += 1;
+    return s;
+  };
+  const best = candidates.reduce((a, b) => (score(b) > score(a) ? b : a));
+  return Number((best as any).weight_grams);
 }
 
 function fieldMatches(blockField: string | undefined, specField: string | null | undefined) {
@@ -248,3 +260,4 @@ function fieldMatches(blockField: string | undefined, specField: string | null |
   if (!specField) return false;
   return blockField.toLowerCase() === String(specField).toLowerCase();
 }
+

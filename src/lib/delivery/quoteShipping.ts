@@ -29,6 +29,7 @@ export interface ItemWeight {
   billableKg: number;
 }
 
+
 export interface ShippingQuoteAddress {
   city?: string;
   postal_code?: string;
@@ -64,6 +65,8 @@ export interface ShippingQuoteResult {
   physicalKg: number;
   volumetricKg: number;
   billableKg: number;
+  /** Where the heaviest line's weight came from (pack_row, override, calculated…). */
+  weightSource?: string | null;
   reason?: string;
 }
 
@@ -155,18 +158,26 @@ export function aggregateCartWeight(
   let physicalKg = 0;
   let volumetricKg = 0;
   let billableKg = 0;
+  let heaviest = -1;
+  let weightSource: string | null = null;
   for (const item of items) {
     const w = estimateItemWeight(item, settings);
     physicalKg += finite(w.physicalKg);
     volumetricKg += finite(w.volumetricKg);
     billableKg += finite(w.billableKg);
+    if (finite(w.billableKg) > heaviest) {
+      heaviest = finite(w.billableKg);
+      weightSource = ((item.spec as any)?.weight?.source as string | undefined) ?? null;
+    }
   }
   return {
     physicalKg: Math.round(physicalKg * 1000) / 1000,
     volumetricKg: Math.round(volumetricKg * 1000) / 1000,
     billableKg: Math.round(billableKg * 1000) / 1000,
+    weightSource,
   };
 }
+
 
 /**
  * Cart weight with a live repair pass: any line whose spec carries no usable
