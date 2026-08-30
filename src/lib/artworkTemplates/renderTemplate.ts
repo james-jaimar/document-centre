@@ -7,13 +7,16 @@
  */
 
 import {
+  DEFAULT_CMYK,
   DEFAULT_TEXT_STYLE,
+  cmykToHex,
   fontCss,
   splitByLayer,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
   type TemplatedPlaceholderValue,
 } from "./types";
+
 
 
 export interface BoxRectPx {
