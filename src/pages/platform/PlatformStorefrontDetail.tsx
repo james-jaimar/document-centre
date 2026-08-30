@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
 import { familyImage } from "@/lib/storefront/productImages";
+import ProductGalleryManager from "@/components/admin/ProductGalleryManager";
+
 
 const ICON_CHOICES = ["truck", "shield", "clock", "star", "package", "card"];
 
