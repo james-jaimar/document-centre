@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ProductLightbox from "./ProductLightbox";
 
 export default function ProductGallery({
   images,
@@ -10,17 +11,40 @@ export default function ProductGallery({
   alt: string;
 }) {
   const [index, setIndex] = useState(0);
-  useEffect(() => setIndex(0), [alt]);
+  const [zoomed, setZoomed] = useState(false);
+  useEffect(() => {
+    setIndex(0);
+    setZoomed(false);
+  }, [alt]);
 
   const current = images[index] ?? null;
-  const step = (dir: number) =>
-    setIndex((i) => (images.length ? (i + dir + images.length) % images.length : 0));
+  const step = useCallback(
+    (dir: number) =>
+      setIndex((i) => (images.length ? (i + dir + images.length) % images.length : 0)),
+    [images.length],
+  );
 
   return (
     <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-xl border bg-muted">
+      <div
+        className="relative overflow-hidden rounded-xl border bg-muted"
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight") step(1);
+          if (e.key === "ArrowLeft") step(-1);
+        }}
+        tabIndex={images.length > 1 ? 0 : -1}
+      >
         {current ? (
-          <img src={current} alt={alt} className="aspect-[4/3] w-full object-cover" />
+          <img
+            src={current}
+            alt={
+              images.length > 1
+                ? `${alt} — image ${index + 1} of ${images.length}`
+                : alt
+            }
+            className="aspect-[4/3] w-full cursor-zoom-in object-cover"
+            onClick={() => setZoomed(true)}
+          />
         ) : (
           <div className="flex aspect-[4/3] items-center justify-center">
             <FileText className="h-12 w-12 text-muted-foreground/40" aria-hidden />
@@ -49,15 +73,16 @@ export default function ProductGallery({
       </div>
 
       {images.length > 1 && (
-        <div className="flex gap-3">
+        <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
           {images.map((src, i) => (
             <button
               key={src + i}
               type="button"
               onClick={() => setIndex(i)}
-              aria-label={`Image ${i + 1}`}
+              aria-label={`Show image ${i + 1} of ${images.length}`}
+              aria-current={i === index ? "true" : undefined}
               className={cn(
-                "h-20 w-20 overflow-hidden rounded-lg border bg-muted",
+                "h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted",
                 i === index && "ring-2 ring-primary ring-offset-2",
               )}
             >
@@ -65,6 +90,16 @@ export default function ProductGallery({
             </button>
           ))}
         </div>
+      )}
+
+      {zoomed && current && (
+        <ProductLightbox
+          images={images}
+          index={index}
+          alt={alt}
+          onClose={() => setZoomed(false)}
+          onStep={step}
+        />
       )}
     </div>
   );

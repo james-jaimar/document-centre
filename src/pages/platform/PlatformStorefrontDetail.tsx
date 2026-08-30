@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
 import { familyImage } from "@/lib/storefront/productImages";
+import ProductGalleryManager from "@/components/admin/ProductGalleryManager";
+
 
 const ICON_CHOICES = ["truck", "shield", "clock", "star", "package", "card"];
 
@@ -413,56 +415,16 @@ export default function PlatformStorefrontDetail() {
 
         {/* ---------------- Imagery ---------------- */}
         <TabsContent value="imagery" className="mt-4 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Upload storefront images per product. The first image is used on cards; the rest form
-            the product gallery. Without uploads, the built-in product image is used.
-          </p>
-          {(families ?? []).map((f: any) => {
-            const imgs = draft.images[f.id] ?? [];
-            const fallback = familyImage(f);
-            return (
-              <div key={f.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
-                <div className="min-w-[180px] flex-1">
-                  <p className="text-sm font-medium text-foreground">{f.name}</p>
-                  <p className="text-xs text-muted-foreground">{f.slug}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {(imgs.length ? imgs : fallback ? [fallback] : []).map((src, i) => (
-                    <div key={src + i} className="relative">
-                      <img
-                        src={src}
-                        alt=""
-                        className="h-12 w-16 rounded border object-cover"
-                      />
-                      {imgs.length > 0 && (
-                        <button
-                          type="button"
-                          aria-label="Remove image"
-                          className="absolute -right-2 -top-2 rounded-full border bg-background p-0.5"
-                          onClick={() =>
-                            set("images", {
-                              ...draft.images,
-                              [f.id]: imgs.filter((_, j) => j !== i),
-                            })
-                          }
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <ImageUploadButton
-                    tenantId={tenantId}
-                    label="Add"
-                    onUploaded={(url) =>
-                      set("images", { ...draft.images, [f.id]: [...imgs, url] })
-                    }
-                  />
-                </div>
-              </div>
-            );
-          })}
+          <ProductGalleryManager
+            tenantId={tenantId}
+            families={(families ?? []) as any}
+            images={draft.images}
+            onChange={(updater) =>
+              setDraft((d) => ({ ...d, images: updater(d.images) }))
+            }
+          />
         </TabsContent>
+
       </Tabs>
     </div>
   );
