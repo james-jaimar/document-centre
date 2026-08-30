@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, RotateCcw, Save, Copy } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Save, Copy, Scale } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -408,6 +408,7 @@ export default function PackPricingMatrixEditor({
               onDuplicateSingles={duplicateSinglesToDouble}
               onCopyToOption={copyLadderToOption}
               onFillTrade={fillTradeFromConsumer}
+              onAutoWeigh={autoWeighGroup}
 
               onDeleteGroup={deleteGroup}
             />
@@ -448,6 +449,7 @@ function GroupCard({
   onDuplicateSingles,
   onCopyToOption,
   onFillTrade,
+  onAutoWeigh,
   onDeleteGroup,
 }: {
   group: Group;
@@ -461,6 +463,7 @@ function GroupCard({
   onDuplicateSingles: (group: Group) => void;
   onCopyToOption: (group: Group, targetOption: string) => void;
   onFillTrade: (group: Group) => void;
+  onAutoWeigh: (group: Group) => void;
   onDeleteGroup: (group: Group) => void;
 
 }) {
@@ -503,6 +506,17 @@ function GroupCard({
             title="Set the trade prices in this ladder to the consumer price less a percentage"
           >
             Trade −%
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => onAutoWeigh(group)}
+            title="Estimate each pack's weight from the trim size and paper gsm"
+          >
+            <Scale className="h-3 w-3 mr-1" />
+            Auto weight
           </Button>
           <Button
             type="button"
