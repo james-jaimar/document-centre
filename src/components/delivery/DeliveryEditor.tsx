@@ -365,13 +365,33 @@ function ZoneCard({
         {/* Locations */}
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium text-sm flex items-center gap-2"><MapPin className="size-4" /> Locations</h4>
-            <LocationDialog onAdd={onAddLocation} />
+            <h4 className="font-medium text-sm flex items-center gap-2"><MapPin className="size-4" /> Coverage</h4>
+            <div className="flex gap-2">
+              {!zone.is_default_fallback && (
+                <Button size="sm" variant="outline" onClick={() => onUpdateZone({ ...zone, is_default_fallback: true })}>
+                  <Globe className="size-4 mr-1" />Make countrywide
+                </Button>
+              )}
+              <LocationDialog onAdd={onAddLocation} />
+            </div>
           </div>
-          {locations.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No locations — this zone won't match unless it's the fallback.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
+          {zone.is_default_fallback ? (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Countrywide catch-all.</span> Every address that doesn't
+              match a more specific zone is quoted from this zone's weight tiers
+              {locations.length > 0 ? " (the listed locations still match it first)." : "."}
+              {" "}
+              <button className="underline" onClick={() => onUpdateZone({ ...zone, is_default_fallback: false })}>
+                Restrict to listed locations
+              </button>
+            </p>
+          ) : locations.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No locations — this zone will never match. Add a city / postcode / province, or make it countrywide.
+            </p>
+          ) : null}
+          {locations.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
               {locations.map((l) => (
                 <Badge key={l.id} variant="secondary" className="gap-1 pl-2 pr-1">
                   <span className="text-[10px] uppercase opacity-70">{l.match_type.replace("_", " ")}</span>
@@ -386,47 +406,13 @@ function ZoneCard({
         </section>
 
         {/* Rates */}
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium text-sm">Weight tiers</h4>
-            <RateDialog methods={methods} onSave={onSaveRate} />
-          </div>
-          {rates.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No rates yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Weight (kg)</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Currency</TableHead>
-                  <TableHead className="w-[100px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rates.map((r) => {
-                  const m = methods.find((mm) => mm.id === r.method_id);
-                  return (
-                    <TableRow key={r.id}>
-                      <TableCell>{m?.label ?? r.method_id}</TableCell>
-                      <TableCell>{r.min_weight_kg} – {r.max_weight_kg ?? "∞"}</TableCell>
-                      <TableCell>{r.price.toFixed(2)}</TableCell>
-                      <TableCell>{r.currency_code}</TableCell>
-                      <TableCell className="flex gap-1 justify-end">
-                        <RateDialog methods={methods} rate={r} onSave={(rr) => onSaveRate({ ...rr, id: r.id })}
-                          trigger={<Button variant="ghost" size="sm">Edit</Button>} />
-                        <Button variant="ghost" size="icon" onClick={() => onDeleteRate(r.id)}>
-                          <Trash2 className="size-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </section>
+        <RateLadder
+          methods={methods}
+          rates={rates}
+          onSaveRate={onSaveRate}
+          onDeleteRate={onDeleteRate}
+        />
+
       </CardContent>
     </Card>
   );
