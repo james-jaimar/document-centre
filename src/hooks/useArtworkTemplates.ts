@@ -4,6 +4,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ArtworkPlaceholder, ArtworkTemplate } from "@/lib/artworkTemplates/types";
+import { normaliseCmyk } from "@/lib/artworkTemplates/types";
+
 
 const TEMPLATES_KEY = "artwork_templates";
 const PLACEHOLDERS_KEY = "artwork_template_placeholders";
