@@ -659,15 +659,17 @@ function SidesColumn({
               <Input
                 type="number"
                 min={0}
-                step="1"
+                step="0.01"
                 className="h-8 text-xs"
                 placeholder="auto"
-                title="Finished weight of this pack in grams. Leave blank to let the system calculate it from the paper."
-                value={block.weight_grams != null ? String(block.weight_grams) : ""}
+                title="Finished weight of this whole pack in kilograms. Leave blank to let the system calculate it from the paper."
+                value={block.weight_grams != null ? String(Math.round(block.weight_grams) / 1000) : ""}
                 onChange={(e) => {
                   const raw = e.target.value;
+                  const kg = parseFloat(raw);
                   onUpdateBlock(index, {
-                    weight_grams: raw === "" ? undefined : Math.max(0, Math.round(parseFloat(raw))),
+                    weight_grams:
+                      raw === "" || !Number.isFinite(kg) ? undefined : Math.max(0, Math.round(kg * 1000)),
                   });
                 }}
               />
