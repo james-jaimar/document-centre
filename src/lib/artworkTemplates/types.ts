@@ -134,6 +134,11 @@ export interface ArtworkPlaceholder {
   /** Marks this box as the customer's watermark image (triggers the paid
    *  "watermark printing" extra while a file is placed in it). */
   is_watermark: boolean;
+  /** [colour boxes] Default ink build painted by the template. */
+  default_cmyk: ArtworkCmyk | null;
+  /** [colour boxes] Whether the customer may change the colour. */
+  customer_editable_colour: boolean;
+
   sort_order: number;
   /** Behind or on top of the template artwork. */
   layer: PlaceholderLayer;
