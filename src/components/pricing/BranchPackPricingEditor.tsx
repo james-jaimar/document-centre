@@ -11,6 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
+import { mergePackBlockScope } from "@/lib/storefront/catalogue";
 
 interface Props {
   tenantId: string;
@@ -86,9 +87,7 @@ function BranchFamilyRow({
   const upsert = useUpsertPackPricingOverride();
   const remove = useDeletePackPricingOverride();
 
-  const parentBlocks = tenantOverride?.quantity_blocks?.length
-    ? tenantOverride.quantity_blocks
-    : masterBlocks;
+  const parentBlocks = mergePackBlockScope(masterBlocks, tenantOverride?.quantity_blocks);
 
   const initialBlocks = (branchOverride?.quantity_blocks ?? []) as QuantityBlock[];
 
