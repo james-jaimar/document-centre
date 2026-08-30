@@ -330,10 +330,15 @@ export default function Checkout() {
       toast.error("Please enter a delivery address");
       return;
     }
-    if (deliveryMethod === "delivery" && shippingQuote && shippingQuote.price == null) {
-      toast.error("We couldn't quote delivery to that address. Please check the city / postal code.");
+    if (deliveryMethod === "delivery" && quotingShipping) {
+      toast.error("Still calculating delivery — one moment.");
       return;
     }
+    if (deliveryMethod === "delivery" && (!shippingQuote || shippingQuote.price == null)) {
+      toast.error("Please choose a delivery address and option so we can add the delivery fee.");
+      return;
+    }
+
     if (!legalAccept) {
       toast.error("Please accept the Terms & Conditions and Privacy Policy to continue.");
       return;
