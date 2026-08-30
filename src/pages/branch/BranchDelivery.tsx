@@ -1,4 +1,5 @@
 import DeliveryEditor from "@/components/delivery/DeliveryEditor";
+import PackagingWeightCard from "@/components/delivery/PackagingWeightCard";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -22,7 +23,8 @@ export default function BranchDelivery() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto space-y-4">
+      <PackagingWeightCard tenantId={tenantId} branchId={branchId} />
       <DeliveryEditor
         scope="branch"
         tenantId={tenantId}
