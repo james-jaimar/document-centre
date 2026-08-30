@@ -563,7 +563,69 @@ export default function TemplateBoxEditor({
             )}
 
 
-            {active.kind === "image" ? (
+            {active.kind === "colour" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Default colour (CMYK %)</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["c", "m", "y", "k"] as const).map((ch) => (
+                      <div key={ch} className="space-y-1">
+                        <Label className="text-[10px] uppercase text-muted-foreground">{ch}</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={(active.default_cmyk ?? DEFAULT_CMYK)[ch]}
+                          onChange={(e) =>
+                            patch(active.id, {
+                              default_cmyk: normaliseCmyk({
+                                ...(active.default_cmyk ?? DEFAULT_CMYK),
+                                [ch]: Number(e.target.value),
+                              } as ArtworkCmyk),
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <span
+                      className="h-6 w-10 rounded border"
+                      style={{ background: cmykToHex(active.default_cmyk ?? DEFAULT_CMYK) }}
+                    />
+                    <span className="text-[11px] text-muted-foreground">
+                      Screen approximation — the PDF prints the exact ink build.
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Corner radius (mm)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    value={active.corner_radius_mm}
+                    onChange={(e) =>
+                      patch(active.id, { corner_radius_mm: Number(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-3 rounded-md border p-2">
+                  <div>
+                    <Label className="text-xs">Customer can change colour</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Off means the block always prints the default build. Position and size are
+                      always fixed.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={active.customer_editable_colour !== false}
+                    onCheckedChange={(v) => patch(active.id, { customer_editable_colour: v })}
+                  />
+                </div>
+              </>
+            ) : active.kind === "image" ? (
+
               <>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Default fit</Label>
