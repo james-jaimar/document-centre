@@ -63,6 +63,8 @@ export function useStorefrontCatalogue() {
   });
 
   const { data: categories } = useProductCategories({ activeOnly: true });
+  const { tier: pricingTier } = useCustomerPricingTier();
+
 
   const entries: StorefrontCatalogueEntry[] = (families ?? []).map((f: any) => {
     const family = f as StorefrontFamily;
