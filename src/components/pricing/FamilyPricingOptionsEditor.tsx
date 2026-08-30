@@ -90,8 +90,14 @@ export default function FamilyPricingOptionsEditor({
             <p className="text-[11px] italic text-muted-foreground">No pricing options.</p>
           ) : (
             <div className="space-y-2">
+              <div className="grid grid-cols-[1fr_180px_90px_auto] gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span>Label</span>
+                <span>Slug</span>
+                <span className="text-center">Trade only</span>
+                <span />
+              </div>
               {opts.map((o, i) => (
-                <div key={i} className="grid grid-cols-[1fr_180px_auto] items-center gap-2">
+                <div key={i} className="grid grid-cols-[1fr_180px_90px_auto] items-center gap-2">
                   <Input
                     className="h-8 text-xs"
                     placeholder="Label shown to the customer"
@@ -108,6 +114,12 @@ export default function FamilyPricingOptionsEditor({
                     value={o.slug}
                     onChange={(e) => patchOption(i, { slug: slugify(e.target.value) })}
                   />
+                  <div className="flex justify-center">
+                    <Checkbox
+                      checked={!!o.trade_only}
+                      onCheckedChange={(v) => patchOption(i, { trade_only: v === true })}
+                    />
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -123,10 +135,13 @@ export default function FamilyPricingOptionsEditor({
                 </div>
               ))}
               <p className="text-[10px] text-muted-foreground">
-                Changing a slug detaches existing pack rows priced against the old slug.
+                Changing a slug detaches existing pack rows priced against the old slug. Trade-only
+                options (and their price ladders) are hidden from customers who aren't marked as
+                trade.
               </p>
             </div>
           )}
+
         </div>
       )}
 

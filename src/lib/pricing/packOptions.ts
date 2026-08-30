@@ -12,7 +12,10 @@ export interface PricingOption {
   slug: string;
   label: string;
   sort?: number;
+  /** Only offered to customers on the trade tier. */
+  trade_only?: boolean;
 }
+
 
 export type AddonKind = "percent" | "fixed" | "per_unit";
 
@@ -44,10 +47,12 @@ export function normalizeOptions(raw: unknown): PricingOption[] {
       slug: String(o.slug ?? slugify(String(o.label ?? ""))),
       label: String(o.label ?? o.slug ?? ""),
       sort: Number.isFinite(Number(o.sort)) ? Number(o.sort) : i,
+      trade_only: !!o.trade_only,
     }))
     .filter((o) => !!o.slug && !!o.label)
     .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 }
+
 
 export function normalizeAddons(raw: unknown): PricingAddon[] {
   if (!Array.isArray(raw)) return [];
@@ -92,14 +97,55 @@ export function rowPriceMinor(block: QuantityBlock, tier: PricingTier = "consume
   return trade > 0 ? trade : consumer;
 }
 
+/** Options a customer on this tier may choose. Trade-only options are hidden from consumers. */
+export function visibleOptions(
+  options: PricingOption[],
+  tier: PricingTier = "consumer",
+): PricingOption[] {
+  if (tier === "trade") return options;
+  return options.filter((o) => !o.trade_only);
+}
+
+/** Slugs of options this tier may not use. */
+export function hiddenOptionSlugs(
+  options: PricingOption[],
+  tier: PricingTier = "consumer",
+): Set<string> {
+  const hidden = new Set<string>();
+  if (tier === "trade") return hidden;
+  for (const o of options) if (o.trade_only) hidden.add(o.slug.toLowerCase());
+  return hidden;
+}
+
+/** Drop pack rows priced against an option this tier can't see. */
+export function filterBlocksForTier(
+  blocks: QuantityBlock[],
+  options: PricingOption[],
+  tier: PricingTier = "consumer",
+): QuantityBlock[] {
+  const hidden = hiddenOptionSlugs(options, tier);
+  if (hidden.size === 0) return blocks;
+  return blocks.filter((b) => {
+    const raw = ((b as any).option as string | undefined)?.toLowerCase();
+    return !raw || raw === "*" || !hidden.has(raw);
+  });
+}
+
 /** Distinct quantities priced for the given option, cheapest row per qty. */
 export function packQuantitiesForOption(
   blocks: QuantityBlock[],
   optionSlug: string | null,
   tier: PricingTier = "consumer",
+  options: PricingOption[] = [],
 ): PackQuantityOption[] {
+  // Defence in depth: a consumer can never price a trade-only option, even if
+  // the slug is forced client-side.
+  const hidden = hiddenOptionSlugs(options, tier);
+  if (optionSlug && hidden.has(optionSlug.toLowerCase())) return [];
+
+  const usable = filterBlocksForTier(blocks, options, tier);
   const byQty = new Map<number, number>();
-  for (const b of blocks) {
+  for (const b of usable) {
     if (!blockMatchesOption(b, optionSlug)) continue;
     const qty = Number(b.qty) || 0;
     const price = rowPriceMinor(b, tier);
@@ -111,6 +157,7 @@ export function packQuantitiesForOption(
     .map(([qty, priceMinor]) => ({ qty, priceMinor }))
     .sort((a, b) => a.qty - b.qty);
 }
+
 
 
 /** Pick the priced quantity closest to (and preferably >=) the requested one. */

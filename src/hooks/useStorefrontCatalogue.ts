@@ -11,6 +11,9 @@ import {
   resolvePackBlocks,
   type StorefrontFamily,
 } from "@/lib/storefront/catalogue";
+import { filterBlocksForTier, normalizeOptions } from "@/lib/pricing/packOptions";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+
 
 /** Bucket for families that have no category assigned yet. */
 export const UNCATEGORISED: ProductCategory = {
@@ -60,11 +63,19 @@ export function useStorefrontCatalogue() {
   });
 
   const { data: categories } = useProductCategories({ activeOnly: true });
+  const { tier: pricingTier } = useCustomerPricingTier();
+
 
   const entries: StorefrontCatalogueEntry[] = (families ?? []).map((f: any) => {
     const family = f as StorefrontFamily;
     const rows = (overrides ?? []).filter((o) => o.product_family_id === family.id);
-    const blocks = resolvePackBlocks(family, rows, branchId);
+    // Trade-only pricing options (and their ladders) are hidden from consumers.
+    const blocks = filterBlocksForTier(
+      resolvePackBlocks(family, rows, branchId),
+      normalizeOptions((f as any).pricing_options),
+      pricingTier,
+    );
+
     const category =
       (categories ?? []).find((c) => c.id === (f.category_id ?? null)) ?? UNCATEGORISED;
     return {
