@@ -22,6 +22,8 @@ import { BranchReAcceptanceBanner } from "@/components/branch/BranchReAcceptance
 import { BranchAcceptanceHistory } from "@/components/branch/BranchAcceptanceHistory";
 import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
 import { BranchRegionalCard } from "@/components/branch/BranchRegionalCard";
+import { BranchCategoryCountCard } from "@/components/branch/BranchCategoryCountCard";
+
 
 import { BranchInvoiceNumberingCard } from "@/components/branch/BranchInvoiceNumberingCard";
 import { useSearchParams } from "react-router-dom";
@@ -336,6 +338,12 @@ const BranchSettings = () => {
       {tenantId && branchId && (
         <BranchTaxCard tenantId={tenantId} branchId={branchId} />
       )}
+
+      {/* Storefront category product counts */}
+      {tenantId && branchId && (
+        <BranchCategoryCountCard tenantId={tenantId} branchId={branchId} />
+      )}
+
 
 
       {/* Invoice numbering override */}

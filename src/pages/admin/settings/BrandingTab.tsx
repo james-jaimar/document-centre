@@ -10,6 +10,8 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Save, Palette, Globe, Loader2, Type, Image, Layout, Eye, EyeOff, Info, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { TenantCategoryCountCard } from "@/components/admin/TenantCategoryCountCard";
+
 
 function ImageUploadField({
   label, value, onChange, tenantId, fileKey, previewClass,
@@ -537,8 +539,10 @@ export function BrandingTab() {
       </Card>
 
 
+      <TenantCategoryCountCard />
 
       {/* Typography */}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Type className="h-5 w-5" /> Typography</CardTitle>
