@@ -36,7 +36,10 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     z_index: Number(row.z_index ?? row.sort_order ?? 0),
     opacity: row.opacity == null ? 1 : Number(row.opacity),
     is_watermark: !!row.is_watermark,
+    default_cmyk: row.default_cmyk ? normaliseCmyk(row.default_cmyk) : null,
+    customer_editable_colour: row.customer_editable_colour !== false,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
+
   } as ArtworkPlaceholder;
 }
 
