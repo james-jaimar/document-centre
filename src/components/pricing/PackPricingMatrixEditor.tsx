@@ -600,7 +600,7 @@ function SidesColumn({
             <span>Consumer</span>
             <span>Trade</span>
             <span>Cost</span>
-            <span title="Finished weight of the whole pack, grams">Weight g</span>
+            <span title="Finished weight of the whole pack, kilograms">Weight kg</span>
             <span></span>
           </div>
           {rows.map(({ block, index }) => {
