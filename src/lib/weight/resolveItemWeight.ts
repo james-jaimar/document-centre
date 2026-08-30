@@ -101,8 +101,18 @@ function num(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Merge partial settings over the defaults. Only finite numbers win — an
+ * `undefined`/`null`/NaN entry must NOT blank out a default, otherwise every
+ * downstream weight becomes NaN and courier quoting silently fails.
+ */
 export function mergeWeightSettings(partial?: Partial<WeightSettings> | null): WeightSettings {
-  return { ...DEFAULT_WEIGHT_SETTINGS, ...(partial ?? {}) };
+  const out: WeightSettings = { ...DEFAULT_WEIGHT_SETTINGS };
+  for (const key of Object.keys(DEFAULT_WEIGHT_SETTINGS) as (keyof WeightSettings)[]) {
+    const v = Number(partial?.[key]);
+    if (Number.isFinite(v)) out[key] = v;
+  }
+  return out;
 }
 
 /** Paper weight of one copy, summed across its sections. */
