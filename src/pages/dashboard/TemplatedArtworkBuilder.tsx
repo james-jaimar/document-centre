@@ -392,8 +392,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const { region, baseCurrency, displayDefaultCurrency } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? displayDefaultCurrency ?? "ZAR";
   const { convert } = useCurrencyConverter(activeCurrency, baseCurrency);
-  const { blocks: packBlocks, options: pricingOptions, addons: pricingAddons } =
+  const { blocks: packBlocks, options: allPricingOptions, addons: pricingAddons } =
     useFamilyPackPricing(family as any);
+
+  const { tier: pricingTier } = useCustomerPricingTier();
+  const pricingOptions = useMemo(
+    () => visibleOptions(allPricingOptions, pricingTier),
+    [allPricingOptions, pricingTier],
+  );
 
   const [pricingOption, setPricingOption] = useState<string | null>(null);
   useEffect(() => {
@@ -406,7 +412,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     );
   }, [pricingOptions]);
 
-  const { tier: pricingTier } = useCustomerPricingTier();
 
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   useEffect(() => {
