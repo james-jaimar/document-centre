@@ -549,15 +549,16 @@ function SidesColumn({
         <p className="text-[11px] text-muted-foreground italic">No qty tiers.</p>
       ) : (
         <>
-          <div className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+          <div className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
             <span>Qty</span>
             <span>Consumer</span>
             <span>Trade</span>
             <span>Cost</span>
+            <span title="Finished weight of the whole pack, grams">Weight g</span>
             <span></span>
           </div>
           {rows.map(({ block, index }) => (
-            <div key={index} className="grid grid-cols-[70px_1fr_1fr_1fr_auto] gap-2 items-center">
+            <div key={index} className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 items-center">
               <Input
                 type="number"
                 min={1}
@@ -606,6 +607,21 @@ function SidesColumn({
                   });
                 }}
               />
+              <Input
+                type="number"
+                min={0}
+                step="1"
+                className="h-8 text-xs"
+                placeholder="auto"
+                title="Finished weight of this pack in grams. Leave blank to let the system calculate it from the paper."
+                value={block.weight_grams != null ? String(block.weight_grams) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onUpdateBlock(index, {
+                    weight_grams: raw === "" ? undefined : Math.max(0, Math.round(parseFloat(raw))),
+                  });
+                }}
+              />
               <Button
                 type="button"
                 variant="ghost"
@@ -618,6 +634,7 @@ function SidesColumn({
             </div>
           ))}
         </>
+
       )}
     </div>
   );
