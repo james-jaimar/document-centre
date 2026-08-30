@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
 import { Button } from "@/components/ui/button";
