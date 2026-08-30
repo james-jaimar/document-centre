@@ -29,6 +29,11 @@ export type QuantityBlock = {
   trade_price_minor?: number;
   cost_minor?: number;
 
+  /** Finished weight of this whole pack in grams (packaging excluded).
+   *  Feeds courier weight bands — blank means "calculate it from the paper". */
+  weight_grams?: number;
+
+
   /** Optional pricing-option slug (family-defined finishing axis).
    *  Empty/"*" means the row applies to every option. */
   option?: string;
