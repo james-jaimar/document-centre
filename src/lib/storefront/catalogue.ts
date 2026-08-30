@@ -14,17 +14,55 @@ export interface StorefrontFamily {
   [key: string]: unknown;
 }
 
+/** Stable identity of one pack-ladder row across master/tenant/branch scopes. */
+export function packBlockKey(block: QuantityBlock): string {
+  return [
+    block.option ?? "*",
+    block.size ?? "*",
+    block.paper ?? "*",
+    block.sides ?? "single",
+    Number(block.qty) || 0,
+  ]
+    .map((value) => String(value).toLowerCase())
+    .join("|");
+}
+
+/**
+ * Apply a child scope without losing independently inherited price columns.
+ * A child row owns its consumer price; a blank trade/cost/weight value keeps
+ * the corresponding parent value for the same pack identity.
+ */
+export function mergePackBlockScope(
+  parent: QuantityBlock[],
+  child: QuantityBlock[] | null | undefined,
+): QuantityBlock[] {
+  if (!child?.length) return parent;
+
+  const parentByKey = new Map(parent.map((block) => [packBlockKey(block), block]));
+  return child.map((block) => {
+    const inherited = parentByKey.get(packBlockKey(block));
+    if (!inherited) return block;
+    return {
+      ...inherited,
+      ...block,
+      trade_price_minor: block.trade_price_minor ?? inherited.trade_price_minor,
+      cost_minor: block.cost_minor ?? inherited.cost_minor,
+      weight_grams: block.weight_grams ?? inherited.weight_grams,
+    };
+  });
+}
+
 /** Blocks for a family, preferring branch override, then tenant override. */
 export function resolvePackBlocks(
   family: StorefrontFamily,
   overrides: { branch_id: string | null; quantity_blocks: QuantityBlock[] }[] | undefined,
   branchId: string | null,
 ): QuantityBlock[] {
-  const branchRow = overrides?.find((o) => o.branch_id && o.branch_id === branchId);
-  if (branchRow?.quantity_blocks?.length) return branchRow.quantity_blocks;
+  const master = (family.quantity_blocks as QuantityBlock[] | null) ?? [];
   const tenantRow = overrides?.find((o) => !o.branch_id);
-  if (tenantRow?.quantity_blocks?.length) return tenantRow.quantity_blocks;
-  return (family.quantity_blocks as QuantityBlock[] | null) ?? [];
+  const tenant = mergePackBlockScope(master, tenantRow?.quantity_blocks);
+  const branchRow = overrides?.find((o) => o.branch_id && o.branch_id === branchId);
+  return mergePackBlockScope(tenant, branchRow?.quantity_blocks);
 }
 
 /** Cheapest pack price in major units, or null when the family isn't pack-priced. */

@@ -16,6 +16,7 @@ import { useCatalogSizes, useCatalogPapers } from "@/hooks/useCatalog";
 import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import type { PricingOption } from "@/lib/pricing/packOptions";
 import { sheetWeightGrams } from "@/lib/weightCalculation";
+import { packBlockKey } from "@/lib/storefront/catalogue";
 
 export type PackScope = "master" | "tenant" | "branch";
 
@@ -409,7 +410,7 @@ export default function PackPricingMatrixEditor({
               onCopyToOption={copyLadderToOption}
               onFillTrade={fillTradeFromConsumer}
               onAutoWeigh={autoWeighGroup}
-
+              parentBlocks={parentBlocks}
               onDeleteGroup={deleteGroup}
             />
           ))}
@@ -450,6 +451,7 @@ function GroupCard({
   onCopyToOption,
   onFillTrade,
   onAutoWeigh,
+  parentBlocks,
   onDeleteGroup,
 }: {
   group: Group;
@@ -464,6 +466,7 @@ function GroupCard({
   onCopyToOption: (group: Group, targetOption: string) => void;
   onFillTrade: (group: Group) => void;
   onAutoWeigh: (group: Group) => void;
+  parentBlocks: QuantityBlock[];
   onDeleteGroup: (group: Group) => void;
 
 }) {
@@ -550,6 +553,7 @@ function GroupCard({
           onUpdateBlock={onUpdateBlock}
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "single")}
+          parentBlocks={parentBlocks}
         />
         <SidesColumn
           heading="Double-sided"
@@ -557,6 +561,7 @@ function GroupCard({
           onUpdateBlock={onUpdateBlock}
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "double")}
+          parentBlocks={parentBlocks}
         />
       </div>
     </div>
@@ -569,12 +574,14 @@ function SidesColumn({
   onUpdateBlock,
   onDeleteBlock,
   onAddRow,
+  parentBlocks,
 }: {
   heading: string;
   rows: { block: QuantityBlock; index: number }[];
   onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
   onDeleteBlock: (idx: number) => void;
   onAddRow: () => void;
+  parentBlocks: QuantityBlock[];
 }) {
   return (
     <div className="p-3 space-y-2">
@@ -596,7 +603,10 @@ function SidesColumn({
             <span title="Finished weight of the whole pack, grams">Weight g</span>
             <span></span>
           </div>
-          {rows.map(({ block, index }) => (
+          {rows.map(({ block, index }) => {
+            const parent = parentBlocks.find((candidate) => packBlockKey(candidate) === packBlockKey(block));
+            const inheritedTrade = parent?.trade_price_minor;
+            return (
             <div key={index} className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 items-center">
               <Input
                 type="number"
@@ -622,8 +632,8 @@ function SidesColumn({
                 min={0}
                 step="0.01"
                 className="h-8 text-xs"
-                placeholder="same"
-                title="Trade price — leave blank to charge the consumer price"
+                placeholder={inheritedTrade != null ? `Inherited ${(inheritedTrade / 100).toFixed(2)}` : "Same as consumer"}
+                title={inheritedTrade != null ? "Blank inherits the trade price from the parent scope" : "Blank uses the consumer price"}
                 value={block.trade_price_minor != null ? (block.trade_price_minor / 100).toString() : ""}
                 onChange={(e) => {
                   const raw = e.target.value;
@@ -671,7 +681,8 @@ function SidesColumn({
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
               </Button>
             </div>
-          ))}
+            );
+          })}
         </>
 
       )}
@@ -690,7 +701,10 @@ function ParentGroupSummary({
   paperLabel: (c: string) => string;
 }) {
   const summary = group.rows
-    .map((r) => `${r.block.sides === "single" ? "1s" : "2s"}·${r.block.qty}=R${(r.block.price_minor / 100).toFixed(2)}`)
+    .map((r) => {
+      const trade = r.block.trade_price_minor;
+      return `${r.block.sides === "single" ? "1s" : "2s"}·${r.block.qty}=R${(r.block.price_minor / 100).toFixed(2)} consumer${trade != null ? ` / R${(trade / 100).toFixed(2)} trade` : ""}`;
+    })
     .join("  ·  ");
   return (
     <div className="text-[11px] text-muted-foreground">
