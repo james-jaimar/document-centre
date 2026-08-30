@@ -235,7 +235,7 @@ export function packRowWeightGrams(
   const candidates = blocks.filter((b) => {
     if ((Number(b.qty) || 0) !== sel.qty) return false;
     if (!blockMatchesOption(b, sel.option ?? null)) return false;
-    if (sel.sides && b.sides && b.sides !== "*" && b.sides !== sel.sides) return false;
+    if (sel.sides && b.sides && String(b.sides) !== "*" && b.sides !== sel.sides) return false;
     if (sel.size && !fieldMatches(b.size, sel.size)) return false;
     if (sel.paper && !fieldMatches(b.paper, sel.paper)) return false;
     const g = Number((b as any).weight_grams);
