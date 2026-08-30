@@ -12,7 +12,10 @@ export interface PricingOption {
   slug: string;
   label: string;
   sort?: number;
+  /** Only offered to customers on the trade tier. */
+  trade_only?: boolean;
 }
+
 
 export type AddonKind = "percent" | "fixed" | "per_unit";
 
