@@ -33,6 +33,7 @@ import { Images, Settings2, SlidersHorizontal, Store } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
 import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
+import TenantProductGalleryDialog from "@/components/admin/TenantProductGalleryDialog";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
@@ -58,6 +59,7 @@ const AdminProductCatalogue = () => {
   const [specsFamilyId, setSpecsFamilyId] = useState<string | null>(null);
   const [specsFamilyName, setSpecsFamilyName] = useState<string>("");
   const [artworkFamilyId, setArtworkFamilyId] = useState<string | null>(null);
+  const [galleryFamily, setGalleryFamily] = useState<any | null>(null);
   const [artworkFamilyName, setArtworkFamilyName] = useState<string>("");
 
 
@@ -233,6 +235,14 @@ const AdminProductCatalogue = () => {
                           <Settings2 className="h-3 w-3 mr-1" />
                           Pricing
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setGalleryFamily(f)}
+                        >
+                          <Images className="h-3 w-3 mr-1" />
+                          Images
+                        </Button>
                         {f.supports_editable_artwork && (
                           <Button
                             size="sm"
@@ -299,6 +309,14 @@ const AdminProductCatalogue = () => {
           )}
         </DialogContent>
       </Dialog>
+      {tenantId && galleryFamily && (
+        <TenantProductGalleryDialog
+          open={!!galleryFamily}
+          onOpenChange={(o) => { if (!o) setGalleryFamily(null); }}
+          tenantId={tenantId}
+          family={galleryFamily}
+        />
+      )}
     </div>
   );
 };
