@@ -15,13 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ImageIcon, Type, Trash2, Copy, ChevronUp, ChevronDown } from "lucide-react";
+import { ImageIcon, Type, Trash2, Copy, ChevronUp, ChevronDown, Palette } from "lucide-react";
 import {
   ARTWORK_FONTS,
+  DEFAULT_CMYK,
   DEFAULT_TEXT_STYLE,
+  cmykToHex,
+  normaliseCmyk,
+  type ArtworkCmyk,
   type ArtworkPlaceholder,
   type PlaceholderKind,
 } from "@/lib/artworkTemplates/types";
+
 
 interface Props {
   pageImageUrl: string | null;
