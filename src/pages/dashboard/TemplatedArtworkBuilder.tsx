@@ -448,9 +448,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
 
   const packOptions = useMemo(
-    () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier),
-    [packBlocks, pricingOption, pricingTier],
+    () => packQuantitiesForOption(packBlocks, pricingOption, pricingTier, allPricingOptions),
+    [packBlocks, pricingOption, pricingTier, allPricingOptions],
   );
+
   const packMode = packOptions.length > 0;
 
   useEffect(() => {
