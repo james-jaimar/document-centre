@@ -7,10 +7,42 @@
  * page, while the PDF server stamps the real artwork at full resolution.
  */
 
-export type PlaceholderKind = "image" | "text";
+export type PlaceholderKind = "image" | "text" | "colour";
 export type PlaceholderFit = "fit" | "fill";
 /** Where the box sits relative to the template artwork itself. */
 export type PlaceholderLayer = "under" | "over";
+
+/** Process ink build, each channel 0–100. */
+export interface ArtworkCmyk {
+  c: number;
+  m: number;
+  y: number;
+  k: number;
+}
+
+export const DEFAULT_CMYK: ArtworkCmyk = { c: 0, m: 0, y: 0, k: 100 };
+
+const clamp100 = (n: number) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+
+export function normaliseCmyk(v: Partial<ArtworkCmyk> | null | undefined): ArtworkCmyk {
+  return {
+    c: clamp100(v?.c ?? 0),
+    m: clamp100(v?.m ?? 0),
+    y: clamp100(v?.y ?? 0),
+    k: clamp100(v?.k ?? 0),
+  };
+}
+
+/** Screen approximation of a CMYK build — preview only, never used for print. */
+export function cmykToHex(v: Partial<ArtworkCmyk> | null | undefined): string {
+  const { c, m, y, k } = normaliseCmyk(v);
+  const ch = (x: number) => {
+    const n = Math.round(255 * (1 - x / 100) * (1 - k / 100));
+    return Math.max(0, Math.min(255, n)).toString(16).padStart(2, "0");
+  };
+  return `#${ch(c)}${ch(m)}${ch(y)}`;
+}
+
 
 
 export interface ArtworkTextStyle {
