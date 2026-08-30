@@ -487,11 +487,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   // ── Validation + cart
   const missingRequired = placeholders.filter((p) => {
     if (!p.is_required) return false;
+    // Colour boxes always carry a default ink build, so they can't be "missing".
+    if (p.kind === "colour") return false;
     const v = values[p.id];
     if (!v) return true;
     if (v.kind === "text") return !v.value.trim();
+    if (v.kind === "colour") return false;
     return !v.storage_path;
   });
+
 
   const [submitting, setSubmitting] = useState(false);
   const handleAddToCart = async () => {
