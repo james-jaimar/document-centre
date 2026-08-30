@@ -65,6 +65,8 @@ export interface ShippingQuoteResult {
   physicalKg: number;
   volumetricKg: number;
   billableKg: number;
+  /** Where the heaviest line's weight came from (pack_row, override, calculated…). */
+  weightSource?: string | null;
   reason?: string;
 }
 
