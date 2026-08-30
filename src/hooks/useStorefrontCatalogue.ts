@@ -11,6 +11,9 @@ import {
   resolvePackBlocks,
   type StorefrontFamily,
 } from "@/lib/storefront/catalogue";
+import { filterBlocksForTier, normalizeOptions } from "@/lib/pricing/packOptions";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+
 
 /** Bucket for families that have no category assigned yet. */
 export const UNCATEGORISED: ProductCategory = {
