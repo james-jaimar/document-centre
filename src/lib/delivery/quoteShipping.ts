@@ -139,6 +139,8 @@ export function estimateItemWeight(
   };
 }
 
+const finite = (n: number, fallback = 0) => (Number.isFinite(n) ? n : fallback);
+
 /** Sum across the cart. */
 export function aggregateCartWeight(
   items: CartItemLike[],
@@ -149,15 +151,53 @@ export function aggregateCartWeight(
   let billableKg = 0;
   for (const item of items) {
     const w = estimateItemWeight(item, settings);
-    physicalKg += w.physicalKg;
-    volumetricKg += w.volumetricKg;
-    billableKg += w.billableKg;
+    physicalKg += finite(w.physicalKg);
+    volumetricKg += finite(w.volumetricKg);
+    billableKg += finite(w.billableKg);
   }
   return {
     physicalKg: Math.round(physicalKg * 1000) / 1000,
     volumetricKg: Math.round(volumetricKg * 1000) / 1000,
     billableKg: Math.round(billableKg * 1000) / 1000,
   };
+}
+
+/**
+ * Cart weight with a live repair pass: any line whose spec carries no usable
+ * stamped weight (legacy items, or items stamped before the settings fix) is
+ * recomputed from the real document sections / pack ladder so the courier
+ * band lookup gets a truthful kilogram figure.
+ */
+export async function resolveCartWeight(
+  items: CartItemLike[],
+  settings: WeightSettings,
+  ctx: { tenantId: string | null; branchId: string | null },
+) {
+  const repaired: CartItemLike[] = await Promise.all(
+    items.map(async (item) => {
+      const stamped = Number((item.spec as any)?.weight?.grams);
+      if (Number.isFinite(stamped) && stamped > 0) return item;
+      try {
+        const { resolveOrderItemWeight, toSpecWeight } = await import("@/lib/weight/itemWeight");
+        const resolved = await resolveOrderItemWeight({
+          orderItemId: item.id ?? null,
+          productFamilyId: (item as any).product_family_id ?? null,
+          tenantId: ctx.tenantId,
+          branchId: ctx.branchId,
+          spec: item.spec ?? {},
+          quantity: Number(item.quantity ?? 1),
+        });
+        if (!Number.isFinite(resolved.grams) || resolved.grams <= 0) return item;
+        return {
+          ...item,
+          spec: { ...(item.spec ?? {}), weight: toSpecWeight(resolved) },
+        };
+      } catch {
+        return item;
+      }
+    }),
+  );
+  return aggregateCartWeight(repaired, settings);
 }
 
 /** Minimum billable weight (kg) — courier minimums apply even to tiny parcels. */
