@@ -10,6 +10,11 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { sheetWeightGrams } from "@/lib/weightCalculation";
+import { fetchWeightSettings } from "@/hooks/useWeightSettings";
+import {
+  DEFAULT_WEIGHT_SETTINGS,
+  type WeightSettings,
+} from "@/lib/weight/resolveItemWeight";
 
 export interface CartItemLike {
   id?: string;
@@ -44,6 +49,8 @@ export interface ShippingQuoteRequest {
    * shopping in another currency.
    */
   convertFromBase?: (amount: number) => number;
+  /** Pre-resolved packaging rules; fetched from branch settings when omitted. */
+  settings?: WeightSettings;
 }
 
 export interface ShippingQuoteResult {
@@ -265,8 +272,9 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
   options: ShippingMethodOption[];
 }> {
   const currency = req.currency ?? "ZAR";
-  const weights = aggregateCartWeight(req.items);
-  const chargeableKg = Math.max(weights.billableKg, MIN_BILLABLE_KG);
+  const settings = req.settings ?? (await fetchWeightSettings(req.branchId, req.tenantId));
+  const weights = aggregateCartWeight(req.items, settings);
+  const chargeableKg = Math.max(weights.billableKg, settings.minBillableKg);
 
   if (!req.address?.city && !req.address?.postal_code && !req.address?.province) {
     return { zoneId: null, zoneLabel: null, zoneCode: null, billableKg: chargeableKg, options: [] };
