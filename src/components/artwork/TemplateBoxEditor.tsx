@@ -281,12 +281,23 @@ export default function TemplateBoxEditor({
           >
             <Type className="h-4 w-4 mr-1.5" /> Draw text box
           </Button>
+          <Button
+            size="sm"
+            variant={drawKind === "colour" ? "default" : "outline"}
+            onClick={() => setDrawKind(drawKind === "colour" ? null : "colour")}
+          >
+            <Palette className="h-4 w-4 mr-1.5" /> Draw colour box
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => addDefault("image")}>
             + Image
           </Button>
           <Button size="sm" variant="ghost" onClick={() => addDefault("text")}>
             + Text
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => addDefault("colour")}>
+            + Colour
+          </Button>
+
           {drawKind && (
             <span className="text-xs text-muted-foreground">
               Drag on the page to draw the box.
