@@ -437,9 +437,12 @@ export default function TemplateBoxEditor({
                 >
                   {p.kind === "text" ? (
                     <Type className="h-3.5 w-3.5 shrink-0" />
+                  ) : p.kind === "colour" ? (
+                    <Palette className="h-3.5 w-3.5 shrink-0" />
                   ) : (
                     <ImageIcon className="h-3.5 w-3.5 shrink-0" />
                   )}
+
                   <span className="truncate">{p.name}</span>
                   {p.layer === "under" && (
                     <Badge variant="secondary" className="shrink-0 text-[10px]">behind</Badge>
