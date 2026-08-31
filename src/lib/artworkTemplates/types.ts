@@ -11,6 +11,8 @@ export type PlaceholderKind = "image" | "text" | "colour";
 export type PlaceholderFit = "fit" | "fill";
 /** Where the box sits relative to the template artwork itself. */
 export type PlaceholderLayer = "under" | "over";
+/** Whether a box repeats on every page or belongs to a single page. */
+export type PlaceholderPageScope = "all" | "page";
 
 /** Process ink build, each channel 0–100. */
 export interface ArtworkCmyk {
