@@ -149,6 +149,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [quantity, setQuantity] = useState(1);
   const hydrated = useRef(false);
 
+  /** Watermark boxes may never print above 10% — enforced wherever a value lands. */
+  const capWatermark = (
+    p: { is_watermark?: boolean } | undefined,
+    v: TemplatedPlaceholderValue,
+  ): TemplatedPlaceholderValue =>
+    p?.is_watermark ? ({ ...v, opacity: Math.min((v as any).opacity ?? 0.1, 0.1) } as any) : v;
+
+
   useEffect(() => {
     if (hydrated.current) return;
     const s = (orderItem?.spec as any)?.templated_artwork as TemplatedArtworkSpec | undefined;
