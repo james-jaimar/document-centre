@@ -56,6 +56,12 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   const thumbRef = useRef<HTMLInputElement>(null);
   const [thumbBusy, setThumbBusy] = useState(false);
   const [reordering, setReordering] = useState(false);
+  /** Zero-based page being edited (13-page calendars etc.). */
+  const [pageIndex, setPageIndex] = useState(0);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!selectedId && templates.length > 0) setSelectedId(templates[0].id);
