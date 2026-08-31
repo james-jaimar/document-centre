@@ -76,6 +76,7 @@ export async function buildProofPdf(args: BuildProofPdfArgs): Promise<{ doc: jsP
       pageHeightPx: h,
       trimWidthMm: trimWidthMm || page.widthMm,
       placeholders,
+      pageIndex: page.index,
       values,
       images: placedImages,
       showBoxes: false,

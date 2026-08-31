@@ -11,6 +11,8 @@ export type PlaceholderKind = "image" | "text" | "colour";
 export type PlaceholderFit = "fit" | "fill";
 /** Where the box sits relative to the template artwork itself. */
 export type PlaceholderLayer = "under" | "over";
+/** Whether a box repeats on every page or belongs to a single page. */
+export type PlaceholderPageScope = "all" | "page";
 
 /** Process ink build, each channel 0–100. */
 export interface ArtworkCmyk {
@@ -139,6 +141,11 @@ export interface ArtworkPlaceholder {
   /** [colour boxes] Whether the customer may change the colour. */
   customer_editable_colour: boolean;
 
+  /** `all` = repeated on every page; `page` = only on `page_index`. */
+  page_scope: PlaceholderPageScope;
+  /** Zero-based page this box belongs to when `page_scope === "page"`. */
+  page_index: number | null;
+
   sort_order: number;
   /** Behind or on top of the template artwork. */
   layer: PlaceholderLayer;
@@ -152,6 +159,16 @@ export interface ArtworkPlaceholder {
 export function sortPlaceholders(list: ArtworkPlaceholder[]): ArtworkPlaceholder[] {
   return [...list].sort(
     (a, b) => (a.z_index ?? 0) - (b.z_index ?? 0) || (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
+}
+
+/** Boxes that paint on a given (zero-based) page: global ones plus that page's. */
+export function placeholdersForPage(
+  list: ArtworkPlaceholder[],
+  pageIndex: number,
+): ArtworkPlaceholder[] {
+  return list.filter(
+    (p) => (p.page_scope ?? "all") !== "page" || (p.page_index ?? 0) === pageIndex,
   );
 }
 

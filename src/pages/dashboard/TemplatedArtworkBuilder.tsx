@@ -55,7 +55,7 @@ import type {
   TemplatedImageValue,
   TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
-import { DEFAULT_CMYK, normaliseCmyk } from "@/lib/artworkTemplates/types";
+import { DEFAULT_CMYK, normaliseCmyk, placeholdersForPage } from "@/lib/artworkTemplates/types";
 
 
 
@@ -337,6 +337,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  /** Boxes shown for the page being viewed (global boxes + this page's own). */
+  const pagePlaceholders = useMemo(
+    () => placeholdersForPage(placeholders, pages[pageIndex]?.index ?? pageIndex),
+    [placeholders, pages, pageIndex],
+  );
+
   useEffect(() => {
     const el = canvasRef.current;
     const page = pages[pageIndex];
@@ -351,6 +357,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       pageHeightPx: page.heightPx,
       trimWidthMm: template.trim_width_mm || page.widthMm,
       placeholders,
+      pageIndex: page.index,
       values,
       images: placedImages,
       showBoxes: true,
@@ -711,8 +718,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <p className="text-sm text-muted-foreground">
               This layout has no editable areas — it prints exactly as designed.
             </p>
+          ) : pagePlaceholders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing to fill in on this page — use the pager to move to another page.
+            </p>
           ) : (
-            placeholders.map((p, i) => (
+            pagePlaceholders.map((p, i) => (
               <PlaceholderPanel
                 key={p.id}
                 placeholder={p}

@@ -11,6 +11,7 @@ import {
   DEFAULT_TEXT_STYLE,
   cmykToHex,
   fontCss,
+  placeholdersForPage,
   splitByLayer,
   type ArtworkPlaceholder,
   type TemplatedImageValue,
@@ -119,6 +120,8 @@ export interface ComposeOptions {
   placeholders: ArtworkPlaceholder[];
   values: Record<string, TemplatedPlaceholderValue | undefined>;
   images: Record<string, HTMLImageElement | undefined>;
+  /** Zero-based page being drawn — restricts single-page placeholders. */
+  pageIndex?: number;
   showBoxes?: boolean;
   /** Highlighted placeholder id (drawn with an accent outline). */
   activeId?: string | null;
@@ -238,7 +241,11 @@ export function composeTemplatePage(
   ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
   const pxPerMm = trimWidthMm > 0 ? pageWidthPx / trimWidthMm : 1;
-  const { under, over } = splitByLayer(opts.placeholders);
+  const forPage =
+    opts.pageIndex == null
+      ? opts.placeholders
+      : placeholdersForPage(opts.placeholders, opts.pageIndex);
+  const { under, over } = splitByLayer(forPage);
 
   for (const p of under) drawPlaceholder(ctx, p, opts, pxPerMm);
 

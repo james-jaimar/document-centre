@@ -56,6 +56,12 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   const thumbRef = useRef<HTMLInputElement>(null);
   const [thumbBusy, setThumbBusy] = useState(false);
   const [reordering, setReordering] = useState(false);
+  /** Zero-based page being edited (13-page calendars etc.). */
+  const [pageIndex, setPageIndex] = useState(0);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!selectedId && templates.length > 0) setSelectedId(templates[0].id);
@@ -510,27 +516,62 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
           )}
 
 
+          {pages.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pageIndex === 0}
+                onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+              >
+                Previous page
+              </Button>
+              <Badge variant="secondary">
+                Page {pageIndex + 1} of {pages.length}
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pageIndex >= pages.length - 1}
+                onClick={() => setPageIndex((i) => Math.min(pages.length - 1, i + 1))}
+              >
+                Next page
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Boxes set to "this page only" show here; "every page" boxes appear on all pages.
+              </span>
+            </div>
+          )}
+
           {renderingPdf ? (
             <Skeleton className="h-96 w-full" />
           ) : (
             <TemplateBoxEditor
-              pageImageUrl={pages[0]?.dataUrl ?? null}
+              key={pageIndex}
+              pageImageUrl={pages[pageIndex]?.dataUrl ?? pages[0]?.dataUrl ?? null}
               trimWidthMm={selected.trim_width_mm || pages[0]?.widthMm || 210}
               trimHeightMm={selected.trim_height_mm || pages[0]?.heightMm || 297}
               placeholders={draft}
               onChange={setDraft}
+              pageIndex={pageIndex}
+              pageCount={Math.max(pages.length, selected.page_count || 1)}
             />
           )}
 
           {pages.length > 1 && (
             <div className="flex gap-2 overflow-x-auto rounded-lg border bg-muted/30 p-2">
               {pages.map((p) => (
-                <img
+                <button
                   key={p.index}
-                  src={p.dataUrl}
-                  alt={`Page ${p.index + 1}`}
-                  className="h-20 w-auto rounded border bg-background"
-                />
+                  type="button"
+                  onClick={() => setPageIndex(p.index)}
+                  className={`shrink-0 rounded border bg-background p-0.5 ${
+                    p.index === pageIndex ? "ring-2 ring-primary" : ""
+                  }`}
+                  title={`Page ${p.index + 1}`}
+                >
+                  <img src={p.dataUrl} alt={`Page ${p.index + 1}`} className="h-20 w-auto" />
+                </button>
               ))}
             </div>
           )}

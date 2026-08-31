@@ -22,9 +22,11 @@ import {
   DEFAULT_TEXT_STYLE,
   cmykToHex,
   normaliseCmyk,
+  placeholdersForPage,
   type ArtworkCmyk,
   type ArtworkPlaceholder,
   type PlaceholderKind,
+  type PlaceholderPageScope,
 } from "@/lib/artworkTemplates/types";
 
 
@@ -34,6 +36,10 @@ interface Props {
   trimHeightMm: number;
   placeholders: ArtworkPlaceholder[];
   onChange: (next: ArtworkPlaceholder[]) => void;
+  /** Zero-based page currently being edited (multi-page templates). */
+  pageIndex?: number;
+  /** Total pages in the base PDF. */
+  pageCount?: number;
 }
 
 type DragState =
@@ -52,6 +58,7 @@ export function makePlaceholder(
   kind: PlaceholderKind,
   geom: { x_mm: number; y_mm: number; width_mm: number; height_mm: number },
   index: number,
+  page?: { scope: PlaceholderPageScope; index: number },
 ): ArtworkPlaceholder {
   return {
     id: makeId(),
@@ -75,6 +82,8 @@ export function makePlaceholder(
     is_watermark: false,
     default_cmyk: kind === "colour" ? { ...DEFAULT_CMYK } : null,
     customer_editable_colour: kind === "colour",
+    page_scope: page?.scope ?? "all",
+    page_index: page?.scope === "page" ? page.index : null,
     sort_order: index,
     layer: "over",
     z_index: index,
@@ -92,16 +101,28 @@ export default function TemplateBoxEditor({
   trimHeightMm,
   placeholders,
   onChange,
+  pageIndex = 0,
+  pageCount = 1,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawKind, setDrawKind] = useState<PlaceholderKind | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** Scope given to boxes created from here (multi-page templates). */
+  const [newScope, setNewScope] = useState<PlaceholderPageScope>(
+    pageCount > 1 ? "page" : "all",
+  );
+
+  /** Only the boxes that paint on the page being edited. */
+  const visible = useMemo(
+    () => placeholdersForPage(placeholders, pageIndex),
+    [placeholders, pageIndex],
+  );
 
   const active = useMemo(
-    () => placeholders.find((p) => p.id === activeId) ?? null,
-    [placeholders, activeId],
+    () => visible.find((p) => p.id === activeId) ?? null,
+    [visible, activeId],
   );
 
   const toMm = useCallback(
@@ -187,6 +208,7 @@ export default function TemplateBoxEditor({
               height_mm: round1(ghost.h),
             },
             placeholders.length,
+            { scope: newScope, index: pageIndex },
           ),
         );
         onChange([...placeholders, created]);
@@ -209,6 +231,7 @@ export default function TemplateBoxEditor({
           height_mm: round1(trimHeightMm * (kind === "image" ? 0.3 : 0.08)),
         },
         placeholders.length,
+        { scope: newScope, index: pageIndex },
       ),
     );
     onChange([...placeholders, created]);
@@ -237,12 +260,12 @@ export default function TemplateBoxEditor({
   /** Boxes in paint order: `under` first, then the template, then `over`. */
   const ordered = useMemo(
     () =>
-      [...placeholders].sort(
+      [...visible].sort(
         (a, b) =>
           (a.layer === "under" ? 0 : 1) - (b.layer === "under" ? 0 : 1) ||
           (a.z_index ?? 0) - (b.z_index ?? 0),
       ),
-    [placeholders],
+    [visible],
   );
 
   /** Nudge a box up or down the stack within its own layer. */
@@ -288,6 +311,23 @@ export default function TemplateBoxEditor({
           >
             <Palette className="h-4 w-4 mr-1.5" /> Draw colour box
           </Button>
+          {pageCount > 1 && (
+            <div className="flex items-center gap-1.5 rounded-md border px-2 py-1">
+              <Label className="text-xs text-muted-foreground">New boxes</Label>
+              <Select
+                value={newScope}
+                onValueChange={(v) => setNewScope(v as PlaceholderPageScope)}
+              >
+                <SelectTrigger className="h-7 w-[150px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="page">This page only</SelectItem>
+                  <SelectItem value="all">Every page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button size="sm" variant="ghost" onClick={() => addDefault("image")}>
             + Image
           </Button>
@@ -420,7 +460,8 @@ export default function TemplateBoxEditor({
       <div className="space-y-3">
         <div className="rounded-lg border">
           <div className="border-b px-3 py-2 text-sm font-medium">
-            Layers ({placeholders.length})
+            Layers ({visible.length}
+            {pageCount > 1 ? ` on page ${pageIndex + 1}` : ""})
           </div>
           <div className="max-h-56 overflow-auto">
             {ordered.length === 0 ? (
@@ -444,6 +485,16 @@ export default function TemplateBoxEditor({
                   )}
 
                   <span className="truncate">{p.name}</span>
+                  {pageCount > 1 && (
+                    <Badge
+                      variant={(p.page_scope ?? "all") === "page" ? "outline" : "secondary"}
+                      className="shrink-0 text-[10px]"
+                    >
+                      {(p.page_scope ?? "all") === "page"
+                        ? `p${(p.page_index ?? 0) + 1}`
+                        : "all pages"}
+                    </Badge>
+                  )}
                   {p.layer === "under" && (
                     <Badge variant="secondary" className="shrink-0 text-[10px]">behind</Badge>
                   )}
@@ -507,6 +558,76 @@ export default function TemplateBoxEditor({
                 onChange={(e) => patch(active.id, { name: e.target.value })}
               />
             </div>
+
+            {pageCount > 1 && (
+              <div className="space-y-2 rounded-md border p-2">
+                <Label className="text-xs">Appears on</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    value={active.page_scope ?? "all"}
+                    onValueChange={(v) =>
+                      patch(active.id, {
+                        page_scope: v as PlaceholderPageScope,
+                        page_index: v === "page" ? (active.page_index ?? pageIndex) : null,
+                      })
+                    }
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="page">This page only</SelectItem>
+                      <SelectItem value="all">Every page</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(active.page_scope ?? "all") === "page" && (
+                    <Select
+                      value={String(active.page_index ?? pageIndex)}
+                      onValueChange={(v) => patch(active.id, { page_index: Number(v) })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: pageCount }, (_, i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            Page {i + 1}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {(active.page_scope ?? "all") === "page" && (
+                  <Select
+                    value=""
+                    onValueChange={(v) => {
+                      const target = Number(v);
+                      const copy = {
+                        ...active,
+                        id: makeId(),
+                        page_scope: "page" as PlaceholderPageScope,
+                        page_index: target,
+                        z_index: placeholders.length,
+                        sort_order: placeholders.length,
+                      };
+                      onChange([...placeholders, copy]);
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Copy this box to another page…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: pageCount }, (_, i) => i)
+                        .filter((i) => i !== (active.page_index ?? pageIndex))
+                        .map((i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            Copy to page {i + 1}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+
 
             <div className="grid grid-cols-2 gap-2">
               {(["x_mm", "y_mm", "width_mm", "height_mm"] as const).map((key) => (

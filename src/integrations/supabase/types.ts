@@ -60,6 +60,8 @@ export type Database = {
           max_length: number | null
           name: string
           opacity: number
+          page_index: number | null
+          page_scope: string
           sort_order: number
           template_id: string
           text_style: Json
@@ -87,6 +89,8 @@ export type Database = {
           max_length?: number | null
           name: string
           opacity?: number
+          page_index?: number | null
+          page_scope?: string
           sort_order?: number
           template_id: string
           text_style?: Json
@@ -114,6 +118,8 @@ export type Database = {
           max_length?: number | null
           name?: string
           opacity?: number
+          page_index?: number | null
+          page_scope?: string
           sort_order?: number
           template_id?: string
           text_style?: Json

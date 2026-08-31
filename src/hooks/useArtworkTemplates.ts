@@ -41,6 +41,8 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     default_cmyk: row.default_cmyk ? normaliseCmyk(row.default_cmyk) : null,
     customer_editable_colour: row.customer_editable_colour !== false,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
+    page_scope: row.page_scope === "page" ? "page" : "all",
+    page_index: row.page_index == null ? null : Number(row.page_index),
 
   } as ArtworkPlaceholder;
 }
@@ -185,6 +187,9 @@ export function useSaveArtworkPlaceholders() {
           is_watermark: !!p.is_watermark,
           default_cmyk: p.kind === "colour" ? normaliseCmyk(p.default_cmyk) : null,
           customer_editable_colour: p.customer_editable_colour !== false,
+
+          page_scope: p.page_scope === "page" ? "page" : "all",
+          page_index: p.page_scope === "page" ? (p.page_index ?? 0) : null,
 
           sort_order: i,
           layer: p.layer === "under" ? "under" : "over",
