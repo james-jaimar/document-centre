@@ -261,7 +261,11 @@ function CustomerLayoutInner() {
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Content */}
-          <main className={`flex-1 overflow-auto customer-body ${chromeless ? "" : "p-6 xl:p-8"}`}>
+          <main
+            className={`flex-1 customer-body ${
+              chromeless ? "flex flex-col overflow-hidden" : "overflow-auto p-6 xl:p-8"
+            }`}
+          >
             <Outlet />
           </main>
 
