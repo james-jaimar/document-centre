@@ -445,7 +445,7 @@ def _render_overlay(
 
             if img is not None:
                 dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, img.width, img.height, value)
-                data = _encoded_jpeg(
+                data, img_alpha = _encoded_jpeg(
                     img, pid, dw, dh, jpeg_cache if jpeg_cache is not None else {}
                 )
                 c.drawImage(
@@ -457,7 +457,8 @@ def _render_overlay(
                     height=dh,
                     preserveAspectRatio=False,
                     anchor="c",
-                    mask=None,
+                    # "auto" lets ReportLab emit the PNG's alpha as an /SMask.
+                    mask="auto" if img_alpha else None,
                 )
 
             c.restoreState()
