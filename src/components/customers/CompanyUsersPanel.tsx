@@ -24,7 +24,7 @@ interface Props {
 
 /** Users linked to a company: add, link, edit job title, set primary, remove. */
 export function CompanyUsersPanel({ companyId, companyName, customerPath }: Props) {
-  const { data: members = [] } = useCompanyMembers(companyId);
+  const { data: members = [], error: membersError } = useCompanyMembers(companyId);
   const { data: unlinked = [] } = useUnlinkedCustomers();
   const { link, unlink, update } = useCompanyMemberMutations(companyId);
   const [pick, setPick] = useState<string>("");
@@ -77,11 +77,16 @@ export function CompanyUsersPanel({ companyId, companyName, customerPath }: Prop
         />
       )}
 
-      {members.length === 0 ? (
+      {membersError ? (
+        <div className="rounded-md border border-destructive/40 p-8 text-center text-sm text-destructive">
+          Couldn’t load users for this company. {(membersError as any)?.message ?? ""}
+        </div>
+      ) : members.length === 0 ? (
         <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
           No users linked to this company yet.
         </div>
       ) : (
+
         <Table>
           <TableHeader>
             <TableRow>
