@@ -1,35 +1,31 @@
-# Company Users tab shows 0 for Laiela Paruk
+# Company Users tab shows 0 — confirmed cause
 
-## What I checked
+## What the network tab shows
 
-In the database the link is correct: the membership for `laiela@ahavahconsulting.co.za` (Impress Print Calendars tenant) carries `company_id` = Ahavah Consulting. So the data is right and only the Users tab is wrong.
+Every request for company users returns **400**. Reproducing it directly against the API gives:
 
-Access rules also look fine for a tenant admin: the memberships table allows staff of the tenant to read the rows, and table permissions are in place. That means the "Users (0)" is a front-end read problem, not a permissions or data problem — but I have not yet reproduced it while signed in as the Impress admin, so the exact cause is unconfirmed.
+> Could not find a relationship between 'tenant_memberships' and 'profile_id'
 
-## Step 1 — Reproduce and confirm the cause
+The memberships table has no declared link to the profiles table, so the combined "membership + person details" request is rejected outright. The link itself is fine in the data: Laiela's membership does carry Ahavah Consulting, which is why the customer's own edit screen shows the company. Only the company-side list is broken, and it silently renders as "Users (0)".
 
-Sign in as the Impress Print admin in the preview and open Companies -> Ahavah Consulting -> Users, watching the network response for the members request. Two candidates:
+The same failure hits the "Link an existing customer" dropdown (the second red request), which is why that list is empty too.
 
-- The request returns the row and the tab was showing a cached, pre-link result (list data is cached for 30 seconds and does not refresh on window focus; only certain actions clear it).
-- The request returns nothing, in which case the read is being blocked or filtered and I fix that specific cause.
+## The fix
 
-No further work is committed until this observation says which one it is.
+Split the two company queries into two plain steps — fetch the memberships, then fetch the matching people — exactly the pattern already used by the Users & Roles page, which works. No combined request, so no dependency on a declared table relationship.
 
-## Step 2 — Fix based on what Step 1 shows
+Applies to both:
+- the company Users tab list
+- the "customers not yet attached to a company" picker
 
-If it is caching:
-- Clear the company members cache whenever a customer's company link changes, from every place that can change it (the customer edit dialog, the company settings card, the add-customer dialog and the link/unlink buttons), so the Users tab is correct the moment you switch to it.
-- Always re-fetch the members list when the company page is opened, rather than trusting a stale copy.
+Also surface failures instead of showing a silent zero: if the list request errors, the tab shows a short "couldn't load users" message rather than "Users (0)".
 
-If the read itself returns nothing:
-- Scope the members query to the current tenant and app and fix whichever rule or filter is excluding the row, then re-verify on the same page.
+## Verify
 
-## Step 3 — Verify
-
-Reload the company page as the Impress admin and confirm Laiela appears in Users (1), then unlink and re-link from the customer record to confirm the tab updates immediately without a refresh.
+Reload Companies -> Ahavah Consulting -> Users as the Impress admin and confirm Laiela Paruk appears with her email, the tab reads Users (1), and the network requests return 200. Then confirm the picker lists unattached customers again.
 
 ## Technical notes
 
-- Members query: `useCompanyMembers` in `src/hooks/useCustomerCompanies.ts`, key `["customer-companies", "members", companyId]`, selecting `tenant_memberships` filtered by `company_id` with an embedded `profiles` row.
-- Writers to check for invalidation: `EditCustomerDialog.tsx`, `CustomerCompanySettings.tsx`, `AddCustomerDialog.tsx`, `useCompanyMemberMutations`.
-- Global query defaults (`src/App.tsx`): `staleTime: 30_000`, `refetchOnWindowFocus: false`.
+- `useCompanyMembers` and `useUnlinkedCustomers` in `src/hooks/useCustomerCompanies.ts` currently embed `profiles:profile_id (...)`; replace with a memberships select followed by a `profiles ... .in("id", ids)` select and a client-side merge, mirroring `src/hooks/useTenantMembers.ts`.
+- Keep the returned `CompanyMember` shape unchanged so `CompanyUsersPanel` and `CompanyDetailView` need no changes beyond an error state.
+- No database or access-rule changes required.
