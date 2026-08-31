@@ -24,7 +24,7 @@ interface Props {
 
 /** Users linked to a company: add, link, edit job title, set primary, remove. */
 export function CompanyUsersPanel({ companyId, companyName, customerPath }: Props) {
-  const { data: members = [] } = useCompanyMembers(companyId);
+  const { data: members = [], error: membersError } = useCompanyMembers(companyId);
   const { data: unlinked = [] } = useUnlinkedCustomers();
   const { link, unlink, update } = useCompanyMemberMutations(companyId);
   const [pick, setPick] = useState<string>("");
