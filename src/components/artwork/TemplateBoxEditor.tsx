@@ -398,7 +398,7 @@ export default function TemplateBoxEditor({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           className={`relative w-full overflow-hidden rounded-none border bg-muted ${drawKind ? "cursor-crosshair" : ""}`}
-          style={{ aspectRatio: `${trimWidthMm || 1} / ${trimHeightMm || 1}` }}
+          style={{ aspectRatio: `${canvasWidthMm || 1} / ${canvasHeightMm || 1}` }}
         >
           {pageImageUrl ? (
             <img
@@ -441,10 +441,10 @@ export default function TemplateBoxEditor({
                     : "border-primary/50 bg-primary/5"
               }`}
               style={{
-                left: pct(p.x_mm, trimWidthMm),
-                top: pct(p.y_mm, trimHeightMm),
-                width: pct(p.width_mm, trimWidthMm),
-                height: pct(p.height_mm, trimHeightMm),
+                left: pct(p.x_mm + bleedLeftMm, canvasWidthMm),
+                top: pct(p.y_mm + bleedTopMm, canvasHeightMm),
+                width: pct(p.width_mm, canvasWidthMm),
+                height: pct(p.height_mm, canvasHeightMm),
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
                 // Under-template boxes sit below the artwork image (zIndex 5).
                 zIndex: p.layer === "under" ? 1 : 10 + i,
@@ -490,18 +490,37 @@ export default function TemplateBoxEditor({
             <div
               className="pointer-events-none absolute border-2 border-dashed border-primary bg-primary/10"
               style={{
-                left: pct(ghost.x, trimWidthMm),
-                top: pct(ghost.y, trimHeightMm),
-                width: pct(ghost.w, trimWidthMm),
-                height: pct(ghost.h, trimHeightMm),
+                left: pct(ghost.x + bleedLeftMm, canvasWidthMm),
+                top: pct(ghost.y + bleedTopMm, canvasHeightMm),
+                width: pct(ghost.w, canvasWidthMm),
+                height: pct(ghost.h, canvasHeightMm),
+              }}
+            />
+          )}
+
+          {/* Where the sheet actually cuts. Anything outside is trimmed away. */}
+          {hasBleed && (
+            <div
+              className="pointer-events-none absolute border border-dashed border-foreground/70 outline-dashed outline-1 outline-background/70"
+              style={{
+                left: pct(bleedLeftMm, canvasWidthMm),
+                top: pct(bleedTopMm, canvasHeightMm),
+                width: pct(trimWidthMm, canvasWidthMm),
+                height: pct(trimHeightMm, canvasHeightMm),
+                zIndex: 9999,
               }}
             />
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Trim {trimWidthMm} × {trimHeightMm} mm. Boxes repeat on every page of the template.
+          Trim {trimWidthMm} × {trimHeightMm} mm
+          {hasBleed
+            ? ` · showing ${Math.max(bleedLeftMm, bleedTopMm, bleedRightMm, bleedBottomMm)} mm bleed — the dashed line is where it cuts, anything outside is trimmed off`
+            : ""}
+          . Boxes repeat on every page of the template.
         </p>
       </div>
+
 
       {/* Inspector */}
       <div className="space-y-3">
