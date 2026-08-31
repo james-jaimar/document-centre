@@ -104,6 +104,7 @@ export default function ArtworkProofModal({
       pageHeightPx: page.heightPx,
       trimWidthMm: trimWidthMm || page.widthMm,
       placeholders,
+      pageIndex: page.index,
       values,
       images: placedImages,
       showBoxes: false,
