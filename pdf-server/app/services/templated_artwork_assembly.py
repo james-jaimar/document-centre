@@ -918,7 +918,7 @@ def assemble_templated_artwork(
                 under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
                 _render_overlay(
                     under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    under_defs, values, images, vector_ids, jpeg_cache,
+                    page_under, values, images, vector_ids, jpeg_cache,
                 )
                 layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
@@ -943,13 +943,13 @@ def assemble_templated_artwork(
             composed = under_page
 
         # 2. Boxes in front of the template artwork.
-        if over_defs:
+        if page_over:
             overlay_path = layer_cache.get(("over", *geo_key))
             if overlay_path is None:
                 overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
                 _render_overlay(
                     overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    over_defs, values, images, vector_ids, jpeg_cache,
+                    page_over, values, images, vector_ids, jpeg_cache,
                 )
                 layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
