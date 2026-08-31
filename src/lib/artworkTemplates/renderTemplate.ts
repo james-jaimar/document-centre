@@ -119,6 +119,8 @@ export interface ComposeOptions {
   placeholders: ArtworkPlaceholder[];
   values: Record<string, TemplatedPlaceholderValue | undefined>;
   images: Record<string, HTMLImageElement | undefined>;
+  /** Zero-based page being drawn — restricts single-page placeholders. */
+  pageIndex?: number;
   showBoxes?: boolean;
   /** Highlighted placeholder id (drawn with an accent outline). */
   activeId?: string | null;
