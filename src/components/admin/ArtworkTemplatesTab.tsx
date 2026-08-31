@@ -241,7 +241,10 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       const blob = await downloadFromS3(selected.base_pdf_path);
       const rendered = await rasterisePdfPages(blob, {
         targetLongPx: 1400,
+        cropTo: "bleed",
+        bleedMm: selected.bleed_mm ?? 3,
       });
+
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       await upsertTemplate.mutateAsync({
         id: selected.id,
