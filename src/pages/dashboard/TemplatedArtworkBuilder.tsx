@@ -361,6 +361,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       pageWidthPx: page.widthPx,
       pageHeightPx: page.heightPx,
       trimWidthMm: template.trim_width_mm || page.widthMm,
+      trimHeightMm: template.trim_height_mm || page.heightMm,
+      bleedLeftMm: page.bleedLeftMm,
+      bleedTopMm: page.bleedTopMm,
+      canvasWidthMm: page.canvasWidthMm,
+      showTrimLine: true,
+
       placeholders,
       pageIndex: page.index,
       values,
