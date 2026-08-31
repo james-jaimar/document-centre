@@ -900,13 +900,19 @@ def assemble_templated_artwork(
         # Placeholder geometry is identical on every page with the same size and
         # trim origin, so the rendered layer is built once and reused — without
         # this the customer's photo is re-encoded onto all 12 pages.
+        page_under = [d for d in under_defs if _def_on_page(d, page_index)]
+        page_over = [d for d in over_defs if _def_on_page(d, page_index)]
+        has_page_scoped = any(
+            str(d.get("page_scope") or "all") == "page" for d in defs
+        )
         geo_key = (
             round(page_w_pt, 2), round(page_h_pt, 2),
             round(trim_x_pt, 2), round(trim_top_pt, 2),
+            page_index if has_page_scoped else -1,
         )
 
         # 1. Boxes that sit BEHIND the template artwork.
-        if under_defs:
+        if page_under:
             under_path = layer_cache.get(("under", *geo_key))
             if under_path is None:
                 under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
