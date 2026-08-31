@@ -55,3 +55,51 @@ export async function rasterisePdfPageOneToImage(file: File): Promise<File> {
     }
   }
 }
+
+/**
+ * Alpha-preserving variant used by the templated-artwork builder.
+ *
+ * Renders page 1 onto a genuinely transparent canvas (pdf.js otherwise paints
+ * opaque white underneath) and exports PNG, so a PDF containing only white
+ * vector graphics keeps its transparency instead of arriving as a white block.
+ */
+export async function rasterisePdfPageOneToPng(file: File): Promise<File> {
+  const buf = await file.arrayBuffer();
+  const doc = await (pdfjsLib as any).getDocument({ data: buf }).promise;
+  try {
+    const page = await doc.getPage(1);
+    const viewport1 = page.getViewport({ scale: 1 });
+    const targetLongPx = 2400;
+    const longPt = Math.max(viewport1.width, viewport1.height);
+    const scale = Math.min(4, targetLongPx / longPt);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const ctx = canvas.getContext("2d")!;
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+      canvas,
+      background: "rgba(0,0,0,0)",
+    }).promise;
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob returned null"))),
+        "image/png",
+      );
+    });
+
+    const pngName = file.name.replace(/\.pdf$/i, "") + ".page1.png";
+    return new File([blob], pngName, { type: "image/png" });
+  } finally {
+    try {
+      await doc.cleanup();
+      await doc.destroy();
+    } catch {
+      /* noop */
+    }
+  }
+}
