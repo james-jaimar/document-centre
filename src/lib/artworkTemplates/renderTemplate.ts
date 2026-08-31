@@ -240,7 +240,11 @@ export function composeTemplatePage(
   ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
   const pxPerMm = trimWidthMm > 0 ? pageWidthPx / trimWidthMm : 1;
-  const { under, over } = splitByLayer(opts.placeholders);
+  const forPage =
+    opts.pageIndex == null
+      ? opts.placeholders
+      : placeholdersForPage(opts.placeholders, opts.pageIndex);
+  const { under, over } = splitByLayer(forPage);
 
   for (const p of under) drawPlaceholder(ctx, p, opts, pxPerMm);
 
