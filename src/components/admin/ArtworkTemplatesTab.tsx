@@ -575,6 +575,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               pageImageUrl={pages[pageIndex]?.dataUrl ?? pages[0]?.dataUrl ?? null}
               trimWidthMm={selected.trim_width_mm || pages[0]?.widthMm || 210}
               trimHeightMm={selected.trim_height_mm || pages[0]?.heightMm || 297}
+              bleedLeftMm={pages[pageIndex]?.bleedLeftMm ?? 0}
+              bleedTopMm={pages[pageIndex]?.bleedTopMm ?? 0}
+              bleedRightMm={pages[pageIndex]?.bleedRightMm ?? 0}
+              bleedBottomMm={pages[pageIndex]?.bleedBottomMm ?? 0}
+
               placeholders={draft}
               onChange={setDraft}
               pageIndex={pageIndex}
