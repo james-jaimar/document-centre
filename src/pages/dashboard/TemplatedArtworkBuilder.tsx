@@ -337,6 +337,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  /** Boxes shown for the page being viewed (global boxes + this page's own). */
+  const pagePlaceholders = useMemo(
+    () => placeholdersForPage(placeholders, pages[pageIndex]?.index ?? pageIndex),
+    [placeholders, pages, pageIndex],
+  );
+
   useEffect(() => {
     const el = canvasRef.current;
     const page = pages[pageIndex];
