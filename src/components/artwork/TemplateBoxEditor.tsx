@@ -56,6 +56,7 @@ export function makePlaceholder(
   kind: PlaceholderKind,
   geom: { x_mm: number; y_mm: number; width_mm: number; height_mm: number },
   index: number,
+  page?: { scope: PlaceholderPageScope; index: number },
 ): ArtworkPlaceholder {
   return {
     id: makeId(),
