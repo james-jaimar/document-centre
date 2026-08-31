@@ -23,7 +23,7 @@ import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
-import { rasterisePdfPageOneToImage } from "@/lib/canvasPrints/pdfToImage";
+import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
