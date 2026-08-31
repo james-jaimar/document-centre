@@ -129,25 +129,37 @@ export function useCompanyMembers(companyId: string | undefined) {
     queryKey: [LIST_KEY, "members", companyId],
     enabled: !!companyId,
     queryFn: async () => {
-      const { data, error } = await supabase
+      // NOTE: no declared FK between tenant_memberships.profile_id and
+      // profiles, so a PostgREST embed 400s. Fetch in two steps and merge.
+      const { data: rows, error } = await supabase
         .from("tenant_memberships")
-        .select(
-          "id, profile_id, job_title, is_primary_contact, is_active, profiles:profile_id (email, first_name, last_name, display_name, phone)",
-        )
+        .select("id, profile_id, job_title, is_primary_contact, is_active")
         .eq("company_id", companyId!);
       if (error) throw error;
-      return (data ?? []).map((m: any): CompanyMember => ({
-        membership_id: m.id,
-        profile_id: m.profile_id,
-        email: m.profiles?.email ?? null,
-        first_name: m.profiles?.first_name ?? null,
-        last_name: m.profiles?.last_name ?? null,
-        display_name: m.profiles?.display_name ?? null,
-        phone: m.profiles?.phone ?? null,
-        job_title: m.job_title ?? null,
-        is_primary_contact: !!m.is_primary_contact,
-        is_active: m.is_active !== false,
-      }));
+      if (!rows?.length) return [] as CompanyMember[];
+
+      const ids = [...new Set(rows.map((m) => m.profile_id))];
+      const { data: profiles, error: pErr } = await supabase
+        .from("profiles")
+        .select("id, email, first_name, last_name, display_name, phone")
+        .in("id", ids);
+      if (pErr) throw pErr;
+
+      return rows.map((m: any): CompanyMember => {
+        const p: any = profiles?.find((pr) => pr.id === m.profile_id) ?? null;
+        return {
+          membership_id: m.id,
+          profile_id: m.profile_id,
+          email: p?.email ?? null,
+          first_name: p?.first_name ?? null,
+          last_name: p?.last_name ?? null,
+          display_name: p?.display_name ?? null,
+          phone: p?.phone ?? null,
+          job_title: m.job_title ?? null,
+          is_primary_contact: !!m.is_primary_contact,
+          is_active: m.is_active !== false,
+        };
+      });
     },
   });
 }
@@ -159,30 +171,39 @@ export function useUnlinkedCustomers() {
     queryKey: [LIST_KEY, "unlinked", tenantId, appId],
     enabled: !!tenantId && !!appId,
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: rows, error } = await supabase
         .from("tenant_memberships")
-        .select(
-          "id, profile_id, profiles:profile_id (email, first_name, last_name, display_name, is_anonymous)",
-        )
+        .select("id, profile_id")
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("role", "customer")
         .is("company_id", null);
       if (error) throw error;
-      return (data ?? [])
-        .filter((m: any) => m.profiles?.email && !m.profiles?.is_anonymous)
-        .map((m: any) => ({
+      if (!rows?.length) return [];
+
+      const ids = [...new Set(rows.map((m) => m.profile_id))];
+      const { data: profiles, error: pErr } = await supabase
+        .from("profiles")
+        .select("id, email, first_name, last_name, display_name, is_anonymous")
+        .in("id", ids);
+      if (pErr) throw pErr;
+
+      return rows
+        .map((m: any) => ({ m, p: profiles?.find((pr: any) => pr.id === m.profile_id) as any }))
+        .filter(({ p }) => p?.email && !p?.is_anonymous)
+        .map(({ m, p }) => ({
           membership_id: m.id as string,
           profile_id: m.profile_id as string,
-          email: m.profiles.email as string,
+          email: p.email as string,
           name:
-            m.profiles.display_name ||
-            [m.profiles.first_name, m.profiles.last_name].filter(Boolean).join(" ") ||
-            m.profiles.email,
+            p.display_name ||
+            [p.first_name, p.last_name].filter(Boolean).join(" ") ||
+            p.email,
         }));
     },
   });
 }
+
 
 export function useCompanyMemberMutations(companyId: string | undefined) {
   const qc = useQueryClient();
