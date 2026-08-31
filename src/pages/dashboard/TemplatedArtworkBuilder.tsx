@@ -718,8 +718,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <p className="text-sm text-muted-foreground">
               This layout has no editable areas — it prints exactly as designed.
             </p>
+          ) : pagePlaceholders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing to fill in on this page — use the pager to move to another page.
+            </p>
           ) : (
-            placeholders.map((p, i) => (
+            pagePlaceholders.map((p, i) => (
               <PlaceholderPanel
                 key={p.id}
                 placeholder={p}
