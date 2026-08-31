@@ -41,6 +41,8 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     default_cmyk: row.default_cmyk ? normaliseCmyk(row.default_cmyk) : null,
     customer_editable_colour: row.customer_editable_colour !== false,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
+    page_scope: row.page_scope === "page" ? "page" : "all",
+    page_index: row.page_index == null ? null : Number(row.page_index),
 
   } as ArtworkPlaceholder;
 }
