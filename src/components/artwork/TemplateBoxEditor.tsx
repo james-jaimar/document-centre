@@ -208,6 +208,7 @@ export default function TemplateBoxEditor({
               height_mm: round1(ghost.h),
             },
             placeholders.length,
+            { scope: newScope, index: pageIndex },
           ),
         );
         onChange([...placeholders, created]);
