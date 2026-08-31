@@ -216,6 +216,7 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route path="/__select-probe" element={<SelectProbe />} />
       {/* Public */}
       <Route path="/auth" element={<Auth />} />
       <Route path="/t/:slug/auth" element={<Auth />} />
