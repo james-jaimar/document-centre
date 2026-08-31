@@ -133,7 +133,10 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       await uploadToS3(path, file);
       const rendered = await rasterisePdfPages(file, {
         targetLongPx: 1400,
+        cropTo: "bleed",
+        bleedMm: selected.bleed_mm ?? 3,
       });
+
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       let previewPath: string | null = null;
       try {
