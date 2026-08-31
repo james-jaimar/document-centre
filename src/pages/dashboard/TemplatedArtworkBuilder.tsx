@@ -712,7 +712,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
                 onFocus={() => setActiveId(p.id)}
                 onPickFile={(file) => handlePickFile(p.id, file)}
-                onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: v }))}
+                onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: capWatermark(p, v) }))}
                 onClear={() =>
                   setValues((prev) => {
                     const next = { ...prev };
