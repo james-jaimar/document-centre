@@ -139,6 +139,11 @@ export interface ArtworkPlaceholder {
   /** [colour boxes] Whether the customer may change the colour. */
   customer_editable_colour: boolean;
 
+  /** `all` = repeated on every page; `page` = only on `page_index`. */
+  page_scope: PlaceholderPageScope;
+  /** Zero-based page this box belongs to when `page_scope === "page"`. */
+  page_index: number | null;
+
   sort_order: number;
   /** Behind or on top of the template artwork. */
   layer: PlaceholderLayer;
