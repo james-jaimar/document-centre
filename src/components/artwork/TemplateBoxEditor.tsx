@@ -231,6 +231,7 @@ export default function TemplateBoxEditor({
           height_mm: round1(trimHeightMm * (kind === "image" ? 0.3 : 0.08)),
         },
         placeholders.length,
+        { scope: newScope, index: pageIndex },
       ),
     );
     onChange([...placeholders, created]);
