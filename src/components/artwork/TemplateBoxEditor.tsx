@@ -260,12 +260,12 @@ export default function TemplateBoxEditor({
   /** Boxes in paint order: `under` first, then the template, then `over`. */
   const ordered = useMemo(
     () =>
-      [...placeholders].sort(
+      [...visible].sort(
         (a, b) =>
           (a.layer === "under" ? 0 : 1) - (b.layer === "under" ? 0 : 1) ||
           (a.z_index ?? 0) - (b.z_index ?? 0),
       ),
-    [placeholders],
+    [visible],
   );
 
   /** Nudge a box up or down the stack within its own layer. */
