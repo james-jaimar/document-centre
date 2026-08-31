@@ -164,7 +164,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     hydrated.current = true;
     if (s.template_id) setTemplateId(s.template_id);
     const map: Record<string, TemplatedPlaceholderValue> = {};
-    for (const v of s.placeholders ?? []) map[v.placeholder_id] = v;
+    for (const v of s.placeholders ?? []) {
+      const def = (s.placeholder_defs ?? []).find((d) => d.id === v.placeholder_id);
+      map[v.placeholder_id] = capWatermark(def, v);
+    }
     setValues(map);
     const q = (orderItem?.spec as any)?.quantity;
     if (typeof q === "number" && q > 0) setQuantity(q);
