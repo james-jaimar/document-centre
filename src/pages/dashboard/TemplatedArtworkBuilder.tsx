@@ -256,7 +256,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         const blob = await downloadFromS3(template.base_pdf_path!);
         const rendered = await rasterisePdfPages(blob, {
           targetLongPx: 1400,
+          cropTo: "bleed",
+          bleedMm: template.bleed_mm ?? 3,
         });
+
         if (!cancelled) setPages(rendered);
       } catch (err) {
         console.error("[templated-artwork] template render failed", err);
