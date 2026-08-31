@@ -34,6 +34,11 @@ interface Props {
   pageImageUrl: string | null;
   trimWidthMm: number;
   trimHeightMm: number;
+  /** Bleed included in the page image, per side (mm). Defaults to none. */
+  bleedLeftMm?: number;
+  bleedTopMm?: number;
+  bleedRightMm?: number;
+  bleedBottomMm?: number;
   placeholders: ArtworkPlaceholder[];
   onChange: (next: ArtworkPlaceholder[]) => void;
   /** Zero-based page currently being edited (multi-page templates). */
@@ -41,6 +46,7 @@ interface Props {
   /** Total pages in the base PDF. */
   pageCount?: number;
 }
+
 
 type DragState =
   | { mode: "move"; id: string; startX: number; startY: number; origX: number; origY: number }
