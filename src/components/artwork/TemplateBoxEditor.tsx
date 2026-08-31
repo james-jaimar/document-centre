@@ -22,6 +22,7 @@ import {
   DEFAULT_TEXT_STYLE,
   cmykToHex,
   normaliseCmyk,
+  placeholdersForPage,
   type ArtworkCmyk,
   type ArtworkPlaceholder,
   type PlaceholderKind,
