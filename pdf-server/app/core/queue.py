@@ -59,6 +59,7 @@ QUEUE_TO_CLOUD_TASKS_QUEUE: dict[str, str] = {
     "pdf": "documents-heavy",
     "default": "documents-light",
     "thumbnails": "documents-light",
+    "tickets": "documents-light",
     "emails-default": "emails-default",
     "emails-control": "emails-control",
 }
