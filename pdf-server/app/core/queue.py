@@ -45,6 +45,9 @@ QUEUE_TO_WORKER_ENV: dict[str, str] = {
     "pdf": "WORKER_URL_HEAVY",
     "default": "WORKER_URL_LIGHT",
     "thumbnails": "WORKER_URL_LIGHT",
+    # Job tickets are small ReportLab renders — they must never queue behind
+    # a heavy print-ready assembly, so they ride the light worker.
+    "tickets": "WORKER_URL_LIGHT",
     "emails-default": "WORKER_URL_EMAILS",
     "emails-control": "WORKER_URL_EMAILS",
 }
