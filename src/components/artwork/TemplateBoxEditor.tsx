@@ -559,6 +559,76 @@ export default function TemplateBoxEditor({
               />
             </div>
 
+            {pageCount > 1 && (
+              <div className="space-y-2 rounded-md border p-2">
+                <Label className="text-xs">Appears on</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    value={active.page_scope ?? "all"}
+                    onValueChange={(v) =>
+                      patch(active.id, {
+                        page_scope: v as PlaceholderPageScope,
+                        page_index: v === "page" ? (active.page_index ?? pageIndex) : null,
+                      })
+                    }
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="page">This page only</SelectItem>
+                      <SelectItem value="all">Every page</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(active.page_scope ?? "all") === "page" && (
+                    <Select
+                      value={String(active.page_index ?? pageIndex)}
+                      onValueChange={(v) => patch(active.id, { page_index: Number(v) })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: pageCount }, (_, i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            Page {i + 1}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {(active.page_scope ?? "all") === "page" && (
+                  <Select
+                    value=""
+                    onValueChange={(v) => {
+                      const target = Number(v);
+                      const copy = {
+                        ...active,
+                        id: makeId(),
+                        page_scope: "page" as PlaceholderPageScope,
+                        page_index: target,
+                        z_index: placeholders.length,
+                        sort_order: placeholders.length,
+                      };
+                      onChange([...placeholders, copy]);
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Copy this box to another page…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: pageCount }, (_, i) => i)
+                        .filter((i) => i !== (active.page_index ?? pageIndex))
+                        .map((i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            Copy to page {i + 1}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+
+
             <div className="grid grid-cols-2 gap-2">
               {(["x_mm", "y_mm", "width_mm", "height_mm"] as const).map((key) => (
                 <div key={key} className="space-y-1.5">
