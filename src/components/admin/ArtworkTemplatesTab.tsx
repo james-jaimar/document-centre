@@ -100,7 +100,9 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   }, [
     selected?.id,
     selected?.base_pdf_path,
+    selected?.bleed_mm,
   ]);
+
 
   const handleCreate = async () => {
     try {
