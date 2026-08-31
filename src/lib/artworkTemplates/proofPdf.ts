@@ -75,6 +75,11 @@ export async function buildProofPdf(args: BuildProofPdfArgs): Promise<{ doc: jsP
       pageWidthPx: w,
       pageHeightPx: h,
       trimWidthMm: trimWidthMm || page.widthMm,
+      trimHeightMm: page.heightMm,
+      bleedLeftMm: page.bleedLeftMm,
+      bleedTopMm: page.bleedTopMm,
+      canvasWidthMm: page.canvasWidthMm,
+      showTrimLine: true,
       placeholders,
       pageIndex: page.index,
       values,
@@ -86,8 +91,10 @@ export async function buildProofPdf(args: BuildProofPdfArgs): Promise<{ doc: jsP
     drawWatermark(ctx, w, h);
 
     const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-    const pw = page.widthMm > 0 ? page.widthMm : (w / 96) * 25.4;
-    const ph = page.heightMm > 0 ? page.heightMm : (h / 96) * 25.4;
+    // The raster includes bleed, so the proof sheet is the bleed size.
+    const pw = page.canvasWidthMm > 0 ? page.canvasWidthMm : (w / 96) * 25.4;
+    const ph = page.canvasHeightMm > 0 ? page.canvasHeightMm : (h / 96) * 25.4;
+
     const orientation = pw >= ph ? "landscape" : "portrait";
 
     if (!doc) {
