@@ -14,6 +14,7 @@ import AppLayout from "@/components/AppLayout";
 import BranchLayout from "@/components/BranchLayout";
 import CustomerLayout from "@/components/CustomerLayout";
 import DemoGateGuard from "@/components/legal/DemoGateGuard";
+import SelectProbe from "@/pages/__SelectProbe";
 
 import Auth from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
