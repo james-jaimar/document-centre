@@ -2,16 +2,18 @@
 
 ## What's actually wrong
 
-This is not a tenant/permission problem — it fails for any job.
+You're right that it worked a week ago — it broke on **Fri 28 Aug 16:45 UTC**, in the commit that split job-ticket rendering onto its own queue. It's not tenant- or permission-related; it fails for every job since then.
 
 Verified:
-- The Supabase edge log shows one failure: `POST | 502 | .../functions/v1/production-pdf` at 08:04 today. A 502 from that function means the upstream PDF API rejected the dispatch.
-- The PDF API itself is healthy (`/health` returns ok, `queue_backend: cloud_tasks`).
-- `pdf-server/app/web/routes.py` enqueues the ticket task on the logical queue `"tickets"` (added when ticket rendering was split off the assembly queue).
-- `pdf-server/app/core/queue.py` has no `"tickets"` entry in either `QUEUE_TO_CLOUD_TASKS_QUEUE` or `QUEUE_TO_WORKER_ENV`. In Cloud Tasks mode the lookup raises, the API returns 500, and the edge function turns that into 502.
-- The Celery-only path (`start-worker-light.sh -Q default,thumbnails,tickets`) does know the queue, which is why this was never caught on the legacy VPS setup.
+- Commit `977bffc0b` (28 Aug 16:45) changed `pdf-server/app/web/routes.py` to enqueue the ticket task on a new logical queue `"tickets"`, and touched only `routes.py` + `production_tasks.py` — it never registered `"tickets"` in `pdf-server/app/core/queue.py`.
+- In Cloud Tasks mode (production is `queue_backend: cloud_tasks`) `QUEUE_TO_CLOUD_TASKS_QUEUE["tickets"]` raises a KeyError, the PDF API returns 500, and the edge function relays it as 502.
+- The Supabase edge log confirms the single failure today: `POST | 502 | .../functions/v1/production-pdf`.
+- The PDF API itself is healthy (`/health` ok).
+- Only the Celery path knows the queue (`start-worker-light.sh -Q default,thumbnails,tickets`), which is why nothing caught it — production doesn't use Celery.
+- Data matches the timeline: INV-00136's ticket rendered at 14:39 on 28 Aug (before the commit); INV-00137, 138 and 139 all have `job_ticket_pdf_path = null`.
 
-Print-ready assembly still works because it uses `documents`, which is mapped.
+Print-ready assembly is unaffected because it still uses `documents`, which is mapped.
+
 
 ## The fix
 
