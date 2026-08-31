@@ -23,7 +23,7 @@ import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
-import { rasterisePdfPageOneToImage } from "@/lib/canvasPrints/pdfToImage";
+import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
@@ -385,7 +385,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
         const wasPdf = isPdf;
-        const file = isPdf ? await rasterisePdfPageOneToImage(rawFile) : rawFile;
+        // PNG, not JPEG: keeps alpha so white-only vector artwork stays
+        // transparent instead of arriving as a solid white block.
+        const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
         const itemId = await ensureOrder();
         const uploaded = await uploadPhoto(file, itemId);
         if (!uploaded) return;

@@ -298,29 +298,43 @@ def _image_draw_rect(
 MAX_PLACED_DPI = 300
 
 
+def _has_alpha(img: Image.Image) -> bool:
+    return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+
+
 def _encoded_jpeg(
     img: Image.Image,
     pid: str,
     draw_w_pt: float,
     draw_h_pt: float,
     cache: dict[tuple[str, int, int], bytes],
-) -> bytes:
-    """CMYK JPEG bytes for this image at the placed size, encoded once."""
+) -> tuple[bytes, bool]:
+    """Encoded bytes for this image at the placed size, encoded once.
+
+    Opaque images become CMYK JPEG (press-correct). Images carrying an alpha
+    channel are kept as RGBA PNG so the transparency survives into the PDF —
+    flattening them onto white would turn white-only artwork into a white box.
+    Returns (bytes, has_alpha).
+    """
     target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
     target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
     key = (pid, target_w, target_h)
     hit = cache.get(key)
+    alpha = _has_alpha(img)
     if hit is not None:
-        return hit
+        return hit, alpha
     src = img
     if src.width > target_w or src.height > target_h:
         src = src.copy()
         src.thumbnail((target_w, target_h), Image.LANCZOS)
     buf = io.BytesIO()
-    _to_cmyk(src).save(buf, format="JPEG", quality=92, optimize=True)
+    if alpha:
+        src.convert("RGBA").save(buf, format="PNG", optimize=True)
+    else:
+        _to_cmyk(src).save(buf, format="JPEG", quality=92, optimize=True)
     data = buf.getvalue()
     cache[key] = data
-    return data
+    return data, alpha
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +445,7 @@ def _render_overlay(
 
             if img is not None:
                 dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, img.width, img.height, value)
-                data = _encoded_jpeg(
+                data, img_alpha = _encoded_jpeg(
                     img, pid, dw, dh, jpeg_cache if jpeg_cache is not None else {}
                 )
                 c.drawImage(
@@ -443,7 +457,8 @@ def _render_overlay(
                     height=dh,
                     preserveAspectRatio=False,
                     anchor="c",
-                    mask=None,
+                    # "auto" lets ReportLab emit the PNG's alpha as an /SMask.
+                    mask="auto" if img_alpha else None,
                 )
 
             c.restoreState()
@@ -772,7 +787,8 @@ def assemble_templated_artwork(
         storage.download(str(src), local_img)
         img = ImageOps.exif_transpose(Image.open(local_img))
         if img.mode not in ("RGB", "RGBA", "L", "CMYK"):
-            img = img.convert("RGB")
+            # Keep alpha when the source carries it (e.g. palette PNGs).
+            img = img.convert("RGBA" if _has_alpha(img) else "RGB")
         images[pid] = img
 
     trim_w_mm = _num(ta.get("trim_width_mm"))
