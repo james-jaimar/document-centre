@@ -468,6 +468,16 @@ export default function TemplateBoxEditor({
                   )}
 
                   <span className="truncate">{p.name}</span>
+                  {pageCount > 1 && (
+                    <Badge
+                      variant={(p.page_scope ?? "all") === "page" ? "outline" : "secondary"}
+                      className="shrink-0 text-[10px]"
+                    >
+                      {(p.page_scope ?? "all") === "page"
+                        ? `p${(p.page_index ?? 0) + 1}`
+                        : "all pages"}
+                    </Badge>
+                  )}
                   {p.layer === "under" && (
                     <Badge variant="secondary" className="shrink-0 text-[10px]">behind</Badge>
                   )}
