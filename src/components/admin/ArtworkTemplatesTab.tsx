@@ -82,7 +82,10 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         const blob = await downloadFromS3(selected.base_pdf_path!);
         const rendered = await rasterisePdfPages(blob, {
           targetLongPx: 1400,
+          cropTo: "bleed",
+          bleedMm: selected.bleed_mm ?? 3,
         });
+
         if (!cancelled) setPages(rendered);
       } catch (err) {
         console.error("[artwork] template render failed", err);
@@ -97,7 +100,9 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
   }, [
     selected?.id,
     selected?.base_pdf_path,
+    selected?.bleed_mm,
   ]);
+
 
   const handleCreate = async () => {
     try {
@@ -128,7 +133,10 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       await uploadToS3(path, file);
       const rendered = await rasterisePdfPages(file, {
         targetLongPx: 1400,
+        cropTo: "bleed",
+        bleedMm: selected.bleed_mm ?? 3,
       });
+
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       let previewPath: string | null = null;
       try {
@@ -147,6 +155,19 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         trim_height_mm: rendered[0].heightMm,
         trim_offset_x_mm: rendered[0].offsetXMm,
         trim_offset_y_mm: rendered[0].offsetYMm,
+        // Record the bleed the supplied PDF actually carries, so the customer
+        // builder shows the same working area.
+        ...(rendered[0].bleedLeftMm > 0
+          ? {
+              bleed_mm: Math.max(
+                rendered[0].bleedLeftMm,
+                rendered[0].bleedTopMm,
+                rendered[0].bleedRightMm,
+                rendered[0].bleedBottomMm,
+              ),
+            }
+          : {}),
+
       } as any);
       setPages(rendered);
       toast.success(
@@ -220,7 +241,10 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
       const blob = await downloadFromS3(selected.base_pdf_path);
       const rendered = await rasterisePdfPages(blob, {
         targetLongPx: 1400,
+        cropTo: "bleed",
+        bleedMm: selected.bleed_mm ?? 3,
       });
+
       if (rendered.length === 0) throw new Error("The PDF has no pages.");
       await upsertTemplate.mutateAsync({
         id: selected.id,
@@ -551,6 +575,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               pageImageUrl={pages[pageIndex]?.dataUrl ?? pages[0]?.dataUrl ?? null}
               trimWidthMm={selected.trim_width_mm || pages[0]?.widthMm || 210}
               trimHeightMm={selected.trim_height_mm || pages[0]?.heightMm || 297}
+              bleedLeftMm={pages[pageIndex]?.bleedLeftMm ?? 0}
+              bleedTopMm={pages[pageIndex]?.bleedTopMm ?? 0}
+              bleedRightMm={pages[pageIndex]?.bleedRightMm ?? 0}
+              bleedBottomMm={pages[pageIndex]?.bleedBottomMm ?? 0}
+
               placeholders={draft}
               onChange={setDraft}
               pageIndex={pageIndex}

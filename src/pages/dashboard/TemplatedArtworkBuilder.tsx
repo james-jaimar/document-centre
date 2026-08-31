@@ -256,7 +256,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         const blob = await downloadFromS3(template.base_pdf_path!);
         const rendered = await rasterisePdfPages(blob, {
           targetLongPx: 1400,
+          cropTo: "bleed",
+          bleedMm: template.bleed_mm ?? 3,
         });
+
         if (!cancelled) setPages(rendered);
       } catch (err) {
         console.error("[templated-artwork] template render failed", err);
@@ -280,7 +283,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [
     template?.id,
     template?.base_pdf_path,
+    template?.bleed_mm,
   ]);
+
 
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
   useEffect(() => {
@@ -356,6 +361,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       pageWidthPx: page.widthPx,
       pageHeightPx: page.heightPx,
       trimWidthMm: template.trim_width_mm || page.widthMm,
+      trimHeightMm: template.trim_height_mm || page.heightMm,
+      bleedLeftMm: page.bleedLeftMm,
+      bleedTopMm: page.bleedTopMm,
+      canvasWidthMm: page.canvasWidthMm,
+      showTrimLine: true,
+
       placeholders,
       pageIndex: page.index,
       values,

@@ -83,7 +83,11 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
     (async () => {
       try {
         const blob = await downloadFromS3(pdfPath);
-        const rendered = await rasterisePdfPages(blob, { targetLongPx: 1100 });
+        const rendered = await rasterisePdfPages(blob, {
+          targetLongPx: 1100,
+          ...(isTemplated ? { cropTo: "bleed" as const, bleedMm: 3 } : {}),
+        });
+
         if (cancelled) return;
         setPages(rendered);
         const imgs: Record<number, HTMLImageElement> = {};
@@ -151,6 +155,12 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
       pageWidthPx: page.widthPx,
       pageHeightPx: page.heightPx,
       trimWidthMm: trimWidthMm || page.widthMm,
+      trimHeightMm: page.heightMm,
+      bleedLeftMm: page.bleedLeftMm,
+      bleedTopMm: page.bleedTopMm,
+      canvasWidthMm: page.canvasWidthMm,
+      showTrimLine: true,
+
       placeholders,
       pageIndex: page.index,
       values,

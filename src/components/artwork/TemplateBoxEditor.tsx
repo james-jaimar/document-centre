@@ -34,6 +34,11 @@ interface Props {
   pageImageUrl: string | null;
   trimWidthMm: number;
   trimHeightMm: number;
+  /** Bleed included in the page image, per side (mm). Defaults to none. */
+  bleedLeftMm?: number;
+  bleedTopMm?: number;
+  bleedRightMm?: number;
+  bleedBottomMm?: number;
   placeholders: ArtworkPlaceholder[];
   onChange: (next: ArtworkPlaceholder[]) => void;
   /** Zero-based page currently being edited (multi-page templates). */
@@ -41,6 +46,7 @@ interface Props {
   /** Total pages in the base PDF. */
   pageCount?: number;
 }
+
 
 type DragState =
   | { mode: "move"; id: string; startX: number; startY: number; origX: number; origY: number }
@@ -99,11 +105,19 @@ export default function TemplateBoxEditor({
   pageImageUrl,
   trimWidthMm,
   trimHeightMm,
+  bleedLeftMm = 0,
+  bleedTopMm = 0,
+  bleedRightMm = 0,
+  bleedBottomMm = 0,
   placeholders,
   onChange,
   pageIndex = 0,
   pageCount = 1,
 }: Props) {
+  const canvasWidthMm = trimWidthMm + bleedLeftMm + bleedRightMm;
+  const canvasHeightMm = trimHeightMm + bleedTopMm + bleedBottomMm;
+  const hasBleed = bleedLeftMm + bleedTopMm + bleedRightMm + bleedBottomMm > 0.05;
+
   const stageRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawKind, setDrawKind] = useState<PlaceholderKind | null>(null);
@@ -125,24 +139,27 @@ export default function TemplateBoxEditor({
     [visible, activeId],
   );
 
+  // Stage coordinates are the bleed canvas, but placeholder geometry is stored
+  // relative to the TRIM origin — so subtract the bleed margin here. Boxes that
+  // bleed off the sheet legitimately carry negative x/y.
   const toMm = useCallback(
     (clientX: number, clientY: number) => {
       const el = stageRef.current;
-      if (!el || !trimWidthMm) return { x: 0, y: 0 };
+      if (!el || !canvasWidthMm) return { x: 0, y: 0 };
       const r = el.getBoundingClientRect();
       return {
-        x: ((clientX - r.left) / r.width) * trimWidthMm,
-        y: ((clientY - r.top) / r.height) * trimHeightMm,
+        x: ((clientX - r.left) / r.width) * canvasWidthMm - bleedLeftMm,
+        y: ((clientY - r.top) / r.height) * canvasHeightMm - bleedTopMm,
       };
     },
-    [trimWidthMm, trimHeightMm],
+    [canvasWidthMm, canvasHeightMm, bleedLeftMm, bleedTopMm],
   );
 
   const mmPerPx = useCallback(() => {
     const el = stageRef.current;
-    if (!el || !trimWidthMm) return 1;
-    return trimWidthMm / el.getBoundingClientRect().width;
-  }, [trimWidthMm]);
+    if (!el || !canvasWidthMm) return 1;
+    return canvasWidthMm / el.getBoundingClientRect().width;
+  }, [canvasWidthMm]);
 
   const patch = useCallback(
     (id: string, updates: Partial<ArtworkPlaceholder>) => {
@@ -152,15 +169,45 @@ export default function TemplateBoxEditor({
   );
 
   const clampBox = useCallback(
-    (p: ArtworkPlaceholder): ArtworkPlaceholder => ({
-      ...p,
-      x_mm: round1(Math.max(0, Math.min(p.x_mm, trimWidthMm - p.width_mm))),
-      y_mm: round1(Math.max(0, Math.min(p.y_mm, trimHeightMm - p.height_mm))),
-      width_mm: round1(Math.max(5, Math.min(p.width_mm, trimWidthMm))),
-      height_mm: round1(Math.max(5, Math.min(p.height_mm, trimHeightMm))),
-    }),
-    [trimWidthMm, trimHeightMm],
+    (p: ArtworkPlaceholder): ArtworkPlaceholder => {
+      const width = round1(Math.max(5, Math.min(p.width_mm, canvasWidthMm)));
+      const height = round1(Math.max(5, Math.min(p.height_mm, canvasHeightMm)));
+      return {
+        ...p,
+        width_mm: width,
+        height_mm: height,
+        x_mm: round1(
+          Math.max(-bleedLeftMm, Math.min(p.x_mm, trimWidthMm + bleedRightMm - width)),
+        ),
+        y_mm: round1(
+          Math.max(-bleedTopMm, Math.min(p.y_mm, trimHeightMm + bleedBottomMm - height)),
+        ),
+      };
+    },
+    [
+      trimWidthMm,
+      trimHeightMm,
+      canvasWidthMm,
+      canvasHeightMm,
+      bleedLeftMm,
+      bleedTopMm,
+      bleedRightMm,
+      bleedBottomMm,
+    ],
   );
+
+  /** Snap the selected box to full bleed on all four sides. */
+  const bleedOffEdges = useCallback(
+    (p: ArtworkPlaceholder) =>
+      patch(p.id, {
+        x_mm: round1(-bleedLeftMm),
+        y_mm: round1(-bleedTopMm),
+        width_mm: round1(trimWidthMm + bleedLeftMm + bleedRightMm),
+        height_mm: round1(trimHeightMm + bleedTopMm + bleedBottomMm),
+      }),
+    [patch, trimWidthMm, trimHeightMm, bleedLeftMm, bleedTopMm, bleedRightMm, bleedBottomMm],
+  );
+
 
   // ── pointer handling ──────────────────────────────────────────────
   const onStagePointerDown = (e: React.PointerEvent) => {
@@ -351,7 +398,7 @@ export default function TemplateBoxEditor({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           className={`relative w-full overflow-hidden rounded-none border bg-muted ${drawKind ? "cursor-crosshair" : ""}`}
-          style={{ aspectRatio: `${trimWidthMm || 1} / ${trimHeightMm || 1}` }}
+          style={{ aspectRatio: `${canvasWidthMm || 1} / ${canvasHeightMm || 1}` }}
         >
           {pageImageUrl ? (
             <img
@@ -394,10 +441,10 @@ export default function TemplateBoxEditor({
                     : "border-primary/50 bg-primary/5"
               }`}
               style={{
-                left: pct(p.x_mm, trimWidthMm),
-                top: pct(p.y_mm, trimHeightMm),
-                width: pct(p.width_mm, trimWidthMm),
-                height: pct(p.height_mm, trimHeightMm),
+                left: pct(p.x_mm + bleedLeftMm, canvasWidthMm),
+                top: pct(p.y_mm + bleedTopMm, canvasHeightMm),
+                width: pct(p.width_mm, canvasWidthMm),
+                height: pct(p.height_mm, canvasHeightMm),
                 borderRadius: `${(p.corner_radius_mm / Math.max(1, p.width_mm)) * 100}%`,
                 // Under-template boxes sit below the artwork image (zIndex 5).
                 zIndex: p.layer === "under" ? 1 : 10 + i,
@@ -443,18 +490,37 @@ export default function TemplateBoxEditor({
             <div
               className="pointer-events-none absolute border-2 border-dashed border-primary bg-primary/10"
               style={{
-                left: pct(ghost.x, trimWidthMm),
-                top: pct(ghost.y, trimHeightMm),
-                width: pct(ghost.w, trimWidthMm),
-                height: pct(ghost.h, trimHeightMm),
+                left: pct(ghost.x + bleedLeftMm, canvasWidthMm),
+                top: pct(ghost.y + bleedTopMm, canvasHeightMm),
+                width: pct(ghost.w, canvasWidthMm),
+                height: pct(ghost.h, canvasHeightMm),
+              }}
+            />
+          )}
+
+          {/* Where the sheet actually cuts. Anything outside is trimmed away. */}
+          {hasBleed && (
+            <div
+              className="pointer-events-none absolute border border-dashed border-foreground/70 outline-dashed outline-1 outline-background/70"
+              style={{
+                left: pct(bleedLeftMm, canvasWidthMm),
+                top: pct(bleedTopMm, canvasHeightMm),
+                width: pct(trimWidthMm, canvasWidthMm),
+                height: pct(trimHeightMm, canvasHeightMm),
+                zIndex: 9999,
               }}
             />
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Trim {trimWidthMm} × {trimHeightMm} mm. Boxes repeat on every page of the template.
+          Trim {trimWidthMm} × {trimHeightMm} mm
+          {hasBleed
+            ? ` · showing ${Math.max(bleedLeftMm, bleedTopMm, bleedRightMm, bleedBottomMm)} mm bleed — the dashed line is where it cuts, anything outside is trimmed off`
+            : ""}
+          . Boxes repeat on every page of the template.
         </p>
       </div>
+
 
       {/* Inspector */}
       <div className="space-y-3">
@@ -647,6 +713,25 @@ export default function TemplateBoxEditor({
                 </div>
               ))}
             </div>
+
+            {hasBleed && (
+              <div className="space-y-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => bleedOffEdges(active)}
+                >
+                  Bleed off all edges
+                </Button>
+                <p className="text-[11px] text-muted-foreground">
+                  Negative X/Y are allowed — they push the box out into the bleed
+                  (up to {Math.max(bleedLeftMm, bleedTopMm, bleedRightMm, bleedBottomMm)} mm).
+                </p>
+              </div>
+            )}
+
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">

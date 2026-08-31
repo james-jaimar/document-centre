@@ -31,10 +31,20 @@ export interface RasterisedPage {
   pageHeightMm: number;
   /** True when the raster was cropped down to a TrimBox smaller than the page. */
   trimmed: boolean;
+  /** How much bleed (mm) the raster actually includes on each side. Zero when
+   *  the page was cropped to the trim box. */
+  bleedLeftMm: number;
+  bleedTopMm: number;
+  bleedRightMm: number;
+  bleedBottomMm: number;
+  /** Rasterised canvas size in mm — trim plus whatever bleed is included. */
+  canvasWidthMm: number;
+  canvasHeightMm: number;
 }
 
 
 const PT_TO_MM = 25.4 / 72;
+const MM_TO_PT = 72 / 25.4;
 
 interface Box {
   x: number;
@@ -43,16 +53,17 @@ interface Box {
   height: number;
 }
 
-/** Read the trim + crop boxes per page (PDF user space, points). */
+/** Read the trim + bleed + crop boxes per page (PDF user space, points). */
 async function readPageBoxes(
   buf: ArrayBuffer,
-): Promise<Array<{ trim: Box; crop: Box; rotation: number }> | null> {
+): Promise<Array<{ trim: Box; bleed: Box | null; crop: Box; rotation: number }> | null> {
   try {
     const doc = await PDFDocument.load(buf, { ignoreEncryption: true, updateMetadata: false });
     return doc.getPages().map((p) => {
       const media = p.getMediaBox();
       let crop: Box = media;
       let trim: Box = media;
+      let bleed: Box | null = null;
       try {
         crop = p.getCropBox();
       } catch {
@@ -63,14 +74,21 @@ async function readPageBoxes(
       } catch {
         trim = crop;
       }
+      try {
+        const b = p.getBleedBox();
+        if (b && b.width > 1 && b.height > 1) bleed = b;
+      } catch {
+        bleed = null;
+      }
       // Some producers write a degenerate TrimBox — ignore anything silly.
       if (!trim || trim.width < 1 || trim.height < 1) trim = crop;
-      return { trim, crop, rotation: p.getRotation().angle % 360 };
+      return { trim, bleed, crop, rotation: p.getRotation().angle % 360 };
     });
   } catch {
     return null;
   }
 }
+
 
 /**
  * Turn the near-white background of a rasterised template into transparency so
@@ -131,9 +149,15 @@ export async function rasterisePdfPages(
     knockoutWhite?: boolean;
     /** 0–60 — how far from pure white still counts as background. */
     knockoutTolerance?: number;
+    /** Crop the raster to the trim box (default) or include bleed. */
+    cropTo?: "trim" | "bleed";
+    /** Bleed to include when the PDF carries no BleedBox (mm, default 3). */
+    bleedMm?: number;
   } = {},
 ): Promise<RasterisedPage[]> {
   const targetLongPx = opts.targetLongPx ?? 1400;
+  const wantBleed = opts.cropTo === "bleed";
+  const fallbackBleedPt = Math.max(0, opts.bleedMm ?? 3) * MM_TO_PT;
   const buf = source instanceof Blob ? await source.arrayBuffer() : source;
   // pdf.js detaches the buffer it is given, so hand each reader its own copy.
   const boxes = await readPageBoxes(buf.slice(0));
@@ -162,9 +186,43 @@ export async function rasterisePdfPages(
         }
       }
 
+      // How much bleed can we actually show around the trim? Prefer the PDF's
+      // BleedBox; otherwise expand the trim by the requested bleed. Either way
+      // it is clamped to what the rendered (crop) page really contains.
+      let bleed = { left: 0, top: 0, right: 0, bottom: 0 };
+      if (wantBleed && trimPt && info) {
+        const c = info.crop;
+        let want = { left: fallbackBleedPt, top: fallbackBleedPt, right: fallbackBleedPt, bottom: fallbackBleedPt };
+        const b = info.bleed;
+        if (b && b.width > info.trim.width + 0.5 && b.height > info.trim.height + 0.5) {
+          const t = info.trim;
+          want = {
+            left: Math.max(0, t.x - b.x),
+            right: Math.max(0, b.x + b.width - (t.x + t.width)),
+            top: Math.max(0, b.y + b.height - (t.y + t.height)),
+            bottom: Math.max(0, t.y - b.y),
+          };
+        }
+        bleed = {
+          left: Math.min(want.left, trimPt.x),
+          top: Math.min(want.top, trimPt.y),
+          right: Math.min(want.right, Math.max(0, c.width - (trimPt.x + trimPt.width))),
+          bottom: Math.min(want.bottom, Math.max(0, c.height - (trimPt.y + trimPt.height))),
+        };
+      }
+
+      const cropPt: Box | null = trimPt
+        ? {
+            x: trimPt.x - bleed.left,
+            y: trimPt.y - bleed.top,
+            width: trimPt.width + bleed.left + bleed.right,
+            height: trimPt.height + bleed.top + bleed.bottom,
+          }
+        : null;
+
       const longPt = Math.max(
-        trimPt ? trimPt.width : base.width,
-        trimPt ? trimPt.height : base.height,
+        cropPt ? cropPt.width : base.width,
+        cropPt ? cropPt.height : base.height,
       );
       const scale = Math.min(4, targetLongPx / longPt);
       const viewport = page.getViewport({ scale });
@@ -187,15 +245,15 @@ export async function rasterisePdfPages(
       }).promise;
 
       let out = canvas;
-      if (trimPt) {
+      if (cropPt) {
         const cropped = document.createElement("canvas");
-        cropped.width = Math.max(1, Math.round(trimPt.width * scale));
-        cropped.height = Math.max(1, Math.round(trimPt.height * scale));
+        cropped.width = Math.max(1, Math.round(cropPt.width * scale));
+        cropped.height = Math.max(1, Math.round(cropPt.height * scale));
         const cctx = cropped.getContext("2d")!;
         cctx.drawImage(
           canvas,
-          Math.round(trimPt.x * scale),
-          Math.round(trimPt.y * scale),
+          Math.round(cropPt.x * scale),
+          Math.round(cropPt.y * scale),
           cropped.width,
           cropped.height,
           0,
@@ -229,7 +287,14 @@ export async function rasterisePdfPages(
         pageWidthMm: mm1(base.width),
         pageHeightMm: mm1(base.height),
         trimmed: !!trimPt,
+        bleedLeftMm: mm1(bleed.left),
+        bleedTopMm: mm1(bleed.top),
+        bleedRightMm: mm1(bleed.right),
+        bleedBottomMm: mm1(bleed.bottom),
+        canvasWidthMm: mm1(widthPt + bleed.left + bleed.right),
+        canvasHeightMm: mm1(heightPt + bleed.top + bleed.bottom),
       });
+
 
     }
   } finally {

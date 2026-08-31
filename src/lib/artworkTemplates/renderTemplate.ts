@@ -117,6 +117,15 @@ export interface ComposeOptions {
   pageWidthPx: number;
   pageHeightPx: number;
   trimWidthMm: number;
+  /** Trim height — only needed when a trim line is drawn. */
+  trimHeightMm?: number;
+  /** Bleed included in the page image, in mm per side (default 0). */
+  bleedLeftMm?: number;
+  bleedTopMm?: number;
+  /** Full canvas width in mm (trim + left + right bleed). Defaults to trim. */
+  canvasWidthMm?: number;
+  /** Draw a dashed trim line and dim the bleed margin (proofs/preview only). */
+  showTrimLine?: boolean;
   placeholders: ArtworkPlaceholder[];
   values: Record<string, TemplatedPlaceholderValue | undefined>;
   images: Record<string, HTMLImageElement | undefined>;
@@ -126,6 +135,7 @@ export interface ComposeOptions {
   /** Highlighted placeholder id (drawn with an accent outline). */
   activeId?: string | null;
 }
+
 
 function drawPlaceholder(
   ctx: CanvasRenderingContext2D,
@@ -240,23 +250,60 @@ export function composeTemplatePage(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
-  const pxPerMm = trimWidthMm > 0 ? pageWidthPx / trimWidthMm : 1;
+  const canvasWidthMm = opts.canvasWidthMm && opts.canvasWidthMm > 0 ? opts.canvasWidthMm : trimWidthMm;
+  const pxPerMm = canvasWidthMm > 0 ? pageWidthPx / canvasWidthMm : 1;
+  const offsetXPx = (opts.bleedLeftMm ?? 0) * pxPerMm;
+  const offsetYPx = (opts.bleedTopMm ?? 0) * pxPerMm;
   const forPage =
     opts.pageIndex == null
       ? opts.placeholders
       : placeholdersForPage(opts.placeholders, opts.pageIndex);
   const { under, over } = splitByLayer(forPage);
 
-  for (const p of under) drawPlaceholder(ctx, p, opts, pxPerMm);
+  // Placeholder geometry is measured from the trim's top-left corner, so shift
+  // the drawing origin by whatever bleed the page image carries.
+  const withOrigin = (draw: () => void) => {
+    ctx.save();
+    ctx.translate(offsetXPx, offsetYPx);
+    draw();
+    ctx.restore();
+  };
+
+  withOrigin(() => {
+    for (const p of under) drawPlaceholder(ctx, p, opts, pxPerMm);
+  });
 
   if (opts.pageImage) {
     ctx.drawImage(opts.pageImage, 0, 0, pageWidthPx, pageHeightPx);
   }
 
-  for (const p of over) drawPlaceholder(ctx, p, opts, pxPerMm);
+  withOrigin(() => {
+    for (const p of over) drawPlaceholder(ctx, p, opts, pxPerMm);
+    if (opts.showBoxes) {
+      for (const p of [...under, ...over]) outlineBox(ctx, p, opts, pxPerMm);
+    }
+  });
 
-  if (opts.showBoxes) {
-    for (const p of [...under, ...over]) outlineBox(ctx, p, opts, pxPerMm);
+  if (opts.showTrimLine && (offsetXPx > 0.5 || offsetYPx > 0.5)) {
+    const trimWpx = trimWidthMm * pxPerMm;
+    const trimHpx = (opts.trimHeightMm ?? 0) * pxPerMm ||
+      pageHeightPx - offsetYPx * 2;
+    ctx.save();
+    // Dim the bleed margin so it reads as "this gets cut off".
+    ctx.fillStyle = "rgba(15,23,42,0.18)";
+    ctx.beginPath();
+    ctx.rect(0, 0, pageWidthPx, pageHeightPx);
+    ctx.rect(offsetXPx, offsetYPx, trimWpx, trimHpx);
+    ctx.fill("evenodd");
+    ctx.setLineDash([Math.max(4, pxPerMm * 2), Math.max(3, pxPerMm * 1.5)]);
+    ctx.lineWidth = Math.max(1, pxPerMm * 0.3);
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.strokeRect(offsetXPx, offsetYPx, trimWpx, trimHpx);
+    ctx.lineDashOffset = Math.max(4, pxPerMm * 2);
+    ctx.strokeStyle = "rgba(15,23,42,0.85)";
+    ctx.strokeRect(offsetXPx, offsetYPx, trimWpx, trimHpx);
+    ctx.restore();
   }
+
 }
 
