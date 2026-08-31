@@ -591,10 +591,24 @@ def _knockout_base_page(
         return False
 
     img = Image.open(tmp).convert("RGBA")
-    tol = max(0.0, min(60.0, tolerance))
-    cut = 255 - tol
     px = img.load()
     w, h = img.size
+
+    # If the page already carries its own transparency there is no white
+    # background to remove — knocking white out here would erase legitimate
+    # white artwork (e.g. white type on a calendar cover).
+    step = max(1, (w * h) // 20000)
+    sampled = clear = 0
+    for idx in range(0, w * h, step):
+        sampled += 1
+        if px[idx % w, idx // w][3] < 10:
+            clear += 1
+    if sampled and clear / sampled > 0.05:
+        img.save(out_png)
+        return True
+
+    tol = max(0.0, min(60.0, tolerance))
+    cut = 255 - tol
     for y in range(h):
         for x in range(w):
             r, g, b, a = px[x, y]
@@ -607,6 +621,7 @@ def _knockout_base_page(
                 px[x, y] = (r, g, b, int(a * (1 - (lum - (cut - 24)) / 24)))
     img.save(out_png)
     return True
+
 
 
 def _render_base_raster_layer(
