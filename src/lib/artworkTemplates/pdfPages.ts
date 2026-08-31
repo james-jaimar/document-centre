@@ -31,10 +31,20 @@ export interface RasterisedPage {
   pageHeightMm: number;
   /** True when the raster was cropped down to a TrimBox smaller than the page. */
   trimmed: boolean;
+  /** How much bleed (mm) the raster actually includes on each side. Zero when
+   *  the page was cropped to the trim box. */
+  bleedLeftMm: number;
+  bleedTopMm: number;
+  bleedRightMm: number;
+  bleedBottomMm: number;
+  /** Rasterised canvas size in mm — trim plus whatever bleed is included. */
+  canvasWidthMm: number;
+  canvasHeightMm: number;
 }
 
 
 const PT_TO_MM = 25.4 / 72;
+const MM_TO_PT = 72 / 25.4;
 
 interface Box {
   x: number;
@@ -43,16 +53,17 @@ interface Box {
   height: number;
 }
 
-/** Read the trim + crop boxes per page (PDF user space, points). */
+/** Read the trim + bleed + crop boxes per page (PDF user space, points). */
 async function readPageBoxes(
   buf: ArrayBuffer,
-): Promise<Array<{ trim: Box; crop: Box; rotation: number }> | null> {
+): Promise<Array<{ trim: Box; bleed: Box | null; crop: Box; rotation: number }> | null> {
   try {
     const doc = await PDFDocument.load(buf, { ignoreEncryption: true, updateMetadata: false });
     return doc.getPages().map((p) => {
       const media = p.getMediaBox();
       let crop: Box = media;
       let trim: Box = media;
+      let bleed: Box | null = null;
       try {
         crop = p.getCropBox();
       } catch {
@@ -63,14 +74,21 @@ async function readPageBoxes(
       } catch {
         trim = crop;
       }
+      try {
+        const b = p.getBleedBox();
+        if (b && b.width > 1 && b.height > 1) bleed = b;
+      } catch {
+        bleed = null;
+      }
       // Some producers write a degenerate TrimBox — ignore anything silly.
       if (!trim || trim.width < 1 || trim.height < 1) trim = crop;
-      return { trim, crop, rotation: p.getRotation().angle % 360 };
+      return { trim, bleed, crop, rotation: p.getRotation().angle % 360 };
     });
   } catch {
     return null;
   }
 }
+
 
 /**
  * Turn the near-white background of a rasterised template into transparency so
