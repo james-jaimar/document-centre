@@ -176,7 +176,15 @@ export async function rasterisePdfPages(
       // templates exported without a background rectangle stay see-through and
       // `under` placeholders show through. The compositor paints the paper.
       const ctx = canvas.getContext("2d")!;
-      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      // pdf.js fills the canvas with opaque white unless told otherwise, which
+      // would hide the page's own transparency and make the knockout guard below
+      // useless. Render onto a genuinely transparent canvas instead.
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+        canvas,
+        background: "rgba(0,0,0,0)",
+      }).promise;
 
       let out = canvas;
       if (trimPt) {
