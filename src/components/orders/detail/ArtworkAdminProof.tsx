@@ -155,6 +155,12 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
       pageWidthPx: page.widthPx,
       pageHeightPx: page.heightPx,
       trimWidthMm: trimWidthMm || page.widthMm,
+      trimHeightMm: page.heightMm,
+      bleedLeftMm: page.bleedLeftMm,
+      bleedTopMm: page.bleedTopMm,
+      canvasWidthMm: page.canvasWidthMm,
+      showTrimLine: true,
+
       placeholders,
       pageIndex: page.index,
       values,
