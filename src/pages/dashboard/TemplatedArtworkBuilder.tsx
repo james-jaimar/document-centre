@@ -803,10 +803,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <span className="text-right font-medium">{family?.name ?? "—"}</span>
           </div>
           {pricingOptions.length > 0 && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Finishing option</Label>
+            <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <Label className="text-sm font-semibold text-foreground">Finishing option</Label>
               <Select value={pricingOption ?? ""} onValueChange={(v) => setPricingOption(v)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-auto min-h-10 border-2 border-primary/60 bg-background py-2 font-medium [&>span]:line-clamp-none [&>span]:whitespace-normal">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -817,6 +817,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                   ))}
                 </SelectContent>
               </Select>
+              {pricingOptions.length > 1 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {pricingOptions.length} options available
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-1.5">
