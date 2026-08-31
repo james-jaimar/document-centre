@@ -100,16 +100,28 @@ export default function TemplateBoxEditor({
   trimHeightMm,
   placeholders,
   onChange,
+  pageIndex = 0,
+  pageCount = 1,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawKind, setDrawKind] = useState<PlaceholderKind | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** Scope given to boxes created from here (multi-page templates). */
+  const [newScope, setNewScope] = useState<PlaceholderPageScope>(
+    pageCount > 1 ? "page" : "all",
+  );
+
+  /** Only the boxes that paint on the page being edited. */
+  const visible = useMemo(
+    () => placeholdersForPage(placeholders, pageIndex),
+    [placeholders, pageIndex],
+  );
 
   const active = useMemo(
-    () => placeholders.find((p) => p.id === activeId) ?? null,
-    [placeholders, activeId],
+    () => visible.find((p) => p.id === activeId) ?? null,
+    [visible, activeId],
   );
 
   const toMm = useCallback(
