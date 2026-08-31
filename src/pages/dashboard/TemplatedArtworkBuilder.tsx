@@ -55,7 +55,7 @@ import type {
   TemplatedImageValue,
   TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
-import { DEFAULT_CMYK, normaliseCmyk } from "@/lib/artworkTemplates/types";
+import { DEFAULT_CMYK, normaliseCmyk, placeholdersForPage } from "@/lib/artworkTemplates/types";
 
 
 
