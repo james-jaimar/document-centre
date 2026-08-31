@@ -92,7 +92,14 @@ def _cloud_tasks_enqueue(
     # doesn't host Cloud Tasks). Fall back to GCP_REGION for back-compat.
     region = os.getenv("GCP_TASKS_REGION") or os.environ["GCP_REGION"]
     invoker_sa = os.environ["TASKS_INVOKER_SA"]
-    queue_id = QUEUE_TO_CLOUD_TASKS_QUEUE[queue]
+    try:
+        queue_id = QUEUE_TO_CLOUD_TASKS_QUEUE[queue]
+    except KeyError as exc:  # actionable message instead of a bare KeyError → 500
+        raise RuntimeError(
+            f"Logical queue {queue!r} is not registered in QUEUE_TO_CLOUD_TASKS_QUEUE "
+            f"(known: {sorted(QUEUE_TO_CLOUD_TASKS_QUEUE)}). Add it there and in "
+            "QUEUE_TO_WORKER_ENV before enqueueing onto it."
+        ) from exc
     worker_url = _resolve_worker_url(queue)
 
     client = tasks_v2.CloudTasksClient()
