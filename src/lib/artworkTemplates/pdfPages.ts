@@ -77,6 +77,10 @@ async function readPageBoxes(
  * placeholders drawn *behind* the template can show through. Pixels within
  * `tolerance` of pure white become fully transparent; near-white pixels fade
  * proportionally so edges stay smooth.
+ *
+ * Skipped entirely when the page already carries its own transparency (the
+ * usual case for print-ready vector templates) — otherwise legitimate WHITE
+ * artwork, such as white type on a calendar cover, would be erased too.
  */
 function knockoutWhiteInPlace(canvas: HTMLCanvasElement, tolerance: number) {
   const ctx = canvas.getContext("2d");
@@ -84,6 +88,17 @@ function knockoutWhiteInPlace(canvas: HTMLCanvasElement, tolerance: number) {
   const tol = Math.max(0, Math.min(60, tolerance));
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = img.data;
+
+  // Sample the alpha channel (every 40th pixel). A page exported without a
+  // white background rectangle is already mostly transparent — leave it alone.
+  let sampled = 0;
+  let clear = 0;
+  for (let i = 3; i < d.length; i += 4 * 40) {
+    sampled++;
+    if (d[i] < 10) clear++;
+  }
+  if (sampled > 0 && clear / sampled > 0.05) return;
+
   for (let i = 0; i < d.length; i += 4) {
     const lum = Math.min(d[i], d[i + 1], d[i + 2]);
     const cut = 255 - tol;
@@ -96,6 +111,7 @@ function knockoutWhiteInPlace(canvas: HTMLCanvasElement, tolerance: number) {
   }
   ctx.putImageData(img, 0, 0);
 }
+
 
 /**
  * Render every page (up to `maxPages`) at roughly `targetLongPx` on the long
