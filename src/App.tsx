@@ -14,7 +14,6 @@ import AppLayout from "@/components/AppLayout";
 import BranchLayout from "@/components/BranchLayout";
 import CustomerLayout from "@/components/CustomerLayout";
 import DemoGateGuard from "@/components/legal/DemoGateGuard";
-import SelectProbe from "@/pages/__SelectProbe";
 
 import Auth from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
@@ -217,7 +216,6 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/__select-probe" element={<SelectProbe />} />
       {/* Public */}
       <Route path="/auth" element={<Auth />} />
       <Route path="/t/:slug/auth" element={<Auth />} />
