@@ -25,6 +25,7 @@ import {
   type ArtworkCmyk,
   type ArtworkPlaceholder,
   type PlaceholderKind,
+  type PlaceholderPageScope,
 } from "@/lib/artworkTemplates/types";
 
 
