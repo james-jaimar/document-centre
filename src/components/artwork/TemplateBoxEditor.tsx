@@ -311,6 +311,23 @@ export default function TemplateBoxEditor({
           >
             <Palette className="h-4 w-4 mr-1.5" /> Draw colour box
           </Button>
+          {pageCount > 1 && (
+            <div className="flex items-center gap-1.5 rounded-md border px-2 py-1">
+              <Label className="text-xs text-muted-foreground">New boxes</Label>
+              <Select
+                value={newScope}
+                onValueChange={(v) => setNewScope(v as PlaceholderPageScope)}
+              >
+                <SelectTrigger className="h-7 w-[150px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="page">This page only</SelectItem>
+                  <SelectItem value="all">Every page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button size="sm" variant="ghost" onClick={() => addDefault("image")}>
             + Image
           </Button>
