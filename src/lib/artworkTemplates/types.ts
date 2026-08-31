@@ -162,6 +162,16 @@ export function sortPlaceholders(list: ArtworkPlaceholder[]): ArtworkPlaceholder
   );
 }
 
+/** Boxes that paint on a given (zero-based) page: global ones plus that page's. */
+export function placeholdersForPage(
+  list: ArtworkPlaceholder[],
+  pageIndex: number,
+): ArtworkPlaceholder[] {
+  return list.filter(
+    (p) => (p.page_scope ?? "all") !== "page" || (p.page_index ?? 0) === pageIndex,
+  );
+}
+
 export function splitByLayer(list: ArtworkPlaceholder[]) {
   const sorted = sortPlaceholders(list);
   return {
