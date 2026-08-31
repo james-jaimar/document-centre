@@ -714,6 +714,25 @@ export default function TemplateBoxEditor({
               ))}
             </div>
 
+            {hasBleed && (
+              <div className="space-y-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => bleedOffEdges(active)}
+                >
+                  Bleed off all edges
+                </Button>
+                <p className="text-[11px] text-muted-foreground">
+                  Negative X/Y are allowed — they push the box out into the bleed
+                  (up to {Math.max(bleedLeftMm, bleedTopMm, bleedRightMm, bleedBottomMm)} mm).
+                </p>
+              </div>
+            )}
+
+
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">Layer</Label>
