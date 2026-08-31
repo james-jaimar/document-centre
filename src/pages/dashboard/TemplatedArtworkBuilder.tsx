@@ -283,7 +283,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [
     template?.id,
     template?.base_pdf_path,
+    template?.bleed_mm,
   ]);
+
 
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
   useEffect(() => {
