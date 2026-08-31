@@ -155,6 +155,19 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
         trim_height_mm: rendered[0].heightMm,
         trim_offset_x_mm: rendered[0].offsetXMm,
         trim_offset_y_mm: rendered[0].offsetYMm,
+        // Record the bleed the supplied PDF actually carries, so the customer
+        // builder shows the same working area.
+        ...(rendered[0].bleedLeftMm > 0
+          ? {
+              bleed_mm: Math.max(
+                rendered[0].bleedLeftMm,
+                rendered[0].bleedTopMm,
+                rendered[0].bleedRightMm,
+                rendered[0].bleedBottomMm,
+              ),
+            }
+          : {}),
+
       } as any);
       setPages(rendered);
       toast.success(
