@@ -1,62 +1,45 @@
-# Custom Domain Go-Live: the2027edition.com
+# Calendars: per-page placeholder boxes
 
-## Goal
-Point `the2027edition.com` at the Document Centre storefront using AWS Amplify as the SSL/TLS terminator (direct-to-Amplify path).
+Today every placeholder box (image, text, colour) on an artwork template is repeated on **every** page of the base PDF — that is how deskpads work, and it is confirmed in the schema (`artwork_template_placeholders` has no page column), in the customer builder (one value per box, drawn on all pages) and in the PDF server (the same box list is stamped onto every page).
 
-## Why this is required
-The app already supports two tenant host patterns:
-- `{slug}.document-centre.com` — served by Amplify's wildcard/subdomain config.
-- A custom domain stored in `tenants.custom_domain` — resolved by `useTenantFromHost.ts`.
+Calendars need the same template engine, but with a 13-page base PDF (cover + 12 months) where each box is either **on this page only** or **repeated on all pages**.
 
-For `the2027edition.com` to work, the request must reach Amplify with a valid certificate for that hostname. CNAME'ing to a tenant subdomain alone does not provision that certificate; the domain must be registered in Amplify so ACM can issue a cert.
+## What changes for you
 
-## Steps
+**Admin template editor**
+- Page navigator (thumbnail strip / prev-next) so you draw boxes on the cover, on January, on February, and so on.
+- Every box gets a scope control: **This page only** or **All pages**.
+- The canvas shows boxes belonging to the current page plus all repeating boxes (repeating ones marked with a small "all pages" badge so you can tell them apart).
+- "Duplicate to page…" and "Copy boxes from page…" so you can lay out one month and reuse it.
+- Box list in the side rail groups into "Repeats on all pages" and "Page N only".
 
-### 1. Confirm the tenant slug and subdomain
-- In the admin portal, find the tenant for "The 2027 Edition".
-- Note its slug (e.g. `the2027edition`).
-- Verify `https://{slug}.document-centre.com` already loads the storefront.
+**Customer builder**
+- The placeholder rail follows the page you are viewing: repeating boxes stay pinned at the top ("appears on every page"), page-specific boxes appear under a "Page N" heading.
+- Page pager already exists; it now also drives which boxes are editable.
+- Required-field validation is per page, and the "not finished yet" hint names the page.
+- Live preview draws only the boxes that belong to the page on screen.
 
-### 2. Add the domain in AWS Amplify
-- Open the AWS Amplify console for the Document Centre app.
-- Go to **Domain management** → **Add domain**.
-- Enter `the2027edition.com`.
-- Choose to include `www.the2027edition.com` if you want both apex and www to work.
-- Wait for Amplify to generate the required DNS records (CNAME/ANAME/A for the apex, CNAME for www, plus a TXT verification record).
+**Print output**
+- The PDF server stamps each page with its own boxes plus the repeating ones. Deskpads and existing templates are unaffected.
 
-### 3. Configure DNS at the registrar
-- Log in to the registrar/DNS provider for `the2027edition.com`.
-- Add the exact records Amplify provided:
-  - Apex: ANAME/ALIAS or A records as shown.
-  - `www`: CNAME to the Amplify target.
-  - Verification: TXT record as shown.
-- Do **not** use the older "CNAME to `{slug}.document-centre.com`" instructions from the in-app Domains tab for this path; that path is for users who want to hide behind an existing subdomain, but it still needs Amplify to know the apex.
+## Technical section
 
-### 4. Wait for Amplify verification
-- In Amplify, the domain will move through **Verifying** → **SSL configuring** → **Active**.
-- This can take 15–60 minutes (sometimes longer for propagation).
+1. **Schema migration** on `public.artwork_template_placeholders`:
+   - `page_scope text NOT NULL DEFAULT 'all' CHECK (page_scope IN ('all','page'))`
+   - `page_index integer` (0-based; NULL when scope is `all`)
+   - index on `(template_id, page_index)`. No grant/RLS changes needed (columns only).
+   - Existing rows default to `all`, so deskpad templates behave exactly as now.
 
-### 5. Save the custom domain in the app
-- In the tenant admin **Settings → Domains** tab, enter `the2027edition.com` and save.
-- Click **Verify DNS**. The `verify-domain` Edge Function checks for a CNAME/A record pointing to a known platform host (`document-centre.com`, `amplifyapp.com`, or `lovable.app`).
+2. **Types** (`src/lib/artworkTemplates/types.ts`): add `page_scope` and `page_index` to `ArtworkPlaceholder`; add a helper `placeholdersForPage(list, pageIndex)` that returns repeating + page-matched boxes in draw order (reusing `splitByLayer`).
 
-### 6. Add Supabase Auth redirect URLs
-- In Supabase → Authentication → URL Configuration → Redirect URLs, add:
-  - `https://the2027edition.com/auth/callback`
-  - `https://the2027edition.com/**`
-- If using `www`, also add:
-  - `https://www.the2027edition.com/auth/callback`
-  - `https://www.the2027edition.com/**`
-- This prevents Google OAuth from falling back to `document-centre.com` after login.
+3. **Compositing** (`renderTemplate.ts`): `ComposeOptions` gains `pageIndex`; callers pass the filtered list, so `composeTemplatePage` itself needs only the filtered input. Proof export (`proofPdf.ts`) filters per page as it loops.
 
-### 7. Test end-to-end
-- Visit `https://the2027edition.com` — should load the tenant storefront, not the Document Centre marketing site.
-- Visit `https://the2027edition.com/t/{slug}` — should redirect or serve the same storefront (the subdomain router treats custom domains as tenant hosts).
-- Add a product to cart, proceed to checkout, and log in with Google to confirm the redirect URLs work.
+4. **Admin editor** (`src/components/artwork/TemplateBoxEditor.tsx`, `PlaceholderPanel.tsx`): add page state, page thumbnails, scope selector, duplicate/copy-to-page actions, and write `page_scope`/`page_index` on insert and update. New boxes default to the current page (`page` scope) when the template has more than one page, `all` when it has one.
 
-## Optional follow-up work
-- If you want customers to self-serve this in the future, update the in-app **Domains** tab to explain the direct-to-Amplify path and auto-suggest the exact DNS records from Amplify.
-- Add a canonical redirect: force `www` → apex (or vice versa) in the app or at DNS level to avoid duplicate content.
+5. **Customer builder** (`src/pages/dashboard/TemplatedArtworkBuilder.tsx`): filter the rail and the canvas by the active page; keep values keyed by placeholder id (unchanged, since each box is a distinct row); validation and the DPI badges follow the filtered set. Placeholder ids stay unique, so `order_items.spec.templated_artwork.placeholders` needs no shape change — only `placeholder_defs` now carries the new fields.
 
-## Out of scope for this plan
-- No code changes are required for the domain to go live; this is an infrastructure/DNS task.
+6. **PDF server** (`pdf-server/app/services/templated_artwork_assembly.py`): in the existing `for page_index, page in enumerate(reader.pages)` loop, pass `defs` filtered to `page_scope == 'all' or page_index == d['page_index']` into the overlay/underlay builders. Defs without the new keys keep the current behaviour.
+
+7. **Regression check**: an existing A2 deskpad template still renders identically (all boxes `all` scope), and a 13-page calendar renders cover-only and month-only boxes on the right pages.
+
+Not in this step: pricing, the calendar product family itself, and month-name auto-fill — say the word and they follow.
