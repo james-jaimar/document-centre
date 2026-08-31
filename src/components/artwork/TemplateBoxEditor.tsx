@@ -34,6 +34,10 @@ interface Props {
   trimHeightMm: number;
   placeholders: ArtworkPlaceholder[];
   onChange: (next: ArtworkPlaceholder[]) => void;
+  /** Zero-based page currently being edited (multi-page templates). */
+  pageIndex?: number;
+  /** Total pages in the base PDF. */
+  pageCount?: number;
 }
 
 type DragState =
