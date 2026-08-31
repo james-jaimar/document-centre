@@ -1,0 +1,30 @@
+name: Queue coverage check
+
+# Guards against the class of bug where a task is enqueued onto a logical
+# queue that is only wired up for Celery (dev/VPS) and not for Cloud Tasks
+# (production) — the failure otherwise only shows up as a 502 at click time.
+
+on:
+  pull_request:
+    paths:
+      - 'pdf-server/app/**/*.py'
+      - 'pdf-server/scripts/audit-enqueue-coverage.py'
+  push:
+    branches: [main]
+    paths:
+      - 'pdf-server/app/**/*.py'
+      - 'pdf-server/scripts/audit-enqueue-coverage.py'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Audit enqueue() coverage
+        run: python3 pdf-server/scripts/audit-enqueue-coverage.py

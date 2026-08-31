@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getDownloadUrls } from "@/lib/s3Storage";
+import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 
 
 export interface ImposedComponent {
@@ -199,11 +200,15 @@ export function useProductionArtefacts(jobId: string | null) {
     if (!jobId) return;
     setGenerating("ticket");
     try {
-      const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "ticket", job_id: jobId, force: !!opts?.force, wait: false },
+      // Verbose invoke so an upstream failure (e.g. a PDF-API dispatch error)
+      // surfaces its real message instead of "non-2xx status code".
+      const res = await invokeEdgeFunctionVerbose("production-pdf", {
+        action: "ticket",
+        job_id: jobId,
+        force: !!opts?.force,
+        wait: false,
       });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      if (!res.ok) throw new Error(res.error ?? "Unknown error");
       toast({ title: "Job ticket queued", description: "It will appear here shortly." });
 
       // Poll order_jobs for the ticket path (up to ~2 minutes).
