@@ -117,6 +117,15 @@ export interface ComposeOptions {
   pageWidthPx: number;
   pageHeightPx: number;
   trimWidthMm: number;
+  /** Trim height — only needed when a trim line is drawn. */
+  trimHeightMm?: number;
+  /** Bleed included in the page image, in mm per side (default 0). */
+  bleedLeftMm?: number;
+  bleedTopMm?: number;
+  /** Full canvas width in mm (trim + left + right bleed). Defaults to trim. */
+  canvasWidthMm?: number;
+  /** Draw a dashed trim line and dim the bleed margin (proofs/preview only). */
+  showTrimLine?: boolean;
   placeholders: ArtworkPlaceholder[];
   values: Record<string, TemplatedPlaceholderValue | undefined>;
   images: Record<string, HTMLImageElement | undefined>;
@@ -126,6 +135,7 @@ export interface ComposeOptions {
   /** Highlighted placeholder id (drawn with an accent outline). */
   activeId?: string | null;
 }
+
 
 function drawPlaceholder(
   ctx: CanvasRenderingContext2D,
