@@ -443,7 +443,8 @@ export default function TemplateBoxEditor({
       <div className="space-y-3">
         <div className="rounded-lg border">
           <div className="border-b px-3 py-2 text-sm font-medium">
-            Layers ({placeholders.length})
+            Layers ({visible.length}
+            {pageCount > 1 ? ` on page ${pageIndex + 1}` : ""})
           </div>
           <div className="max-h-56 overflow-auto">
             {ordered.length === 0 ? (
