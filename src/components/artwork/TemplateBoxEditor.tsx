@@ -105,11 +105,19 @@ export default function TemplateBoxEditor({
   pageImageUrl,
   trimWidthMm,
   trimHeightMm,
+  bleedLeftMm = 0,
+  bleedTopMm = 0,
+  bleedRightMm = 0,
+  bleedBottomMm = 0,
   placeholders,
   onChange,
   pageIndex = 0,
   pageCount = 1,
 }: Props) {
+  const canvasWidthMm = trimWidthMm + bleedLeftMm + bleedRightMm;
+  const canvasHeightMm = trimHeightMm + bleedTopMm + bleedBottomMm;
+  const hasBleed = bleedLeftMm + bleedTopMm + bleedRightMm + bleedBottomMm > 0.05;
+
   const stageRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawKind, setDrawKind] = useState<PlaceholderKind | null>(null);
