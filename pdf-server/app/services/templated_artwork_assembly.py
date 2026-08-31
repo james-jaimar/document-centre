@@ -787,7 +787,8 @@ def assemble_templated_artwork(
         storage.download(str(src), local_img)
         img = ImageOps.exif_transpose(Image.open(local_img))
         if img.mode not in ("RGB", "RGBA", "L", "CMYK"):
-            img = img.convert("RGB")
+            # Keep alpha when the source carries it (e.g. palette PNGs).
+            img = img.convert("RGBA" if _has_alpha(img) else "RGB")
         images[pid] = img
 
     trim_w_mm = _num(ta.get("trim_width_mm"))
