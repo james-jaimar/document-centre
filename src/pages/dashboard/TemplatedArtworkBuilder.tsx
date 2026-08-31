@@ -149,6 +149,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [quantity, setQuantity] = useState(1);
   const hydrated = useRef(false);
 
+  /** Watermark boxes may never print above 10% — enforced wherever a value lands. */
+  const capWatermark = (
+    p: { is_watermark?: boolean } | undefined,
+    v: TemplatedPlaceholderValue,
+  ): TemplatedPlaceholderValue =>
+    p?.is_watermark ? ({ ...v, opacity: Math.min((v as any).opacity ?? 0.1, 0.1) } as any) : v;
+
+
   useEffect(() => {
     if (hydrated.current) return;
     const s = (orderItem?.spec as any)?.templated_artwork as TemplatedArtworkSpec | undefined;
@@ -156,7 +164,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     hydrated.current = true;
     if (s.template_id) setTemplateId(s.template_id);
     const map: Record<string, TemplatedPlaceholderValue> = {};
-    for (const v of s.placeholders ?? []) map[v.placeholder_id] = v;
+    for (const v of s.placeholders ?? []) {
+      const def = (s.placeholder_defs ?? []).find((d) => d.id === v.placeholder_id);
+      map[v.placeholder_id] = capWatermark(def, v);
+    }
     setValues(map);
     const q = (orderItem?.spec as any)?.quantity;
     if (typeof q === "number" && q > 0) setQuantity(q);
@@ -390,9 +401,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           offset_x: 0,
           offset_y: 0,
           background_hex: ph?.background_hex ?? null,
-          opacity: ph?.opacity ?? 1,
+          opacity: ph?.is_watermark ? Math.min(ph?.opacity ?? 0.1, 0.1) : (ph?.opacity ?? 1),
         };
-        setValues((prev) => ({ ...prev, [placeholderId]: next }));
+        setValues((prev) => ({ ...prev, [placeholderId]: capWatermark(ph, next) }));
       } catch (err: any) {
         console.error("[templated-artwork] upload failed", err);
         toast.error(err?.message ?? "Upload failed");
@@ -712,7 +723,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
                 onFocus={() => setActiveId(p.id)}
                 onPickFile={(file) => handlePickFile(p.id, file)}
-                onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: v }))}
+                onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: capWatermark(p, v) }))}
                 onClear={() =>
                   setValues((prev) => {
                     const next = { ...prev };
@@ -792,10 +803,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <span className="text-right font-medium">{family?.name ?? "—"}</span>
           </div>
           {pricingOptions.length > 0 && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Finishing option</Label>
+            <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <Label className="text-sm font-semibold text-foreground">Finishing option</Label>
               <Select value={pricingOption ?? ""} onValueChange={(v) => setPricingOption(v)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-auto min-h-10 border-2 border-primary/60 bg-background py-2 font-medium [&>span]:line-clamp-none [&>span]:whitespace-normal">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -806,6 +817,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                   ))}
                 </SelectContent>
               </Select>
+              {pricingOptions.length > 1 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {pricingOptions.length} options available
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-1.5">

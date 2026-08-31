@@ -328,19 +328,45 @@ export default function PlaceholderPanel({
             </p>
           )}
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-foreground">
-              Opacity ({Math.round((v.opacity ?? placeholder.opacity ?? 1) * 100)}%) — use ~10% for a
-              watermark
-            </Label>
-            <Slider
-              min={0.05}
-              max={1}
-              step={0.05}
-              value={[v.opacity ?? placeholder.opacity ?? 1]}
-              onValueChange={([o]) => onChange({ ...v, opacity: o })}
-            />
-          </div>
+          {placeholder.is_watermark ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-foreground">Watermark strength</Label>
+              <div className="flex gap-2">
+                {[0.05, 0.1].map((o) => {
+                  const current = Math.min(v.opacity ?? 0.1, 0.1);
+                  const selected = Math.abs(current - o) < 0.001;
+                  return (
+                    <Button
+                      key={o}
+                      type="button"
+                      size="sm"
+                      variant={selected ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={() => onChange({ ...v, opacity: o })}
+                    >
+                      {Math.round(o * 100)}%
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Watermarks print at 10% maximum so the artwork underneath stays readable.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-foreground">
+                Opacity ({Math.round((v.opacity ?? placeholder.opacity ?? 1) * 100)}%)
+              </Label>
+              <Slider
+                min={0.05}
+                max={1}
+                step={0.05}
+                value={[v.opacity ?? placeholder.opacity ?? 1]}
+                onValueChange={([o]) => onChange({ ...v, opacity: o })}
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-foreground">Zoom</Label>
             <Slider
