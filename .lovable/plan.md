@@ -21,7 +21,7 @@ Print-ready assembly is unaffected because it still uses `documents`, which is m
    - `QUEUE_TO_WORKER_ENV["tickets"] = "WORKER_URL_LIGHT"`
    - `QUEUE_TO_CLOUD_TASKS_QUEUE["tickets"] = "documents-light"`
    This keeps the original intent (tickets never queue behind heavy assembly on `documents-heavy`) without needing a new Cloud Tasks queue or extra infrastructure.
-2. Add a startup guard: assert every logical queue named by `enqueue()` call sites exists in both maps, so an unmapped queue fails loudly at deploy rather than at the customer's click.
+2. Wire `pdf-server/scripts/audit-enqueue-coverage.py` (which already checks exactly this) into CI / the deploy path, so an unmapped queue fails at build time instead of at the customer's click.
 3. Improve the error surfaced to the admin: `production-pdf` already returns the upstream text, but `ProductionPanel` shows the generic Supabase message. Show the real reason in the toast so the next upstream failure is self-diagnosing.
 
 ## Notes
