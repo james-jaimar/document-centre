@@ -91,8 +91,14 @@ function CustomerLayoutInner() {
   const isAnon = isAnonymousUser(user);
   const showSidebar = !chromeless && !!user && !isAnon && accountArea;
 
+  // The window is the single scroll container now, so route changes must reset
+  // it — otherwise a new page inherits the previous page's scroll offset.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [pathname]);
 
   useTenantGA(integrations.ga_property_id as string | undefined);
+
 
   // True once both the tenant lookup AND branding fetch have settled. When a
   // slug is present in the URL we must wait for BOTH — otherwise the layout
