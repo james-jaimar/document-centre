@@ -137,16 +137,20 @@ Deno.serve(async (req) => {
     );
 
     // Customer membership tagging — so the customer shows up in the branch
-    // list immediately, before any orders exist.
-    const { data: existingMem } = await admin
+    // list immediately, before any orders exist. One customer membership per
+    // tenant only: never create a second row for the same person.
+    const { data: existingMems } = await admin
       .from("tenant_memberships")
-      .select("id, branch_id, role")
+      .select("id, branch_id, role, is_active")
       .eq("profile_id", profileId!)
       .eq("tenant_id", tenant_id)
       .eq("app_id", tenant.app_id)
       .eq("role", "customer")
-      .maybeSingle();
-    if (!existingMem) {
+      .order("created_at", { ascending: true });
+
+    const mems = existingMems ?? [];
+    const duplicate = mems.length > 0;
+    if (!duplicate) {
       await admin.from("tenant_memberships").insert({
         profile_id: profileId,
         tenant_id,
@@ -155,17 +159,19 @@ Deno.serve(async (req) => {
         branch_id,
         is_active: true,
       });
-    } else if (branch_id && existingMem.branch_id !== branch_id) {
-      // Membership exists at tenant level but not yet for this branch — add another row.
-      await admin.from("tenant_memberships").insert({
-        profile_id: profileId,
-        tenant_id,
-        app_id: tenant.app_id,
-        role: "customer",
-        branch_id,
-        is_active: true,
-      });
+    } else {
+      // Reuse the existing membership; adopt the branch if one was given.
+      const keep = mems.find((m: any) => m.branch_id === branch_id) ?? mems[0];
+      const patch: Record<string, unknown> = { is_active: true };
+      if (branch_id && !keep.branch_id) patch.branch_id = branch_id;
+      await admin.from("tenant_memberships").update(patch).eq("id", keep.id);
+      // Clean up any historic duplicate rows for this tenant.
+      const extras = mems.filter((m: any) => m.id !== keep.id).map((m: any) => m.id);
+      if (extras.length > 0) {
+        await admin.from("tenant_memberships").delete().in("id", extras);
+      }
     }
+
 
     // Generate a recovery link so the customer can set their own password.
     let recovery_link: string | null = null;
