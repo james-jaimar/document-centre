@@ -6,7 +6,13 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
-import { rowPriceMinor } from "@/lib/pricing/packOptions";
+import {
+  normalizeOptions,
+  visibleOptions,
+  blockMatchesOption,
+  packQuantitiesForOption,
+} from "@/lib/pricing/packOptions";
+
 
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import ProductGallery from "@/components/storefront/ProductGallery";
@@ -31,7 +37,24 @@ import { familyImages } from "@/lib/storefront/productImages";
 import { isEditableFamily, startOrderPath } from "@/lib/storefront/catalogue";
 
 const ANY = "*";
-const label = (v: string) => (v === ANY ? "Any" : v.replace(/_/g, " ").toUpperCase());
+const label = (v: string) => (v === ANY ? "Any" : v.replace(/_/g, " "));
+
+function Field({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function StaticValue({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-foreground">{children}</p>
+  );
+}
+
+
 
 export default function StorefrontProduct() {
   const { familySlug } = useParams();
@@ -41,13 +64,31 @@ export default function StorefrontProduct() {
   const { config } = useStorefrontPages(tenantId);
   const { entries, isLoading } = useStorefrontCatalogue();
   const { format, inclSuffix } = useStorefrontPrice();
+  const { tier: pricingTier } = useCustomerPricingTier();
 
   const entry = entries.find((e) => e.family.slug === familySlug);
-  const blocks = entry?.blocks ?? [];
+  const allBlocks = entry?.blocks ?? [];
+
+  // Finishing options (e.g. "with Gloss Lam" / "with Matt Lam"). Trade-only
+  // options are never shown to consumers.
+  const options = useMemo(
+    () => visibleOptions(normalizeOptions((entry?.family as any)?.pricing_options), pricingTier),
+    [entry?.family, pricingTier],
+  );
+  const [option, setOption] = useState<string | null>(null);
+  const activeOption =
+    (option && options.some((o) => o.slug === option) ? option : options[0]?.slug) ?? null;
+
+  // Every axis below is derived from the rows priced for the chosen option,
+  // otherwise duplicate quantities appear once per option.
+  const blocks = useMemo(
+    () => allBlocks.filter((b) => blockMatchesOption(b, activeOption)),
+    [allBlocks, activeOption],
+  );
 
   const sizes = useMemo(() => [...new Set(blocks.map((b) => b.size))], [blocks]);
   const [size, setSize] = useState<string | null>(null);
-  const activeSize = size ?? sizes[0] ?? null;
+  const activeSize = size && sizes.includes(size) ? size : sizes[0] ?? null;
 
   const papers = useMemo(
     () => [...new Set(blocks.filter((b) => b.size === activeSize).map((b) => b.paper))],
@@ -70,23 +111,24 @@ export default function StorefrontProduct() {
   const activeSides =
     sides && sidesOptions.includes(sides as any) ? sides : sidesOptions[0] ?? null;
 
-  const { tier: pricingTier } = useCustomerPricingTier();
-
   const rows = useMemo(
     () =>
-      blocks
-        .filter(
+      packQuantitiesForOption(
+        blocks.filter(
           (b) => b.size === activeSize && b.paper === activePaper && b.sides === activeSides,
-        )
-        .map((b) => ({ qty: b.qty, priceMajor: rowPriceMinor(b, pricingTier) / 100 }))
-        .sort((a, b) => a.qty - b.qty),
-    [blocks, activeSize, activePaper, activeSides, pricingTier],
+        ),
+        activeOption,
+        pricingTier,
+        options,
+      ).map((r) => ({ qty: r.qty, priceMajor: r.priceMinor / 100 })),
+    [blocks, activeSize, activePaper, activeSides, activeOption, pricingTier, options],
   );
 
 
   const [qty, setQty] = useState<number | null>(null);
   const activeQty = qty && rows.some((r) => r.qty === qty) ? qty : rows[0]?.qty ?? null;
   const activeRow = rows.find((r) => r.qty === activeQty) ?? null;
+
 
   if (isLoading) {
     return (
@@ -159,9 +201,8 @@ export default function StorefrontProduct() {
             {rows.length > 0 && (
               <div className="rounded-xl border bg-card p-5">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {sizes.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Size</p>
+                  {sizes.length > 1 ? (
+                    <Field title="Size">
                       <Select value={activeSize ?? ""} onValueChange={setSize}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -170,11 +211,31 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                    </Field>
+                  ) : activeSize ? (
+                    <Field title="Size"><StaticValue>{label(activeSize)}</StaticValue></Field>
+                  ) : null}
+
+                  {options.length > 1 && (
+                    <Field title="Finishing option">
+                      <Select value={activeOption ?? ""} onValueChange={setOption}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {options.map((o) => (
+                            <SelectItem key={o.slug} value={o.slug}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
                   )}
+                  {options.length === 1 && (
+                    <Field title="Finishing option">
+                      <StaticValue>{options[0].label}</StaticValue>
+                    </Field>
+                  )}
+
                   {rows.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Quantity</p>
+                    <Field title="Quantity">
                       <Select
                         value={activeQty ? String(activeQty) : ""}
                         onValueChange={(v) => setQty(Number(v))}
@@ -188,11 +249,11 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                    </Field>
                   )}
-                  {papers.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Paper</p>
+
+                  {papers.length > 1 ? (
+                    <Field title="Paper">
                       <Select value={activePaper ?? ""} onValueChange={setPaper}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -201,11 +262,13 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                  )}
-                  {sidesOptions.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Sides</p>
+                    </Field>
+                  ) : activePaper ? (
+                    <Field title="Paper"><StaticValue>{label(activePaper)}</StaticValue></Field>
+                  ) : null}
+
+                  {sidesOptions.length > 1 ? (
+                    <Field title="Sides">
                       <Select value={activeSides ?? ""} onValueChange={setSides}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -216,9 +279,16 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                  )}
+                    </Field>
+                  ) : activeSides ? (
+                    <Field title="Sides">
+                      <StaticValue>
+                        {activeSides === "double" ? "Double sided" : "Single sided"}
+                      </StaticValue>
+                    </Field>
+                  ) : null}
                 </div>
+
 
                 {activeRow && (
                   <div className="mt-5 flex flex-wrap items-end justify-between gap-4 rounded-xl sf-accent-soft p-4">
