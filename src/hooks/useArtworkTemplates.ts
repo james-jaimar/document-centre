@@ -41,8 +41,13 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     default_cmyk: row.default_cmyk ? normaliseCmyk(row.default_cmyk) : null,
     customer_editable_colour: row.customer_editable_colour !== false,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
-    page_scope: row.page_scope === "page" ? "page" : "all",
+    page_scope:
+      row.page_scope === "page" ? "page" : row.page_scope === "pages" ? "pages" : "all",
     page_index: row.page_index == null ? null : Number(row.page_index),
+    page_indexes: Array.isArray(row.page_indexes)
+      ? row.page_indexes.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+      : null,
+    field_key: row.field_key ? String(row.field_key).trim() : null,
 
   } as ArtworkPlaceholder;
 }
