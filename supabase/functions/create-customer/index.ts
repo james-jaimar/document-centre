@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
         options: { redirectTo },
       });
       if (linkErr) {
-        return json({ ok: true, profile_id: profileId, created, warning: `Link generation failed: ${linkErr.message}` });
+        return json({ ok: true, profile_id: profileId, created, already_member: duplicate, warning: `Link generation failed: ${linkErr.message}` });
       }
       recovery_link = link?.properties?.action_link ?? null;
       // Supabase auth-email-hook will dispatch the branded "recovery" template
@@ -200,6 +200,7 @@ Deno.serve(async (req) => {
       ok: true,
       profile_id: profileId,
       created,
+      already_member: duplicate,
       recovery_link,
     });
   } catch (e) {
