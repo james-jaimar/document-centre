@@ -568,6 +568,7 @@ function GroupCard({
           heading="Single-sided"
           rows={singles}
           onUpdateBlock={onUpdateBlock}
+          onUpdateBlocks={onUpdateBlocks}
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "single")}
           parentBlocks={parentBlocks}
@@ -576,11 +577,13 @@ function GroupCard({
           heading="Double-sided"
           rows={doubles}
           onUpdateBlock={onUpdateBlock}
+          onUpdateBlocks={onUpdateBlocks}
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "double")}
           parentBlocks={parentBlocks}
         />
       </div>
+
     </div>
   );
 }
