@@ -588,10 +588,41 @@ function GroupCard({
   );
 }
 
+const PASTE_COLUMNS = ["qty", "price", "trade", "cost", "weight"] as const;
+type PasteColumn = (typeof PASTE_COLUMNS)[number];
+
+function patchForColumn(column: PasteColumn, raw: string): Partial<QuantityBlock> | null {
+  const blank = raw.trim() === "";
+  const value = parseNumericCell(raw);
+  switch (column) {
+    case "qty":
+      if (value == null) return null;
+      return { qty: Math.max(0, Math.round(value)) };
+    case "price":
+      if (value == null) return null;
+      return { price_minor: Math.max(0, Math.round(value * 100)) };
+    case "trade":
+      if (blank) return { trade_price_minor: undefined };
+      if (value == null) return null;
+      return { trade_price_minor: Math.max(0, Math.round(value * 100)) };
+    case "cost":
+      if (blank) return { cost_minor: undefined };
+      if (value == null) return null;
+      return { cost_minor: Math.max(0, Math.round(value * 100)) };
+    case "weight":
+      if (blank) return { weight_grams: undefined };
+      if (value == null) return null;
+      return { weight_grams: Math.max(0, Math.round(value * 1000)) };
+    default:
+      return null;
+  }
+}
+
 function SidesColumn({
   heading,
   rows,
   onUpdateBlock,
+  onUpdateBlocks,
   onDeleteBlock,
   onAddRow,
   parentBlocks,
@@ -599,10 +630,48 @@ function SidesColumn({
   heading: string;
   rows: { block: QuantityBlock; index: number }[];
   onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
+  onUpdateBlocks: (patches: Array<{ index: number; patch: Partial<QuantityBlock> }>) => void;
   onDeleteBlock: (idx: number) => void;
   onAddRow: () => void;
   parentBlocks: QuantityBlock[];
 }) {
+  /** Spreadsheet-style paste: fills downwards (and sideways for tab-separated data). */
+  const handlePaste = (rowPos: number, column: PasteColumn) => (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    const grid = parseClipboardGrid(text);
+    if (!isMultiCellPaste(grid)) return; // single value → normal browser paste
+    e.preventDefault();
+
+    const startCol = PASTE_COLUMNS.indexOf(column);
+    const patches = new Map<number, Partial<QuantityBlock>>();
+    let skipped = 0;
+
+    grid.forEach((line, r) => {
+      const target = rows[rowPos + r];
+      if (!target) {
+        if (line.some((cell) => cell !== "")) skipped += 1;
+        return;
+      }
+      line.forEach((cell, c) => {
+        const colName = PASTE_COLUMNS[startCol + c];
+        if (!colName) return;
+        const patch = patchForColumn(colName, cell);
+        if (!patch) return;
+        patches.set(target.index, { ...(patches.get(target.index) ?? {}), ...patch });
+      });
+    });
+
+    const list = Array.from(patches.entries()).map(([index, patch]) => ({ index, patch }));
+    onUpdateBlocks(list);
+
+    if (skipped > 0) {
+      toast.warning(`Filled ${list.length} row${list.length === 1 ? "" : "s"} — ${skipped} pasted value${skipped === 1 ? "" : "s"} skipped (add more qty tiers first).`);
+    } else if (list.length > 1) {
+      toast.success(`Filled ${list.length} rows from your paste.`);
+    }
+  };
+
   return (
     <div className="p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -623,7 +692,10 @@ function SidesColumn({
             <span title="Finished weight of the whole pack, kilograms">Weight kg</span>
             <span></span>
           </div>
-          {rows.map(({ block, index }) => {
+          <p className="text-[10px] text-muted-foreground italic">
+            Tip: copy a column from your spreadsheet, click the top cell and paste — it fills every row below.
+          </p>
+          {rows.map(({ block, index }, rowPos) => {
             const parent = parentBlocks.find((candidate) => packBlockKey(candidate) === packBlockKey(block));
             const inheritedTrade = parent?.trade_price_minor;
             return (
@@ -633,6 +705,7 @@ function SidesColumn({
                 min={1}
                 className="h-8 text-xs"
                 value={block.qty}
+                onPaste={handlePaste(rowPos, "qty")}
                 onChange={(e) => onUpdateBlock(index, { qty: parseInt(e.target.value, 10) || 0 })}
               />
               <Input
@@ -641,6 +714,7 @@ function SidesColumn({
                 step="0.01"
                 className="h-8 text-xs"
                 value={(block.price_minor / 100).toString()}
+                onPaste={handlePaste(rowPos, "price")}
                 onChange={(e) =>
                   onUpdateBlock(index, {
                     price_minor: Math.round(parseFloat(e.target.value || "0") * 100),
@@ -655,6 +729,7 @@ function SidesColumn({
                 placeholder={inheritedTrade != null ? `Inherited ${(inheritedTrade / 100).toFixed(2)}` : "Same as consumer"}
                 title={inheritedTrade != null ? "Blank inherits the trade price from the parent scope" : "Blank uses the consumer price"}
                 value={block.trade_price_minor != null ? (block.trade_price_minor / 100).toString() : ""}
+                onPaste={handlePaste(rowPos, "trade")}
                 onChange={(e) => {
                   const raw = e.target.value;
                   onUpdateBlock(index, {
@@ -669,6 +744,7 @@ function SidesColumn({
                 className="h-8 text-xs"
                 placeholder="—"
                 value={block.cost_minor != null ? (block.cost_minor / 100).toString() : ""}
+                onPaste={handlePaste(rowPos, "cost")}
                 onChange={(e) => {
                   const raw = e.target.value;
                   onUpdateBlock(index, {
@@ -684,6 +760,7 @@ function SidesColumn({
                 placeholder="auto"
                 title="Finished weight of this whole pack in kilograms. Leave blank to let the system calculate it from the paper."
                 value={block.weight_grams != null ? String(Math.round(block.weight_grams) / 1000) : ""}
+                onPaste={handlePaste(rowPos, "weight")}
                 onChange={(e) => {
                   const raw = e.target.value;
                   const kg = parseFloat(raw);
@@ -693,6 +770,7 @@ function SidesColumn({
                   });
                 }}
               />
+
               <Button
                 type="button"
                 variant="ghost"
