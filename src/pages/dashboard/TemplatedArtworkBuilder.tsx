@@ -116,6 +116,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   const { data: templates = [], isLoading: templatesLoading } = useArtworkTemplates(familyId, {
     publishedOnly: true,
+    tenantId,
   });
 
   const [templateId, setTemplateId] = useState<string | null>(null);
@@ -124,7 +125,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     if (!templateId && templates.length > 0) setTemplateId(templates[0].id);
   }, [templates, templateId]);
 
-  const { data: placeholders = [] } = useArtworkPlaceholders(templateId);
+  const { data: placeholders = [] } = useArtworkPlaceholders(templateId, { tenantId });
+
 
   const ensureOrder = useCallback(async (): Promise<string> => {
     if (orderItem?.id) return orderItem.id;

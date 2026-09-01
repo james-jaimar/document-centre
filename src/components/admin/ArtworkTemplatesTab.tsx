@@ -39,15 +39,20 @@ interface Props {
 }
 
 export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props) {
-  const { data: templates = [], isLoading } = useArtworkTemplates(productFamilyId);
+  const { data: templates = [], isLoading } = useArtworkTemplates(productFamilyId, {
+    tenantId,
+  });
   const upsertTemplate = useUpsertArtworkTemplate();
   const deleteTemplate = useDeleteArtworkTemplate();
   const savePlaceholders = useSaveArtworkPlaceholders();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = templates.find((t) => t.id === selectedId) ?? null;
+  /** Never write to a template that isn't owned by the tenant being administered. */
+  const canWriteSelected = !!selected && selected.tenant_id === tenantId;
 
-  const { data: savedPlaceholders = [] } = useArtworkPlaceholders(selectedId);
+  const { data: savedPlaceholders = [] } = useArtworkPlaceholders(selectedId, { tenantId });
+
   const [draft, setDraft] = useState<ArtworkPlaceholder[]>([]);
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [renderingPdf, setRenderingPdf] = useState(false);
