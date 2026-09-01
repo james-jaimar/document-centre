@@ -49,6 +49,7 @@ export type Database = {
           customer_editable_colour: boolean
           default_cmyk: Json | null
           default_value: string | null
+          field_key: string | null
           fit_mode: string
           height_mm: number
           id: string
@@ -61,6 +62,7 @@ export type Database = {
           name: string
           opacity: number
           page_index: number | null
+          page_indexes: number[] | null
           page_scope: string
           sort_order: number
           template_id: string
@@ -78,6 +80,7 @@ export type Database = {
           customer_editable_colour?: boolean
           default_cmyk?: Json | null
           default_value?: string | null
+          field_key?: string | null
           fit_mode?: string
           height_mm?: number
           id?: string
@@ -90,6 +93,7 @@ export type Database = {
           name: string
           opacity?: number
           page_index?: number | null
+          page_indexes?: number[] | null
           page_scope?: string
           sort_order?: number
           template_id: string
@@ -107,6 +111,7 @@ export type Database = {
           customer_editable_colour?: boolean
           default_cmyk?: Json | null
           default_value?: string | null
+          field_key?: string | null
           fit_mode?: string
           height_mm?: number
           id?: string
@@ -119,6 +124,7 @@ export type Database = {
           name?: string
           opacity?: number
           page_index?: number | null
+          page_indexes?: number[] | null
           page_scope?: string
           sort_order?: number
           template_id?: string

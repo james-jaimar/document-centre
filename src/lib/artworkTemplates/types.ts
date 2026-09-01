@@ -11,8 +11,8 @@ export type PlaceholderKind = "image" | "text" | "colour";
 export type PlaceholderFit = "fit" | "fill";
 /** Where the box sits relative to the template artwork itself. */
 export type PlaceholderLayer = "under" | "over";
-/** Whether a box repeats on every page or belongs to a single page. */
-export type PlaceholderPageScope = "all" | "page";
+/** Whether a box repeats on every page, one page, or a list of pages. */
+export type PlaceholderPageScope = "all" | "page" | "pages";
 
 /** Process ink build, each channel 0–100. */
 export interface ArtworkCmyk {
@@ -141,10 +141,14 @@ export interface ArtworkPlaceholder {
   /** [colour boxes] Whether the customer may change the colour. */
   customer_editable_colour: boolean;
 
-  /** `all` = repeated on every page; `page` = only on `page_index`. */
+  /** `all` = every page; `page` = only `page_index`; `pages` = `page_indexes`. */
   page_scope: PlaceholderPageScope;
   /** Zero-based page this box belongs to when `page_scope === "page"`. */
   page_index: number | null;
+  /** Zero-based pages this box belongs to when `page_scope === "pages"`. */
+  page_indexes: number[] | null;
+  /** Optional shared field name — boxes with the same key share one value. */
+  field_key: string | null;
 
   sort_order: number;
   /** Behind or on top of the template artwork. */
@@ -163,13 +167,77 @@ export function sortPlaceholders(list: ArtworkPlaceholder[]): ArtworkPlaceholder
 }
 
 /** Boxes that paint on a given (zero-based) page: global ones plus that page's. */
+export function placeholderOnPage(p: ArtworkPlaceholder, pageIndex: number): boolean {
+  const scope = p.page_scope ?? "all";
+  if (scope === "page") return (p.page_index ?? 0) === pageIndex;
+  if (scope === "pages") return (p.page_indexes ?? []).includes(pageIndex);
+  return true;
+}
+
 export function placeholdersForPage(
   list: ArtworkPlaceholder[],
   pageIndex: number,
 ): ArtworkPlaceholder[] {
-  return list.filter(
-    (p) => (p.page_scope ?? "all") !== "page" || (p.page_index ?? 0) === pageIndex,
-  );
+  return list.filter((p) => placeholderOnPage(p, pageIndex));
+}
+
+/** Parse a 1-based page range list ("1,3,5-7") into zero-based indexes. */
+export function parsePageRange(input: string, pageCount: number): number[] {
+  const out = new Set<number>();
+  for (const part of input.split(/[,\s]+/).filter(Boolean)) {
+    const m = part.match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = m[2] ? Number(m[2]) : a;
+    for (let n = Math.min(a, b); n <= Math.max(a, b); n++) {
+      if (n >= 1 && n <= pageCount) out.add(n - 1);
+    }
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+/** Format zero-based indexes back into a 1-based range list ("1, 3-7"). */
+export function formatPageRange(indexes: number[] | null | undefined): string {
+  const list = [...(indexes ?? [])].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let i = 0;
+  while (i < list.length) {
+    let j = i;
+    while (j + 1 < list.length && list[j + 1] === list[j] + 1) j++;
+    parts.push(i === j ? `${list[i] + 1}` : `${list[i] + 1}-${list[j] + 1}`);
+    i = j + 1;
+  }
+  return parts.join(", ");
+}
+
+/** Short badge for a box's page scope: "all", "p1", "p2-13". */
+export function pageScopeLabel(p: ArtworkPlaceholder): string {
+  const scope = p.page_scope ?? "all";
+  if (scope === "page") return `p${(p.page_index ?? 0) + 1}`;
+  if (scope === "pages") return `p${formatPageRange(p.page_indexes) || "?"}`;
+  return "all";
+}
+
+/**
+ * The value that should paint in a box: its own, else any value belonging to a
+ * sibling box that shares the same `field_key` (one upload, many placements).
+ */
+export function resolveValueFor<T extends { placeholder_id?: string }>(
+  p: ArtworkPlaceholder,
+  values: Record<string, T | undefined>,
+  defs?: ArtworkPlaceholder[],
+): T | undefined {
+  const own = values[p.id];
+  if (own) return own;
+  const key = (p.field_key ?? "").trim();
+  if (!key || !defs) return undefined;
+  for (const d of defs) {
+    if (d.id === p.id) continue;
+    if ((d.field_key ?? "").trim() !== key) continue;
+    const v = values[d.id];
+    if (v) return v;
+  }
+  return undefined;
 }
 
 export function splitByLayer(list: ArtworkPlaceholder[]) {

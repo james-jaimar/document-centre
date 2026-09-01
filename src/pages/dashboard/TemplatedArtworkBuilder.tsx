@@ -51,6 +51,7 @@ import {
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
+  ArtworkPlaceholder,
   TemplatedArtworkSpec,
   TemplatedImageValue,
   TemplatedPlaceholderValue,
@@ -348,6 +349,44 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [placeholders, pages, pageIndex],
   );
 
+  /** Every box that shares a value with this one (itself included). */
+  const siblingsOf = useCallback(
+    (p: { id: string; field_key?: string | null }) => {
+      const key = (p.field_key ?? "").trim();
+      if (!key) return placeholders.filter((d) => d.id === p.id);
+      return placeholders.filter((d) => (d.field_key ?? "").trim() === key);
+    },
+    [placeholders],
+  );
+
+  /** Write a value to a box and to every box sharing its field name. */
+  const applyValue = useCallback(
+    (p: ArtworkPlaceholder, v: TemplatedPlaceholderValue | null) => {
+      const targets = siblingsOf(p);
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const t of targets) {
+          if (v == null) delete next[t.id];
+          else next[t.id] = capWatermark(t, { ...v, placeholder_id: t.id });
+        }
+        return next;
+      });
+    },
+    [siblingsOf],
+  );
+
+  /** One rail entry per shared field name on this page. */
+  const railPlaceholders = useMemo(() => {
+    const seen = new Set<string>();
+    return pagePlaceholders.filter((p) => {
+      const key = (p.field_key ?? "").trim();
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [pagePlaceholders]);
+
   useEffect(() => {
     const el = canvasRef.current;
     const page = pages[pageIndex];
@@ -423,7 +462,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           background_hex: ph?.background_hex ?? null,
           opacity: ph?.is_watermark ? Math.min(ph?.opacity ?? 0.1, 0.1) : (ph?.opacity ?? 1),
         };
-        setValues((prev) => ({ ...prev, [placeholderId]: capWatermark(ph, next) }));
+        if (ph) applyValue(ph, next);
+        else setValues((prev) => ({ ...prev, [placeholderId]: next }));
       } catch (err: any) {
         console.error("[templated-artwork] upload failed", err);
         toast.error(err?.message ?? "Upload failed");
@@ -431,7 +471,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [ensureOrder, uploadPhoto, placeholders],
+    [ensureOrder, uploadPhoto, placeholders, applyValue],
   );
 
   // ── Pricing: pack ladder (with finishing options + paid extras) when the
@@ -736,26 +776,25 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               Nothing to fill in on this page — use the pager to move to another page.
             </p>
           ) : (
-            pagePlaceholders.map((p, i) => (
-              <PlaceholderPanel
-                key={p.id}
-                placeholder={p}
-                value={values[p.id]}
-                busy={busyId === p.id}
-                step={i + 1}
-                active={activeId === p.id}
-
-                onFocus={() => setActiveId(p.id)}
-                onPickFile={(file) => handlePickFile(p.id, file)}
-                onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: capWatermark(p, v) }))}
-                onClear={() =>
-                  setValues((prev) => {
-                    const next = { ...prev };
-                    delete next[p.id];
-                    return next;
-                  })
-                }
-              />
+            railPlaceholders.map((p, i) => (
+              <div key={p.id} className="space-y-1">
+                <PlaceholderPanel
+                  placeholder={p}
+                  value={values[p.id]}
+                  busy={busyId === p.id}
+                  step={i + 1}
+                  active={activeId === p.id}
+                  onFocus={() => setActiveId(p.id)}
+                  onPickFile={(file) => handlePickFile(p.id, file)}
+                  onChange={(v) => applyValue(p, v)}
+                  onClear={() => applyValue(p, null)}
+                />
+                {siblingsOf(p).length > 1 && (
+                  <p className="px-1 text-[11px] text-muted-foreground">
+                    Used in {siblingsOf(p).length} places across the calendar — upload once.
+                  </p>
+                )}
+              </div>
             ))
           )}
         </div>

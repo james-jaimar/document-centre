@@ -137,6 +137,16 @@ export interface ComposeOptions {
 }
 
 
+/** Id of the sibling box whose value this box borrows via `field_key`. */
+function sharedSourceId(p: ArtworkPlaceholder, opts: ComposeOptions): string | null {
+  const key = (p.field_key ?? "").trim();
+  if (!key || opts.values[p.id]) return null;
+  const src = opts.placeholders.find(
+    (d) => d.id !== p.id && (d.field_key ?? "").trim() === key && !!opts.values[d.id],
+  );
+  return src?.id ?? null;
+}
+
 function drawPlaceholder(
   ctx: CanvasRenderingContext2D,
   p: ArtworkPlaceholder,
@@ -144,7 +154,9 @@ function drawPlaceholder(
   pxPerMm: number,
 ) {
   const box = boxRectPx(p, pxPerMm);
-  const value = opts.values[p.id];
+  // Boxes tagged with the same shared field name reuse one customer value.
+  const sharedId = sharedSourceId(p, opts);
+  const value = opts.values[p.id] ?? (sharedId ? opts.values[sharedId] : undefined);
   const alpha = Math.max(0, Math.min(1, value?.opacity ?? p.opacity ?? 1));
 
   if (p.kind === "colour") {
@@ -158,7 +170,7 @@ function drawPlaceholder(
     ctx.fillRect(box.x, box.y, box.w, box.h);
     ctx.restore();
   } else if (p.kind === "image") {
-    const img = opts.images[p.id];
+    const img = opts.images[p.id] ?? (sharedId ? opts.images[sharedId] : undefined);
     const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
     ctx.save();
     ctx.globalAlpha = alpha;

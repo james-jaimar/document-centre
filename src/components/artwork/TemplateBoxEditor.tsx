@@ -23,6 +23,9 @@ import {
   cmykToHex,
   normaliseCmyk,
   placeholdersForPage,
+  pageScopeLabel,
+  parsePageRange,
+  formatPageRange,
   type ArtworkCmyk,
   type ArtworkPlaceholder,
   type PlaceholderKind,
@@ -90,6 +93,8 @@ export function makePlaceholder(
     customer_editable_colour: kind === "colour",
     page_scope: page?.scope ?? "all",
     page_index: page?.scope === "page" ? page.index : null,
+    page_indexes: page?.scope === "pages" ? [page.index] : null,
+    field_key: null,
     sort_order: index,
     layer: "over",
     z_index: index,
@@ -553,12 +558,15 @@ export default function TemplateBoxEditor({
                   <span className="truncate">{p.name}</span>
                   {pageCount > 1 && (
                     <Badge
-                      variant={(p.page_scope ?? "all") === "page" ? "outline" : "secondary"}
+                      variant={(p.page_scope ?? "all") === "all" ? "secondary" : "outline"}
                       className="shrink-0 text-[10px]"
                     >
-                      {(p.page_scope ?? "all") === "page"
-                        ? `p${(p.page_index ?? 0) + 1}`
-                        : "all pages"}
+                      {(p.page_scope ?? "all") === "all" ? "all pages" : pageScopeLabel(p)}
+                    </Badge>
+                  )}
+                  {(p.field_key ?? "").trim() && (
+                    <Badge variant="secondary" className="shrink-0 text-[10px]">
+                      #{p.field_key}
                     </Badge>
                   )}
                   {p.layer === "under" && (
@@ -635,12 +643,19 @@ export default function TemplateBoxEditor({
                       patch(active.id, {
                         page_scope: v as PlaceholderPageScope,
                         page_index: v === "page" ? (active.page_index ?? pageIndex) : null,
+                        page_indexes:
+                          v === "pages"
+                            ? (active.page_indexes?.length
+                                ? active.page_indexes
+                                : [active.page_index ?? pageIndex])
+                            : null,
                       })
                     }
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="page">This page only</SelectItem>
+                      <SelectItem value="pages">Specific pages…</SelectItem>
                       <SelectItem value="all">Every page</SelectItem>
                     </SelectContent>
                   </Select>
@@ -690,8 +705,49 @@ export default function TemplateBoxEditor({
                     </SelectContent>
                   </Select>
                 )}
+                {(active.page_scope ?? "all") === "pages" && (
+                  <div className="space-y-1">
+                    <Input
+                      className="h-8 text-xs"
+                      defaultValue={formatPageRange(active.page_indexes)}
+                      placeholder="e.g. 2-13 or 1,3,5"
+                      onBlur={(e) =>
+                        patch(active.id, {
+                          page_indexes: parsePageRange(e.target.value, pageCount),
+                        })
+                      }
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Pages {formatPageRange(active.page_indexes) || "—"} (1 = first page)
+                    </p>
+                  </div>
+                )}
               </div>
             )}
+
+            <div className="space-y-1.5 rounded-md border p-2">
+              <Label className="text-xs">Shared field name (optional)</Label>
+              <Input
+                className="h-8 text-xs"
+                list="artwork-field-keys"
+                value={active.field_key ?? ""}
+                placeholder="e.g. logo"
+                onChange={(e) => patch(active.id, { field_key: e.target.value })}
+              />
+              <datalist id="artwork-field-keys">
+                {[...new Set(
+                  placeholders
+                    .map((p) => (p.field_key ?? "").trim())
+                    .filter(Boolean),
+                )].map((k) => (
+                  <option key={k} value={k} />
+                ))}
+              </datalist>
+              <p className="text-[11px] text-muted-foreground">
+                Boxes sharing a name are filled by one customer upload — placed in each
+                box's own position and size.
+              </p>
+            </div>
 
 
 

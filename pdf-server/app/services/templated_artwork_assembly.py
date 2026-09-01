@@ -564,13 +564,20 @@ def _split_layers(defs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], lis
 
 
 def _def_on_page(d: dict[str, Any], page_index: int) -> bool:
-    """Single-page boxes only paint on their own page; the rest repeat."""
-    if str(d.get("page_scope") or "all") != "page":
-        return True
-    try:
-        return int(d.get("page_index") or 0) == page_index
-    except (TypeError, ValueError):
-        return True
+    """Page-scoped boxes only paint on their page(s); the rest repeat."""
+    scope = str(d.get("page_scope") or "all")
+    if scope == "page":
+        try:
+            return int(d.get("page_index") or 0) == page_index
+        except (TypeError, ValueError):
+            return True
+    if scope == "pages":
+        raw = d.get("page_indexes") or []
+        try:
+            return page_index in {int(n) for n in raw}
+        except (TypeError, ValueError):
+            return True
+    return True
 
 
 def _knockout_base_page(
@@ -934,7 +941,7 @@ def assemble_templated_artwork(
         page_under = [d for d in under_defs if _def_on_page(d, page_index)]
         page_over = [d for d in over_defs if _def_on_page(d, page_index)]
         has_page_scoped = any(
-            str(d.get("page_scope") or "all") == "page" for d in defs
+            str(d.get("page_scope") or "all") in ("page", "pages") for d in defs
         )
         geo_key = (
             round(page_w_pt, 2), round(page_h_pt, 2),
