@@ -415,6 +415,8 @@ export default function PackPricingMatrixEditor({
               optionLabel={optionLabel}
               pricingOptions={pricingOptions}
               onUpdateBlock={updateBlockAt}
+              onUpdateBlocks={updateBlocksAt}
+
               onDeleteBlock={deleteBlockAt}
               onAddQty={addQtyRow}
               onDuplicateSingles={duplicateSinglesToDouble}
