@@ -475,6 +475,8 @@ function GroupCard({
   optionLabel: (slug: string) => string;
   pricingOptions: PricingOption[];
   onUpdateBlock: (idx: number, patch: Partial<QuantityBlock>) => void;
+  onUpdateBlocks: (patches: Array<{ index: number; patch: Partial<QuantityBlock> }>) => void;
+
   onDeleteBlock: (idx: number) => void;
   onAddQty: (group: Group, sides: "single" | "double") => void;
   onDuplicateSingles: (group: Group) => void;
