@@ -649,6 +649,7 @@ export default function TemplateBoxEditor({
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="page">This page only</SelectItem>
+                      <SelectItem value="pages">Specific pages…</SelectItem>
                       <SelectItem value="all">Every page</SelectItem>
                     </SelectContent>
                   </Select>
