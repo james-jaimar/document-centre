@@ -224,7 +224,8 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
             <AlertDialogTitle>Delete this customer permanently?</AlertDialogTitle>
             <AlertDialogDescription>
               This deletes the login account for <strong>{customer.email ?? "this customer"}</strong>.
-              This cannot be undone.
+              Their past orders and invoices stay on record but are no longer linked to a
+              customer account. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
