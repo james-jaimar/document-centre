@@ -144,7 +144,9 @@ function drawPlaceholder(
   pxPerMm: number,
 ) {
   const box = boxRectPx(p, pxPerMm);
-  const value = opts.values[p.id];
+  // Boxes tagged with the same shared field name reuse one customer value.
+  const sharedId = sharedSourceId(p, opts);
+  const value = opts.values[p.id] ?? (sharedId ? opts.values[sharedId] : undefined);
   const alpha = Math.max(0, Math.min(1, value?.opacity ?? p.opacity ?? 1));
 
   if (p.kind === "colour") {
