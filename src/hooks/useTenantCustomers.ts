@@ -29,14 +29,25 @@ export function useTenantCustomers() {
     queryFn: async (): Promise<CustomerListRow[]> => {
       const { data: memberships, error: mErr } = await supabase
         .from("tenant_memberships")
-        .select("id, profile_id, is_active, is_trade_customer, mis_account_number")
+        .select(
+          "id, profile_id, is_active, is_trade_customer, mis_account_number, branch_id, company_id, company:company_id (id, is_active, is_trade_customer, mis_account_number)",
+        )
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("role", "customer");
 
       if (mErr) throw mErr;
 
-      const rows = (memberships ?? []) as any[];
+      // One row per person: a customer can have both a tenant-level and a
+      // branch membership row. Prefer the branch-scoped one.
+      const byProfile = new Map<string, any>();
+      for (const m of (memberships ?? []) as any[]) {
+        const prev = byProfile.get(m.profile_id);
+        if (!prev || (!prev.branch_id && m.branch_id) || (!prev.company_id && m.company_id)) {
+          byProfile.set(m.profile_id, prev ? { ...prev, ...m } : m);
+        }
+      }
+      const rows = [...byProfile.values()];
       const profileIds = rows.map((r) => r.profile_id);
       if (profileIds.length === 0) return [];
 
@@ -77,8 +88,12 @@ export function useTenantCustomers() {
           profile_id: r.profile_id,
           membership_id: r.id,
           is_active: r.is_active,
-          is_trade_customer: !!r.is_trade_customer,
-          mis_account_number: r.mis_account_number ?? null,
+          // Company trade status cascades to everyone linked to that company.
+          is_trade_customer:
+            !!r.is_trade_customer ||
+            (r.company?.is_active !== false && !!r.company?.is_trade_customer),
+          mis_account_number:
+            r.mis_account_number ?? r.company?.mis_account_number ?? null,
           display_name: p?.display_name ?? null,
           first_name: p?.first_name ?? null,
           last_name: p?.last_name ?? null,
