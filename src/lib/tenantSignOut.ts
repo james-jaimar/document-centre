@@ -1,4 +1,6 @@
+import { isTenantOwnHost } from "@/lib/tenantUrl";
 /**
+
  * Shared tenant sign-out helpers.
  *
  * After signing out on a tenant portal we set a short-lived sessionStorage
