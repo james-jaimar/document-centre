@@ -184,9 +184,8 @@ export default function StorefrontProduct() {
             {rows.length > 0 && (
               <div className="rounded-xl border bg-card p-5">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {sizes.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Size</p>
+                  {sizes.length > 1 ? (
+                    <Field title="Size">
                       <Select value={activeSize ?? ""} onValueChange={setSize}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -195,11 +194,31 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                    </Field>
+                  ) : activeSize ? (
+                    <Field title="Size"><StaticValue>{label(activeSize)}</StaticValue></Field>
+                  ) : null}
+
+                  {options.length > 1 && (
+                    <Field title="Finishing option">
+                      <Select value={activeOption ?? ""} onValueChange={setOption}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {options.map((o) => (
+                            <SelectItem key={o.slug} value={o.slug}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
                   )}
+                  {options.length === 1 && (
+                    <Field title="Finishing option">
+                      <StaticValue>{options[0].label}</StaticValue>
+                    </Field>
+                  )}
+
                   {rows.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Quantity</p>
+                    <Field title="Quantity">
                       <Select
                         value={activeQty ? String(activeQty) : ""}
                         onValueChange={(v) => setQty(Number(v))}
@@ -213,11 +232,11 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                    </Field>
                   )}
-                  {papers.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Paper</p>
+
+                  {papers.length > 1 ? (
+                    <Field title="Paper">
                       <Select value={activePaper ?? ""} onValueChange={setPaper}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -226,11 +245,13 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                  )}
-                  {sidesOptions.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Sides</p>
+                    </Field>
+                  ) : activePaper ? (
+                    <Field title="Paper"><StaticValue>{label(activePaper)}</StaticValue></Field>
+                  ) : null}
+
+                  {sidesOptions.length > 1 ? (
+                    <Field title="Sides">
                       <Select value={activeSides ?? ""} onValueChange={setSides}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -241,9 +262,16 @@ export default function StorefrontProduct() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                  )}
+                    </Field>
+                  ) : activeSides ? (
+                    <Field title="Sides">
+                      <StaticValue>
+                        {activeSides === "double" ? "Double sided" : "Single sided"}
+                      </StaticValue>
+                    </Field>
+                  ) : null}
                 </div>
+
 
                 {activeRow && (
                   <div className="mt-5 flex flex-wrap items-end justify-between gap-4 rounded-xl sf-accent-soft p-4">
