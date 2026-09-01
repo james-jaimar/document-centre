@@ -458,6 +458,8 @@ function GroupCard({
   optionLabel,
   pricingOptions,
   onUpdateBlock,
+  onUpdateBlocks,
+
   onDeleteBlock,
   onAddQty,
   onDuplicateSingles,
