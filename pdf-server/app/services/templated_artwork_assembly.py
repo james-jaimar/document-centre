@@ -941,7 +941,7 @@ def assemble_templated_artwork(
         page_under = [d for d in under_defs if _def_on_page(d, page_index)]
         page_over = [d for d in over_defs if _def_on_page(d, page_index)]
         has_page_scoped = any(
-            str(d.get("page_scope") or "all") == "page" for d in defs
+            str(d.get("page_scope") or "all") in ("page", "pages") for d in defs
         )
         geo_key = (
             round(page_w_pt, 2), round(page_h_pt, 2),
