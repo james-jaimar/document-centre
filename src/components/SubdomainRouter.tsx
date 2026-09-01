@@ -1,7 +1,30 @@
 import { type ReactNode, createContext, useContext, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTenantFromHost } from "@/hooks/useTenantFromHost";
 import { TenantSlugProvider } from "@/contexts/TenantSlugContext";
-import { isPlatformHost } from "@/lib/tenantUrl";
+import { isPlatformHost, stripTenantPrefix } from "@/lib/tenantUrl";
+
+/**
+ * On a tenant-owned host, `/t/{slug}/...` URLs are rogue duplicates of the
+ * clean paths. Rewrite them in place so the address bar (and any bookmark
+ * that gets made from it) stays on the tenant's own URL shape.
+ */
+function TenantUrlNormaliser({ slug }: { slug: string }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isPlatformHost(window.location.hostname)) return;
+    if (!/^\/t\/[^/]+/.test(location.pathname)) return;
+    const next = stripTenantPrefix(location.pathname, slug);
+    if (next === location.pathname) return;
+    navigate(`${next}${location.search}${location.hash}`, { replace: true });
+  }, [location.pathname, location.search, location.hash, navigate, slug]);
+
+  return null;
+}
+
 
 interface SubdomainState {
   matched: boolean;
