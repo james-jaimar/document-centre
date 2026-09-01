@@ -37,7 +37,7 @@ import { familyImages } from "@/lib/storefront/productImages";
 import { isEditableFamily, startOrderPath } from "@/lib/storefront/catalogue";
 
 const ANY = "*";
-const label = (v: string) => (v === ANY ? "Any" : v.replace(/_/g, " ").toUpperCase());
+const label = (v: string) => (v === ANY ? "Any" : v.replace(/_/g, " "));
 
 export default function StorefrontProduct() {
   const { familySlug } = useParams();
@@ -47,13 +47,31 @@ export default function StorefrontProduct() {
   const { config } = useStorefrontPages(tenantId);
   const { entries, isLoading } = useStorefrontCatalogue();
   const { format, inclSuffix } = useStorefrontPrice();
+  const { tier: pricingTier } = useCustomerPricingTier();
 
   const entry = entries.find((e) => e.family.slug === familySlug);
-  const blocks = entry?.blocks ?? [];
+  const allBlocks = entry?.blocks ?? [];
+
+  // Finishing options (e.g. "with Gloss Lam" / "with Matt Lam"). Trade-only
+  // options are never shown to consumers.
+  const options = useMemo(
+    () => visibleOptions(normalizeOptions((entry?.family as any)?.pricing_options), pricingTier),
+    [entry?.family, pricingTier],
+  );
+  const [option, setOption] = useState<string | null>(null);
+  const activeOption =
+    (option && options.some((o) => o.slug === option) ? option : options[0]?.slug) ?? null;
+
+  // Every axis below is derived from the rows priced for the chosen option,
+  // otherwise duplicate quantities appear once per option.
+  const blocks = useMemo(
+    () => allBlocks.filter((b) => blockMatchesOption(b, activeOption)),
+    [allBlocks, activeOption],
+  );
 
   const sizes = useMemo(() => [...new Set(blocks.map((b) => b.size))], [blocks]);
   const [size, setSize] = useState<string | null>(null);
-  const activeSize = size ?? sizes[0] ?? null;
+  const activeSize = size && sizes.includes(size) ? size : sizes[0] ?? null;
 
   const papers = useMemo(
     () => [...new Set(blocks.filter((b) => b.size === activeSize).map((b) => b.paper))],
@@ -76,23 +94,24 @@ export default function StorefrontProduct() {
   const activeSides =
     sides && sidesOptions.includes(sides as any) ? sides : sidesOptions[0] ?? null;
 
-  const { tier: pricingTier } = useCustomerPricingTier();
-
   const rows = useMemo(
     () =>
-      blocks
-        .filter(
+      packQuantitiesForOption(
+        blocks.filter(
           (b) => b.size === activeSize && b.paper === activePaper && b.sides === activeSides,
-        )
-        .map((b) => ({ qty: b.qty, priceMajor: rowPriceMinor(b, pricingTier) / 100 }))
-        .sort((a, b) => a.qty - b.qty),
-    [blocks, activeSize, activePaper, activeSides, pricingTier],
+        ),
+        activeOption,
+        pricingTier,
+        options,
+      ).map((r) => ({ qty: r.qty, priceMajor: r.priceMinor / 100 })),
+    [blocks, activeSize, activePaper, activeSides, activeOption, pricingTier, options],
   );
 
 
   const [qty, setQty] = useState<number | null>(null);
   const activeQty = qty && rows.some((r) => r.qty === qty) ? qty : rows[0]?.qty ?? null;
   const activeRow = rows.find((r) => r.qty === activeQty) ?? null;
+
 
   if (isLoading) {
     return (
