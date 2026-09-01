@@ -128,6 +128,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const handleUpload = async (file: File) => {
     if (!selected) return;
+    if (!canWriteSelected) {
+      toast.error("This template belongs to another tenant.");
+      return;
+    }
+
     if (file.type !== "application/pdf") {
       toast.error("The base artwork must be a PDF.");
       return;
@@ -229,6 +234,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const handleSaveBoxes = async () => {
     if (!selected) return;
+    if (!canWriteSelected) {
+      toast.error("This template belongs to another tenant.");
+      return;
+    }
+
     try {
       await savePlaceholders.mutateAsync({ templateId: selected.id, placeholders: draft });
       toast.success("Placeholders saved.");
@@ -275,6 +285,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const patchTemplate = async (updates: Partial<ArtworkTemplate>) => {
     if (!selected) return;
+    if (!canWriteSelected) {
+      toast.error("This template belongs to another tenant.");
+      return;
+    }
+
     await upsertTemplate.mutateAsync({
       id: selected.id,
       product_family_id: productFamilyId,
