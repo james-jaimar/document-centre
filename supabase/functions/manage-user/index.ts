@@ -339,12 +339,59 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
       }
 
       case "delete_account": {
-        if (!isPlatformAdmin) return err("Only platform admins can delete accounts", 403);
+        // Tenant owners/admins may delete their own customers; platform admins
+        // may delete anyone.
+        if (!isPlatformAdmin) {
+          if (!isTenantAdmin || !tenant_id) {
+            return err("You are not allowed to delete this account", 403);
+          }
+          const { data: targetMems } = await admin
+            .from("tenant_memberships")
+            .select("tenant_id, role")
+            .eq("profile_id", target_profile_id);
+          const outside = (targetMems ?? []).some((m: any) => m.tenant_id !== tenant_id);
+          const staff = (targetMems ?? []).some((m: any) => m.role !== "customer");
+          if (outside || staff) {
+            return err(
+              "This person has access beyond your customers — remove them from this tenant instead",
+              403,
+            );
+          }
+        }
+
+        // Several tables reference the user with ON DELETE NO ACTION (orders,
+        // messages, timeline, etc.), so the auth delete fails while those rows
+        // exist. Detach the references first — the records themselves stay.
+        const detach: Array<[string, string]> = [
+          ["orders", "ordered_by_profile_id"],
+          ["orders", "created_by_admin_profile_id"],
+          ["orders", "impersonated_by"],
+          ["order_jobs", "assigned_to_profile_id"],
+          ["order_documents", "created_by"],
+          ["order_adjustments", "created_by"],
+          ["timeline_events", "actor_profile_id"],
+          ["timeline_events", "impersonated_by"],
+          ["messages", "sender_profile_id"],
+          ["messages", "impersonated_by"],
+          ["status_history", "changed_by"],
+          ["tenant_subscriptions", "assigned_by"],
+          ["contact_submissions", "handled_by_profile_id"],
+          ["email_outbox", "created_by_profile_id"],
+        ];
+        for (const [table, column] of detach) {
+          const { error: dErr } = await admin
+            .from(table)
+            .update({ [column]: null })
+            .eq(column, target_profile_id);
+          if (dErr) console.error(`detach ${table}.${column}: ${dErr.message}`);
+        }
+
         await audit({ deleted_at: new Date().toISOString() });
         const { error: e } = await admin.auth.admin.deleteUser(target_profile_id);
         if (e) return err(`Failed to delete: ${e.message}`);
         return json({ success: true, message: "Account deleted" });
       }
+
 
       case "update_profile": {
         const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };

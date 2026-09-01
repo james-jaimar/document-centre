@@ -51,7 +51,7 @@ export function AddCustomerDialog({ open, onOpenChange }: Props) {
     setSubmitting(true);
     try {
       const res = await invokeEdgeFunctionVerbose<{
-        ok: boolean; profile_id: string; created: boolean; warning?: string;
+        ok: boolean; profile_id: string; created: boolean; already_member?: boolean; warning?: string;
       }>("create-customer", {
         email: e,
         tenant_id: tenantId,
@@ -67,7 +67,11 @@ export function AddCustomerDialog({ open, onOpenChange }: Props) {
       const payload = res.data;
 
       toast({
-        title: payload.created ? "Customer added" : "Existing customer linked to your branch",
+        title: payload.already_member
+          ? "This email is already a customer here"
+          : payload.created
+            ? "Customer added"
+            : "Existing customer linked to your branch",
         description: sendInvite
           ? (payload.warning ? `Saved, but invite email failed: ${payload.warning}` : "Welcome email sent.")
           : "No invite email sent.",

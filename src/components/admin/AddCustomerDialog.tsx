@@ -71,7 +71,7 @@ export function AddCustomerDialog({
     try {
       const targetBranch = branchId === NO_BRANCH ? null : branchId;
       const res = await invokeEdgeFunctionVerbose<{
-        ok: boolean; profile_id: string; created: boolean; warning?: string;
+        ok: boolean; profile_id: string; created: boolean; already_member?: boolean; warning?: string;
       }>("create-customer", {
         email: e,
         tenant_id: tenantId,
@@ -103,6 +103,11 @@ export function AddCustomerDialog({
         if (mErr) toast.error(`Customer saved, but trade settings failed: ${mErr.message}`);
       }
 
+      if (payload.already_member) {
+        toast.warning("This email is already a customer here", {
+          description: "We updated the existing customer instead of creating a duplicate.",
+        });
+      }
       toast.success(
         payload.created ? "Customer created" : "Existing customer linked to this tenant",
         {
