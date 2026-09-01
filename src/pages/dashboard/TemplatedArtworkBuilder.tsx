@@ -348,6 +348,44 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [placeholders, pages, pageIndex],
   );
 
+  /** Every box that shares a value with this one (itself included). */
+  const siblingsOf = useCallback(
+    (p: { id: string; field_key?: string | null }) => {
+      const key = (p.field_key ?? "").trim();
+      if (!key) return placeholders.filter((d) => d.id === p.id);
+      return placeholders.filter((d) => (d.field_key ?? "").trim() === key);
+    },
+    [placeholders],
+  );
+
+  /** Write a value to a box and to every box sharing its field name. */
+  const applyValue = useCallback(
+    (p: ArtworkPlaceholder, v: TemplatedPlaceholderValue | null) => {
+      const targets = siblingsOf(p);
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const t of targets) {
+          if (v == null) delete next[t.id];
+          else next[t.id] = capWatermark(t, { ...v, placeholder_id: t.id });
+        }
+        return next;
+      });
+    },
+    [siblingsOf],
+  );
+
+  /** One rail entry per shared field name on this page. */
+  const railPlaceholders = useMemo(() => {
+    const seen = new Set<string>();
+    return pagePlaceholders.filter((p) => {
+      const key = (p.field_key ?? "").trim();
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [pagePlaceholders]);
+
   useEffect(() => {
     const el = canvasRef.current;
     const page = pages[pageIndex];
