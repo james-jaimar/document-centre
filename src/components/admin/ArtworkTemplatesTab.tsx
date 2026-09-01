@@ -110,7 +110,12 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
 
   const handleCreate = async () => {
+    if (!tenantId) {
+      toast.error("No tenant is selected — cannot create a template.");
+      return;
+    }
     try {
+
       const created = await upsertTemplate.mutateAsync({
         product_family_id: productFamilyId,
         name: `Layout ${templates.length + 1}`,
@@ -375,9 +380,14 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               size="sm"
               variant="ghost"
               onClick={async () => {
+                if (!canWriteSelected) {
+                  toast.error("This template belongs to another tenant.");
+                  return;
+                }
                 await deleteTemplate.mutateAsync(selected.id);
                 setSelectedId(null);
               }}
+
             >
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
