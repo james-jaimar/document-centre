@@ -137,6 +137,16 @@ export interface ComposeOptions {
 }
 
 
+/** Id of the sibling box whose value this box borrows via `field_key`. */
+function sharedSourceId(p: ArtworkPlaceholder, opts: ComposeOptions): string | null {
+  const key = (p.field_key ?? "").trim();
+  if (!key || opts.values[p.id]) return null;
+  const src = opts.placeholders.find(
+    (d) => d.id !== p.id && (d.field_key ?? "").trim() === key && !!opts.values[d.id],
+  );
+  return src?.id ?? null;
+}
+
 function drawPlaceholder(
   ctx: CanvasRenderingContext2D,
   p: ArtworkPlaceholder,
