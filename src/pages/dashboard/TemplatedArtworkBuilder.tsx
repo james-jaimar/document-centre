@@ -926,7 +926,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                   const line = priced.addonLines.find((l) => l.slug === a.slug);
                   const preview =
                     a.kind === "percent"
-                      ? `+${a.amount}%`
+                      ? ""
                       : `+${formatPrice(
                           priceDisplay.toGross(
                             convert(a.amount) *
