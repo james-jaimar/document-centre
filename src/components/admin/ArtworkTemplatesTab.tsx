@@ -39,15 +39,20 @@ interface Props {
 }
 
 export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props) {
-  const { data: templates = [], isLoading } = useArtworkTemplates(productFamilyId);
+  const { data: templates = [], isLoading } = useArtworkTemplates(productFamilyId, {
+    tenantId,
+  });
   const upsertTemplate = useUpsertArtworkTemplate();
   const deleteTemplate = useDeleteArtworkTemplate();
   const savePlaceholders = useSaveArtworkPlaceholders();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = templates.find((t) => t.id === selectedId) ?? null;
+  /** Never write to a template that isn't owned by the tenant being administered. */
+  const canWriteSelected = !!selected && selected.tenant_id === tenantId;
 
-  const { data: savedPlaceholders = [] } = useArtworkPlaceholders(selectedId);
+  const { data: savedPlaceholders = [] } = useArtworkPlaceholders(selectedId, { tenantId });
+
   const [draft, setDraft] = useState<ArtworkPlaceholder[]>([]);
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [renderingPdf, setRenderingPdf] = useState(false);
@@ -105,7 +110,12 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
 
   const handleCreate = async () => {
+    if (!tenantId) {
+      toast.error("No tenant is selected — cannot create a template.");
+      return;
+    }
     try {
+
       const created = await upsertTemplate.mutateAsync({
         product_family_id: productFamilyId,
         name: `Layout ${templates.length + 1}`,
@@ -123,6 +133,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const handleUpload = async (file: File) => {
     if (!selected) return;
+    if (!canWriteSelected) {
+      toast.error("This template belongs to another tenant.");
+      return;
+    }
+
     if (file.type !== "application/pdf") {
       toast.error("The base artwork must be a PDF.");
       return;
@@ -224,6 +239,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const handleSaveBoxes = async () => {
     if (!selected) return;
+    if (!canWriteSelected) {
+      toast.error("This template belongs to another tenant.");
+      return;
+    }
+
     try {
       await savePlaceholders.mutateAsync({ templateId: selected.id, placeholders: draft });
       toast.success("Placeholders saved.");
@@ -270,6 +290,11 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const patchTemplate = async (updates: Partial<ArtworkTemplate>) => {
     if (!selected) return;
+    if (!canWriteSelected) {
+      toast.error("This template belongs to another tenant.");
+      return;
+    }
+
     await upsertTemplate.mutateAsync({
       id: selected.id,
       product_family_id: productFamilyId,
@@ -355,9 +380,14 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
               size="sm"
               variant="ghost"
               onClick={async () => {
+                if (!canWriteSelected) {
+                  toast.error("This template belongs to another tenant.");
+                  return;
+                }
                 await deleteTemplate.mutateAsync(selected.id);
                 setSelectedId(null);
               }}
+
             >
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
