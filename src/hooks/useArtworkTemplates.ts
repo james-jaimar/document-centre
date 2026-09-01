@@ -53,13 +53,32 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
 }
 
 
-/** Templates for a product family. Admin view shows drafts too. */
+/**
+ * Templates for a product family, scoped to a single tenant.
+ *
+ * `tenantId` is REQUIRED in practice: without it the query returns every
+ * template the caller's RLS grants allow (platform admins and multi-tenant
+ * members would see other tenants' layouts). Pass the tenant being
+ * administered, or the resolved storefront tenant.
+ */
 export function useArtworkTemplates(
   productFamilyId: string | null | undefined,
-  opts: { publishedOnly?: boolean } = {},
+  opts: {
+    publishedOnly?: boolean;
+    tenantId?: string | null;
+    /** Include master-scope templates alongside the tenant's own. */
+    includeMaster?: boolean;
+  } = {},
 ) {
+  const tenantId = opts.tenantId ?? null;
   return useQuery({
-    queryKey: [TEMPLATES_KEY, productFamilyId, !!opts.publishedOnly],
+    queryKey: [
+      TEMPLATES_KEY,
+      productFamilyId,
+      !!opts.publishedOnly,
+      tenantId,
+      !!opts.includeMaster,
+    ],
     queryFn: async () => {
       let q = supabase
         .from("artwork_templates")
@@ -69,11 +88,16 @@ export function useArtworkTemplates(
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
       if (opts.publishedOnly) q = q.eq("status", "published");
+      if (tenantId) {
+        q = opts.includeMaster
+          ? q.or(`tenant_id.eq.${tenantId},scope_type.eq.master`)
+          : q.eq("tenant_id", tenantId);
+      }
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []).map(asTemplate);
     },
-    enabled: !!productFamilyId,
+    enabled: !!productFamilyId && !!tenantId,
   });
 }
 
@@ -93,22 +117,36 @@ export function useArtworkTemplate(templateId: string | null | undefined) {
   });
 }
 
-export function useArtworkPlaceholders(templateId: string | null | undefined) {
+/**
+ * Placeholders for a template. When `tenantId` is supplied the parent
+ * template must belong to that tenant, so a stale template id from another
+ * tenant can never load its boxes.
+ */
+export function useArtworkPlaceholders(
+  templateId: string | null | undefined,
+  opts: { tenantId?: string | null } = {},
+) {
+  const tenantId = opts.tenantId ?? null;
   return useQuery({
-    queryKey: [PLACEHOLDERS_KEY, templateId],
+    queryKey: [PLACEHOLDERS_KEY, templateId, tenantId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("artwork_template_placeholders")
-        .select("*")
+        .select("*, artwork_templates!inner(tenant_id, scope_type)")
         .eq("template_id", templateId!)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
+      if (tenantId) q = q.eq("artwork_templates.tenant_id", tenantId);
+      const { data, error } = await q;
       if (error) throw error;
-      return (data ?? []).map(asPlaceholder);
+      return (data ?? []).map(({ artwork_templates: _t, ...row }: any) =>
+        asPlaceholder(row),
+      );
     },
     enabled: !!templateId,
   });
 }
+
 
 export function useUpsertArtworkTemplate() {
   const qc = useQueryClient();
