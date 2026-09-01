@@ -462,7 +462,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           background_hex: ph?.background_hex ?? null,
           opacity: ph?.is_watermark ? Math.min(ph?.opacity ?? 0.1, 0.1) : (ph?.opacity ?? 1),
         };
-        setValues((prev) => ({ ...prev, [placeholderId]: capWatermark(ph, next) }));
+        if (ph) applyValue(ph, next);
+        else setValues((prev) => ({ ...prev, [placeholderId]: next }));
       } catch (err: any) {
         console.error("[templated-artwork] upload failed", err);
         toast.error(err?.message ?? "Upload failed");
