@@ -1,4 +1,6 @@
+import { isTenantOwnHost } from "@/lib/tenantUrl";
 /**
+
  * Shared tenant sign-out helpers.
  *
  * After signing out on a tenant portal we set a short-lived sessionStorage
@@ -62,6 +64,10 @@ export function normaliseExternalUrl(u: string | null | undefined): string | nul
  * "Back to main site" link in the footer handles that case instead.
  */
 export function resolvePostSignOutPath(slug: string | null | undefined): string {
+  // On a tenant-owned host the tenant is implied by the domain — never emit
+  // the platform's /t/{slug} prefix there.
+  if (isTenantOwnHost()) return "/";
   if (!slug) return "/";
   return `/t/${slug}`;
 }
+
