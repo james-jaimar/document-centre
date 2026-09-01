@@ -81,11 +81,13 @@ export function SubdomainWrapper({ children }: { children: ReactNode }) {
     return (
       <SubdomainContext.Provider value={state}>
         <TenantSlugProvider slug={tenant.slug}>
+          <TenantUrlNormaliser slug={tenant.slug} />
           {children}
         </TenantSlugProvider>
       </SubdomainContext.Provider>
     );
   }
+
 
   return (
     <SubdomainContext.Provider value={state}>
