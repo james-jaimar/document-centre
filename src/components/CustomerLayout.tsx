@@ -91,8 +91,14 @@ function CustomerLayoutInner() {
   const isAnon = isAnonymousUser(user);
   const showSidebar = !chromeless && !!user && !isAnon && accountArea;
 
+  // The window is the single scroll container now, so route changes must reset
+  // it — otherwise a new page inherits the previous page's scroll offset.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [pathname]);
 
   useTenantGA(integrations.ga_property_id as string | undefined);
+
 
   // True once both the tenant lookup AND branding fetch have settled. When a
   // slug is present in the URL we must wait for BOTH — otherwise the layout
@@ -225,7 +231,14 @@ function CustomerLayoutInner() {
   }
 
   return (
-    <div className="flex h-screen w-full flex-col" style={tenantStyle}>
+    <div
+      className={
+        editorMode
+          ? "flex h-screen w-full flex-col overflow-hidden"
+          : "flex min-h-screen w-full flex-col"
+      }
+      style={tenantStyle}
+    >
       <ImpersonationBanner />
       <BranchPicker />
       {/* Optional tenant-configured brand strip above the standard header */}
@@ -235,11 +248,11 @@ function CustomerLayoutInner() {
 
 
       {/* Sidebar + main content row */}
-      <div className="flex flex-1 w-full min-h-0">
+      <div className={`flex w-full flex-1 ${editorMode ? "min-h-0" : ""}`}>
         {/* Desktop sidebar — account areas only, signed-in customers only */}
         {showSidebar && (
           <div
-            className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+            className={`hidden lg:flex sticky top-[88px] h-[calc(100vh-88px)] transition-all duration-300 ease-in-out overflow-hidden ${
               collapsed ? "w-0" : "w-64"
             } ${brandingReady ? "opacity-100" : "opacity-0"}`}
           >
@@ -259,11 +272,15 @@ function CustomerLayoutInner() {
         )}
 
 
-        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        <div className={`flex flex-1 flex-col min-w-0 ${editorMode ? "overflow-hidden" : ""}`}>
           {/* Content */}
           <main
             className={`flex-1 customer-body ${
-              chromeless ? "flex flex-col overflow-hidden" : "overflow-auto p-6 xl:p-8"
+              editorMode
+                ? "flex flex-col overflow-hidden"
+                : storefrontMode
+                  ? ""
+                  : "p-6 xl:p-8"
             }`}
           >
             <Outlet />
@@ -273,6 +290,7 @@ function CustomerLayoutInner() {
           <CustomerFooter />
         </div>
       </div>
+
       <TenantChatWidget
         isDemo={!!tenant?.is_demo}
         tawkEnabled={integrations.tawk_enabled === true}
