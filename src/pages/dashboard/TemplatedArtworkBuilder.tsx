@@ -471,7 +471,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [ensureOrder, uploadPhoto, placeholders],
+    [ensureOrder, uploadPhoto, placeholders, applyValue],
   );
 
   // ── Pricing: pack ladder (with finishing options + paid extras) when the
