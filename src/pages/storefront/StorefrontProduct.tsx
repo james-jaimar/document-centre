@@ -39,6 +39,23 @@ import { isEditableFamily, startOrderPath } from "@/lib/storefront/catalogue";
 const ANY = "*";
 const label = (v: string) => (v === ANY ? "Any" : v.replace(/_/g, " "));
 
+function Field({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function StaticValue({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-foreground">{children}</p>
+  );
+}
+
+
+
 export default function StorefrontProduct() {
   const { familySlug } = useParams();
   const navigate = useNavigate();
