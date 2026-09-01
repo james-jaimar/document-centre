@@ -33,6 +33,25 @@ export function parseTenantPath(pathname: string): ParsedTenantPath {
   return { slug: m[1], branchSlug: second };
 }
 
+/**
+ * True when the app is being served from a tenant-owned host (custom domain
+ * or {slug}.document-centre.com). On those hosts the `/t/{slug}` prefix must
+ * never appear in URLs — the tenant is already implied by the hostname.
+ */
+export function isTenantOwnHost(): boolean {
+  if (typeof window === "undefined") return false;
+  return !isPlatformHost(window.location.hostname);
+}
+
+/** Remove a leading `/t/{slug}` segment from a pathname. */
+export function stripTenantPrefix(pathname: string, slug?: string | null): string {
+  const re = slug
+    ? new RegExp(`^/t/${slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=/|$)`)
+    : /^\/t\/[^/]+(?=\/|$)/;
+  const out = pathname.replace(re, "");
+  return out === "" ? "/" : out;
+}
+
 export function buildTenantPath(
   slug: string,
   branchSlug: string | null,
@@ -40,8 +59,12 @@ export function buildTenantPath(
 ): string {
   const branch = branchSlug ? `${branchSlug}/` : "";
   const clean = rest.replace(/^\//, "");
+  if (isTenantOwnHost()) {
+    return `/${branch}${clean}`.replace(/\/$/, "") || "/";
+  }
   return `/t/${slug}/${branch}${clean}`.replace(/\/$/, "");
 }
+
 
 /**
  * Returns true if the hostname is the platform/marketing host (or a local/preview
