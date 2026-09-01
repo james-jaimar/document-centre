@@ -643,6 +643,12 @@ export default function TemplateBoxEditor({
                       patch(active.id, {
                         page_scope: v as PlaceholderPageScope,
                         page_index: v === "page" ? (active.page_index ?? pageIndex) : null,
+                        page_indexes:
+                          v === "pages"
+                            ? (active.page_indexes?.length
+                                ? active.page_indexes
+                                : [active.page_index ?? pageIndex])
+                            : null,
                       })
                     }
                   >
