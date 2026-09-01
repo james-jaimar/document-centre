@@ -564,13 +564,20 @@ def _split_layers(defs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], lis
 
 
 def _def_on_page(d: dict[str, Any], page_index: int) -> bool:
-    """Single-page boxes only paint on their own page; the rest repeat."""
-    if str(d.get("page_scope") or "all") != "page":
-        return True
-    try:
-        return int(d.get("page_index") or 0) == page_index
-    except (TypeError, ValueError):
-        return True
+    """Page-scoped boxes only paint on their page(s); the rest repeat."""
+    scope = str(d.get("page_scope") or "all")
+    if scope == "page":
+        try:
+            return int(d.get("page_index") or 0) == page_index
+        except (TypeError, ValueError):
+            return True
+    if scope == "pages":
+        raw = d.get("page_indexes") or []
+        try:
+            return page_index in {int(n) for n in raw}
+        except (TypeError, ValueError):
+            return True
+    return True
 
 
 def _knockout_base_page(
