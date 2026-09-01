@@ -17,6 +17,9 @@ import type { QuantityBlock } from "@/hooks/useProductFamilies";
 import type { PricingOption } from "@/lib/pricing/packOptions";
 import { sheetWeightGrams } from "@/lib/weightCalculation";
 import { packBlockKey } from "@/lib/storefront/catalogue";
+import { parseClipboardGrid, isMultiCellPaste, parseNumericCell } from "@/lib/pricing/gridPaste";
+import { toast } from "sonner";
+
 
 export type PackScope = "master" | "tenant" | "branch";
 
