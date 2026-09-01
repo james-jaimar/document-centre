@@ -695,7 +695,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
                   const line = priced.addonLines.find((l) => l.slug === a.slug);
                   const preview =
                     a.kind === "percent"
-                      ? `+${a.amount}%`
+                      ? ""
                       : `+${formatPrice(priceDisplay.toGross(convert(a.amount) * (a.kind === "per_unit" ? Math.max(quantity, 1) : 1)), activeCurrency)}`;
                   return (
                     <label
