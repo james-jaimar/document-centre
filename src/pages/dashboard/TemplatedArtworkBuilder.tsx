@@ -51,6 +51,7 @@ import {
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
+  ArtworkPlaceholder,
   TemplatedArtworkSpec,
   TemplatedImageValue,
   TemplatedPlaceholderValue,
