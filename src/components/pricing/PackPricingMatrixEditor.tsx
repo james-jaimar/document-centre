@@ -147,6 +147,17 @@ export default function PackPricingMatrixEditor({
     next[idx] = { ...next[idx], ...patch };
     commit(next);
   }
+  /** Apply many patches at once (used by spreadsheet-style column paste). */
+  function updateBlocksAt(patches: Array<{ index: number; patch: Partial<QuantityBlock> }>) {
+    if (patches.length === 0) return;
+    const next = blocks.slice();
+    for (const { index, patch } of patches) {
+      if (!next[index]) continue;
+      next[index] = { ...next[index], ...patch };
+    }
+    commit(next);
+  }
+
   function deleteBlockAt(idx: number) {
     commit(blocks.filter((_, i) => i !== idx));
   }
