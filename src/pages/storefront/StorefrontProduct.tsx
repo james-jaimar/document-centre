@@ -6,7 +6,13 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
-import { rowPriceMinor } from "@/lib/pricing/packOptions";
+import {
+  normalizeOptions,
+  visibleOptions,
+  blockMatchesOption,
+  packQuantitiesForOption,
+} from "@/lib/pricing/packOptions";
+
 
 import AssuranceBar from "@/components/storefront/AssuranceBar";
 import ProductGallery from "@/components/storefront/ProductGallery";
