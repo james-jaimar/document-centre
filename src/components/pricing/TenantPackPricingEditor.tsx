@@ -7,6 +7,7 @@ import {
   usePackPricingOverridesForFamily,
 } from "@/hooks/useProductPackPricingOverrides";
 import PackPricingMatrixEditor from "@/components/pricing/PackPricingMatrixEditor";
+import { normalizeOptions, type PricingOption } from "@/lib/pricing/packOptions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -58,6 +59,7 @@ export default function TenantPackPricingEditor({ tenantId }: Props) {
                 ? ((family as any).printing_rules ?? {}).allowed_finished_sizes
                 : []
             }
+            pricingOptions={normalizeOptions((family as any).pricing_options)}
           />
         ))}
       </Accordion>
@@ -71,12 +73,14 @@ function TenantFamilyRow({
   familyName,
   masterBlocks,
   allowedSizes,
+  pricingOptions,
 }: {
   tenantId: string;
   familyId: string;
   familyName: string;
   masterBlocks: QuantityBlock[];
   allowedSizes: string[];
+  pricingOptions: PricingOption[];
 }) {
   const { data: allOverrides = [] } = usePackPricingOverridesForFamily(familyId, tenantId);
   const tenantOverride = allOverrides.find((o) => o.branch_id === null) ?? null;
@@ -127,6 +131,7 @@ function TenantFamilyRow({
           parentBlocks={masterBlocks}
           initialBlocks={initialBlocks}
           allowedSizeCodes={allowedSizes}
+          pricingOptions={pricingOptions}
           saving={upsert.isPending}
           reverting={remove.isPending}
           onSave={handleSave}
