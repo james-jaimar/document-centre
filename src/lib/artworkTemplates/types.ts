@@ -141,10 +141,14 @@ export interface ArtworkPlaceholder {
   /** [colour boxes] Whether the customer may change the colour. */
   customer_editable_colour: boolean;
 
-  /** `all` = repeated on every page; `page` = only on `page_index`. */
+  /** `all` = every page; `page` = only `page_index`; `pages` = `page_indexes`. */
   page_scope: PlaceholderPageScope;
   /** Zero-based page this box belongs to when `page_scope === "page"`. */
   page_index: number | null;
+  /** Zero-based pages this box belongs to when `page_scope === "pages"`. */
+  page_indexes: number[] | null;
+  /** Optional shared field name — boxes with the same key share one value. */
+  field_key: string | null;
 
   sort_order: number;
   /** Behind or on top of the template artwork. */
