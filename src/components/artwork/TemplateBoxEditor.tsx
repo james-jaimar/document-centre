@@ -705,8 +705,49 @@ export default function TemplateBoxEditor({
                     </SelectContent>
                   </Select>
                 )}
+                {(active.page_scope ?? "all") === "pages" && (
+                  <div className="space-y-1">
+                    <Input
+                      className="h-8 text-xs"
+                      defaultValue={formatPageRange(active.page_indexes)}
+                      placeholder="e.g. 2-13 or 1,3,5"
+                      onBlur={(e) =>
+                        patch(active.id, {
+                          page_indexes: parsePageRange(e.target.value, pageCount),
+                        })
+                      }
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Pages {formatPageRange(active.page_indexes) || "—"} (1 = first page)
+                    </p>
+                  </div>
+                )}
               </div>
             )}
+
+            <div className="space-y-1.5 rounded-md border p-2">
+              <Label className="text-xs">Shared field name (optional)</Label>
+              <Input
+                className="h-8 text-xs"
+                list="artwork-field-keys"
+                value={active.field_key ?? ""}
+                placeholder="e.g. logo"
+                onChange={(e) => patch(active.id, { field_key: e.target.value })}
+              />
+              <datalist id="artwork-field-keys">
+                {[...new Set(
+                  placeholders
+                    .map((p) => (p.field_key ?? "").trim())
+                    .filter(Boolean),
+                )].map((k) => (
+                  <option key={k} value={k} />
+                ))}
+              </datalist>
+              <p className="text-[11px] text-muted-foreground">
+                Boxes sharing a name are filled by one customer upload — placed in each
+                box's own position and size.
+              </p>
+            </div>
 
 
 
