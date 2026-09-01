@@ -775,26 +775,25 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               Nothing to fill in on this page — use the pager to move to another page.
             </p>
           ) : (
-            pagePlaceholders.map((p, i) => (
-              <PlaceholderPanel
-                key={p.id}
-                placeholder={p}
-                value={values[p.id]}
-                busy={busyId === p.id}
-                step={i + 1}
-                active={activeId === p.id}
-
-                onFocus={() => setActiveId(p.id)}
-                onPickFile={(file) => handlePickFile(p.id, file)}
-                onChange={(v) => setValues((prev) => ({ ...prev, [p.id]: capWatermark(p, v) }))}
-                onClear={() =>
-                  setValues((prev) => {
-                    const next = { ...prev };
-                    delete next[p.id];
-                    return next;
-                  })
-                }
-              />
+            railPlaceholders.map((p, i) => (
+              <div key={p.id} className="space-y-1">
+                <PlaceholderPanel
+                  placeholder={p}
+                  value={values[p.id]}
+                  busy={busyId === p.id}
+                  step={i + 1}
+                  active={activeId === p.id}
+                  onFocus={() => setActiveId(p.id)}
+                  onPickFile={(file) => handlePickFile(p.id, file)}
+                  onChange={(v) => applyValue(p, v)}
+                  onClear={() => applyValue(p, null)}
+                />
+                {siblingsOf(p).length > 1 && (
+                  <p className="px-1 text-[11px] text-muted-foreground">
+                    Used in {siblingsOf(p).length} places across the calendar — upload once.
+                  </p>
+                )}
+              </div>
             ))
           )}
         </div>
