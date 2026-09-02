@@ -7,13 +7,12 @@ import { buildAdminPath } from "@/lib/adminRouting";
 import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 
 import { takeReturnPath, peekReturnPath, isSafeReturnPath } from "@/lib/auth/oauthReturn";
+import { claimAnonymousWork } from "@/lib/auth/claimAnonymousWork";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
-const ANON_KEY = "dc_anon_user_id";
 
 const AuthCallback = () => {
   const navigate = useNavigate();
@@ -56,19 +55,7 @@ const AuthCallback = () => {
       }
 
       // Claim anonymous orders if the user was previously browsing anonymously
-      const anonUserId = localStorage.getItem(ANON_KEY);
-      if (anonUserId && anonUserId !== session.user.id) {
-        localStorage.removeItem(ANON_KEY);
-        try {
-          await supabase.functions.invoke("claim-anonymous-orders", {
-            body: { anonymous_user_id: anonUserId },
-          });
-        } catch (e) {
-          console.warn("Failed to claim anonymous orders:", e);
-        }
-      } else {
-        localStorage.removeItem(ANON_KEY);
-      }
+      await claimAnonymousWork(session.user.id);
 
       // Resolve roles + memberships in parallel.
       const [rolesRes, membershipsRes] = await Promise.all([

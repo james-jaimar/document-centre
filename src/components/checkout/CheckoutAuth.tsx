@@ -12,7 +12,6 @@ import { AlertCircle, CheckCircle2, Loader2, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { claimAnonymousWork, clearAnonymousUser } from "@/lib/auth/claimAnonymousWork";
 
 
