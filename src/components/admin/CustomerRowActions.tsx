@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  KeyRound, MoreHorizontal, Pencil, Trash2, UserCheck, UserMinus, UserX, Lock,
+  KeyRound, Mail, MoreHorizontal, Pencil, Trash2, UserCheck, UserMinus, UserX, Lock,
 } from "lucide-react";
 import { useManageUser } from "@/hooks/useManageUser";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
@@ -47,6 +47,7 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
   const manage = useManageUser();
   const [editOpen, setEditOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -85,6 +86,9 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
           {extraItems}
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-2" /> Edit details
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!customer.email} onClick={() => setWelcomeOpen(true)}>
+            <Mail className="h-4 w-4 mr-2" /> Send welcome email
           </DropdownMenuItem>
           <DropdownMenuItem disabled={!customer.email} onClick={() => setResetOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" /> Send password email
@@ -128,6 +132,27 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
           email: customer.email,
         }}
       />
+
+      <AlertDialog open={welcomeOpen} onOpenChange={setWelcomeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send welcome email?</AlertDialogTitle>
+            <AlertDialogDescription>
+              We'll email <strong>{customer.email}</strong> a secure link to set their password.
+              They'll be asked to choose a new password before they can use the portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={manage.isPending}
+              onClick={() => run({ action: "send_welcome", target_profile_id: customer.profile_id })}
+            >
+              Send welcome email
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
         <AlertDialogContent>
