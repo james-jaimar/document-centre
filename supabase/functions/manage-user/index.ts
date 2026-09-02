@@ -256,14 +256,23 @@ Deno.serve(async (req) => {
           );
 
         const isInvite = action === "resend_invite";
-        const subject = isInvite
-          ? `Your sign-in link for ${portalName}`
-          : `Reset your password for ${portalName}`;
-        const heading = isInvite ? `Sign in to ${escapeHtml(portalName)}` : `Reset your password`;
-        const intro = isInvite
-          ? `Use the button below to sign in and set a new password if needed. This link expires in 1 hour.`
-          : `Click the button below to set a new password for your <strong>${escapeHtml(portalName)}</strong> account. This link expires in 1 hour.`;
-        const buttonLabel = isInvite ? "Open portal" : "Reset password";
+        const isWelcome = action === "send_welcome";
+        const subject = isWelcome
+          ? `Welcome to ${portalName} — set your password`
+          : isInvite
+            ? `Your sign-in link for ${portalName}`
+            : `Reset your password for ${portalName}`;
+        const heading = isWelcome
+          ? `Welcome to ${escapeHtml(portalName)}`
+          : isInvite
+            ? `Sign in to ${escapeHtml(portalName)}`
+            : `Reset your password`;
+        const intro = isWelcome
+          ? `An account has been created for you on <strong>${escapeHtml(portalName)}</strong>. Click the button below to choose your password and get started. This link expires in 1 hour — if it does, just ask us to send you a new one.`
+          : isInvite
+            ? `Use the button below to sign in and set a new password if needed. This link expires in 1 hour.`
+            : `Click the button below to set a new password for your <strong>${escapeHtml(portalName)}</strong> account. This link expires in 1 hour.`;
+        const buttonLabel = isWelcome ? "Set your password" : isInvite ? "Open portal" : "Reset password";
         const logo = logoUrl
           ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
           : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
