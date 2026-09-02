@@ -28,6 +28,8 @@ export interface CompanyMember {
   job_title: string | null;
   is_primary_contact: boolean;
   is_active: boolean;
+  welcome_sent_at: string | null;
+  must_change_password: boolean;
 }
 
 const LIST_KEY = "customer-companies";
