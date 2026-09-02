@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { rememberReturnPath, isSafeReturnPath } from "@/lib/auth/oauthReturn";
+import { rememberAnonymousUser } from "@/lib/auth/claimAnonymousWork";
 
 type Provider = "google";
 
@@ -42,7 +43,7 @@ export const SocialAuthButtons = ({
       // Persist anonymous user ID so AuthCallback can transfer orders after OAuth
       const isAnonymous = !!(user as any)?.is_anonymous;
       if (isAnonymous && user?.id) {
-        localStorage.setItem("dc_anon_user_id", user.id);
+        rememberAnonymousUser(user.id, tenantSlug ?? null);
       }
 
       // Save current path so AuthCallback can return the user here after OAuth
