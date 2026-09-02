@@ -116,6 +116,7 @@ Deno.serve(async (req) => {
     // have actually transacted at one of the caller's branches.
     const BRANCH_ALLOWED_ACTIONS: Action[] = [
       "force_password_reset",
+      "send_welcome",
       "update_profile",
       "update_email",
       "resend_invite",
