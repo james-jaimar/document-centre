@@ -23,7 +23,7 @@ export default function Try() {
         const { data: { session: existing } } = await supabase.auth.getSession();
         if (existing?.user) {
           await supabase.functions.invoke("demo-bootstrap").catch(() => null);
-          if (!cancelled) navigate("/t/demo/print-centre", { replace: true });
+          if (!cancelled) navigate("/t/demo", { replace: true });
           return;
         }
 
@@ -40,7 +40,7 @@ export default function Try() {
           console.warn("demo-bootstrap warning:", bootErr);
         }
 
-        if (!cancelled) navigate("/t/demo/print-centre", { replace: true });
+        if (!cancelled) navigate("/t/demo", { replace: true });
       } catch (e: any) {
         console.error("Try entry failed:", e);
         if (!cancelled) {
