@@ -173,27 +173,45 @@ Deno.serve(async (req) => {
     }
 
 
-    // Generate a recovery link so the customer can set their own password.
-    let recovery_link: string | null = null;
+    // Send the branded welcome email ("set your password") through manage-user
+    // so the wording, branding and forced-password-change flag are identical
+    // wherever a welcome is sent from.
+    const recovery_link: string | null = null;
+    let welcome_warning: string | null = null;
     if (send_invite) {
-      const origin =
-        tenant.custom_domain
-          ? `https://${tenant.custom_domain}`
-          : (req.headers.get("origin") || "https://document-centre.com");
-      const redirectTo = `${origin}/reset-password`;
-      const { data: link, error: linkErr } = await (admin.auth as any).admin.generateLink({
-        type: "recovery",
-        email,
-        options: { redirectTo },
-      });
-      if (linkErr) {
-        return json({ ok: true, profile_id: profileId, created, already_member: duplicate, warning: `Link generation failed: ${linkErr.message}` });
+      try {
+        const res = await fetch(`${url}/functions/v1/manage-user`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: authHeader,
+            apikey: anonKey,
+            ...(req.headers.get("origin") ? { origin: req.headers.get("origin")! } : {}),
+          },
+          body: JSON.stringify({
+            action: "send_welcome",
+            target_profile_id: profileId,
+            tenant_id,
+            app_id: tenant.app_id,
+            branch_id,
+          }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || out?.error) {
+          welcome_warning = `Welcome email failed: ${out?.error ?? res.status}`;
+        }
+      } catch (e) {
+        welcome_warning = `Welcome email failed: ${(e as Error).message}`;
       }
-      recovery_link = link?.properties?.action_link ?? null;
-      // Supabase auth-email-hook will dispatch the branded "recovery" template
-      // automatically once generateLink is called with type=recovery and email
-      // delivery is enabled. We still surface the link so the UI can copy it
-      // if needed (e.g. if SMTP is misconfigured).
+    }
+    if (welcome_warning) {
+      return json({
+        ok: true,
+        profile_id: profileId,
+        created,
+        already_member: duplicate,
+        warning: welcome_warning,
+      });
     }
 
     return json({
