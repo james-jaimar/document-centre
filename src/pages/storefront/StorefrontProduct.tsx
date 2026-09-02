@@ -7,6 +7,14 @@ import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
 import {
+  useProductCopy,
+  resolveProductCopy,
+  defaultSpecsBody,
+  defaultDeliveryBody,
+  DEFAULT_ARTWORK_BODY,
+} from "@/hooks/useProductCopy";
+
+import {
   normalizeOptions,
   visibleOptions,
   blockMatchesOption,
