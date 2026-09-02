@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { hasTenantSignOutFlag, clearTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
+import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import TenantChatWidget from "@/components/TenantChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
@@ -119,15 +120,8 @@ function CustomerLayoutInner() {
   }, [baseReady]);
   const brandingReady = baseReady || brandingTimedOut;
 
-  // Dynamic favicon
-  useEffect(() => {
-    if (!branding?.favicon_url) return;
-    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) return;
-    const original = link.href;
-    link.href = branding.favicon_url;
-    return () => { link.href = original; };
-  }, [branding?.favicon_url]);
+  // Tenant tab title, meta description, social tags + favicon
+  useDocumentBranding(tenant?.id ?? null, tenant?.name ?? null, "");
 
   // --- Anonymous session bootstrap ---
   const bootstrapAttempted = useRef(false);
