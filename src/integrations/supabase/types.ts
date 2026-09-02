@@ -5874,9 +5874,11 @@ export type Database = {
           is_anonymous: boolean
           is_demo: boolean
           last_name: string | null
+          must_change_password: boolean
           phone: string | null
           tenant_id: string | null
           updated_at: string
+          welcome_sent_at: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -5891,9 +5893,11 @@ export type Database = {
           is_anonymous?: boolean
           is_demo?: boolean
           last_name?: string | null
+          must_change_password?: boolean
           phone?: string | null
           tenant_id?: string | null
           updated_at?: string
+          welcome_sent_at?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -5908,9 +5912,11 @@ export type Database = {
           is_anonymous?: boolean
           is_demo?: boolean
           last_name?: string | null
+          must_change_password?: boolean
           phone?: string | null
           tenant_id?: string | null
           updated_at?: string
+          welcome_sent_at?: string | null
         }
         Relationships: [
           {

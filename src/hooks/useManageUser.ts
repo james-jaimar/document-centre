@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type ManageUserAction =
   | "force_password_reset"
+  | "send_welcome"
   | "set_password"
   | "disable_account"
   | "enable_account"

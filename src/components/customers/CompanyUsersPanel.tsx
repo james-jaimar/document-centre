@@ -8,7 +8,16 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Plus, Star, UserMinus, UserPlus } from "lucide-react";
+import { Mail, Plus, Star, UserMinus, UserPlus } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   useCompanyMembers, useCompanyMemberMutations, useUnlinkedCustomers,
 } from "@/hooks/useCustomerCompanies";
@@ -29,7 +38,72 @@ export function CompanyUsersPanel({ companyId, companyName, customerPath }: Prop
   const { link, unlink, update } = useCompanyMemberMutations(companyId);
   const [pick, setPick] = useState<string>("");
   const [addUserOpen, setAddUserOpen] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [sending, setSending] = useState(false);
   const { tenantId, appId } = useTenantContext();
+  const qc = useQueryClient();
+
+  const selectable = members.filter((m) => !!m.email);
+  const allSelected = selectable.length > 0 && selected.length === selectable.length;
+
+  const toggleAll = () =>
+    setSelected(allSelected ? [] : selectable.map((m) => m.profile_id));
+
+  const toggleOne = (profileId: string) =>
+    setSelected((prev) =>
+      prev.includes(profileId) ? prev.filter((id) => id !== profileId) : [...prev, profileId],
+    );
+
+  const sendWelcomeBulk = async () => {
+    setSending(true);
+    let ok = 0;
+    const failures: string[] = [];
+    try {
+      for (const profileId of selected) {
+        const member = members.find((m) => m.profile_id === profileId);
+        try {
+          const { data, error } = await supabase.functions.invoke("manage-user", {
+            body: {
+              action: "send_welcome",
+              target_profile_id: profileId,
+              tenant_id: tenantId ?? null,
+              app_id: appId ?? null,
+            },
+          });
+          if (error) throw error;
+          if ((data as any)?.error) throw new Error((data as any).error);
+          ok += 1;
+        } catch (e: any) {
+          failures.push(`${member?.email ?? "unknown"}: ${e?.message ?? "failed"}`);
+        }
+      }
+      if (failures.length === 0) {
+        toast.success(`Welcome email sent to ${ok} ${ok === 1 ? "person" : "people"}`);
+      } else {
+        toast.warning(`Sent ${ok} of ${selected.length}`, {
+          description: failures.slice(0, 3).join(" · "),
+        });
+      }
+      setSelected([]);
+      setBulkOpen(false);
+      qc.invalidateQueries({ queryKey: ["customer-companies"] });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const welcomeStatus = (m: (typeof members)[number]) => {
+    if (!m.welcome_sent_at) {
+      return <span className="text-xs text-muted-foreground">Not sent</span>;
+    }
+    const when = new Date(m.welcome_sent_at).toLocaleDateString();
+    return m.must_change_password ? (
+      <Badge variant="outline" className="text-xs font-normal">Sent {when} · awaiting password</Badge>
+    ) : (
+      <Badge variant="secondary" className="text-xs font-normal">Password set</Badge>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -77,6 +151,44 @@ export function CompanyUsersPanel({ companyId, companyName, customerPath }: Prop
         />
       )}
 
+      {selectable.length > 0 && (
+        <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            {selected.length > 0 ? `${selected.length} selected` : "Select users to send welcome emails"}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={selected.length === 0}
+            onClick={() => setBulkOpen(true)}
+          >
+            <Mail className="h-4 w-4 mr-1" /> Send welcome email to selected
+          </Button>
+        </div>
+      )}
+
+      <AlertDialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send welcome emails?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selected.length} {selected.length === 1 ? "person" : "people"} will get a secure
+              link to set their password. They must choose a new password before they can use
+              the portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sending}
+              onClick={(e) => { e.preventDefault(); void sendWelcomeBulk(); }}
+            >
+              {sending ? "Sending…" : "Send"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {membersError ? (
         <div className="rounded-md border border-destructive/40 p-8 text-center text-sm text-destructive">
           Couldn’t load users for this company. {(membersError as any)?.message ?? ""}
@@ -90,16 +202,32 @@ export function CompanyUsersPanel({ companyId, companyName, customerPath }: Prop
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={toggleAll}
+                  aria-label="Select all users"
+                />
+              </TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Job title</TableHead>
               <TableHead>Primary</TableHead>
+              <TableHead>Welcome</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {members.map((m) => (
               <TableRow key={m.membership_id}>
+                <TableCell>
+                  <Checkbox
+                    checked={selected.includes(m.profile_id)}
+                    disabled={!m.email}
+                    onCheckedChange={() => toggleOne(m.profile_id)}
+                    aria-label={`Select ${m.email ?? "user"}`}
+                  />
+                </TableCell>
                 <TableCell className="font-medium">
                   {customerPath ? (
                     <Link to={customerPath(m.profile_id)} className="hover:underline">
@@ -138,6 +266,7 @@ export function CompanyUsersPanel({ companyId, companyName, customerPath }: Prop
                     {m.is_primary_contact ? "Primary" : "Set primary"}
                   </Button>
                 </TableCell>
+                <TableCell>{welcomeStatus(m)}</TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">
                     <Button

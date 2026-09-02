@@ -24,6 +24,7 @@ function err(message: string, status = 400) {
 
 type Action =
   | "force_password_reset"
+  | "send_welcome"
   | "set_password"
   | "disable_account"
   | "enable_account"
@@ -115,6 +116,7 @@ Deno.serve(async (req) => {
     // have actually transacted at one of the caller's branches.
     const BRANCH_ALLOWED_ACTIONS: Action[] = [
       "force_password_reset",
+      "send_welcome",
       "update_profile",
       "update_email",
       "resend_invite",
@@ -202,6 +204,7 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "force_password_reset":
+      case "send_welcome":
       case "resend_invite": {
         if (!targetEmail) return err("Target user has no email on file");
         const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
@@ -253,14 +256,23 @@ Deno.serve(async (req) => {
           );
 
         const isInvite = action === "resend_invite";
-        const subject = isInvite
-          ? `Your sign-in link for ${portalName}`
-          : `Reset your password for ${portalName}`;
-        const heading = isInvite ? `Sign in to ${escapeHtml(portalName)}` : `Reset your password`;
-        const intro = isInvite
-          ? `Use the button below to sign in and set a new password if needed. This link expires in 1 hour.`
-          : `Click the button below to set a new password for your <strong>${escapeHtml(portalName)}</strong> account. This link expires in 1 hour.`;
-        const buttonLabel = isInvite ? "Open portal" : "Reset password";
+        const isWelcome = action === "send_welcome";
+        const subject = isWelcome
+          ? `Welcome to ${portalName} — set your password`
+          : isInvite
+            ? `Your sign-in link for ${portalName}`
+            : `Reset your password for ${portalName}`;
+        const heading = isWelcome
+          ? `Welcome to ${escapeHtml(portalName)}`
+          : isInvite
+            ? `Sign in to ${escapeHtml(portalName)}`
+            : `Reset your password`;
+        const intro = isWelcome
+          ? `An account has been created for you on <strong>${escapeHtml(portalName)}</strong>. Click the button below to choose your password and get started. This link expires in 1 hour — if it does, just ask us to send you a new one.`
+          : isInvite
+            ? `Use the button below to sign in and set a new password if needed. This link expires in 1 hour.`
+            : `Click the button below to set a new password for your <strong>${escapeHtml(portalName)}</strong> account. This link expires in 1 hour.`;
+        const buttonLabel = isWelcome ? "Set your password" : isInvite ? "Open portal" : "Reset password";
         const logo = logoUrl
           ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
           : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
@@ -288,7 +300,7 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
             category: "auth",
             created_by_profile_id: caller.id,
             metadata: {
-              kind: isInvite ? "resend_invite" : "force_password_reset",
+              kind: isWelcome ? "send_welcome" : isInvite ? "resend_invite" : "force_password_reset",
               profile_id: target_profile_id,
             },
           });
@@ -297,12 +309,21 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
           return err(`Failed to enqueue email: ${(e as Error).message}`, 500);
         }
 
+        if (isWelcome) {
+          await admin
+            .from("profiles")
+            .update({ must_change_password: true, welcome_sent_at: new Date().toISOString() })
+            .eq("id", target_profile_id);
+        }
+
         await audit({ delivered_via: "email_outbox", delivery: "queued" });
         return json({
           success: true,
-          message: isInvite
-            ? `Invite link sent to ${targetEmail}`
-            : `Reset link sent to ${targetEmail}`,
+          message: isWelcome
+            ? `Welcome email sent to ${targetEmail}`
+            : isInvite
+              ? `Invite link sent to ${targetEmail}`
+              : `Reset link sent to ${targetEmail}`,
         });
       }
 

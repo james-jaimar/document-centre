@@ -28,6 +28,8 @@ export interface CompanyMember {
   job_title: string | null;
   is_primary_contact: boolean;
   is_active: boolean;
+  welcome_sent_at: string | null;
+  must_change_password: boolean;
 }
 
 const LIST_KEY = "customer-companies";
@@ -141,7 +143,7 @@ export function useCompanyMembers(companyId: string | undefined) {
       const ids = [...new Set(rows.map((m) => m.profile_id))];
       const { data: profiles, error: pErr } = await supabase
         .from("profiles")
-        .select("id, email, first_name, last_name, display_name, phone")
+        .select("id, email, first_name, last_name, display_name, phone, welcome_sent_at, must_change_password")
         .in("id", ids);
       if (pErr) throw pErr;
 
@@ -158,6 +160,8 @@ export function useCompanyMembers(companyId: string | undefined) {
           job_title: m.job_title ?? null,
           is_primary_contact: !!m.is_primary_contact,
           is_active: m.is_active !== false,
+          welcome_sent_at: p?.welcome_sent_at ?? null,
+          must_change_password: !!p?.must_change_password,
         };
       });
     },

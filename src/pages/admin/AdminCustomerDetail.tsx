@@ -156,6 +156,21 @@ export default function AdminCustomerDetail() {
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-1" /> Edit
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!profile?.email || manageUser.isPending}
+            onClick={() =>
+              id && manageUser.mutate({
+                action: "send_welcome",
+                target_profile_id: id,
+                tenant_id: tenantId ?? null,
+                app_id: appId ?? null,
+              })
+            }
+          >
+            <Mail className="h-4 w-4 mr-1" /> Send welcome email
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setResetOpen(true)} disabled={!profile?.email}>
             <KeyRound className="h-4 w-4 mr-1" /> Send reset link
           </Button>

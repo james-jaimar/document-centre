@@ -83,6 +83,20 @@ const ResetPassword = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+
+      // Clear the "must change password" flag set by a welcome email so the
+      // portal guard stops redirecting them here.
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from("profiles")
+            .update({ must_change_password: false })
+            .eq("id", user.id);
+        }
+      } catch {
+        /* best-effort */
+      }
       // If this came from a reusable welcome link (branch activation), mark
       // the onboarding token consumed and drop the user straight into their
       // branch admin — do NOT sign them out.

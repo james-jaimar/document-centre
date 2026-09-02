@@ -113,9 +113,9 @@ export function AddCustomerDialog({
         {
           description: sendInvite
             ? (payload.warning
-                ? `Saved, but invite email failed: ${payload.warning}`
-                : "A 'set your password' email has been sent.")
-            : "No invite email sent.",
+                ? `Saved, but the welcome email failed: ${payload.warning}`
+                : "A welcome email with a 'set your password' link has been sent.")
+            : "No welcome email sent.",
         },
       );
 
@@ -261,7 +261,7 @@ export function AddCustomerDialog({
 
           <label className="flex items-start gap-2 text-sm cursor-pointer pt-1">
             <Checkbox checked={sendInvite} onCheckedChange={(v) => setSendInvite(v === true)} />
-            <span>Send "set your password" email now</span>
+            <span>Send welcome email now (secure link to set their password)</span>
           </label>
           <label className="flex items-start gap-2 text-sm cursor-pointer">
             <Checkbox checked={impersonateAfter} onCheckedChange={(v) => setImpersonateAfter(v === true)} />
