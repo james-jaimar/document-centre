@@ -23,6 +23,10 @@ export interface TenantBranding {
   footer_css: string;
   origin_url: string;
   favicon_url: string;
+  /** Browser tab title for customer-facing pages */
+  browser_title: string;
+  /** Meta description for customer-facing pages */
+  meta_description: string;
   // Optional branded strip rendered above the standard portal header
   brand_strip_enabled: boolean;
   brand_strip_image_url: string;
@@ -52,6 +56,8 @@ const DEFAULTS: TenantBranding = {
   footer_css: "",
   origin_url: "",
   favicon_url: "",
+  browser_title: "",
+  meta_description: "",
   brand_strip_enabled: false,
   brand_strip_image_url: "",
   brand_strip_bg_color: "",
@@ -59,9 +65,9 @@ const DEFAULTS: TenantBranding = {
   brand_strip_link_url: "",
 };
 
-// v2: bumped when brand_strip_* fields were added so pre-existing cached
+// v3: bumped when browser_title/meta_description were added so pre-existing cached
 // snapshots (which lack those keys) are ignored on next load.
-const CACHE_PREFIX = "tenant_branding:v2:";
+const CACHE_PREFIX = "tenant_branding:v3:";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function readBrandingCache(tenantId: string): TenantBranding | null {
