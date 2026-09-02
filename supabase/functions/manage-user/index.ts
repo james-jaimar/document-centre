@@ -204,6 +204,7 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "force_password_reset":
+      case "send_welcome":
       case "resend_invite": {
         if (!targetEmail) return err("Target user has no email on file");
         const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
