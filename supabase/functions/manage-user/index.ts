@@ -300,7 +300,7 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
             category: "auth",
             created_by_profile_id: caller.id,
             metadata: {
-              kind: isInvite ? "resend_invite" : "force_password_reset",
+              kind: isWelcome ? "send_welcome" : isInvite ? "resend_invite" : "force_password_reset",
               profile_id: target_profile_id,
             },
           });
@@ -309,12 +309,21 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
           return err(`Failed to enqueue email: ${(e as Error).message}`, 500);
         }
 
+        if (isWelcome) {
+          await admin
+            .from("profiles")
+            .update({ must_change_password: true, welcome_sent_at: new Date().toISOString() })
+            .eq("id", target_profile_id);
+        }
+
         await audit({ delivered_via: "email_outbox", delivery: "queued" });
         return json({
           success: true,
-          message: isInvite
-            ? `Invite link sent to ${targetEmail}`
-            : `Reset link sent to ${targetEmail}`,
+          message: isWelcome
+            ? `Welcome email sent to ${targetEmail}`
+            : isInvite
+              ? `Invite link sent to ${targetEmail}`
+              : `Reset link sent to ${targetEmail}`,
         });
       }
 
