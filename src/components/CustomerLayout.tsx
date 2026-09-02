@@ -7,6 +7,7 @@ import CustomerFooter from "@/components/CustomerFooter";
 import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useMemo, useEffect, useRef, useState } from "react";
+import { useForcePasswordChange } from "@/hooks/useForcePasswordChange";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
 import { hasTenantSignOutFlag, clearTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
@@ -101,6 +102,9 @@ function CustomerLayoutInner() {
   }, [pathname]);
 
   useTenantGA(integrations.ga_property_id as string | undefined);
+
+  // Customers invited by a welcome email must set their own password first.
+  useForcePasswordChange(user, slug ? `/t/${slug}` : "");
 
 
   // True once both the tenant lookup AND branding fetch have settled. When a
