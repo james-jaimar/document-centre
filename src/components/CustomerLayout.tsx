@@ -21,6 +21,8 @@ import BranchPicker from "@/components/BranchPicker";
 import { useDeviceKind } from "@/hooks/useDeviceKind";
 import CustomerMobileLayout from "@/components/customer/mobile/CustomerMobileLayout";
 import { useStorefrontPages } from "@/hooks/useStorefrontPages";
+import { useQueryClient } from "@tanstack/react-query";
+import { rememberAnonymousUser, claimAnonymousWork, peekAnonymousUser } from "@/lib/auth/claimAnonymousWork";
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
 function hexToHslString(hex: string | undefined | null): string | null {
