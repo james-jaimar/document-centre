@@ -342,29 +342,21 @@ export default function StorefrontProduct() {
               </p>
             </div>
 
-            <Accordion type="single" collapsible>
-              <AccordionItem value="specs">
-                <AccordionTrigger className="text-sm">Specifications</AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground">
-                  {entry.sizes.length
-                    ? `Available sizes: ${entry.sizes.join(", ")}.`
-                    : "Sizes and materials are confirmed during configuration."}
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="artwork">
-                <AccordionTrigger className="text-sm">Artwork requirements</AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground">
-                  Supply print-ready PDF. We automatically preflight every file for size, bleed,
-                  fonts and image resolution, and flag anything that needs attention before print.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="delivery">
-                <AccordionTrigger className="text-sm">Turnaround & delivery</AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground">
-                  {config.turnaround_note}. {config.delivery_note} or {config.collect_note.toLowerCase()}.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+            {copySections.some((s) => s.enabled) && (
+              <Accordion type="single" collapsible>
+                {copySections
+                  .filter((s) => s.enabled)
+                  .map((section) => (
+                    <AccordionItem key={section.key} value={section.key}>
+                      <AccordionTrigger className="text-sm">{section.title}</AccordionTrigger>
+                      <AccordionContent className="whitespace-pre-line text-sm text-muted-foreground">
+                        {section.body}
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+              </Accordion>
+            )}
+
           </div>
         </div>
       </div>
