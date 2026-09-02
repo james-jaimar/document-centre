@@ -29,11 +29,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Images, Settings2, SlidersHorizontal, Store } from "lucide-react";
+import { Images, Settings2, SlidersHorizontal, Store, Type } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
 import ArtworkTemplatesTab from "@/components/admin/ArtworkTemplatesTab";
 import TenantProductGalleryDialog from "@/components/admin/TenantProductGalleryDialog";
+import TenantProductCopyDialog from "@/components/admin/TenantProductCopyDialog";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
@@ -59,6 +60,7 @@ const AdminProductCatalogue = () => {
   const [specsFamilyId, setSpecsFamilyId] = useState<string | null>(null);
   const [specsFamilyName, setSpecsFamilyName] = useState<string>("");
   const [artworkFamilyId, setArtworkFamilyId] = useState<string | null>(null);
+  const [copyFamily, setCopyFamily] = useState<{ id: string; name: string } | null>(null);
   const [galleryFamily, setGalleryFamily] = useState<any | null>(null);
   const [artworkFamilyName, setArtworkFamilyName] = useState<string>("");
 
@@ -238,6 +240,14 @@ const AdminProductCatalogue = () => {
                         <Button
                           size="sm"
                           variant="outline"
+                          onClick={() => setCopyFamily({ id: f.id, name: f.name })}
+                        >
+                          <Type className="h-3 w-3 mr-1" />
+                          Copy
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
                           onClick={() => setGalleryFamily(f)}
                         >
                           <Images className="h-3 w-3 mr-1" />
@@ -285,6 +295,16 @@ const AdminProductCatalogue = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {tenantId && copyFamily && (
+        <TenantProductCopyDialog
+          open={!!copyFamily}
+          onOpenChange={(o) => { if (!o) setCopyFamily(null); }}
+          tenantId={tenantId}
+          productFamilyId={copyFamily.id}
+          productFamilyName={copyFamily.name}
+        />
+      )}
 
       {tenantId && specsFamilyId && (
         <TenantProductSpecsDialog
