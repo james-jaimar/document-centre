@@ -69,6 +69,19 @@ export default function StorefrontProduct() {
   const entry = entries.find((e) => e.family.slug === familySlug);
   const allBlocks = entry?.blocks ?? [];
 
+  // Product-page information sections: tenant-editable, defaults computed here.
+  const { entryFor: copyFor } = useProductCopy(tenantId);
+  const copySections = useMemo(
+    () =>
+      resolveProductCopy(copyFor(entry?.family?.id), {
+        specs: defaultSpecsBody(entry?.sizes ?? []),
+        artwork: DEFAULT_ARTWORK_BODY,
+        delivery: defaultDeliveryBody(config),
+      }),
+    [copyFor, entry?.family?.id, entry?.sizes, config],
+  );
+
+
   // Finishing options (e.g. "with Gloss Lam" / "with Matt Lam"). Trade-only
   // options are never shown to consumers.
   const options = useMemo(
