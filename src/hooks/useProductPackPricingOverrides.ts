@@ -8,6 +8,7 @@ export interface PackPricingOverrideRow {
   tenant_id: string;
   branch_id: string | null;
   quantity_blocks: QuantityBlock[];
+  pricing_addons: unknown[] | null;
   updated_at: string;
   updated_by: string | null;
 }
@@ -65,7 +66,10 @@ export function useUpsertPackPricingOverride() {
       product_family_id: string;
       tenant_id: string;
       branch_id: string | null;
-      quantity_blocks: QuantityBlock[];
+      /** Omit to leave the existing ladder untouched (extras-only save). */
+      quantity_blocks?: QuantityBlock[];
+      /** Omit to leave existing extras untouched; null clears the override. */
+      pricing_addons?: unknown[] | null;
     }) => {
       // Partial unique indexes (WHERE branch_id IS NULL / IS NOT NULL) can't
       // be inferred by PostgREST's onConflict, so do an explicit
@@ -81,10 +85,14 @@ export function useUpsertPackPricingOverride() {
       const { data: existing, error: findError } = await existingQ.maybeSingle();
       if (findError) throw findError;
 
+      const patch: Record<string, unknown> = {};
+      if (input.quantity_blocks !== undefined) patch.quantity_blocks = input.quantity_blocks;
+      if (input.pricing_addons !== undefined) patch.pricing_addons = input.pricing_addons;
+
       if (existing?.id) {
         const { data, error } = await (supabase as any)
           .from("product_pack_pricing_overrides")
-          .update({ quantity_blocks: input.quantity_blocks })
+          .update(patch)
           .eq("id", existing.id)
           .select()
           .single();
@@ -94,7 +102,13 @@ export function useUpsertPackPricingOverride() {
 
       const { data, error } = await (supabase as any)
         .from("product_pack_pricing_overrides")
-        .insert(input)
+        .insert({
+          product_family_id: input.product_family_id,
+          tenant_id: input.tenant_id,
+          branch_id: input.branch_id,
+          quantity_blocks: input.quantity_blocks ?? [],
+          ...(input.pricing_addons !== undefined ? { pricing_addons: input.pricing_addons } : {}),
+        })
         .select()
         .single();
       if (error) throw error;

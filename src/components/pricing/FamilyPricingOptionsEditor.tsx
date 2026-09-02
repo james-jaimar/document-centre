@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,9 @@ interface Props {
   saving?: boolean;
   /** When false, only the extras editor is shown (tenant/branch overrides). */
   allowOptionEditing?: boolean;
+  /** Optional "revert to inherited" action (tenant/branch scopes). */
+  onRevert?: () => Promise<void> | void;
+  revertLabel?: string;
   onSave: (next: { options: PricingOption[]; addons: PricingAddon[] }) => Promise<void> | void;
 }
 
@@ -40,6 +43,8 @@ export default function FamilyPricingOptionsEditor({
   addons,
   saving = false,
   allowOptionEditing = true,
+  onRevert,
+  revertLabel,
   onSave,
 }: Props) {
   const [opts, setOpts] = useState<PricingOption[]>(normalizeOptions(options));
@@ -232,7 +237,13 @@ export default function FamilyPricingOptionsEditor({
         )}
       </div>
 
-      <div className="flex justify-end border-t pt-3">
+      <div className="flex items-center justify-end gap-2 border-t pt-3">
+        {onRevert && (
+          <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => onRevert()}>
+            <RotateCcw className="mr-1 h-3.5 w-3.5" />
+            {revertLabel ?? "Revert to inherited"}
+          </Button>
+        )}
         <Button
           type="button"
           size="sm"
@@ -242,7 +253,7 @@ export default function FamilyPricingOptionsEditor({
           }
         >
           <Save className="mr-1 h-3.5 w-3.5" />
-          {saving ? "Saving…" : "Save options & extras"}
+          {saving ? "Saving…" : allowOptionEditing ? "Save options & extras" : "Save extras"}
         </Button>
       </div>
       <Label className="sr-only">pricing options</Label>
