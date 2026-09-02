@@ -14,6 +14,8 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { useQueryClient } from "@tanstack/react-query";
+import { rememberAnonymousUser, claimAnonymousWork } from "@/lib/auth/claimAnonymousWork";
 
 type AuthMode = "login" | "register" | "forgot";
 
@@ -31,6 +33,7 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [gating, setGating] = useState(false);
+  const qc = useQueryClient();
 
   const isTenantPortal = !!tenantSlug;
 
@@ -45,6 +48,9 @@ const Auth = () => {
     // Anonymous users (from storefront bootstrap) should see the login form,
     // not be auto-redirected. Sign them out so they can use real credentials.
     if ((user as any).is_anonymous) {
+      // Remember the guest identity BEFORE dropping the session so their
+      // cart can be transferred once they sign in.
+      rememberAnonymousUser(user.id, tenantSlug ?? null);
       supabase.auth.signOut();
       return;
     }
@@ -152,8 +158,9 @@ const Auth = () => {
     if (!email || !password) return setError("Please enter both email and password");
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      await claimAnonymousWork(data.user?.id ?? null, qc);
       toast.success("Welcome back!");
     } catch (err: any) {
       setError(err.message);
@@ -185,10 +192,11 @@ const Auth = () => {
       if ((data as any)?.error) throw new Error((data as any).error);
 
       // Immediately sign in — no email round-trip required.
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+      if (!signInErr) await claimAnonymousWork(signInData?.user?.id ?? null, qc);
       if (signInErr) {
         // Most likely: account already existed with a different password.
         setError(

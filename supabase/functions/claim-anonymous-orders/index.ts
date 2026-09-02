@@ -86,6 +86,12 @@ Deno.serve(async (req) => {
       return json({ error: updErr.message }, 500);
     }
 
+    // Re-own everything the guest created that is still keyed to their id.
+    // upload_sessions.created_by CASCADEs from profiles, so this MUST happen
+    // before the anonymous user is deleted or the uploaded artwork vanishes.
+    await admin.from("order_documents").update({ created_by: user.id }).eq("created_by", anonUserId);
+    await admin.from("upload_sessions").update({ created_by: user.id }).eq("created_by", anonUserId);
+    await admin.from("customer_saved_orders").update({ profile_id: user.id }).eq("profile_id", anonUserId);
 
     // Clean up: delete the anonymous user's membership and profile
     // (they're no longer needed)
