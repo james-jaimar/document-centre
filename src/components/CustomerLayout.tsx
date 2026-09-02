@@ -131,6 +131,7 @@ function CustomerLayoutInner() {
 
   // --- Anonymous session bootstrap ---
   const bootstrapAttempted = useRef(false);
+  const qc = useQueryClient();
 
   useEffect(() => {
     // Only run on tenant portal routes, not /try or /dashboard
@@ -165,10 +166,14 @@ function CustomerLayoutInner() {
         }
 
         // Create anonymous session scoped to this tenant
-        const { error: signInErr } = await supabase.auth.signInAnonymously({
+        const { data: anonData, error: signInErr } = await supabase.auth.signInAnonymously({
           options: { data: { tenant_slug: slug } },
         });
         if (signInErr) throw signInErr;
+
+        // Record the guest identity immediately so any later sign-in (from any
+        // route) can transfer their cart, even if the session is replaced.
+        if (anonData?.user?.id) rememberAnonymousUser(anonData.user.id, slug);
 
         // Belt-and-braces: ensure membership via edge function
         await supabase.functions.invoke("tenant-bootstrap", {
@@ -179,6 +184,24 @@ function CustomerLayoutInner() {
       }
     })();
   }, [slug, user, authLoading]);
+
+  // Keep the guest identity recorded for the life of the anonymous session,
+  // and claim their work the moment a real account appears (safety net for
+  // any sign-in path that doesn't call the helper itself).
+  const claimRan = useRef(false);
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (isAnonymousUser(user)) {
+      rememberAnonymousUser(user.id, slug ?? null);
+      return;
+    }
+    if (claimRan.current) return;
+    if (!peekAnonymousUser()) return;
+    claimRan.current = true;
+    void claimAnonymousWork(user.id, qc);
+  }, [user, authLoading, slug, qc]);
+
+
 
 
   // Inject tenant colour + font CSS variables for the print centre
