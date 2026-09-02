@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { claimAnonymousWork, clearAnonymousUser } from "@/lib/auth/claimAnonymousWork";
 
 
 type AuthTab = "register" | "login";
@@ -86,21 +87,11 @@ export default function CheckoutAuth() {
   };
 
   const claimAnonOrders = async (anonUserId: string | null) => {
-    if (!anonUserId) return;
-    try {
-      const { error: claimErr } = await supabase.functions.invoke("claim-anonymous-orders", {
-        body: { anonymous_user_id: anonUserId },
-      });
-      if (claimErr) console.warn("Failed to claim anonymous orders:", claimErr);
-    } catch (e) {
-      console.warn("Failed to claim anonymous orders:", e);
-    } finally {
-      // The cart query re-keys to the new user id the moment the session
-      // swaps, which happens before the transfer finishes — refetch now so
-      // the claimed cart/draft actually appears instead of "cart is empty".
-      invalidateUserOrderCaches(qc);
-      await qc.refetchQueries({ queryKey: ["cart"] });
-    }
+    // The cart query re-keys to the new user id the moment the session swaps,
+    // which happens before the transfer finishes — the shared helper refetches
+    // once the claim completes so the cart appears instead of "cart is empty".
+    const { data } = await supabase.auth.getUser();
+    await claimAnonymousWork(data.user?.id ?? null, qc, anonUserId);
   };
 
 
@@ -194,6 +185,7 @@ export default function CheckoutAuth() {
           .eq("id", user!.id);
 
         await ensureMembership();
+        clearAnonymousUser();
         toast.success("Account created! You can now place your order.");
       } else {
         // No session at all — create via request-signup + auto sign-in
