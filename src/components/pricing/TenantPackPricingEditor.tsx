@@ -7,7 +7,8 @@ import {
   usePackPricingOverridesForFamily,
 } from "@/hooks/useProductPackPricingOverrides";
 import PackPricingMatrixEditor from "@/components/pricing/PackPricingMatrixEditor";
-import { normalizeOptions, type PricingOption } from "@/lib/pricing/packOptions";
+import FamilyPricingOptionsEditor from "@/components/pricing/FamilyPricingOptionsEditor";
+import { normalizeAddons, normalizeOptions, type PricingAddon, type PricingOption } from "@/lib/pricing/packOptions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,6 +61,7 @@ export default function TenantPackPricingEditor({ tenantId }: Props) {
                 : []
             }
             pricingOptions={normalizeOptions((family as any).pricing_options)}
+            masterAddons={normalizeAddons((family as any).pricing_addons)}
           />
         ))}
       </Accordion>
@@ -74,6 +76,7 @@ function TenantFamilyRow({
   masterBlocks,
   allowedSizes,
   pricingOptions,
+  masterAddons,
 }: {
   tenantId: string;
   familyId: string;
@@ -81,6 +84,7 @@ function TenantFamilyRow({
   masterBlocks: QuantityBlock[];
   allowedSizes: string[];
   pricingOptions: PricingOption[];
+  masterAddons: PricingAddon[];
 }) {
   const { data: allOverrides = [] } = usePackPricingOverridesForFamily(familyId, tenantId);
   const tenantOverride = allOverrides.find((o) => o.branch_id === null) ?? null;
@@ -88,6 +92,38 @@ function TenantFamilyRow({
   const remove = useDeletePackPricingOverride();
 
   const initialBlocks = (tenantOverride?.quantity_blocks ?? []) as QuantityBlock[];
+  const overriddenAddons = Array.isArray(tenantOverride?.pricing_addons)
+    ? normalizeAddons(tenantOverride!.pricing_addons)
+    : null;
+  const addons = overriddenAddons ?? masterAddons;
+
+  async function handleSaveAddons(next: { addons: PricingAddon[] }) {
+    try {
+      await upsert.mutateAsync({
+        product_family_id: familyId,
+        tenant_id: tenantId,
+        branch_id: null,
+        pricing_addons: next.addons,
+      });
+      toast({ title: "Extras saved", description: `${familyName} — tenant extras updated.` });
+    } catch (e: any) {
+      toast({ title: "Save failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function handleRevertAddons() {
+    try {
+      await upsert.mutateAsync({
+        product_family_id: familyId,
+        tenant_id: tenantId,
+        branch_id: null,
+        pricing_addons: null,
+      });
+      toast({ title: "Reverted", description: `${familyName} now inherits master extras.` });
+    } catch (e: any) {
+      toast({ title: "Revert failed", description: e.message, variant: "destructive" });
+    }
+  }
 
   async function handleSave(blocks: QuantityBlock[]) {
     try {
@@ -125,7 +161,26 @@ function TenantFamilyRow({
           )}
         </div>
       </AccordionTrigger>
-      <AccordionContent className="px-4 pb-4">
+      <AccordionContent className="px-4 pb-4 space-y-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Paid extras</span>
+            {overriddenAddons ? (
+              <Badge variant="secondary" className="text-[10px]">Tenant extras</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px]">Inheriting master extras</Badge>
+            )}
+          </div>
+          <FamilyPricingOptionsEditor
+            options={pricingOptions}
+            addons={addons}
+            allowOptionEditing={false}
+            saving={upsert.isPending}
+            onSave={(next) => handleSaveAddons({ addons: next.addons })}
+            onRevert={overriddenAddons ? handleRevertAddons : undefined}
+            revertLabel="Revert to master extras"
+          />
+        </div>
         <PackPricingMatrixEditor
           scope="tenant"
           parentBlocks={masterBlocks}
