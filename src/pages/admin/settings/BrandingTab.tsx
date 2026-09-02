@@ -102,6 +102,8 @@ export function BrandingTab() {
   const [landingLayout, setLandingLayout] = useState("hero_centered");
   const [originUrl, setOriginUrl] = useState("");
   const [faviconUrl, setFaviconUrl] = useState("");
+  const [browserTitle, setBrowserTitle] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
 
   // Brand strip (optional band above the standard portal header)
   const [brandStripEnabled, setBrandStripEnabled] = useState(false);
@@ -145,6 +147,8 @@ export function BrandingTab() {
       setLandingLayout((settingsMap.landing_layout as string) ?? "hero_centered");
       setOriginUrl((settingsMap.origin_url as string) ?? "");
       setFaviconUrl((settingsMap.favicon_url as string) ?? "");
+      setBrowserTitle((settingsMap.browser_title as string) ?? "");
+      setMetaDescription((settingsMap.meta_description as string) ?? "");
       setHeaderHtml((settingsMap.header_html as string) ?? "");
       setFooterHtml((settingsMap.footer_html as string) ?? "");
       const bse = settingsMap.brand_strip_enabled;
@@ -242,6 +246,8 @@ export function BrandingTab() {
         { category: "branding", setting_key: "landing_layout", setting_value: landingLayout, value_type: "string" },
         { category: "branding", setting_key: "origin_url", setting_value: originUrl, value_type: "string" },
         { category: "branding", setting_key: "favicon_url", setting_value: faviconUrl, value_type: "string" },
+        { category: "branding", setting_key: "browser_title", setting_value: browserTitle, value_type: "string" },
+        { category: "branding", setting_key: "meta_description", setting_value: metaDescription, value_type: "string" },
         // Store scraped HTML for reference (not rendered live on customer pages)
         { category: "branding", setting_key: "header_html", setting_value: headerHtml, value_type: "string" },
         { category: "branding", setting_key: "footer_html", setting_value: footerHtml, value_type: "string" },
@@ -443,6 +449,30 @@ export function BrandingTab() {
             fileKey="favicon"
             previewClass="h-8 w-8 object-contain"
           />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <Label>Browser tab title</Label>
+              <Input
+                value={browserTitle}
+                onChange={(e) => setBrowserTitle(e.target.value)}
+                placeholder="e.g. Impress Print — Order Prints Online"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Shown in the browser tab on customer pages. Leave blank to use the portal name.
+              </p>
+            </div>
+            <div>
+              <Label>Meta description</Label>
+              <Input
+                value={metaDescription}
+                onChange={(e) => setMetaDescription(e.target.value)}
+                placeholder="Short description used by search engines and link previews"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave blank to use the tagline.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
