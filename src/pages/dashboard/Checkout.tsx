@@ -392,6 +392,14 @@ export default function Checkout() {
       return;
     }
 
+    if (requiresPrepayment && paymentMethod !== "stripe" && paymentMethod !== "payfast") {
+      toast.error(
+        "Your account must pay online at checkout (C.O.D.). Please select an online payment method.",
+      );
+      return;
+    }
+
+
     setIsSubmitting(true);
     try {
       const payingOnline = paymentMethod === "stripe" || paymentMethod === "payfast";
