@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ArtworkPlaceholder, ArtworkTemplate } from "@/lib/artworkTemplates/types";
 import { normaliseCmyk } from "@/lib/artworkTemplates/types";
+import { copyS3Object } from "@/lib/s3Storage";
 
 
 const TEMPLATES_KEY = "artwork_templates";
@@ -271,6 +272,115 @@ export function useSaveArtworkPlaceholders() {
     },
     onSuccess: (templateId) => {
       qc.invalidateQueries({ queryKey: [PLACEHOLDERS_KEY, templateId] });
+    },
+  });
+}
+
+/**
+ * Copy a template (row + base files + placeholder boxes) into another tenant
+ * or branch. Platform-admin only in the UI; RLS also requires tenant-admin
+ * rights on the destination.
+ *
+ * The copy is fully independent: files are duplicated under the new
+ * template's own storage folder so re-uploading on either side can never
+ * affect the other.
+ */
+export function useCopyArtworkTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      source,
+      tenantId,
+      branchId,
+      name,
+    }: {
+      source: ArtworkTemplate;
+      tenantId: string;
+      branchId?: string | null;
+      name?: string;
+    }) => {
+      const {
+        id: _id,
+        created_at: _c,
+        updated_at: _u,
+        base_pdf_path,
+        preview_path,
+        base_transparent_path,
+        ...rest
+      } = source as any;
+
+      const { data: created, error } = await supabase
+        .from("artwork_templates")
+        .insert({
+          ...rest,
+          name: (name ?? source.name).trim() || source.name,
+          scope_type: branchId ? "branch" : "tenant",
+          tenant_id: tenantId,
+          branch_id: branchId ?? null,
+          base_pdf_path: null,
+          preview_path: null,
+          base_transparent_path: null,
+        } as any)
+        .select()
+        .single();
+      if (error) throw error;
+      const newId = (created as any).id as string;
+
+      // Duplicate the stored artwork into the new template's own folder.
+      const fileWarnings: string[] = [];
+      const patch: Record<string, unknown> = {};
+      const copies: [string | null | undefined, string, string][] = [
+        [base_pdf_path, `artwork-templates/${newId}/base.pdf`, "base_pdf_path"],
+        [
+          base_transparent_path,
+          `artwork-templates/${newId}/base-transparent.png`,
+          "base_transparent_path",
+        ],
+        [preview_path, `artwork-templates/${newId}/thumbnail.png`, "preview_path"],
+      ];
+      for (const [from, to, column] of copies) {
+        if (!from) continue;
+        try {
+          await copyS3Object(from, to);
+          patch[column] = to;
+        } catch (err: any) {
+          fileWarnings.push(err?.message ?? `Could not copy ${column}.`);
+        }
+      }
+
+      if (fileWarnings.length > 0) patch.status = "draft";
+      if (Object.keys(patch).length > 0) {
+        const { error: upErr } = await supabase
+          .from("artwork_templates")
+          .update(patch as any)
+          .eq("id", newId);
+        if (upErr) throw upErr;
+      }
+
+      // Duplicate the placeholder boxes.
+      const { data: boxes, error: boxErr } = await supabase
+        .from("artwork_template_placeholders")
+        .select("*")
+        .eq("template_id", source.id)
+        .order("sort_order", { ascending: true });
+      if (boxErr) throw boxErr;
+
+      const rows = (boxes ?? []).map(({ id, created_at, updated_at, ...b }: any) => ({
+        ...b,
+        template_id: newId,
+      }));
+      if (rows.length > 0) {
+        const { error: insErr } = await supabase
+          .from("artwork_template_placeholders")
+          .insert(rows as any);
+        if (insErr) throw insErr;
+      }
+
+      return { id: newId, boxCount: rows.length, warnings: fileWarnings };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [TEMPLATES_KEY] });
+      qc.invalidateQueries({ queryKey: [PLACEHOLDERS_KEY] });
     },
   });
 }
