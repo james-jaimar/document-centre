@@ -127,7 +127,8 @@ export function BranchSubscriptionAssignCard({ branchId }: Props) {
           </p>
         )}
 
-        <div className={`flex flex-wrap gap-2 pt-2 border-t ${isPlatformAdmin ? "" : "hidden"}`}>
+        {isPlatformAdmin && (
+        <div className="flex flex-wrap gap-2 pt-2 border-t">
           <AssignPlanDialog
             branchId={branchId}
             regionId={regionId}
