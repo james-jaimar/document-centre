@@ -54,6 +54,7 @@ type FormState = {
   delivery_postal_code: string;
   delivery_country: string;
   is_trade_customer: boolean;
+  payment_terms_mode: "account" | "prepaid";
   mis_account_number: string;
   credit_limit: string;
   payment_terms_days: string;
@@ -70,7 +71,7 @@ const EMPTY: FormState = {
   delivery_same_as_billing: true,
   delivery_line1: "", delivery_line2: "", delivery_suburb: "", delivery_city: "",
   delivery_province: "", delivery_postal_code: "", delivery_country: "",
-  is_trade_customer: false, mis_account_number: "",
+  is_trade_customer: false, payment_terms_mode: "account", mis_account_number: "",
   credit_limit: "0", payment_terms_days: "30", default_discount_pct: "0",
   notes: "", is_active: true,
 };
@@ -101,6 +102,7 @@ function fromCompany(c: CustomerCompany): FormState {
     delivery_postal_code: c.delivery_postal_code ?? "",
     delivery_country: c.delivery_country ?? "",
     is_trade_customer: !!c.is_trade_customer,
+    payment_terms_mode: ((c as any).payment_terms_mode === "prepaid" ? "prepaid" : "account"),
     mis_account_number: c.mis_account_number ?? "",
     credit_limit: String(c.credit_limit ?? 0),
     payment_terms_days: String(c.payment_terms_days ?? 30),
@@ -152,6 +154,7 @@ export function CompanyFormDialog({ open, onOpenChange, company, branchId, onSav
         delivery_postal_code: trimmed(form.delivery_postal_code),
         delivery_country: trimmed(form.delivery_country),
         is_trade_customer: form.is_trade_customer,
+        payment_terms_mode: form.payment_terms_mode,
         mis_account_number: trimmed(form.mis_account_number),
         credit_limit: Number(form.credit_limit) || 0,
         payment_terms_days: Number(form.payment_terms_days) || 0,
@@ -281,6 +284,22 @@ export function CompanyFormDialog({ open, onOpenChange, company, branchId, onSav
                     onCheckedChange={(v) => set("is_trade_customer", v)}
                   />
                 </label>
+                <div className="space-y-1">
+                  <Label>Payment terms</Label>
+                  <Select
+                    value={form.payment_terms_mode}
+                    onValueChange={(v) => set("payment_terms_mode", v as "account" | "prepaid")}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="account">On account / EFT allowed</SelectItem>
+                      <SelectItem value="prepaid">Pay on order (C.O.D. — online payment only)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Pay on order hides account and EFT at checkout — these customers must pay online.
+                  </p>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   {field("mis_account_number", "Account number (MIS)", { placeholder: "e.g. IMP0421" })}
                   {field("credit_limit", "Credit limit", { type: "number" })}
