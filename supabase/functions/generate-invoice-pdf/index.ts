@@ -814,8 +814,8 @@ Deno.serve(async (req) => {
       ? `1. Thank you for your payment.`
       : `1. Payment is due within ${paymentDays} days of invoice date.\n2. Please use the invoice number as your payment reference.`;
     const overrideTerms = kind === "proforma"
-      ? (invoicesCat.proforma_terms as string | undefined)
-      : (invoicesCat.invoice_terms as string | undefined);
+      ? ((docs.proforma_terms as string | undefined) ?? (invoicesCat.proforma_terms as string | undefined))
+      : ((docs.invoice_terms as string | undefined) ?? (invoicesCat.invoice_terms as string | undefined));
     const termsToShow = overrideTerms && overrideTerms.trim().length ? overrideTerms : defaultTerms;
     for (const para of termsToShow.split(/\r?\n/)) {
       for (const ln of wrap(para, font, 8, leftW - 4)) {
