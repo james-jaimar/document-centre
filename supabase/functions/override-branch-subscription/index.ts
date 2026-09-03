@@ -22,14 +22,19 @@ type Action =
   | "force_cancel"
   | "reset_trial"
   | "reset_pending"
-  | "reopen_storefront";
+  | "reopen_storefront"
+  | "set_tenant_exempt"
+  | "clear_tenant_exempt";
 
 interface Body {
   branch_id?: string;
+  tenant_id?: string;
   action?: Action;
   reason?: string | null;
   days?: number;
+  until?: string | null;
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
