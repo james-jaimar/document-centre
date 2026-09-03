@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { useBranchContext } from "@/contexts/BranchContext";
+import { useBranch } from "@/contexts/BranchContext";
 
 export const BILLING_SETTINGS_CATEGORY = "financial";
 export const REQUIRE_BILLING_ADDRESS_KEY = "require_billing_address";
