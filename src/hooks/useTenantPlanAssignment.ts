@@ -11,6 +11,9 @@ export interface TenantPlanAssignment {
   billing_notes: string | null;
   plan_assigned_at: string | null;
   plan_assigned_by: string | null;
+  billing_exempt: boolean | null;
+  billing_exempt_until: string | null;
+  billing_exempt_reason: string | null;
 }
 
 export function useTenantPlanAssignment(tenantId?: string) {
@@ -21,7 +24,7 @@ export function useTenantPlanAssignment(tenantId?: string) {
       const { data, error } = await (supabase as any)
         .from("tenants")
         .select(
-          "id, assigned_plan_slug, assigned_region_id, assigned_discount_type, assigned_discount_value, assigned_trial_days, billing_notes, plan_assigned_at, plan_assigned_by"
+          "id, assigned_plan_slug, assigned_region_id, assigned_discount_type, assigned_discount_value, assigned_trial_days, billing_notes, plan_assigned_at, plan_assigned_by, billing_exempt, billing_exempt_until, billing_exempt_reason"
         )
         .eq("id", tenantId!)
         .maybeSingle();
