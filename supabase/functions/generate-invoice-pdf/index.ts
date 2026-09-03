@@ -667,7 +667,7 @@ Deno.serve(async (req) => {
     const metaCols = [
       { label: "Account No.", value: buyerCompany?.mis_account_number ?? "" },
       { label: "VAT Reg No.", value: buyerCompany?.vat_number ?? "" },
-
+      { label: dateLabel, value: fmtDate(new Date()) },
       { label: "Order Number", value: String(order.order_number ?? "") },
       { label: "Representative", value: repName ?? "" },
       { label: numLabel, value: String(invNum ?? "") },
