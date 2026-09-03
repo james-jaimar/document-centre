@@ -299,6 +299,31 @@ Deno.serve(async (req) => {
     ]);
     const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;
 
+    // Buying company (for the customer VAT / account-number strip). The seller's
+    // VAT number belongs in "Invoice From" only — never in the customer columns.
+    let buyerCompany: { vat_number?: string | null; mis_account_number?: string | null } | null = null;
+    const buyerProfileId = (order as any).ordered_by_profile_id ?? null;
+    if (buyerProfileId) {
+      const { data: mem } = await admin
+        .from("tenant_memberships")
+        .select("company_id")
+        .eq("profile_id", buyerProfileId)
+        .eq("tenant_id", order.tenant_id)
+        .eq("is_active", true)
+        .not("company_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if ((mem as any)?.company_id) {
+        const { data: co } = await admin
+          .from("customer_companies")
+          .select("vat_number, mis_account_number")
+          .eq("id", (mem as any).company_id)
+          .maybeSingle();
+        buyerCompany = (co as any) ?? null;
+      }
+    }
+
+
     const settingsArr = settings || [];
     const brandingTbl: Record<string, any> = {};
     const financial: Record<string, any> = {};
