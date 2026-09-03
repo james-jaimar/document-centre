@@ -401,7 +401,18 @@ export default function PlatformSubscriptions() {
                                   <ArrowUpCircle className="h-4 w-4 mr-1" />
                                   Open billing
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={exemptMutation.isPending}
+                                  onClick={() => handleToggleExempt(tenant)}
+                                  title="Activate this tenant without any subscription or payment"
+                                >
+                                  <Gift className="h-4 w-4 mr-1" />
+                                  {(tenant as any).billing_exempt ? "Remove exemption" : "No payment required"}
+                                </Button>
                                 {sub && (sub.status === "active" || sub.billing_status === "paid" || sub.billing_status === "free") && (
+
                                   <Button
                                     variant="ghost"
                                     size="sm"
