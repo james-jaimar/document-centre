@@ -994,7 +994,7 @@ export default function Checkout() {
                     </Label>
                   </div>
                 ))}
-                {credit?.is_active && (
+                {credit?.is_active && !requiresPrepayment && (
                   <div className="flex items-start space-x-2">
                     <RadioGroupItem
                       value="account"
@@ -1017,14 +1017,24 @@ export default function Checkout() {
                     </Label>
                   </div>
                 )}
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="offline" id="pm-offline" />
-                  <Label htmlFor="pm-offline" className="cursor-pointer">
-                    EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
-                  </Label>
-                </div>
+                {!requiresPrepayment && (
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="offline" id="pm-offline" />
+                    <Label htmlFor="pm-offline" className="cursor-pointer">
+                      EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
+                    </Label>
+                  </div>
+                )}
+                {requiresPrepayment && (
+                  <p className="text-xs text-muted-foreground">
+                    {(onlineProviders ?? []).length > 0
+                      ? "Your account is set to pay on order (C.O.D.), so payment is made online at checkout."
+                      : "Your account is set to pay on order (C.O.D.), but no online payment method is available right now. Please contact us to complete this order."}
+                  </p>
+                )}
               </RadioGroup>
             )}
+
           </div>
 
           {/* PO / Cost Centre (optional) */}
