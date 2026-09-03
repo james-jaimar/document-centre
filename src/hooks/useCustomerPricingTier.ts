@@ -105,12 +105,18 @@ export function useCustomerPricingTier(): CustomerPricingTier {
         } as unknown as CreditAccount)
       : null;
 
+  // Individual setting wins when explicitly set; otherwise inherit the company's.
+  const requiresPrepayment =
+    (membership?.payment_terms_mode ?? company?.payment_terms_mode ?? "account") === "prepaid";
+
   return {
     tier: isTrade ? "trade" : "consumer",
     isTrade,
+    requiresPrepayment,
     misAccountNumber:
       membership?.mis_account_number ?? company?.mis_account_number ?? null,
     credit: personalCredit ?? companyCredit,
+
     isLoading,
   };
 }
