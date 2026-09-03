@@ -22,14 +22,19 @@ type Action =
   | "force_cancel"
   | "reset_trial"
   | "reset_pending"
-  | "reopen_storefront";
+  | "reopen_storefront"
+  | "set_tenant_exempt"
+  | "clear_tenant_exempt";
 
 interface Body {
   branch_id?: string;
+  tenant_id?: string;
   action?: Action;
   reason?: string | null;
   days?: number;
+  until?: string | null;
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -54,20 +59,12 @@ Deno.serve(async (req) => {
   const reason = (body.reason ?? "").trim() || null;
   const days = Number.isFinite(body.days) ? Math.max(0, Math.min(3650, Math.floor(body.days!))) : 0;
 
-  if (!branchId || typeof branchId !== "string") return json({ error: "branch_id required" }, 400);
   if (!action) return json({ error: "action required" }, 400);
 
   const sb = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
-
-  const { data: branch } = await sb
-    .from("branches")
-    .select("id, tenant_id, storefront_closed_at")
-    .eq("id", branchId)
-    .single();
-  if (!branch) return json({ error: "Branch not found" }, 404);
 
   // Platform admins only.
   const { data: platformRole } = await sb
@@ -76,10 +73,75 @@ Deno.serve(async (req) => {
     .eq("user_id", user.id)
     .eq("role", "platform_admin")
     .maybeSingle();
-  // Every action here (comp, grace, cancel, reset, reopen) is a
-  // platform-level billing override. Tenant/branch admins may only pay
+  // Every action here (comp, grace, cancel, reset, reopen, tenant exemption)
+  // is a platform-level billing override. Tenant/branch admins may only pay
   // for their subscription — never change its terms.
   if (!platformRole) return json({ error: "Forbidden — platform admin only" }, 403);
+
+  // ---- Tenant-wide billing exemption (no plan / trial / payment required) ----
+  if (action === "set_tenant_exempt" || action === "clear_tenant_exempt") {
+    const tenantId = body.tenant_id;
+    if (!tenantId || typeof tenantId !== "string") {
+      return json({ error: "tenant_id required" }, 400);
+    }
+    const { data: tenantBefore } = await sb
+      .from("tenants")
+      .select("id, billing_exempt, billing_exempt_until, billing_exempt_reason")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (!tenantBefore) return json({ error: "Tenant not found" }, 404);
+
+    let until: string | null = null;
+    if (action === "set_tenant_exempt") {
+      if (body.until) {
+        const parsed = new Date(body.until);
+        if (Number.isNaN(parsed.getTime())) return json({ error: "Invalid until date" }, 400);
+        until = parsed.toISOString();
+      } else if (days > 0) {
+        until = new Date(Date.now() + days * 86400000).toISOString();
+      }
+    }
+
+    const tenantPatch =
+      action === "set_tenant_exempt"
+        ? { billing_exempt: true, billing_exempt_until: until, billing_exempt_reason: reason }
+        : { billing_exempt: false, billing_exempt_until: null, billing_exempt_reason: null };
+
+    const { data: tenantAfter, error: tenantErr } = await sb
+      .from("tenants")
+      .update(tenantPatch)
+      .eq("id", tenantId)
+      .select("id, billing_exempt, billing_exempt_until, billing_exempt_reason")
+      .single();
+    if (tenantErr) return json({ error: tenantErr.message }, 500);
+
+    await sb.from("platform_admin_audit" as any).insert({
+      actor_user_id: user.id,
+      actor_email_snapshot: user.email ?? null,
+      action: `subscription.${action}`,
+      target_type: "tenant",
+      target_id: tenantId,
+      tenant_id: tenantId,
+      branch_id: null,
+      before_state: tenantBefore as unknown as Record<string, unknown>,
+      after_state: tenantAfter as unknown as Record<string, unknown>,
+      reason,
+      ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      user_agent: req.headers.get("user-agent") ?? null,
+    });
+
+    return json({ ok: true, tenant: tenantAfter });
+  }
+
+  if (!branchId || typeof branchId !== "string") return json({ error: "branch_id required" }, 400);
+
+  const { data: branch } = await sb
+    .from("branches")
+    .select("id, tenant_id, storefront_closed_at")
+    .eq("id", branchId)
+    .single();
+  if (!branch) return json({ error: "Branch not found" }, 404);
+
 
   const { data: existing } = await sb
     .from("branch_subscriptions" as any)

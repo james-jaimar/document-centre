@@ -7253,6 +7253,9 @@ export type Database = {
           assigned_region_id: string | null
           assigned_trial_days: number | null
           billing_email: string | null
+          billing_exempt: boolean
+          billing_exempt_reason: string | null
+          billing_exempt_until: string | null
           billing_notes: string | null
           country: string
           country_code: string
@@ -7294,6 +7297,9 @@ export type Database = {
           assigned_region_id?: string | null
           assigned_trial_days?: number | null
           billing_email?: string | null
+          billing_exempt?: boolean
+          billing_exempt_reason?: string | null
+          billing_exempt_until?: string | null
           billing_notes?: string | null
           country?: string
           country_code?: string
@@ -7335,6 +7341,9 @@ export type Database = {
           assigned_region_id?: string | null
           assigned_trial_days?: number | null
           billing_email?: string | null
+          billing_exempt?: boolean
+          billing_exempt_reason?: string | null
+          billing_exempt_until?: string | null
           billing_notes?: string | null
           country?: string
           country_code?: string
@@ -7924,6 +7933,8 @@ export type Database = {
           stripe_customer_id: string
           stripe_subscription_id: string
           subscription_id: string
+          tenant_billing_exempt: boolean
+          tenant_billing_exempt_until: string
           tenant_id: string
           tenant_name: string
           tenant_slug: string

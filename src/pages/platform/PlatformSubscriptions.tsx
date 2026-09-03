@@ -49,11 +49,13 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Gift,
 } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 import { useNavigate } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { useTenantBillingExempt } from "@/hooks/usePlatformSubscriptions";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -100,6 +102,35 @@ export default function PlatformSubscriptions() {
   const { data: plans } = useAllPlatformPricingPlans();
   const updatePlan = useUpdateTenantPlan();
   const upsertSub = useUpsertSubscription();
+  const exemptMutation = useTenantBillingExempt();
+
+  // Platform-only: mark a tenant as active with no plan, trial or payment.
+  const handleToggleExempt = async (tenant: Tenant) => {
+    const isExempt = Boolean((tenant as any).billing_exempt);
+    if (isExempt) {
+      if (!confirm(`Remove the no-payment exemption for ${tenant.name}? Its branches will fall back to their subscription status.`)) return;
+      try {
+        await exemptMutation.mutateAsync({ tenant_id: tenant.id, exempt: false });
+        toast.success(`Exemption removed for ${tenant.name}`);
+      } catch (e: any) {
+        toast.error(e.message ?? "Failed to remove exemption");
+      }
+      return;
+    }
+    const reason = prompt(`Why is ${tenant.name} exempt from payment? (optional)`) ?? "";
+    const untilRaw = prompt("Exempt until (YYYY-MM-DD) — leave blank for indefinite") ?? "";
+    const until = untilRaw.trim() ? new Date(untilRaw.trim()).toISOString() : null;
+    if (untilRaw.trim() && Number.isNaN(Date.parse(untilRaw.trim()))) {
+      toast.error("Invalid date");
+      return;
+    }
+    try {
+      await exemptMutation.mutateAsync({ tenant_id: tenant.id, exempt: true, reason: reason.trim() || null, until });
+      toast.success(`${tenant.name} is now active with no payment required`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to set exemption");
+    }
+  };
 
   const [assignDialog, setAssignDialog] = useState<Tenant | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("starter");
@@ -349,9 +380,18 @@ export default function PlatformSubscriptions() {
                                 <div>
                                   <p className="font-medium">{tenant.name}</p>
                                   <p className="text-xs text-muted-foreground">{tenant.slug}</p>
+                                  {(tenant as any).billing_exempt && (
+                                    <Badge variant="outline" className="mt-1 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                                      No payment required
+                                      {(tenant as any).billing_exempt_until
+                                        ? ` · until ${new Date((tenant as any).billing_exempt_until).toLocaleDateString()}`
+                                        : ""}
+                                    </Badge>
+                                  )}
                                 </div>
                               </div>
                             </TableCell>
+
                             <TableCell>
                               <Badge variant="outline" className="capitalize">
                                 {planSlug.replace("_", "-")}
@@ -392,7 +432,18 @@ export default function PlatformSubscriptions() {
                                   <ArrowUpCircle className="h-4 w-4 mr-1" />
                                   Open billing
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={exemptMutation.isPending}
+                                  onClick={() => handleToggleExempt(tenant)}
+                                  title="Activate this tenant without any subscription or payment"
+                                >
+                                  <Gift className="h-4 w-4 mr-1" />
+                                  {(tenant as any).billing_exempt ? "Remove exemption" : "No payment required"}
+                                </Button>
                                 {sub && (sub.status === "active" || sub.billing_status === "paid" || sub.billing_status === "free") && (
+
                                   <Button
                                     variant="ghost"
                                     size="sm"
