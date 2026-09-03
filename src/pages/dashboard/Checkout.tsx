@@ -798,6 +798,148 @@ export default function Checkout() {
             </div>
           )}
 
+          {/* Billing Address */}
+          {billingRequired && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-foreground">Billing Address</h3>
+              <p className="text-xs text-muted-foreground">
+                We need these details for your invoice. You only have to enter them once.
+              </p>
+
+              {user && (
+                <AddressPicker
+                  addressType="billing"
+                  selectedId={selectedBillingId}
+                  onSelect={(addr) => {
+                    setSelectedBillingId(addr.id);
+                    setSameAsDelivery(false);
+                    setBilling({
+                      contact_name: addr.contact_name ?? "",
+                      company_name: addr.company_name ?? "",
+                      line1: addr.line1 ?? "",
+                      line2: addr.line2 ?? "",
+                      city: addr.city ?? "",
+                      province: addr.province ?? "",
+                      postal_code: addr.postal_code ?? "",
+                      country: addr.country ?? "South Africa",
+                      phone: addr.phone ?? "",
+                      email: addr.email ?? "",
+                    });
+                  }}
+                />
+              )}
+
+              {deliveryMethod === "delivery" && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                  <Checkbox
+                    checked={sameAsDelivery}
+                    onCheckedChange={(v) => {
+                      const on = !!v;
+                      setSameAsDelivery(on);
+                      if (on) {
+                        setSelectedBillingId(null);
+                        setBilling((p) => ({
+                          ...p,
+                          contact_name: address.contact_name,
+                          company_name: address.company_name,
+                          line1: address.line1,
+                          line2: address.line2,
+                          city: address.city,
+                          province: address.province,
+                          postal_code: address.postal_code,
+                          phone: address.phone,
+                          email: address.email,
+                        }));
+                      }
+                    }}
+                  />
+                  Same as delivery address
+                </label>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Contact Name *</Label>
+                  <Input
+                    value={billing.contact_name}
+                    onChange={(e) => setBilling((p) => ({ ...p, contact_name: e.target.value }))}
+                    placeholder="John Smith"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Company</Label>
+                  <Input
+                    value={billing.company_name}
+                    onChange={(e) => setBilling((p) => ({ ...p, company_name: e.target.value }))}
+                    placeholder="Acme Corp"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Address Line 1 *</Label>
+                <Input
+                  value={billing.line1}
+                  onChange={(e) => setBilling((p) => ({ ...p, line1: e.target.value }))}
+                  placeholder="123 Main Street"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Address Line 2</Label>
+                <Input
+                  value={billing.line2}
+                  onChange={(e) => setBilling((p) => ({ ...p, line2: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">City *</Label>
+                  <Input
+                    value={billing.city}
+                    onChange={(e) => setBilling((p) => ({ ...p, city: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Province</Label>
+                  <Input
+                    value={billing.province}
+                    onChange={(e) => setBilling((p) => ({ ...p, province: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Postal Code *</Label>
+                  <Input
+                    value={billing.postal_code}
+                    onChange={(e) => setBilling((p) => ({ ...p, postal_code: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Country *</Label>
+                  <Input
+                    value={billing.country}
+                    onChange={(e) => setBilling((p) => ({ ...p, country: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Phone</Label>
+                  <Input
+                    value={billing.phone}
+                    onChange={(e) => setBilling((p) => ({ ...p, phone: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Email</Label>
+                  <Input
+                    type="email"
+                    value={billing.email}
+                    onChange={(e) => setBilling((p) => ({ ...p, email: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Delivery Options */}
           {deliveryMethod === "delivery" && shippingOptions.length > 0 && (
             <div className="border border-border rounded-lg p-4 space-y-3">
