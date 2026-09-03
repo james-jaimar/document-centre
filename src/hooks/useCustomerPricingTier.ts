@@ -22,8 +22,11 @@ export interface CustomerPricingTier {
   misAccountNumber: string | null;
   /** Credit facility that applies at the active branch, if any. */
   credit: CreditAccount | null;
+  /** Customer must pay online before the order is accepted (C.O.D. / prepaid). */
+  requiresPrepayment: boolean;
   isLoading: boolean;
 }
+
 
 export function useCustomerTradeMembership() {
   const { user } = useAuth();
