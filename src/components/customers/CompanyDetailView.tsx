@@ -154,8 +154,13 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Payment terms</div>
-              <div className="text-lg font-semibold">{company.payment_terms_days ?? 0} days</div>
+              <div className="text-lg font-semibold">
+                {(company as any).payment_terms_mode === "prepaid"
+                  ? "Pay on order (C.O.D.)"
+                  : `${company.payment_terms_days ?? 0} days`}
+              </div>
             </div>
+
             <div>
               <div className="text-xs text-muted-foreground">Default discount</div>
               <div className="text-lg font-semibold">{Number(company.default_discount_pct ?? 0)}%</div>
