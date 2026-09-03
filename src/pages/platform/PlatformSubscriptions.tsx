@@ -49,11 +49,13 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Gift,
 } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 import { useNavigate } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { useTenantBillingExempt } from "@/hooks/usePlatformSubscriptions";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -100,6 +102,35 @@ export default function PlatformSubscriptions() {
   const { data: plans } = useAllPlatformPricingPlans();
   const updatePlan = useUpdateTenantPlan();
   const upsertSub = useUpsertSubscription();
+  const exemptMutation = useTenantBillingExempt();
+
+  // Platform-only: mark a tenant as active with no plan, trial or payment.
+  const handleToggleExempt = async (tenant: Tenant) => {
+    const isExempt = Boolean((tenant as any).billing_exempt);
+    if (isExempt) {
+      if (!confirm(`Remove the no-payment exemption for ${tenant.name}? Its branches will fall back to their subscription status.`)) return;
+      try {
+        await exemptMutation.mutateAsync({ tenant_id: tenant.id, exempt: false });
+        toast.success(`Exemption removed for ${tenant.name}`);
+      } catch (e: any) {
+        toast.error(e.message ?? "Failed to remove exemption");
+      }
+      return;
+    }
+    const reason = prompt(`Why is ${tenant.name} exempt from payment? (optional)`) ?? "";
+    const untilRaw = prompt("Exempt until (YYYY-MM-DD) — leave blank for indefinite") ?? "";
+    const until = untilRaw.trim() ? new Date(untilRaw.trim()).toISOString() : null;
+    if (untilRaw.trim() && Number.isNaN(Date.parse(untilRaw.trim()))) {
+      toast.error("Invalid date");
+      return;
+    }
+    try {
+      await exemptMutation.mutateAsync({ tenant_id: tenant.id, exempt: true, reason: reason.trim() || null, until });
+      toast.success(`${tenant.name} is now active with no payment required`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to set exemption");
+    }
+  };
 
   const [assignDialog, setAssignDialog] = useState<Tenant | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("starter");
