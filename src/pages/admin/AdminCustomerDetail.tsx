@@ -449,6 +449,7 @@ export default function AdminCustomerDetail() {
                 customerProfileId={id}
                 isTradeCustomer={(membership as any)?.is_trade_customer}
                 misAccountNumber={(membership as any)?.mis_account_number}
+                paymentTermsMode={(membership as any)?.payment_terms_mode}
               />
               <CustomerCompanySettings
                 customerProfileId={id}

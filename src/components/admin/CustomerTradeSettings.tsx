@@ -8,12 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 interface Props {
   customerProfileId: string;
   isTradeCustomer?: boolean | null;
   misAccountNumber?: string | null;
+  /** null = inherit the company's setting */
+  paymentTermsMode?: string | null;
 }
 
 /**
@@ -24,15 +29,18 @@ export function CustomerTradeSettings({
   customerProfileId,
   isTradeCustomer,
   misAccountNumber,
+  paymentTermsMode,
 }: Props) {
   const { tenantId, appId } = useTenantContext();
   const qc = useQueryClient();
 
   const [isTrade, setIsTrade] = useState(!!isTradeCustomer);
   const [accountNo, setAccountNo] = useState(misAccountNumber ?? "");
+  const [termsMode, setTermsMode] = useState<string>(paymentTermsMode ?? "inherit");
 
   useEffect(() => setIsTrade(!!isTradeCustomer), [isTradeCustomer]);
   useEffect(() => setAccountNo(misAccountNumber ?? ""), [misAccountNumber]);
+  useEffect(() => setTermsMode(paymentTermsMode ?? "inherit"), [paymentTermsMode]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -42,6 +50,7 @@ export function CustomerTradeSettings({
         .update({
           is_trade_customer: isTrade,
           mis_account_number: accountNo.trim() || null,
+          payment_terms_mode: termsMode === "inherit" ? null : termsMode,
         } as any)
         .eq("tenant_id", tenantId)
         .eq("app_id", appId)
@@ -58,7 +67,9 @@ export function CustomerTradeSettings({
   });
 
   const dirty =
-    isTrade !== !!isTradeCustomer || accountNo.trim() !== (misAccountNumber ?? "").trim();
+    isTrade !== !!isTradeCustomer ||
+    accountNo.trim() !== (misAccountNumber ?? "").trim() ||
+    termsMode !== (paymentTermsMode ?? "inherit");
 
   return (
     <Card className="p-4 space-y-4">
@@ -86,6 +97,21 @@ export function CustomerTradeSettings({
         />
         <p className="text-xs text-muted-foreground">
           Matches the customer's account in your MIS system.
+        </p>
+      </div>
+
+      <div className="space-y-1 max-w-sm">
+        <Label>Payment terms</Label>
+        <Select value={termsMode} onValueChange={setTermsMode}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="inherit">Inherit from company</SelectItem>
+            <SelectItem value="account">On account / EFT allowed</SelectItem>
+            <SelectItem value="prepaid">Pay on order (C.O.D. — online only)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Pay on order removes account and EFT at checkout for this customer.
         </p>
       </div>
 
