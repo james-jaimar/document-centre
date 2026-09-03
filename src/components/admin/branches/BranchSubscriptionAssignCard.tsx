@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useTenantContext } from "@/hooks/useTenantContext";
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -37,6 +38,7 @@ export function BranchSubscriptionAssignCard({ branchId }: Props) {
   const { data: subscription, isLoading } = useBranchSubscription(branchId);
   const override = useOverrideBranchSubscription();
   const { toast } = useToast();
+  const { isPlatformAdmin } = useTenantContext();
 
   // Resolve a region for plan options (prefer existing sub, fallback to tenant assignment).
   const { data: branchRow } = useQuery({
