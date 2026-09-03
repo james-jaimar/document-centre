@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Building2, Loader2 } from "lucide-react";
 import { CompanyUsersPanel } from "@/components/customers/CompanyUsersPanel";
