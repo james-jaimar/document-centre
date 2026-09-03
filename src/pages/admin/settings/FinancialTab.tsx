@@ -33,6 +33,7 @@ export function FinancialTab() {
   const [multiCurrency, setMultiCurrency] = useState(false);
   const [acceptedCurrencies, setAcceptedCurrencies] = useState<string[]>([]);
   const [measurementUnit, setMeasurementUnit] = useState("auto");
+  const [requireBillingAddress, setRequireBillingAddress] = useState(false);
 
   useEffect(() => {
     if (!regionalLoading && regionalMap) {
@@ -53,6 +54,7 @@ export function FinancialTab() {
       setTaxLabel((settingsMap.tax_label as string) ?? "VAT");
       setTaxRate(String(rate));
       setTaxInclusive(settingsMap.tax_inclusive === true);
+      setRequireBillingAddress(settingsMap.require_billing_address === true);
       setInvoicePrefix((settingsMap.invoice_prefix as string) ?? "INV");
       setInvoiceNextNumber(String(settingsMap.invoice_next_number ?? 1001));
       setDefaultCurrency(((settingsMap.default_currency_code as string) ?? "ZAR").toUpperCase());
@@ -77,6 +79,7 @@ export function FinancialTab() {
         { category: "financial", setting_key: "tax_label", setting_value: taxLabel, value_type: "string" },
         { category: "financial", setting_key: "tax_rate", setting_value: parseFloat(taxRate), value_type: "number" },
         { category: "financial", setting_key: "tax_inclusive", setting_value: taxInclusive, value_type: "boolean" },
+        { category: "financial", setting_key: "require_billing_address", setting_value: requireBillingAddress, value_type: "boolean" },
         { category: "financial", setting_key: "invoice_prefix", setting_value: invoicePrefix, value_type: "string" },
         { category: "financial", setting_key: "invoice_next_number", setting_value: parseInt(invoiceNextNumber), value_type: "number" },
         { category: "financial", setting_key: "default_currency_code", setting_value: defaultCurrency, value_type: "string" },
@@ -213,6 +216,23 @@ export function FinancialTab() {
           <div className="flex items-center gap-3 pt-6">
             <Switch checked={taxInclusive} onCheckedChange={setTaxInclusive} disabled={!taxEnabled} />
             <Label>Tax-inclusive pricing</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> Billing Details</CardTitle>
+          <CardDescription>
+            Ask customers for a billing address at checkout so every invoice carries
+            proper billing details. They only enter it once — it is saved to their
+            address book and pre-selected on later orders.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="max-w-2xl">
+          <div className="flex items-center gap-3">
+            <Switch checked={requireBillingAddress} onCheckedChange={setRequireBillingAddress} />
+            <Label>Require billing address at checkout</Label>
           </div>
         </CardContent>
       </Card>
