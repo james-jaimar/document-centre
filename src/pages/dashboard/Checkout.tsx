@@ -123,10 +123,18 @@ export default function Checkout() {
   // aren't silently defaulted to EFT when PayFast/Stripe is configured.
   const [paymentTouched, setPaymentTouched] = useState(false);
   useEffect(() => {
-    if (paymentTouched) return;
     if (!onlineProviders || onlineProviders.length === 0) return;
+    // Prepaid (C.O.D.) accounts may only pay online — always pin to a provider.
+    if (requiresPrepayment) {
+      setPaymentMethod((cur) =>
+        onlineProviders.some((p: any) => p.provider === cur) ? cur : onlineProviders[0].provider,
+      );
+      return;
+    }
+    if (paymentTouched) return;
     setPaymentMethod(onlineProviders[0].provider);
-  }, [onlineProviders, paymentTouched]);
+  }, [onlineProviders, paymentTouched, requiresPrepayment]);
+
 
 
   // The collection branch is locked to the active storefront branch. Pricing,
