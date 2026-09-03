@@ -438,6 +438,19 @@ export function usePlaceOrder() {
         phone?: string;
         email?: string;
       };
+      /** Billing address (tenant may require one before checkout). */
+      billingAddress?: {
+        contact_name?: string;
+        company_name?: string;
+        line1?: string;
+        line2?: string;
+        city?: string;
+        province?: string;
+        postal_code?: string;
+        country?: string;
+        phone?: string;
+        email?: string;
+      };
     }) => {
       if (!user) throw new Error("Not authenticated");
 
@@ -824,6 +837,7 @@ export function usePlaceOrder() {
             amount_due: totalAmount,
           },
           delivery_address: input.deliveryMethod === "delivery" ? input.deliveryAddress : undefined,
+          billing_address: input.billingAddress,
           fulfillment_type: input.deliveryMethod,
           jobs,
           is_demo: isDemo,
