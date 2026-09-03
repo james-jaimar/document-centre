@@ -665,9 +665,9 @@ Deno.serve(async (req) => {
     const dateLabel = kind === "proforma" ? "Proforma Date" : kind === "credit_note" ? "Credit Note Date" : "Invoice Date";
     const numLabel = kind === "proforma" ? "Proforma Number" : kind === "credit_note" ? "Credit Note Number" : "Invoice Number";
     const metaCols = [
-      { label: "Account No.", value: "" },
-      { label: "VAT Reg No.", value: from.vat_number ?? "" },
-      { label: dateLabel, value: fmtDate(new Date()) },
+      { label: "Account No.", value: buyerCompany?.mis_account_number ?? "" },
+      { label: "VAT Reg No.", value: buyerCompany?.vat_number ?? "" },
+
       { label: "Order Number", value: String(order.order_number ?? "") },
       { label: "Representative", value: repName ?? "" },
       { label: numLabel, value: String(invNum ?? "") },
