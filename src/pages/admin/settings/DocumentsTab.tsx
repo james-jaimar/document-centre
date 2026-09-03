@@ -11,6 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Save, FileText, Upload, Image } from "lucide-react";
 
+const DEFAULT_PROFORMA_TERMS =
+  "1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma a 50% deposit will be required.";
+const DEFAULT_INVOICE_TERMS =
+  "1. Payment is due within 30 days of invoice date.\n2. Please use the invoice number as your payment reference.";
+
 function parseJsonArr(val: unknown): string[] {
   if (Array.isArray(val)) return val.map(String);
   if (typeof val === "string") {
@@ -47,6 +52,10 @@ export function DocumentsTab() {
   // Footer
   const [legalFooter, setLegalFooter] = useState("");
 
+  // Terms & conditions
+  const [proformaTerms, setProformaTerms] = useState("");
+  const [invoiceTerms, setInvoiceTerms] = useState("");
+
   // Numbering
   const [proformaPrefix, setProformaPrefix] = useState("PRO");
   const [dnPrefix, setDnPrefix] = useState("DN");
@@ -65,6 +74,8 @@ export function DocumentsTab() {
       setProformaTitle((settingsMap.proforma_title as string) ?? "");
       setInvoiceTitle((settingsMap.invoice_title as string) ?? "");
       setLegalFooter((settingsMap.legal_footer_text as string) ?? "");
+      setProformaTerms((settingsMap.proforma_terms as string) ?? "");
+      setInvoiceTerms((settingsMap.invoice_terms as string) ?? "");
       setProformaPrefix((settingsMap.proforma_prefix as string) ?? "PRO");
       setDnPrefix((settingsMap.delivery_note_prefix as string) ?? "DN");
       setJobsheetFields(ensureLength(parseJsonArr(settingsMap.jobsheet_custom_fields), 5));
@@ -108,6 +119,8 @@ export function DocumentsTab() {
         { category: "documents", setting_key: "proforma_title", setting_value: proformaTitle, value_type: "string" },
         { category: "documents", setting_key: "invoice_title", setting_value: invoiceTitle, value_type: "string" },
         { category: "documents", setting_key: "legal_footer_text", setting_value: legalFooter, value_type: "string" },
+        { category: "documents", setting_key: "proforma_terms", setting_value: proformaTerms, value_type: "string" },
+        { category: "documents", setting_key: "invoice_terms", setting_value: invoiceTerms, value_type: "string" },
         { category: "documents", setting_key: "proforma_prefix", setting_value: proformaPrefix, value_type: "string" },
         { category: "documents", setting_key: "delivery_note_prefix", setting_value: dnPrefix, value_type: "string" },
         { category: "documents", setting_key: "jobsheet_custom_fields", setting_value: jobsheetFields, value_type: "json" },
@@ -222,6 +235,46 @@ export function DocumentsTab() {
             </CardHeader>
             <CardContent className="max-w-lg">
               <Textarea value={legalFooter} onChange={(e) => setLegalFooter(e.target.value)} rows={6} placeholder="Banking details, payment instructions, legal notices..." />
+            </CardContent>
+          </Card>
+
+          {/* Terms & Conditions */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Terms and Conditions</CardTitle>
+              <CardDescription>
+                Printed in the Terms and Conditions block on pro formas and invoices. Leave blank to use the built-in default.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 max-w-lg">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Pro forma terms</Label>
+                  <Button variant="ghost" size="sm" onClick={() => setProformaTerms(DEFAULT_PROFORMA_TERMS)}>
+                    Use default
+                  </Button>
+                </div>
+                <Textarea
+                  value={proformaTerms}
+                  onChange={(e) => setProformaTerms(e.target.value)}
+                  rows={4}
+                  placeholder={DEFAULT_PROFORMA_TERMS}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Invoice terms</Label>
+                  <Button variant="ghost" size="sm" onClick={() => setInvoiceTerms(DEFAULT_INVOICE_TERMS)}>
+                    Use default
+                  </Button>
+                </div>
+                <Textarea
+                  value={invoiceTerms}
+                  onChange={(e) => setInvoiceTerms(e.target.value)}
+                  rows={4}
+                  placeholder={DEFAULT_INVOICE_TERMS}
+                />
+              </div>
             </CardContent>
           </Card>
 
