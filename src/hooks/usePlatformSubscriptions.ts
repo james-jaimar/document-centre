@@ -128,3 +128,42 @@ export function useSubscriptionOverride() {
     },
   });
 }
+
+/**
+ * Tenant-wide billing exemption: every branch of the tenant is entitled to
+ * operate with no plan, trial or payment. Platform admin only (enforced
+ * server-side and by a DB trigger on `tenants`).
+ */
+export function useTenantBillingExempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      tenant_id: string;
+      exempt: boolean;
+      reason?: string | null;
+      until?: string | null;
+    }) => {
+      const { data, error } = await supabase.functions.invoke(
+        "override-branch-subscription",
+        {
+          body: {
+            tenant_id: params.tenant_id,
+            action: params.exempt ? "set_tenant_exempt" : "clear_tenant_exempt",
+            reason: params.reason ?? null,
+            until: params.until ?? null,
+          },
+        }
+      );
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenants"] });
+      qc.invalidateQueries({ queryKey: ["platform-branch-subscriptions"] });
+      qc.invalidateQueries({ queryKey: ["platform-audit-log"] });
+      qc.invalidateQueries({ queryKey: ["branch-entitlement"] });
+    },
+  });
+}
+
