@@ -1762,6 +1762,7 @@ export type Database = {
           name: string
           notes: string | null
           payment_terms_days: number
+          payment_terms_mode: string
           phone: string | null
           registration_number: string | null
           tenant_id: string
@@ -1801,6 +1802,7 @@ export type Database = {
           name: string
           notes?: string | null
           payment_terms_days?: number
+          payment_terms_mode?: string
           phone?: string | null
           registration_number?: string | null
           tenant_id: string
@@ -1840,6 +1842,7 @@ export type Database = {
           name?: string
           notes?: string | null
           payment_terms_days?: number
+          payment_terms_mode?: string
           phone?: string | null
           registration_number?: string | null
           tenant_id?: string
@@ -6942,6 +6945,7 @@ export type Database = {
           job_title: string | null
           metadata: Json
           mis_account_number: string | null
+          payment_terms_mode: string | null
           profile_id: string
           role: string
           tenant_id: string
@@ -6960,6 +6964,7 @@ export type Database = {
           job_title?: string | null
           metadata?: Json
           mis_account_number?: string | null
+          payment_terms_mode?: string | null
           profile_id: string
           role: string
           tenant_id: string
@@ -6978,6 +6983,7 @@ export type Database = {
           job_title?: string | null
           metadata?: Json
           mis_account_number?: string | null
+          payment_terms_mode?: string | null
           profile_id?: string
           role?: string
           tenant_id?: string

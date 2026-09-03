@@ -62,7 +62,7 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
-  const { credit, isTrade } = useCustomerPricingTier();
+  const { credit, isTrade, requiresPrepayment } = useCustomerPricingTier();
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
@@ -123,10 +123,18 @@ export default function Checkout() {
   // aren't silently defaulted to EFT when PayFast/Stripe is configured.
   const [paymentTouched, setPaymentTouched] = useState(false);
   useEffect(() => {
-    if (paymentTouched) return;
     if (!onlineProviders || onlineProviders.length === 0) return;
+    // Prepaid (C.O.D.) accounts may only pay online — always pin to a provider.
+    if (requiresPrepayment) {
+      setPaymentMethod((cur) =>
+        onlineProviders.some((p: any) => p.provider === cur) ? cur : onlineProviders[0].provider,
+      );
+      return;
+    }
+    if (paymentTouched) return;
     setPaymentMethod(onlineProviders[0].provider);
-  }, [onlineProviders, paymentTouched]);
+  }, [onlineProviders, paymentTouched, requiresPrepayment]);
+
 
 
   // The collection branch is locked to the active storefront branch. Pricing,
@@ -383,6 +391,14 @@ export default function Checkout() {
       toast.error("This order can't be placed on account. Please choose another payment method.");
       return;
     }
+
+    if (requiresPrepayment && paymentMethod !== "stripe" && paymentMethod !== "payfast") {
+      toast.error(
+        "Your account must pay online at checkout (C.O.D.). Please select an online payment method.",
+      );
+      return;
+    }
+
 
     setIsSubmitting(true);
     try {
@@ -994,7 +1010,7 @@ export default function Checkout() {
                     </Label>
                   </div>
                 ))}
-                {credit?.is_active && (
+                {credit?.is_active && !requiresPrepayment && (
                   <div className="flex items-start space-x-2">
                     <RadioGroupItem
                       value="account"
@@ -1017,14 +1033,24 @@ export default function Checkout() {
                     </Label>
                   </div>
                 )}
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="offline" id="pm-offline" />
-                  <Label htmlFor="pm-offline" className="cursor-pointer">
-                    EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
-                  </Label>
-                </div>
+                {!requiresPrepayment && (
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="offline" id="pm-offline" />
+                    <Label htmlFor="pm-offline" className="cursor-pointer">
+                      EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
+                    </Label>
+                  </div>
+                )}
+                {requiresPrepayment && (
+                  <p className="text-xs text-muted-foreground">
+                    {(onlineProviders ?? []).length > 0
+                      ? "Your account is set to pay on order (C.O.D.), so payment is made online at checkout."
+                      : "Your account is set to pay on order (C.O.D.), but no online payment method is available right now. Please contact us to complete this order."}
+                  </p>
+                )}
               </RadioGroup>
             )}
+
           </div>
 
           {/* PO / Cost Centre (optional) */}

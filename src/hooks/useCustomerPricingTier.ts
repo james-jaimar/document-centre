@@ -22,8 +22,11 @@ export interface CustomerPricingTier {
   misAccountNumber: string | null;
   /** Credit facility that applies at the active branch, if any. */
   credit: CreditAccount | null;
+  /** Customer must pay online before the order is accepted (C.O.D. / prepaid). */
+  requiresPrepayment: boolean;
   isLoading: boolean;
 }
+
 
 export function useCustomerTradeMembership() {
   const { user } = useAuth();
@@ -37,7 +40,7 @@ export function useCustomerTradeMembership() {
       const { data, error } = await supabase
         .from("tenant_memberships")
         .select(
-          "id, is_trade_customer, mis_account_number, role, is_active, company_id, company:company_id (id, name, is_active, is_trade_customer, mis_account_number, credit_limit, payment_terms_days, default_discount_pct)",
+          "id, is_trade_customer, mis_account_number, payment_terms_mode, role, is_active, company_id, company:company_id (id, name, is_active, is_trade_customer, mis_account_number, credit_limit, payment_terms_days, payment_terms_mode, default_discount_pct)",
         )
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
@@ -49,6 +52,7 @@ export function useCustomerTradeMembership() {
             id: string;
             is_trade_customer: boolean | null;
             mis_account_number: string | null;
+            payment_terms_mode: string | null;
             role: string | null;
             is_active: boolean | null;
             company_id: string | null;
@@ -60,6 +64,7 @@ export function useCustomerTradeMembership() {
               mis_account_number: string | null;
               credit_limit: number | null;
               payment_terms_days: number | null;
+              payment_terms_mode: string | null;
               default_discount_pct: number | null;
             } | null;
           }
@@ -67,6 +72,7 @@ export function useCustomerTradeMembership() {
     },
   });
 }
+
 
 export function useCustomerPricingTier(): CustomerPricingTier {
   const { user } = useAuth();
@@ -99,12 +105,18 @@ export function useCustomerPricingTier(): CustomerPricingTier {
         } as unknown as CreditAccount)
       : null;
 
+  // Individual setting wins when explicitly set; otherwise inherit the company's.
+  const requiresPrepayment =
+    (membership?.payment_terms_mode ?? company?.payment_terms_mode ?? "account") === "prepaid";
+
   return {
     tier: isTrade ? "trade" : "consumer",
     isTrade,
+    requiresPrepayment,
     misAccountNumber:
       membership?.mis_account_number ?? company?.mis_account_number ?? null,
     credit: personalCredit ?? companyCredit,
+
     isLoading,
   };
 }
