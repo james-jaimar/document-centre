@@ -92,7 +92,7 @@ async function accessDocument(
 export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
   const { data: inv } = await supabase
     .from("order_invoices")
-    .select("id, kind, order_id, total_amount, amount_paid, issued_at")
+    .select("id, kind, order_id, tenant_id, total_amount, amount_paid, issued_at")
     .eq("id", invoiceId)
     .maybeSingle();
   if (!inv) return;
@@ -105,11 +105,30 @@ export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
     .maybeSingle();
   if (!order) return;
 
+  // Document presentation (terms, footer, titles, VAT label) lives in
+  // tenant_settings — a change there must also invalidate the stored PDF,
+  // otherwise the first render is served forever.
+  let settingsChangedAt: string | null = null;
+  if (inv.tenant_id) {
+    const { data: setting } = await supabase
+      .from("tenant_settings")
+      .select("updated_at")
+      .eq("tenant_id", inv.tenant_id)
+      .in("category", ["documents", "financial", "branding", "invoices"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    settingsChangedAt = (setting as { updated_at?: string } | null)?.updated_at ?? null;
+  }
+
   const eq = (a: any, b: any) => Number(a ?? 0).toFixed(2) === Number(b ?? 0).toFixed(2);
+  const newerThanIssue = (ts: string | null | undefined) =>
+    !!ts && !!inv.issued_at && new Date(ts) > new Date(inv.issued_at);
   const stale =
     !eq(inv.total_amount, order.total_amount) ||
     (inv.kind === "invoice" && !eq(inv.amount_paid, order.amount_paid)) ||
-    (order.updated_at && inv.issued_at && new Date(order.updated_at) > new Date(inv.issued_at));
+    newerThanIssue(order.updated_at) ||
+    newerThanIssue(settingsChangedAt);
 
   if (!stale) return;
 
@@ -119,6 +138,7 @@ export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
   if (error) throw new Error(error.message || "Failed to refresh invoice PDF");
   if ((data as any)?.error) throw new Error((data as any).error);
 }
+
 
 export async function downloadInvoice(invoiceId: string, fileName: string) {
   await ensureInvoiceFresh(invoiceId);

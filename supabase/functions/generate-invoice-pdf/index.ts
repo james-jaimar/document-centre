@@ -299,6 +299,31 @@ Deno.serve(async (req) => {
     ]);
     const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;
 
+    // Buying company (for the customer VAT / account-number strip). The seller's
+    // VAT number belongs in "Invoice From" only — never in the customer columns.
+    let buyerCompany: { vat_number?: string | null; mis_account_number?: string | null } | null = null;
+    const buyerProfileId = (order as any).ordered_by_profile_id ?? null;
+    if (buyerProfileId) {
+      const { data: mem } = await admin
+        .from("tenant_memberships")
+        .select("company_id")
+        .eq("profile_id", buyerProfileId)
+        .eq("tenant_id", order.tenant_id)
+        .eq("is_active", true)
+        .not("company_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if ((mem as any)?.company_id) {
+        const { data: co } = await admin
+          .from("customer_companies")
+          .select("vat_number, mis_account_number")
+          .eq("id", (mem as any).company_id)
+          .maybeSingle();
+        buyerCompany = (co as any) ?? null;
+      }
+    }
+
+
     const settingsArr = settings || [];
     const brandingTbl: Record<string, any> = {};
     const financial: Record<string, any> = {};
@@ -640,8 +665,8 @@ Deno.serve(async (req) => {
     const dateLabel = kind === "proforma" ? "Proforma Date" : kind === "credit_note" ? "Credit Note Date" : "Invoice Date";
     const numLabel = kind === "proforma" ? "Proforma Number" : kind === "credit_note" ? "Credit Note Number" : "Invoice Number";
     const metaCols = [
-      { label: "Account No.", value: "" },
-      { label: "VAT Reg No.", value: from.vat_number ?? "" },
+      { label: "Account No.", value: buyerCompany?.mis_account_number ?? "" },
+      { label: "VAT Reg No.", value: buyerCompany?.vat_number ?? "" },
       { label: dateLabel, value: fmtDate(new Date()) },
       { label: "Order Number", value: String(order.order_number ?? "") },
       { label: "Representative", value: repName ?? "" },
@@ -789,8 +814,8 @@ Deno.serve(async (req) => {
       ? `1. Thank you for your payment.`
       : `1. Payment is due within ${paymentDays} days of invoice date.\n2. Please use the invoice number as your payment reference.`;
     const overrideTerms = kind === "proforma"
-      ? (invoicesCat.proforma_terms as string | undefined)
-      : (invoicesCat.invoice_terms as string | undefined);
+      ? ((docs.proforma_terms as string | undefined) ?? (invoicesCat.proforma_terms as string | undefined))
+      : ((docs.invoice_terms as string | undefined) ?? (invoicesCat.invoice_terms as string | undefined));
     const termsToShow = overrideTerms && overrideTerms.trim().length ? overrideTerms : defaultTerms;
     for (const para of termsToShow.split(/\r?\n/)) {
       for (const ln of wrap(para, font, 8, leftW - 4)) {
