@@ -200,6 +200,34 @@ async function createOrderWithJobs(
   const gateMsg = await checkBranchGate(admin, userId, branch_id);
   if (gateMsg) return json({ error: gateMsg, code: "branch_subscription_blocked" }, 402);
 
+  // Prepaid (C.O.D.) customers may only place orders that are held for an
+  // online payment — no account / EFT bypass from a tampered client.
+  try {
+    const { data: membership } = await admin
+      .from("tenant_memberships")
+      .select("payment_terms_mode, company:company_id (payment_terms_mode, is_active)")
+      .eq("tenant_id", tenant_id)
+      .eq("profile_id", customer.profile_id)
+      .maybeSingle();
+    const companyMode = (membership as any)?.company?.is_active === false
+      ? null
+      : (membership as any)?.company?.payment_terms_mode ?? null;
+    const mode = (membership as any)?.payment_terms_mode ?? companyMode ?? "account";
+    if (mode === "prepaid" && !holdForPayment) {
+      return json(
+        {
+          error: "This account must pay online at checkout (C.O.D.).",
+          code: "prepayment_required",
+        },
+        403,
+      );
+    }
+  } catch (e) {
+    console.warn("[order-engine] payment terms check failed (non-fatal):", e);
+  }
+
+
+
 
   // Resolve app_id from slug
   const { data: app, error: appErr } = await admin
