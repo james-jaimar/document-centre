@@ -49,12 +49,8 @@ export async function fetchRequireBillingAddress(
 
 export function useRequireBillingAddress() {
   const { tenantId } = useTenantContext();
-  let branchId: string | null = null;
-  try {
-    branchId = useBranchContext()?.activeBranch?.id ?? null;
-  } catch {
-    branchId = null;
-  }
+  const { activeBranch } = useBranch();
+  const branchId = activeBranch?.id ?? null;
 
   const query = useQuery({
     queryKey: ["require-billing-address", tenantId, branchId],
