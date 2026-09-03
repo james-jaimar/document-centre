@@ -62,7 +62,7 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
-  const { credit, isTrade } = useCustomerPricingTier();
+  const { credit, isTrade, requiresPrepayment } = useCustomerPricingTier();
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
