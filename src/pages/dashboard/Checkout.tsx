@@ -32,6 +32,7 @@ import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type Shipp
 import AddressPicker from "@/components/customer/AddressPicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
+import { useRequireBillingAddress } from "@/hooks/useRequireBillingAddress";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
 import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
@@ -135,6 +136,23 @@ export default function Checkout() {
 
   // Delivery address fields
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+
+  // Billing address (only shown when the tenant requires one)
+  const { required: billingRequired } = useRequireBillingAddress();
+  const [selectedBillingId, setSelectedBillingId] = useState<string | null>(null);
+  const [sameAsDelivery, setSameAsDelivery] = useState(false);
+  const [billing, setBilling] = useState({
+    contact_name: "",
+    company_name: "",
+    line1: "",
+    line2: "",
+    city: "",
+    province: "",
+    postal_code: "",
+    country: "South Africa",
+    phone: "",
+    email: "",
+  });
   const [address, setAddress] = useState({
     contact_name: "",
     company_name: "",
@@ -339,6 +357,22 @@ export default function Checkout() {
       return;
     }
 
+    if (billingRequired) {
+      const missing =
+        !billing.contact_name.trim() ||
+        !billing.line1.trim() ||
+        !billing.city.trim() ||
+        !billing.postal_code.trim() ||
+        !billing.country.trim() ||
+        (!billing.phone.trim() && !billing.email.trim());
+      if (missing) {
+        toast.error(
+          "Please complete your billing address (name, address, city, postal code, country and a phone or email).",
+        );
+        return;
+      }
+    }
+
     if (!legalAccept) {
       toast.error("Please accept the Terms & Conditions and Privacy Policy to continue.");
       return;
@@ -361,6 +395,7 @@ export default function Checkout() {
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
+        billingAddress: billingRequired ? billing : undefined,
         branchId: deliveryMethod === "collection" ? collectionBranch?.id : undefined,
         deliveryAmount: deliveryFee,
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
@@ -421,6 +456,29 @@ export default function Checkout() {
             .eq("id", newOrderId);
         } catch (e) {
           console.warn("Failed to persist PO/cost centre:", e);
+        }
+      }
+
+      // Save the billing address to the customer's address book so it is
+      // pre-selected next time (only when they typed a new one).
+      if (billingRequired && user && !selectedBillingId && billing.line1.trim()) {
+        try {
+          await createSavedAddress.mutateAsync({
+            address_type: "billing",
+            is_default: true,
+            contact_name: billing.contact_name || null,
+            company_name: billing.company_name || null,
+            phone: billing.phone || null,
+            email: billing.email || null,
+            line1: billing.line1 || null,
+            line2: billing.line2 || null,
+            city: billing.city || null,
+            province: billing.province || null,
+            postal_code: billing.postal_code || null,
+            country: billing.country || "South Africa",
+          });
+        } catch (e) {
+          console.warn("Failed to save billing address to address book:", e);
         }
       }
 
