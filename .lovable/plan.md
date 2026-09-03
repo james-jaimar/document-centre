@@ -1,53 +1,33 @@
-# Invoice / pro forma: customer VAT number and editable terms
+# Lock down subscription control for tenant and branch admins
 
-Verified against the uploaded `CAL-2026-01142.pdf`, the invoice generator, and the database.
+Today a tenant admin on Tenant Settings → Billing can change region, plan, discount type/value, trial length and billing notes, browse the live Stripe catalogue, re-verify (and silently rewrite) plan prices, and on a branch page assign/change a plan, reset a pending subscription, or force-cancel it. That is platform-level control. Tenant and branch admins should only be able to **see** what they are on and **pay** for it.
 
-## 1. The "VAT Reg No." column shows the seller's VAT number
+## Target behaviour
 
-Confirmed cause: in `generate-invoice-pdf`, the metadata strip under the address boxes builds its
-columns as `Account No.` (hard-coded empty) and `VAT Reg No.` = `from.vat_number` — `from` is the
-*selling* party (branch, then tenant). The tenant "Impress Press (Pty) Ltd" has
-`vat_number = 4890102587`, which is why the same number prints twice: once correctly in
-"Invoice From", once wrongly in the customer strip.
+Platform admin (including while impersonating a tenant): unchanged, full control.
 
-Fix: those two columns belong to the **customer**.
+Tenant admin / owner:
+- Billing tab becomes read-only: current plan, region, price, discount, trial terms, and per-branch subscription status shown as plain text/badges.
+- No plan/region/discount/trial editors, no billing notes field, no "Save & apply to all branches", no "Browse Stripe catalogue", no "Verify current".
+- Branch page shows subscription status only — no Assign/Change plan, no Reset pending, no Force cancel.
+- A short line explaining that plan changes are made by Document Centre; contact support to change plan.
 
-- Resolve the buying company for the order: `orders.ordered_by_profile_id` ->
-  `tenant_memberships.company_id` (same tenant, active) -> `customer_companies`.
-- `VAT Reg No.` = the company's `vat_number`; `Account No.` = the company's `mis_account_number`.
-- No company or no value: leave the cell blank rather than falling back to the seller's number.
-- The seller's VAT number stays exactly where it is, in the "Invoice From" block.
+Branch manager:
+- Branch Settings → Subscription keeps exactly what it has now (accept documents, start trial, pay/checkout, manage payment method via the Stripe portal). No plan or discount editing — it already has none.
 
-## 2. Terms and Conditions text is a hard-coded default
+## Server-side enforcement (the important part)
 
-Confirmed: the generator already looks for tenant settings `invoices.proforma_terms` and
-`invoices.invoice_terms` and only falls back to the hard-coded
-"1. This Proforma is valid for 7 working days. / 2. On acceptance of this proforma a 50% deposit
-will be required." There is no screen anywhere that writes those keys, so the default always wins.
+UI hiding is not enough; these endpoints must reject non-platform-admins:
 
-Fix: add the editing surface.
-
-- In Tenant Settings > Documents, add a "Terms and Conditions" section with two multi-line fields:
-  Pro forma terms and Invoice terms, each pre-filled with the current default and with a
-  "Reset to default" action.
-- Save them as `documents.proforma_terms` / `documents.invoice_terms`; the generator will read the
-  `documents` category first, then the legacy `invoices` category, then the built-in default, so
-  nothing already configured is lost.
-- Apply the same tenant terms to the quote PDF, which carries its own copy of the hard-coded text.
-
-## 3. Footer text (for completeness)
-
-The footer disclaimer already reads `documents.legal_footer_text` from Tenant Settings >
-Documents and only falls back to the exchange-rate paragraph when that field is empty — so it is
-already admin-settable. If it still prints the old text on the Impress documents, the field is
-blank for that tenant; I will set it once the terms fields go in.
+- `assign-tenant-plan` — currently only checks that a user is logged in, then writes tenant plan/discount/trial fields with the **service-role** key (so RLS is bypassed entirely). Add a `user_roles` platform_admin check and return 403 otherwise.
+- `override-branch-subscription` — currently allows tenant owner/admin. Restrict privileged actions (`comp`, `clear_comp`, `extend_grace`, `force_cancel`, `reset_trial`, `reopen_storefront`, `reset_pending`) to platform_admin only.
+- `stripe-verify-price` — currently allows any active tenant member; it can rewrite `platform_pricing_plans.price`. Restrict to platform_admin.
+- `assign-branch-plan` — already platform_admin only; leave as is.
+- Also confirm RLS on `tenants` does not let a tenant admin write `assigned_plan_slug` / `assigned_discount_*` / `assigned_trial_days` directly from the client, and tighten to platform-admin-only writes on those columns if it does.
 
 ## Technical notes
 
-- `supabase/functions/generate-invoice-pdf/index.ts`: add a customer-company lookup alongside the
-  existing tenant/branch fetch, use it for the metadata strip, and widen the terms lookup.
-- `supabase/functions/quote-pdf/index.ts`: read the same tenant terms setting.
-- `src/pages/admin/settings/DocumentsTab.tsx`: two new textareas wired through the existing bulk
-  settings save.
-- No schema migration needed — `customer_companies.vat_number` and `mis_account_number` already
-  exist, and terms live in `tenant_settings`.
+- Gate the UI on `isPlatformAdmin` from `useTenantContext` (the same flag that already drives `isOverriding`), not on `membershipRole`.
+- Files: `src/pages/admin/settings/BillingTab.tsx`, `src/components/admin/billing/TenantPlanAssignmentCard.tsx` (split into a read-only summary view + the existing editable view), `src/components/admin/branches/BranchSubscriptionAssignCard.tsx` (hide action buttons and the assign dialog for non-platform admins), `src/pages/admin/AdminBranchDetail.tsx` if needed.
+- Edge functions: `supabase/functions/assign-tenant-plan/index.ts`, `override-branch-subscription/index.ts`, `stripe-verify-price/index.ts`. Redeploy after the change.
+- No changes to `BranchSubscriptionPanel`, checkout, trials, or dunning.
