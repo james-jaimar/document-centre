@@ -35,6 +35,8 @@ interface TenantContextValue {
   /** Platform admin: override to view a different tenant */
   overrideTenantId: string | null;
   isOverriding: boolean;
+  /** True when the signed-in user holds the platform_admin role */
+  isPlatformAdmin: boolean;
   setOverrideTenantId: (id: string | null) => void;
 }
 
@@ -266,6 +268,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         setActiveMembershipId,
         overrideTenantId,
         isOverriding,
+        isPlatformAdmin,
         setOverrideTenantId,
       }}
     >
