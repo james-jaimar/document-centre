@@ -23,6 +23,16 @@ Deno.serve(async (req) => {
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes?.user) return json({ error: "Unauthorized" }, 401);
 
+    // Plan assignment, discounts and trials are platform-level billing
+    // decisions. Tenant owners/admins may only view + pay.
+    const { data: platformRole } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userRes.user.id)
+      .eq("role", "platform_admin")
+      .maybeSingle();
+    if (!platformRole) return json({ error: "Forbidden — platform admin only" }, 403);
+
     const body = await req.json();
     const {
       tenant_id,

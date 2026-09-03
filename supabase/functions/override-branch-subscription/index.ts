@@ -69,22 +69,17 @@ Deno.serve(async (req) => {
     .single();
   if (!branch) return json({ error: "Branch not found" }, 404);
 
-  // Platform admins OR tenant owners/admins of the branch's tenant.
+  // Platform admins only.
   const { data: platformRole } = await sb
     .from("user_roles")
     .select("role")
     .eq("user_id", user.id)
     .eq("role", "platform_admin")
     .maybeSingle();
-  const { data: membership } = await sb
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", user.id)
-    .eq("tenant_id", branch.tenant_id)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
-  if (!platformRole && !membership) return json({ error: "Forbidden" }, 403);
+  // Every action here (comp, grace, cancel, reset, reopen) is a
+  // platform-level billing override. Tenant/branch admins may only pay
+  // for their subscription — never change its terms.
+  if (!platformRole) return json({ error: "Forbidden — platform admin only" }, 403);
 
   const { data: existing } = await sb
     .from("branch_subscriptions" as any)

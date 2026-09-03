@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useBranchPlans } from "@/hooks/useBranchSubscriptions";
 import { useTenantPlanAssignment, useAssignTenantPlan } from "@/hooks/useTenantPlanAssignment";
 import { StripeCatalogueDialog } from "./StripeCatalogueDialog";
+import { useTenantContext } from "@/hooks/useTenantContext";
 
 interface Props { tenantId: string }
 
@@ -41,6 +42,7 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
   const qc = useQueryClient();
   const [verifying, setVerifying] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const { isPlatformAdmin } = useTenantContext();
   const { data: current, isLoading } = useTenantPlanAssignment(tenantId);
   const assign = useAssignTenantPlan();
 
@@ -155,6 +157,77 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
     }
   };
 
+
+  // Tenant owners/admins may only *view* their plan — assignment, discounts,
+  // trials and Stripe catalogue access are platform-admin only.
+  if (!isPlatformAdmin) {
+    const regionLabel = (regions ?? []).find((r: any) => r.id === current?.assigned_region_id);
+    const discount =
+      current?.assigned_discount_type && current.assigned_discount_type !== "none"
+        ? `${current.assigned_discount_value ?? 0}${current.assigned_discount_type === "percentage" ? "%" : ""} (${current.assigned_discount_type.replace("_", " ")})`
+        : "None";
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Building2 className="h-5 w-5" /> Subscription Plan
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Your plan is set by Document Centre. Each branch pays for its own subscription from
+            Branch Settings → Subscription.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">Current plan</dt>
+                  <dd className="mt-1">
+                    {current?.assigned_plan_slug ? (
+                      <Badge variant="secondary" className="capitalize">{current.assigned_plan_slug}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">Not assigned yet</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Region</dt>
+                  <dd className="mt-1">
+                    {regionLabel ? `${regionLabel.region_label} (${regionLabel.currency_code})` : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Discount</dt>
+                  <dd className="mt-1">{discount}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Trial</dt>
+                  <dd className="mt-1">
+                    {current?.assigned_trial_days ? `${current.assigned_trial_days} days` : "No trial"}
+                  </dd>
+                </div>
+                {current?.plan_assigned_at && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Last applied</dt>
+                    <dd className="mt-1">{new Date(current.plan_assigned_at).toLocaleString()}</dd>
+                  </div>
+                )}
+              </dl>
+              <p className="text-xs text-muted-foreground border-t pt-3">
+                Need a different plan, discount or trial? Contact Document Centre support — plan changes
+                are made for you.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
