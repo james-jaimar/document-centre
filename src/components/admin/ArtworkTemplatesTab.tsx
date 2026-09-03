@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, Copy, Image as ImageIcon, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
-import { useTenantContext } from "@/hooks/useTenantContext";
+import { useAuth } from "@/hooks/useAuth";
 import CopyArtworkTemplateDialog from "@/components/admin/CopyArtworkTemplateDialog";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
@@ -50,7 +50,8 @@ export default function ArtworkTemplatesTab({ productFamilyId, tenantId }: Props
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
-  const { isPlatformAdmin } = useTenantContext();
+  const { roles } = useAuth();
+  const isPlatformAdmin = roles.includes("platform_admin");
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   /** Never write to a template that isn't owned by the tenant being administered. */
   const canWriteSelected = !!selected && selected.tenant_id === tenantId;
