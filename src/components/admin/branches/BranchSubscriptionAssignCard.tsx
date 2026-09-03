@@ -190,6 +190,7 @@ export function BranchSubscriptionAssignCard({ branchId }: Props) {
             </AlertDialog>
           )}
         </div>
+        )}
       </CardContent>
     </Card>
   );
