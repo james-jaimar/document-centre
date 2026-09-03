@@ -349,9 +349,18 @@ export default function PlatformSubscriptions() {
                                 <div>
                                   <p className="font-medium">{tenant.name}</p>
                                   <p className="text-xs text-muted-foreground">{tenant.slug}</p>
+                                  {(tenant as any).billing_exempt && (
+                                    <Badge variant="outline" className="mt-1 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                                      No payment required
+                                      {(tenant as any).billing_exempt_until
+                                        ? ` · until ${new Date((tenant as any).billing_exempt_until).toLocaleDateString()}`
+                                        : ""}
+                                    </Badge>
+                                  )}
                                 </div>
                               </div>
                             </TableCell>
+
                             <TableCell>
                               <Badge variant="outline" className="capitalize">
                                 {planSlug.replace("_", "-")}
