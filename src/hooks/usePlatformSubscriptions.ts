@@ -22,9 +22,12 @@ export interface PlatformBranchSubscription {
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;
   override_reason: string | null;
+  tenant_billing_exempt?: boolean | null;
+  tenant_billing_exempt_until?: string | null;
   created_at: string;
   updated_at: string;
 }
+
 
 export function usePlatformBranchSubscriptions() {
   return useQuery({
