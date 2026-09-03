@@ -184,7 +184,20 @@ export function TenantPlanAssignmentCard({ tenantId }: Props) {
             </div>
           ) : (
             <>
+              {current?.billing_exempt && (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+                  <p className="font-medium">Complimentary account — no payment required</p>
+                  <p className="text-muted-foreground">
+                    Document Centre has waived subscription payments for your account
+                    {current.billing_exempt_until
+                      ? ` until ${new Date(current.billing_exempt_until).toLocaleDateString()}`
+                      : ""}
+                    . All your branches stay open without a paid plan.
+                  </p>
+                </div>
+              )}
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+
                 <div>
                   <dt className="text-muted-foreground">Current plan</dt>
                   <dd className="mt-1">
