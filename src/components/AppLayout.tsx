@@ -6,6 +6,7 @@ import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
+import { useMessageDesktopAlerts } from "@/hooks/useMessageDesktopAlerts";
 import { buildAdminPath } from "@/lib/adminRouting";
 
 export default function AppLayout() {
@@ -17,6 +18,12 @@ export default function AppLayout() {
     [unreadMap],
   );
   useDocumentTitleUnread(totalUnread);
+  useMessageDesktopAlerts({
+    tenantId,
+    branchId,
+    ordersBasePath: buildAdminPath("/admin/orders", tenantId),
+  });
+
 
   return (
     <div className="flex h-screen w-full bg-background">
