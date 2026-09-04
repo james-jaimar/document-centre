@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/popover";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
+import DesktopAlertSettings from "@/components/staff/DesktopAlertSettings";
+
 
 const STATUS_LABEL: Record<string, string> = {
   new_order: "New order",
@@ -134,6 +136,10 @@ export default function StaffMessagesBell({ ordersBasePath }: Props) {
           </ul>
         )}
 
+        <div className="border-t">
+          <DesktopAlertSettings />
+        </div>
+
         <div className="border-t px-2 py-1.5">
           <button
             onClick={goToAll}
@@ -142,6 +148,7 @@ export default function StaffMessagesBell({ ordersBasePath }: Props) {
             View all unread
           </button>
         </div>
+
       </PopoverContent>
     </Popover>
   );

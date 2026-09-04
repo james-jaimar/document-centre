@@ -8,6 +8,8 @@ import { AlertCircle, Mail } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
+import { useMessageDesktopAlerts } from "@/hooks/useMessageDesktopAlerts";
+
 import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
 import BranchAdminBillingOnlyGuard from "@/components/branch/BranchAdminBillingOnlyGuard";
@@ -74,7 +76,9 @@ export default function BranchLayout() {
     [unreadMap],
   );
   useDocumentTitleUnread(totalUnread);
+  useMessageDesktopAlerts({ tenantId, branchId, ordersBasePath: "/branch/orders" });
   const newOrderCount = useNewOrdersCount(tenantId, branchId);
+
 
   return (
     <div className="flex h-screen w-full bg-background">
