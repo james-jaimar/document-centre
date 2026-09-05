@@ -3248,6 +3248,59 @@ export type Database = {
           },
         ]
       }
+      message_attachments: {
+        Row: {
+          app_id: string | null
+          branch_id: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number
+          id: string
+          message_id: string
+          mime_type: string | null
+          order_id: string | null
+          tenant_id: string | null
+          uploaded_by: string | null
+        }
+        Insert: {
+          app_id?: string | null
+          branch_id?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number
+          id?: string
+          message_id: string
+          mime_type?: string | null
+          order_id?: string | null
+          tenant_id?: string | null
+          uploaded_by?: string | null
+        }
+        Update: {
+          app_id?: string | null
+          branch_id?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          id?: string
+          message_id?: string
+          mime_type?: string | null
+          order_id?: string | null
+          tenant_id?: string | null
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_attachments_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           app_id: string
