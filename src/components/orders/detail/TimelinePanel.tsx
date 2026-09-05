@@ -8,6 +8,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import MessageAttachmentInput, { type SelectedAttachment } from "@/components/messages/MessageAttachmentInput";
+import MessageAttachmentChips from "@/components/messages/MessageAttachmentChips";
+import { uploadMessageAttachment } from "@/lib/messages/attachments";
 
 interface Props {
   orderId: string;
@@ -15,10 +18,12 @@ interface Props {
   messages: any[];
   appId: string;
   tenantId: string;
+  branchId?: string | null;
 }
 
-export function TimelinePanel({ orderId, timeline, messages, appId, tenantId }: Props) {
+export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, branchId }: Props) {
   const [messageText, setMessageText] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<SelectedAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -30,16 +35,27 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId }: 
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const handleSend = async () => {
-    if (!messageText.trim()) return;
+    if (!messageText.trim() && pendingFiles.length === 0) return;
     setSending(true);
     try {
+      const attachments: Awaited<ReturnType<typeof uploadMessageAttachment>>[] = [];
+      for (const pf of pendingFiles) {
+        attachments.push(
+          await uploadMessageAttachment(pf.file, { tenantId, branchId, orderId }),
+        );
+      }
+      const body =
+        messageText.trim() ||
+        `Sent ${attachments.length} attachment${attachments.length === 1 ? "" : "s"}`;
       await sendMessage({
         order_id: orderId,
-        message_body: messageText.trim(),
+        message_body: body,
         sender_type: "admin",
         is_internal: false,
+        attachments: attachments.length > 0 ? attachments : undefined,
       });
       setMessageText("");
+      setPendingFiles([]);
       queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] });
       toast.success("Message sent");
     } catch (err: any) {
@@ -78,10 +94,15 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId }: 
           placeholder="Type a message..."
           className="min-h-[60px] text-sm resize-none"
         />
+        <MessageAttachmentInput
+          files={pendingFiles}
+          onChange={setPendingFiles}
+          uploading={sending}
+        />
         <div className="flex justify-end">
           <Button
             size="sm"
-            disabled={!messageText.trim() || sending}
+            disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
             onClick={handleSend}
             className="h-7 gap-1 text-xs"
           >
@@ -116,6 +137,7 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId }: 
                   )}>
                     {item.message_body}
                   </div>
+                  <MessageAttachmentChips attachments={item.message_attachments} />
                 </div>
               ) : (
                 <div>

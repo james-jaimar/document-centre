@@ -1057,6 +1057,92 @@ async function createJobProof(
   return json({ success: true, proof_id: proof?.id }, 201);
 }
 
+const MAX_ATTACHMENTS_PER_MESSAGE = 5;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_MIME = new Set<string>([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/csv",
+  "text/plain",
+]);
+const ALLOWED_ATTACHMENT_EXT = /\.(pdf|jpe?g|png|webp|gif|heic|heif|docx?|xlsx?|pptx?|csv|txt)$/i;
+
+/**
+ * Sign a short-lived download URL for a message attachment, but only after
+ * confirming the caller may read the parent order. The generic s3-storage
+ * function signs any path for any signed-in user, so attachment reads must
+ * be brokered here.
+ */
+async function signMessageAttachment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const attachmentId = payload?.attachment_id;
+  if (!attachmentId) return err("Missing attachment_id");
+
+  const { data: att } = await admin
+    .from("message_attachments")
+    .select("id, file_path, message_id, order_id")
+    .eq("id", attachmentId)
+    .maybeSingle();
+  if (!att) return err("Attachment not found", 404);
+
+  const { data: message } = await admin
+    .from("messages")
+    .select("id, is_internal")
+    .eq("id", (att as any).message_id)
+    .maybeSingle();
+  if (!message) return err("Attachment not found", 404);
+
+  const { data: order } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, ordered_by_profile_id")
+    .eq("id", (att as any).order_id)
+    .maybeSingle();
+  if (!order) return err("Attachment not found", 404);
+
+  const isOwner = (order as any).ordered_by_profile_id === userId;
+  if (!isOwner || (message as any).is_internal) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const AWS_S3_API_KEY = Deno.env.get("AWS_S3_API_KEY");
+  if (!LOVABLE_API_KEY || !AWS_S3_API_KEY) return err("Storage not configured", 500);
+
+  const signRes = await fetch(
+    "https://connector-gateway.lovable.dev/api/v1/sign_storage_url?provider=aws_s3&mode=read",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "X-Connection-Api-Key": AWS_S3_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ object_path: (att as any).file_path }),
+    },
+  );
+  if (!signRes.ok) {
+    console.error("[order-engine] sign attachment failed:", signRes.status, await signRes.text());
+    return err("Attachment is temporarily unavailable. Please retry shortly.", 503);
+  }
+  const signed = await signRes.json();
+  return json({ url: signed.url });
+}
+
 async function sendMessage(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -1106,6 +1192,44 @@ async function sendMessage(
 
   if (msgErr) return err(`Failed to send message: ${msgErr.message}`);
 
+  // ── Attachments (metadata only; bytes already in S3) ──────────────
+  const rawAttachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+  if (rawAttachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    return err(`You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`);
+  }
+  if (rawAttachments.length > 0 && msg?.id) {
+    const expectedPrefix = `tenants/${order.tenant_id}/branches/${order.branch_id ?? "_"}/messages/${order_id}/`;
+    const rows: any[] = [];
+    for (const att of rawAttachments) {
+      const filePath = String(att?.file_path ?? "");
+      const size = Number(att?.file_size ?? 0);
+      const mime = String(att?.mime_type ?? "application/octet-stream");
+      if (!filePath.startsWith(expectedPrefix)) {
+        return err("Attachment path is not valid for this order", 400);
+      }
+      if (!Number.isFinite(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES) {
+        return err("Attachments must be 50 MB or smaller", 400);
+      }
+      if (!ALLOWED_ATTACHMENT_MIME.has(mime) && !ALLOWED_ATTACHMENT_EXT.test(filePath)) {
+        return err("That file type isn't allowed here", 400);
+      }
+      rows.push({
+        message_id: msg.id,
+        app_id: order.app_id,
+        tenant_id: order.tenant_id,
+        branch_id: order.branch_id,
+        order_id,
+        file_name: String(att?.file_name ?? "attachment"),
+        file_path: filePath,
+        file_size: Math.round(size),
+        mime_type: mime,
+        uploaded_by: userId,
+      });
+    }
+    const { error: attErr } = await admin.from("message_attachments").insert(rows);
+    if (attErr) return err(`Failed to save attachments: ${attErr.message}`);
+  }
+
   // Timeline event (internal messages only visible to admin)
   await admin.from("timeline_events").insert({
     app_id: order.app_id,
@@ -1120,7 +1244,7 @@ async function sendMessage(
     description: is_internal
       ? `Internal note added on order ${order.order_number}`
       : `Message sent on order ${order.order_number}`,
-    metadata: { message_id: msg?.id, is_internal },
+    metadata: { message_id: msg?.id, is_internal, attachment_count: rawAttachments.length },
   });
 
   return json({ success: true, message_id: msg?.id, created_at: msg?.created_at }, 201);
@@ -2613,6 +2737,9 @@ Deno.serve(async (req) => {
         break;
       case "createJobProof":
         response = await createJobProof(admin, userId, payload);
+        break;
+      case "signMessageAttachment":
+        response = await signMessageAttachment(admin, userId, payload);
         break;
       case "sendMessage":
         response = await sendMessage(admin, userId, payload);

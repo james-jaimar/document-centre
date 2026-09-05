@@ -236,6 +236,12 @@ export async function sendMessage(payload: {
   sender_type: "admin" | "customer" | "system";
   recipient_type?: "thread" | "customer" | "admin";
   is_internal?: boolean;
+  attachments?: {
+    file_name: string;
+    file_path: string;
+    file_size: number;
+    mime_type: string;
+  }[];
 }) {
   return invokeOrderEngine<{
     success: boolean;

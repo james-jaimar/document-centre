@@ -22,6 +22,9 @@ import {
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { sendMessage } from "@/lib/orders/mutations";
+import MessageAttachmentInput, { type SelectedAttachment } from "@/components/messages/MessageAttachmentInput";
+import MessageAttachmentChips from "@/components/messages/MessageAttachmentChips";
+import { uploadMessageAttachment } from "@/lib/messages/attachments";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
 import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
@@ -148,16 +151,35 @@ const CustomerOrderDetail = () => {
 
 
   const handleSendMessage = async () => {
-    if (!messageText.trim() || !id) return;
+    if ((!messageText.trim() && pendingFiles.length === 0) || !id) return;
     setSending(true);
     try {
+      let attachments: Awaited<ReturnType<typeof uploadMessageAttachment>>[] = [];
+      if (pendingFiles.length > 0) {
+        if (!order?.tenant_id) throw new Error("Could not attach files to this order");
+        attachments = [];
+        for (const pf of pendingFiles) {
+          attachments.push(
+            await uploadMessageAttachment(pf.file, {
+              tenantId: order.tenant_id,
+              branchId: order.branch_id,
+              orderId: id,
+            }),
+          );
+        }
+      }
+      const body =
+        messageText.trim() ||
+        `Sent ${attachments.length} attachment${attachments.length === 1 ? "" : "s"}`;
       await sendMessage({
         order_id: id,
-        message_body: messageText.trim(),
+        message_body: body,
         sender_type: "customer",
         is_internal: false,
+        attachments: attachments.length > 0 ? attachments : undefined,
       });
       setMessageText("");
+      setPendingFiles([]);
       queryClient.invalidateQueries({ queryKey: ["order-detail", id] });
       toast.success("Message sent");
     } catch (err: any) {
@@ -167,6 +189,7 @@ const CustomerOrderDetail = () => {
     }
   };
 
+  const [pendingFiles, setPendingFiles] = useState<SelectedAttachment[]>([]);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reviewSourceId, setReviewSourceId] = useState<string | null>(null);
   const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
@@ -704,10 +727,15 @@ const CustomerOrderDetail = () => {
                 placeholder="Ask a question about your order..."
                 className="w-full min-h-[60px] rounded-md border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
+              <MessageAttachmentInput
+                files={pendingFiles}
+                onChange={setPendingFiles}
+                uploading={sending}
+              />
               <div className="flex justify-end">
                 <Button
                   size="sm"
-                  disabled={!messageText.trim() || sending}
+                  disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
                   onClick={handleSendMessage}
                   className="h-7 gap-1 text-xs"
                 >
@@ -746,6 +774,7 @@ const CustomerOrderDetail = () => {
                         >
                           {item.message_body}
                         </div>
+                        <MessageAttachmentChips attachments={item.message_attachments} />
                       </div>
                     ) : (
                       <div>
