@@ -28,22 +28,23 @@ export default function SizeCompare({ data }: { data: StorefrontSizeCompare }) {
         </div>
 
         {items.length > 0 && (
-          <ul className="flex flex-wrap items-end justify-start gap-5 lg:justify-end">
+          <ul className="flex flex-nowrap items-end justify-start gap-4 lg:justify-end">
             {items.map((item) => {
               const ratio = Math.max(0.3, (item.scale || 1) / max);
               return (
                 <li
                   key={`${item.label}-${item.dimensions}`}
-                  className={`flex flex-col items-center justify-center border text-center ${
+                  className={`flex shrink flex-col items-center justify-center border text-center ${
                     item.highlight
                       ? "border-[hsl(var(--sf-blue))] text-[hsl(var(--sf-blue))]"
                       : "border-border text-foreground"
                   }`}
                   style={{
-                    width: `${Math.round(120 + ratio * 130)}px`,
-                    height: `${Math.round(150 + ratio * 130)}px`,
+                    width: `${Math.round(90 + ratio * 100)}px`,
+                    height: `${Math.round(110 + ratio * 160)}px`,
                   }}
                 >
+
                   <span className="sf-display text-[clamp(1.1rem,1.6vw,1.6rem)]">{item.label}</span>
                   {item.dimensions && (
                     <span className="mt-1.5 text-[11px] tracking-wide">{item.dimensions}</span>
