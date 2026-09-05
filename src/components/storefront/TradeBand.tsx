@@ -18,7 +18,7 @@ export default function TradeBand({
   return (
     <section className="pb-4">
       <div className="sf-container">
-        <div className="flex flex-col gap-3 rounded-lg border-[1.5px] border-[hsl(var(--sf-accent))] px-5 py-2.5 md:min-h-[66px] md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 rounded-lg border-[1.5px] border-[hsl(var(--sf-accent))] px-4 py-4 sm:px-5 sm:py-2.5 md:min-h-[66px] md:flex-row md:items-center md:justify-between">
           <div className="flex shrink-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full sf-accent-soft">
               <Building2 className="h-5 w-5 sf-accent" aria-hidden />
@@ -40,7 +40,7 @@ export default function TradeBand({
             </ul>
           )}
 
-          <Button onClick={onClick} className="h-10 shrink-0 px-6 text-[13px] font-bold sf-accent-bg hover:opacity-90">
+          <Button onClick={onClick} className="h-10 w-full shrink-0 px-6 md:w-auto text-[13px] font-bold sf-accent-bg hover:opacity-90">
             {cta}
           </Button>
         </div>

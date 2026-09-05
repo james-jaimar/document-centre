@@ -13,9 +13,9 @@ export default function WideBanner({
   const copyRight = data.image_side === "left";
 
   return (
-    <section className="pb-10">
+    <section className="pb-8 md:pb-10">
       <div className="sf-container">
-        <div className="relative isolate overflow-hidden bg-[hsl(var(--sf-navy))] min-h-[300px] lg:min-h-[360px]">
+        <div className="relative isolate overflow-hidden bg-[hsl(var(--sf-navy))] min-h-[240px] lg:min-h-[360px]">
           {data.image_url && (
             <img
               src={data.image_url}
@@ -34,11 +34,11 @@ export default function WideBanner({
           />
 
           <div
-            className={`relative flex min-h-[300px] flex-col justify-center gap-4 px-8 py-12 lg:min-h-[360px] lg:max-w-[52%] lg:px-14 ${
+            className={`relative flex min-h-[240px] flex-col justify-center gap-3.5 px-6 py-9 sm:px-8 sm:py-12 lg:min-h-[360px] lg:max-w-[52%] lg:px-14 ${
               copyRight ? "lg:ml-auto" : ""
             }`}
           >
-            <h2 className="sf-display whitespace-pre-line text-[clamp(1.6rem,2.6vw,2.4rem)] uppercase leading-[1.12] text-white">
+            <h2 className="sf-display whitespace-pre-line text-[clamp(1.3rem,6vw,2.4rem)] uppercase leading-[1.12] text-white">
               {data.heading}
             </h2>
             <span className="block h-[3px] w-10 bg-[hsl(var(--sf-blue))]" aria-hidden />
