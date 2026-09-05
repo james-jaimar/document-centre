@@ -8,6 +8,8 @@ import {
   useSaveStorefrontPages,
   useStorefrontPages,
   STOREFRONT_PAGES_DEFAULTS,
+  STOREFRONT_SECTION_KEYS,
+  STOREFRONT_SECTION_LABELS,
   type StorefrontPagesConfig,
 } from "@/hooks/useStorefrontPages";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+
 import { familyImage } from "@/lib/storefront/productImages";
 import ProductGalleryManager from "@/components/admin/ProductGalleryManager";
 
