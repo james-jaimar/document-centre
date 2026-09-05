@@ -212,6 +212,18 @@ function coerce(raw: unknown): StorefrontPagesConfig {
     footer_items: v.footer_items?.length
       ? v.footer_items
       : STOREFRONT_PAGES_DEFAULTS.footer_items,
+    hero_spec_items: v.hero_spec_items ?? [],
+    size_compare: {
+      ...STOREFRONT_PAGES_DEFAULTS.size_compare,
+      ...(v.size_compare ?? {}),
+      items: v.size_compare?.items ?? [],
+    },
+    feature_cards: v.feature_cards ?? [],
+    wide_banner: { ...STOREFRONT_PAGES_DEFAULTS.wide_banner, ...(v.wide_banner ?? {}) },
+    section_order: v.section_order?.length
+      ? v.section_order
+      : STOREFRONT_PAGES_DEFAULTS.section_order,
+
     images: v.images ?? {},
   };
 }
