@@ -68,6 +68,7 @@ export function clearReturnPath() {
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(AT_KEY);
+    localStorage.removeItem(ORIGIN_KEY);
   } catch {
     /* noop */
   }
