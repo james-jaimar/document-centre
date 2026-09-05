@@ -1,53 +1,32 @@
-# A richer landing page for The 2027 Edition
+# Fix the 2027 Edition storefront on phones
 
-## Recommendation
+## What's actually happening
 
-Do it as **settings, not hard-code**. Everything in the render is the same handful of building blocks you already have (hero, feature row, three product cards, a dark banner, an assurance strip) — just taller, image-led and with more copy fields. Hard-coding a one-off page for this tenant means every future tweak comes back to me, and the next tenant gets nothing.
+I loaded the 2027 Edition home page at phone width (390px wide) and captured it. The page is not just cramped — it is **wider than the phone**: the browser stretched the layout to 520px to fit content that doesn't shrink. That single overflow is what makes everything look wrong (headline cut off mid-word, hero image sitting on top of the text, everything slightly zoomed out).
 
-So: extend the storefront config with a few new, optional sections and richer hero controls, and expose them all in the existing platform Storefronts editor. The 2027 Edition then gets set up entirely by filling in the fields. Any tenant that leaves the new sections empty keeps today's page exactly as it is.
+Confirmed on the captures:
 
-## What gets added
+1. **Size comparison band** — the A4 / A3 / A2 boxes are set to fixed pixel widths on one non-wrapping row, roughly 600px in total. This is the thing forcing the whole page wide.
+2. **Hero** — headline "SIZE REALLY DOES MATTER" runs off the right edge; on phones the picture is layered behind the words instead of sitting above them; the spec line ("A2 — 594 x 420 mm" etc.) collides with the buttons.
+3. **Reassurance strip at the top** — four items squeezed into stacked centred lines, wasting the top of the screen.
+4. **Feature cards** — full-width and very tall, so a single card fills more than a screen; you scroll a long way to see three of them.
+5. **Shop page** — no overflow, but there is a large empty grey gap between the last product and the footer.
 
-**Deeper hero**
-- Height control (standard / tall / full-bleed) so the hero can run the full first screen like the render.
-- Copy position (left / centre / right) and copy width, so text sits over the light area of the photo.
-- Secondary CTA can render as a plain text link with an arrow instead of an outlined button.
-- Optional "spec line" under the CTAs — a row of short facts separated by dividers ("594 × 420 mm | Short runs | Personalised").
+## What I'll change (mobile only — desktop stays exactly as it is)
 
-**New: Size comparison section** (the "A little calendar is easy to ignore" block)
-- Heading, short body, and a list of size chips (label, dimensions, highlighted yes/no) drawn as proportional outlined rectangles, largest highlighted in the accent colour.
-- Entirely optional; hidden if no chips are added.
+- **Size band:** boxes become proportional (percentage-based) and wrap onto two rows on small screens, so the page can never be wider than the phone. Heading and text sit above them.
+- **Hero:** on phones, picture on top, words underneath in normal flow; headline scales down so it never clips; buttons go full-width and stack; spec facts become a tidy stacked list.
+- **Top strip:** two items per row on phones, left-aligned, tighter.
+- **Feature cards:** shorter image area and tighter padding on phones so more than one card is visible at a time.
+- **Shop/product/cart:** remove the empty filler gap above the footer so the footer sits right under the content.
+- Sweep every storefront section (how-it-works, trade banner, wide banner, product cards, footer strip) at 390px and fix anything else that overflows or clips.
 
-**New: Feature cards row** (Desk Pads / Monthly Planners / Wall Calendars)
-- 2–4 cards, each with title, one or two lines of copy, a large image, and a link label + destination (a shop category, a product, or a custom path).
-- Big image area, matching the render's proportions.
+## Technical notes
 
-**New: Wide banner section** ("Sell big. Without buying big.")
-- Full-width dark panel: heading, body lines, background image, and a text-link CTA.
-- Background image, overlay strength and text side are settable.
+- Files: `src/components/storefront/SizeCompare.tsx` (root cause — swap fixed `width`/`height` px styles for aspect-ratio + `%` widths with `flex-wrap`), `HeroSection.tsx` (mobile stacked variant of both `full` and split layouts), `AssuranceBar.tsx`, `FeatureCards.tsx`, `WideBanner.tsx`, `TradeBand.tsx`, plus the `.dc-storefront` container/heading clamps in `src/index.css`.
+- Filler gap: the customer shell's `min-h` on the content area (`src/components/CustomerLayout.tsx`) — footer moves to sit directly after content.
+- Presentation only: no changes to storefront settings, data, pricing or routing. All existing platform settings keep working unchanged.
 
-**Assurance strip**
-- Extended to 4 items with title + subtitle and a wider icon set (pencil, layers, truck, heart, shield, clock, etc.) to match the render's footer strip.
+## Verification
 
-**Section ordering + visibility**
-- A simple list in the editor to toggle each landing section on/off and drag the order (hero, product/category grid, size comparison, feature cards, banner, how it works, trade band, assurance, footer strip).
-
-**Typography preset**
-- A per-tenant heading style choice (current sans vs. the tall serif in the render), applied only inside the storefront scope. This is what gives the render its editorial, non-SaaS feel.
-
-## Technical details
-
-- Extend `StorefrontPagesConfig` in `src/hooks/useStorefrontPages.ts` with `hero_height`, `hero_align`, `hero_spec_items`, `hero_secondary_style`, `size_compare`, `feature_cards`, `wide_banner`, `section_order`, `heading_font`. All optional with defaults that reproduce today's page; `coerce()` fills gaps so existing tenant rows keep working.
-- New components in `src/components/storefront/`: `SizeCompare.tsx`, `FeatureCards.tsx`, `WideBanner.tsx`. `HeroSection.tsx` gains the height/align/spec-line props; `AssuranceBar.tsx` gains a 4-up variant.
-- `StorefrontHome.tsx` renders sections from `section_order` instead of a fixed sequence.
-- `PlatformStorefrontDetail.tsx` gets new editor cards for each section, with repeatable-row editors and image upload/URL fields reusing the existing image handling.
-- Storefront tokens and the optional serif heading scale live in `src/index.css` under the `.dc-storefront` scope — no hardcoded colour utilities.
-- No schema change: it is all the one JSON row in `tenant_settings`.
-
-## Then
-
-Once merged I'll populate The 2027 Edition's config to match the render (copy, size chips, three feature cards, trade banner, four assurance items) so you can see it live and adjust from the editor.
-
-## Questions folded in
-
-Images for the feature cards and banner: I'll use the tenant's existing uploads where they exist and leave placeholders where they don't — tell me if you want me to source or generate stand-ins.
+Re-capture home, shop, product and cart at 390px and 430px: page width must equal the phone width on every page (no horizontal scroll), no clipped headings, hero readable, footer directly under content.
