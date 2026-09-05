@@ -11,9 +11,9 @@ interface Props {
 }
 
 const HEIGHTS: Record<string, string> = {
-  standard: "min-h-[350px] lg:min-h-[420px]",
-  tall: "min-h-[420px] lg:min-h-[560px]",
-  screen: "min-h-[480px] lg:min-h-[calc(100vh-160px)]",
+  standard: "lg:min-h-[420px]",
+  tall: "lg:min-h-[560px]",
+  screen: "lg:min-h-[calc(100vh-160px)]",
 };
 
 export default function HeroSection({ config, heroImageUrl, onPrimary, onSecondary }: Props) {
@@ -30,15 +30,15 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
           {config.hero_eyebrow}
         </p>
       )}
-      <h1 className="sf-hero-title text-foreground">{config.hero_heading}</h1>
+      <h1 className="sf-hero-title break-words text-foreground">{config.hero_heading}</h1>
       <p className="mt-4 max-w-[44ch] text-[15px] leading-relaxed text-foreground/80">
         {config.hero_subcopy}
       </p>
 
-      <div className="mt-7 flex flex-wrap items-center gap-5">
+      <div className="mt-6 flex flex-col items-stretch gap-3 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
         <Button
           size="lg"
-          className="h-12 rounded-none px-7 text-[12px] font-bold uppercase tracking-[0.12em]"
+          className="h-12 w-full rounded-none px-7 text-[12px] font-bold uppercase tracking-[0.12em] sm:w-auto"
           onClick={onPrimary}
         >
           {config.hero_cta_primary}
@@ -49,7 +49,7 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
             <button
               type="button"
               onClick={onSecondary}
-              className="group flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-foreground"
+              className="group flex items-center justify-center gap-2 py-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-foreground sm:justify-start"
             >
               {config.hero_cta_secondary}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -58,7 +58,7 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
             <Button
               size="lg"
               variant="outline"
-              className="h-12 rounded-none border-2 border-primary bg-background/90 px-7 text-[12px] font-bold uppercase tracking-[0.12em] text-primary hover:bg-background"
+              className="h-12 w-full rounded-none border-2 border-primary bg-background/90 px-7 text-[12px] font-bold uppercase tracking-[0.12em] text-primary hover:bg-background sm:w-auto"
               onClick={onSecondary}
             >
               {config.hero_cta_secondary}
@@ -68,15 +68,15 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
 
       {specs.length > 0 && (
         <ul
-          className={`mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-4 ${
-            align === "center" ? "justify-center" : ""
+          className={`mt-7 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2 ${
+            align === "center" ? "sm:justify-center" : ""
           }`}
         >
           {specs.map((spec, i) => (
             <li
               key={spec}
               className={`text-[11px] font-medium uppercase tracking-[0.12em] text-foreground/70 ${
-                i ? "border-l pl-5" : ""
+                i ? "sm:border-l sm:pl-5" : ""
               }`}
             >
               {spec}
@@ -87,6 +87,21 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
     </>
   );
 
+  /** Phones: picture on top, words underneath — never text over image. */
+  const stacked = (
+    <section className="border-b bg-background lg:hidden">
+      <div className="relative aspect-[4/3] w-full bg-muted sm:aspect-[16/9]">
+        <img
+          src={image}
+          alt={config.hero_heading}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="eager"
+        />
+      </div>
+      <div className={`sf-container py-8 ${align === "center" ? "text-center" : ""}`}>{copy}</div>
+    </section>
+  );
+
   if (full) {
     const place =
       align === "center"
@@ -95,40 +110,46 @@ export default function HeroSection({ config, heroImageUrl, onPrimary, onSeconda
           ? "justify-end"
           : "justify-start";
     return (
-      <section className={`relative overflow-hidden border-b ${height}`}>
-        <img
-          src={image}
-          alt={config.hero_heading}
-          className="absolute inset-0 h-full w-full object-cover object-center"
-          loading="eager"
-        />
-        <div className={`sf-container relative flex items-center py-10 ${height}`}>
-          <div className={`flex w-full ${place}`}>
-            <div className="max-w-[560px]">{copy}</div>
+      <>
+        {stacked}
+        <section className={`relative hidden overflow-hidden border-b lg:block ${height}`}>
+          <img
+            src={image}
+            alt={config.hero_heading}
+            className="absolute inset-0 h-full w-full object-cover object-center"
+            loading="eager"
+          />
+          <div className={`sf-container relative flex items-center py-10 ${height}`}>
+            <div className={`flex w-full ${place}`}>
+              <div className="max-w-[560px]">{copy}</div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </>
     );
   }
 
   return (
-    <section className="border-b bg-background">
-      <div className="grid items-stretch lg:grid-cols-[48%_52%]">
-        <div className="flex items-center">
-          <div className="ml-auto w-full max-w-[680px] px-[6vw] py-10 lg:pl-[9vw] lg:pr-10">
-            {copy}
+    <>
+      {stacked}
+      <section className="hidden border-b bg-background lg:block">
+        <div className="grid items-stretch lg:grid-cols-[48%_52%]">
+          <div className="flex items-center">
+            <div className="ml-auto w-full max-w-[680px] px-[6vw] py-10 lg:pl-[9vw] lg:pr-10">
+              {copy}
+            </div>
+          </div>
+
+          <div className={`relative bg-muted ${height}`}>
+            <img
+              src={image}
+              alt={config.hero_heading}
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="eager"
+            />
           </div>
         </div>
-
-        <div className={`relative bg-muted ${height}`}>
-          <img
-            src={image}
-            alt={config.hero_heading}
-            className="absolute inset-0 h-full w-full object-cover"
-            loading="eager"
-          />
-        </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
