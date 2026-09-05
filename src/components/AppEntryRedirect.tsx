@@ -23,6 +23,12 @@ export function AppEntryRedirect() {
     );
   }
 
+  // A sign-in that was bounced here from somewhere else — explain rather than
+  // silently showing the marketing page.
+  if (stranded) {
+    return <OAuthStrandedNotice message={stranded.message} />;
+  }
+
   // Unauthenticated visitors land on the public marketing site
   if (!user) {
     return <MarketingLanding />;
