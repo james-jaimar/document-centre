@@ -298,6 +298,7 @@ export default function BranchOrderDetail() {
             messages={messages}
             appId={order.app_id}
             tenantId={order.tenant_id}
+            branchId={order.branch_id}
           />
         </div>
       </div>
