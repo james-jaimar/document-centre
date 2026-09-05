@@ -10,6 +10,7 @@
 
 const KEY = "dc_return_path";
 const AT_KEY = "dc_return_path_at";
+const ORIGIN_KEY = "dc_return_origin";
 const MAX_AGE_MS = 10 * 60 * 1000;
 
 export function rememberReturnPath(path?: string) {
@@ -17,8 +18,22 @@ export function rememberReturnPath(path?: string) {
   try {
     localStorage.setItem(KEY, target);
     localStorage.setItem(AT_KEY, String(Date.now()));
+    localStorage.setItem(ORIGIN_KEY, window.location.origin);
   } catch {
     /* storage unavailable — the `next` param still covers us */
+  }
+}
+
+/** The site the user started signing in from, if still fresh. */
+export function peekReturnOrigin(): string | null {
+  try {
+    const origin = localStorage.getItem(ORIGIN_KEY);
+    const at = Number(localStorage.getItem(AT_KEY) ?? 0);
+    if (!origin || !/^https?:\/\//.test(origin)) return null;
+    if (at && Date.now() - at > MAX_AGE_MS) return null;
+    return origin;
+  } catch {
+    return null;
   }
 }
 
@@ -53,6 +68,7 @@ export function clearReturnPath() {
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(AT_KEY);
+    localStorage.removeItem(ORIGIN_KEY);
   } catch {
     /* noop */
   }
