@@ -8,7 +8,7 @@
  * against the parent order rather than trusting any signed-in user.
  */
 import { supabase } from "@/integrations/supabase/client";
-import { getUploadUrl, uploadToS3 } from "@/lib/s3Storage";
+import { uploadToS3 } from "@/lib/s3Storage";
 
 /** 50 MB — anything larger belongs on WeTransfer, not in chat. */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
@@ -115,7 +115,6 @@ export async function uploadMessageAttachment(
   ctx: { tenantId: string; branchId?: string | null; orderId: string },
 ): Promise<AttachmentPayload> {
   const objectPath = buildAttachmentPath({ ...ctx, fileName: file.name });
-  await getUploadUrl(objectPath); // warm/validate signing before the PUT
   await uploadToS3(objectPath, file);
   return {
     file_name: file.name,
