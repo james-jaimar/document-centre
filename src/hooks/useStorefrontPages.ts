@@ -23,6 +23,49 @@ export interface StorefrontStep {
   body: string;
 }
 
+export interface StorefrontSizeChip {
+  label: string;
+  dimensions: string;
+  /** Relative visual size of the outlined rectangle, 1–10. */
+  scale: number;
+  highlight: boolean;
+}
+
+export interface StorefrontSizeCompare {
+  heading: string;
+  body: string;
+  items: StorefrontSizeChip[];
+}
+
+export interface StorefrontFeatureCard {
+  title: string;
+  body: string;
+  image_url: string;
+  link_label: string;
+  /** Path relative to the tenant root, e.g. "shop/desk-pads". */
+  link_path: string;
+}
+
+export interface StorefrontWideBanner {
+  heading: string;
+  body: string;
+  cta_label: string;
+  cta_path: string;
+  image_url: string;
+  image_side: "left" | "right";
+  /** 0–100 darkening over the image so copy stays readable. */
+  overlay: number;
+}
+
+export type StorefrontSectionKey =
+  | "products"
+  | "size_compare"
+  | "feature_cards"
+  | "wide_banner"
+  | "how_it_works"
+  | "trade"
+  | "assurance_footer";
+
 export interface StorefrontPagesConfig {
   enabled: boolean;
   pages: {
@@ -40,6 +83,19 @@ export interface StorefrontPagesConfig {
   hero_image_url: string;
   /** "split" = image in the right column, "full" = full-width image with copy overlaid. */
   hero_layout: "split" | "full";
+  /** Hero depth. */
+  hero_height: "standard" | "tall" | "screen";
+  hero_align: "left" | "center" | "right";
+  hero_secondary_style: "button" | "link";
+  /** Short facts under the hero CTAs, shown divided by rules. */
+  hero_spec_items: string[];
+  size_compare: StorefrontSizeCompare;
+  feature_cards: StorefrontFeatureCard[];
+  wide_banner: StorefrontWideBanner;
+  /** Landing section order + visibility (omitted keys are hidden). */
+  section_order: StorefrontSectionKey[];
+  /** Heading typeface inside the storefront only. */
+  heading_font: "sans" | "serif";
   strip_heading: string;
   strip_subcopy: string;
   how_it_works_heading: string;
@@ -60,6 +116,27 @@ export interface StorefrontPagesConfig {
   images: Record<string, string[]>;
 }
 
+export const STOREFRONT_SECTION_KEYS: StorefrontSectionKey[] = [
+  "products",
+  "size_compare",
+  "feature_cards",
+  "wide_banner",
+  "how_it_works",
+  "trade",
+  "assurance_footer",
+];
+
+export const STOREFRONT_SECTION_LABELS: Record<StorefrontSectionKey, string> = {
+  products: "Products / categories",
+  size_compare: "Size comparison",
+  feature_cards: "Feature cards",
+  wide_banner: "Wide banner",
+  how_it_works: "How it works",
+  trade: "Trade band",
+  assurance_footer: "Footer strip",
+};
+
+
 export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   enabled: false,
   pages: { landing: true, shop: true, product: true, editor: true },
@@ -76,8 +153,26 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   hero_cta_secondary: "Browse the shop",
   hero_image_url: "",
   hero_layout: "split",
+  hero_height: "standard",
+  hero_align: "left",
+  hero_secondary_style: "button",
+  hero_spec_items: [],
+  size_compare: { heading: "", body: "", items: [] },
+  feature_cards: [],
+  wide_banner: {
+    heading: "",
+    body: "",
+    cta_label: "",
+    cta_path: "",
+    image_url: "",
+    image_side: "right",
+    overlay: 40,
+  },
+  section_order: ["products", "how_it_works", "trade", "assurance_footer"],
+  heading_font: "sans",
   strip_heading: "",
   strip_subcopy: "",
+
   how_it_works_heading: "How it works",
   how_it_works: [
     { title: "Choose your product", body: "Pick a size, paper and quantity with live pricing." },
@@ -117,6 +212,18 @@ function coerce(raw: unknown): StorefrontPagesConfig {
     footer_items: v.footer_items?.length
       ? v.footer_items
       : STOREFRONT_PAGES_DEFAULTS.footer_items,
+    hero_spec_items: v.hero_spec_items ?? [],
+    size_compare: {
+      ...STOREFRONT_PAGES_DEFAULTS.size_compare,
+      ...(v.size_compare ?? {}),
+      items: v.size_compare?.items ?? [],
+    },
+    feature_cards: v.feature_cards ?? [],
+    wide_banner: { ...STOREFRONT_PAGES_DEFAULTS.wide_banner, ...(v.wide_banner ?? {}) },
+    section_order: v.section_order?.length
+      ? v.section_order
+      : STOREFRONT_PAGES_DEFAULTS.section_order,
+
     images: v.images ?? {},
   };
 }

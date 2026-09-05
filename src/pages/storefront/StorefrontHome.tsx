@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
-import { useStorefrontPages } from "@/hooks/useStorefrontPages";
+import { useStorefrontPages, type StorefrontSectionKey } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
@@ -11,6 +11,9 @@ import HowItWorks from "@/components/storefront/HowItWorks";
 import TradeBand from "@/components/storefront/TradeBand";
 import ProductStrip from "@/components/storefront/ProductStrip";
 import CategoryCard from "@/components/storefront/CategoryCard";
+import SizeCompare from "@/components/storefront/SizeCompare";
+import FeatureCards from "@/components/storefront/FeatureCards";
+import WideBanner from "@/components/storefront/WideBanner";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { familyImage } from "@/lib/storefront/productImages";
@@ -41,17 +44,10 @@ export default function StorefrontHome() {
     return entry ? familyImage(entry.family, config.images) : null;
   };
 
-  return (
-    <div className="dc-storefront">
-      <AssuranceBar items={config.assurance_items} />
+  const go = (path: string) => navigate(tenantPath(path.replace(/^\/+/, "")));
 
-      <HeroSection
-        config={config}
-        heroImageUrl={branding?.hero_image_url}
-        onPrimary={() => navigate(tenantPath(shopEnabled ? "shop" : "orders/new"))}
-        onSecondary={() => navigate(tenantPath(shopEnabled ? "shop" : "orders/new"))}
-      />
-
+  const sections: Record<StorefrontSectionKey, React.ReactNode> = {
+    products: (
       <section className="border-t py-3">
         <div className="sf-container">
           {isLoading ? (
@@ -88,9 +84,24 @@ export default function StorefrontHome() {
           )}
         </div>
       </section>
-
+    ),
+    size_compare: <SizeCompare data={config.size_compare} />,
+    feature_cards: (
+      <FeatureCards
+        cards={config.feature_cards}
+        onSelect={(card) => go(card.link_path || (shopEnabled ? "shop" : "orders/new"))}
+      />
+    ),
+    wide_banner: (
+      <WideBanner
+        data={config.wide_banner}
+        onClick={() => go(config.wide_banner.cta_path || "account")}
+      />
+    ),
+    how_it_works: (
       <HowItWorks heading={config.how_it_works_heading} steps={config.how_it_works} />
-
+    ),
+    trade: (
       <TradeBand
         heading={config.trade_heading}
         body={config.trade_body}
@@ -98,8 +109,26 @@ export default function StorefrontHome() {
         benefits={config.trade_benefits}
         onClick={() => navigate(tenantPath("account"))}
       />
-
+    ),
+    assurance_footer: (
       <StorefrontFooterStrip items={config.footer_items} note={config.footer_note} />
+    ),
+  };
+
+  return (
+    <div className="dc-storefront" data-heading={config.heading_font}>
+      <AssuranceBar items={config.assurance_items} />
+
+      <HeroSection
+        config={config}
+        heroImageUrl={branding?.hero_image_url}
+        onPrimary={() => navigate(tenantPath(shopEnabled ? "shop" : "orders/new"))}
+        onSecondary={() => navigate(tenantPath(shopEnabled ? "shop" : "orders/new"))}
+      />
+
+      {config.section_order.map((key) =>
+        sections[key] ? <div key={key}>{sections[key]}</div> : null,
+      )}
     </div>
   );
 }

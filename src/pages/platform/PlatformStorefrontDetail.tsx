@@ -8,6 +8,8 @@ import {
   useSaveStorefrontPages,
   useStorefrontPages,
   STOREFRONT_PAGES_DEFAULTS,
+  STOREFRONT_SECTION_KEYS,
+  STOREFRONT_SECTION_LABELS,
   type StorefrontPagesConfig,
 } from "@/hooks/useStorefrontPages";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+
 import { familyImage } from "@/lib/storefront/productImages";
 import ProductGalleryManager from "@/components/admin/ProductGalleryManager";
 
@@ -130,7 +141,7 @@ export default function PlatformStorefrontDetail() {
   );
 
   const stringList = (
-    key: "trade_benefits" | "footer_items",
+    key: "trade_benefits" | "footer_items" | "hero_spec_items",
     label: string,
     placeholder: string,
   ) => (
@@ -239,6 +250,48 @@ export default function PlatformStorefrontDetail() {
               {text("hero_cta_secondary", "Secondary CTA label")}
             </div>
             {text("hero_subcopy", "Sub-copy", true)}
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Hero depth</Label>
+                <Select
+                  value={draft.hero_height}
+                  onValueChange={(v) => set("hero_height", v as any)}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="tall">Tall</SelectItem>
+                    <SelectItem value="screen">Full screen</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Copy position</Label>
+                <Select value={draft.hero_align} onValueChange={(v) => set("hero_align", v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="center">Centre</SelectItem>
+                    <SelectItem value="right">Right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Secondary CTA style</Label>
+                <Select
+                  value={draft.hero_secondary_style}
+                  onValueChange={(v) => set("hero_secondary_style", v as any)}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="button">Outlined button</SelectItem>
+                    <SelectItem value="link">Text link with arrow</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {stringList("hero_spec_items", "Spec line under the buttons", "594 × 420 mm")}
+
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>
                 <Label className="text-sm">Full-width hero image</Label>
@@ -394,6 +447,331 @@ export default function PlatformStorefrontDetail() {
             {text("trade_body", "Body", true)}
             {stringList("trade_benefits", "Benefits", "Volume pricing")}
           </section>
+
+          {/* -------- Size comparison -------- */}
+          <section className="space-y-3 rounded-lg border p-4">
+            <Label className="text-sm font-semibold">Size comparison</Label>
+            <p className="text-xs text-muted-foreground">
+              Leave the heading and chips empty to hide this section.
+            </p>
+            <Input
+              value={draft.size_compare.heading}
+              placeholder="A little calendar is easy to ignore."
+              onChange={(e) =>
+                set("size_compare", { ...draft.size_compare, heading: e.target.value })
+              }
+            />
+            <Textarea
+              rows={2}
+              value={draft.size_compare.body}
+              placeholder="Short supporting paragraph"
+              onChange={(e) => set("size_compare", { ...draft.size_compare, body: e.target.value })}
+            />
+            {draft.size_compare.items.map((item, i) => (
+              <div key={i} className="grid gap-2 md:grid-cols-[1fr_1fr_90px_110px_40px]">
+                <Input
+                  value={item.label}
+                  placeholder="A4"
+                  onChange={(e) => {
+                    const items = [...draft.size_compare.items];
+                    items[i] = { ...item, label: e.target.value };
+                    set("size_compare", { ...draft.size_compare, items });
+                  }}
+                />
+                <Input
+                  value={item.dimensions}
+                  placeholder="210 × 297 mm"
+                  onChange={(e) => {
+                    const items = [...draft.size_compare.items];
+                    items[i] = { ...item, dimensions: e.target.value };
+                    set("size_compare", { ...draft.size_compare, items });
+                  }}
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={item.scale}
+                  onChange={(e) => {
+                    const items = [...draft.size_compare.items];
+                    items[i] = { ...item, scale: Number(e.target.value) || 1 };
+                    set("size_compare", { ...draft.size_compare, items });
+                  }}
+                />
+                <label className="flex items-center gap-2 text-xs">
+                  <Switch
+                    checked={item.highlight}
+                    onCheckedChange={(v) => {
+                      const items = [...draft.size_compare.items];
+                      items[i] = { ...item, highlight: v };
+                      set("size_compare", { ...draft.size_compare, items });
+                    }}
+                  />
+                  Highlight
+                </label>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remove size"
+                  onClick={() =>
+                    set("size_compare", {
+                      ...draft.size_compare,
+                      items: draft.size_compare.items.filter((_, j) => j !== i),
+                    })
+                  }
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                set("size_compare", {
+                  ...draft.size_compare,
+                  items: [
+                    ...draft.size_compare.items,
+                    { label: "", dimensions: "", scale: 3, highlight: false },
+                  ],
+                })
+              }
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add size
+            </Button>
+          </section>
+
+          {/* -------- Feature cards -------- */}
+          <section className="space-y-4 rounded-lg border p-4">
+            <Label className="text-sm font-semibold">Feature cards</Label>
+            {draft.feature_cards.map((card, i) => {
+              const update = (patch: Partial<typeof card>) => {
+                const next = [...draft.feature_cards];
+                next[i] = { ...card, ...patch };
+                set("feature_cards", next);
+              };
+              return (
+                <div key={i} className="space-y-2 rounded-md border p-3">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={card.title}
+                      placeholder="Desk pads"
+                      onChange={(e) => update({ title: e.target.value })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Remove card"
+                      onClick={() =>
+                        set("feature_cards", draft.feature_cards.filter((_, j) => j !== i))
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    rows={2}
+                    value={card.body}
+                    placeholder="One or two short lines"
+                    onChange={(e) => update({ body: e.target.value })}
+                  />
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <Input
+                      value={card.link_label}
+                      placeholder="Shop desk pads"
+                      onChange={(e) => update({ link_label: e.target.value })}
+                    />
+                    <Input
+                      value={card.link_path}
+                      placeholder="shop/c/desk-pads"
+                      onChange={(e) => update({ link_path: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <ImageUploadButton
+                      tenantId={tenantId}
+                      label="Upload card image"
+                      onUploaded={(url) => update({ image_url: url })}
+                    />
+                    {card.image_url && (
+                      <>
+                        <img
+                          src={card.image_url}
+                          alt=""
+                          className="h-12 w-20 rounded border object-cover"
+                        />
+                        <Button variant="ghost" size="sm" onClick={() => update({ image_url: "" })}>
+                          Remove
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                set("feature_cards", [
+                  ...draft.feature_cards,
+                  { title: "", body: "", image_url: "", link_label: "", link_path: "" },
+                ])
+              }
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add card
+            </Button>
+          </section>
+
+          {/* -------- Wide banner -------- */}
+          <section className="space-y-3 rounded-lg border p-4">
+            <Label className="text-sm font-semibold">Wide banner</Label>
+            <Input
+              value={draft.wide_banner.heading}
+              placeholder="Sell big. Without buying big."
+              onChange={(e) => set("wide_banner", { ...draft.wide_banner, heading: e.target.value })}
+            />
+            <Textarea
+              rows={2}
+              value={draft.wide_banner.body}
+              placeholder="Supporting lines"
+              onChange={(e) => set("wide_banner", { ...draft.wide_banner, body: e.target.value })}
+            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input
+                value={draft.wide_banner.cta_label}
+                placeholder="Explore trade"
+                onChange={(e) =>
+                  set("wide_banner", { ...draft.wide_banner, cta_label: e.target.value })
+                }
+              />
+              <Input
+                value={draft.wide_banner.cta_path}
+                placeholder="account"
+                onChange={(e) =>
+                  set("wide_banner", { ...draft.wide_banner, cta_path: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Image side</Label>
+                <Select
+                  value={draft.wide_banner.image_side}
+                  onValueChange={(v) =>
+                    set("wide_banner", { ...draft.wide_banner, image_side: v as any })
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="right">Right</SelectItem>
+                    <SelectItem value="left">Left</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Overlay darkness (0–100)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={draft.wide_banner.overlay}
+                  onChange={(e) =>
+                    set("wide_banner", {
+                      ...draft.wide_banner,
+                      overlay: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <ImageUploadButton
+                tenantId={tenantId}
+                label="Upload banner image"
+                onUploaded={(url) => set("wide_banner", { ...draft.wide_banner, image_url: url })}
+              />
+              {draft.wide_banner.image_url && (
+                <>
+                  <img
+                    src={draft.wide_banner.image_url}
+                    alt=""
+                    className="h-12 w-20 rounded border object-cover"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => set("wide_banner", { ...draft.wide_banner, image_url: "" })}
+                  >
+                    Remove
+                  </Button>
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* -------- Layout -------- */}
+          <section className="space-y-3 rounded-lg border p-4">
+            <Label className="text-sm font-semibold">Section order &amp; visibility</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Heading typeface</Label>
+              <Select
+                value={draft.heading_font}
+                onValueChange={(v) => set("heading_font", v as any)}
+              >
+                <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sans">Modern sans</SelectItem>
+                  <SelectItem value="serif">Editorial serif</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-md border">
+              {STOREFRONT_SECTION_KEYS.map((key) => {
+                const idx = draft.section_order.indexOf(key);
+                const on = idx >= 0;
+                const move = (dir: -1 | 1) => {
+                  const next = [...draft.section_order];
+                  const to = idx + dir;
+                  if (to < 0 || to >= next.length) return;
+                  [next[idx], next[to]] = [next[to], next[idx]];
+                  set("section_order", next);
+                };
+                return (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0"
+                  >
+                    <span className="text-sm">{STOREFRONT_SECTION_LABELS[key]}</span>
+                    <div className="flex items-center gap-1.5">
+                      {on && (
+                        <>
+                          <Button variant="ghost" size="icon" aria-label="Move up" onClick={() => move(-1)}>
+                            <ChevronUp className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" aria-label="Move down" onClick={() => move(1)}>
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                      <Switch
+                        checked={on}
+                        onCheckedChange={(v) =>
+                          set(
+                            "section_order",
+                            v
+                              ? [...draft.section_order, key]
+                              : draft.section_order.filter((k) => k !== key),
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
         </TabsContent>
 
         {/* ---------------- Shop & product ---------------- */}
