@@ -49,7 +49,7 @@ export default function FeatureCards({
             </div>
 
             {card.link_label && (
-              <span className="flex items-center gap-2 bg-background px-7 py-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground">
+              <span className="flex items-center gap-2 bg-background px-5 py-3.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground md:px-7 md:py-4">
                 {card.link_label}
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
               </span>
