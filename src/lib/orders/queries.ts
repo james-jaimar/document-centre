@@ -130,7 +130,7 @@ export async function fetchOrderDetail(orderId: string) {
         .order("created_at", { ascending: false }),
       supabase
         .from("messages")
-        .select("*")
+        .select("*, message_attachments (id, message_id, file_name, file_path, file_size, mime_type)")
         .eq("order_id", orderId)
         .order("created_at", { ascending: true }),
       supabase
