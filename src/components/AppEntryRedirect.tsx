@@ -3,10 +3,12 @@ import { getDefaultRoute, useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
 import MarketingLanding from "@/pages/MarketingLanding";
+import OAuthStrandedNotice, { useStrandedOAuth } from "@/components/auth/OAuthStrandedNotice";
 
 export function AppEntryRedirect() {
   const { user, highestRole, loading, rolesLoaded } = useAuth();
   const { tenantId, memberships, loading: tenantLoading } = useTenantContext();
+  const stranded = useStrandedOAuth();
 
   // Wait for roles AND memberships to resolve before deciding — otherwise a
   // tenant admin can briefly look role-less and get sent to /dashboard.
