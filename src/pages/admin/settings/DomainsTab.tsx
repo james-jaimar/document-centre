@@ -223,6 +223,39 @@ export function DomainsTab() {
                 )}
               </div>
 
+              {/* Sign-in return addresses — required or Google/email sign-in
+                  bounces users to the Document Centre home page. */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+                <p className="text-sm font-medium text-amber-900 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" /> Sign-in return addresses
+                </p>
+                <p className="text-sm text-amber-800">
+                  Add both of these to the sign-in provider's approved return addresses.
+                  Until they are approved, customers signing in on this domain are sent to
+                  the Document Centre home page instead of back to the shop.
+                </p>
+                <div className="space-y-2">
+                  {[
+                    `https://${savedDomain}/auth/callback`,
+                    `https://${savedDomain}/**`,
+                  ].map((value) => (
+                    <div key={value} className="flex items-center gap-2">
+                      <code className="rounded bg-white/70 px-2 py-1 text-xs font-mono text-amber-900 break-all">
+                        {value}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 shrink-0"
+                        onClick={() => copyToClipboard(value)}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {verificationResult && !verificationResult.verified && (
                 <div className="text-sm text-muted-foreground space-y-1">
                   <p>{verificationResult.message}</p>
