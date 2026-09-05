@@ -1,4 +1,15 @@
-import { Truck, Shield, Clock, Star, Package, CreditCard } from "lucide-react";
+import {
+  Truck,
+  Shield,
+  Clock,
+  Star,
+  Package,
+  CreditCard,
+  Pencil,
+  Layers,
+  Heart,
+  Sparkles,
+} from "lucide-react";
 import type { StorefrontAssuranceItem } from "@/hooks/useStorefrontPages";
 
 const ICONS: Record<string, React.ElementType> = {
@@ -8,7 +19,12 @@ const ICONS: Record<string, React.ElementType> = {
   star: Star,
   package: Package,
   card: CreditCard,
+  pencil: Pencil,
+  layers: Layers,
+  heart: Heart,
+  sparkles: Sparkles,
 };
+
 
 /** Thin trust strip that sits above the page content. */
 export default function AssuranceBar({ items }: { items: StorefrontAssuranceItem[] }) {
