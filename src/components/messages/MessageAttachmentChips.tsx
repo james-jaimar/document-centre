@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Download, FileText, ImageIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { downloadObject } from "@/lib/downloadFile";
 import {
   formatBytes,
-  getAttachmentUrl,
   isImageAttachment,
   type MessageAttachmentRow,
 } from "@/lib/messages/attachments";
@@ -21,14 +21,14 @@ export default function MessageAttachmentChips({ attachments }: Props) {
   const open = async (att: MessageAttachmentRow) => {
     setBusyId(att.id);
     try {
-      const url = await getAttachmentUrl(att.id);
-      window.open(url, "_blank", "noopener,noreferrer");
+      await downloadObject(att.file_path, att.file_name);
     } catch (err: any) {
-      toast.error(err?.message || "Could not open this attachment");
+      toast.error(err?.message || "Could not download this attachment");
     } finally {
       setBusyId(null);
     }
   };
+
 
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">

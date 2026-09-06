@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "download") {
-      const { object_path } = body;
+      const { object_path, filename } = body;
       if (!object_path || typeof object_path !== "string") {
         return json({ error: "object_path required" }, 400);
       }
@@ -287,15 +287,24 @@ Deno.serve(async (req) => {
         return json({ error: friendlyError("loading your preview", ref) }, 503);
       }
 
-      return new Response(fileRes.body, {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": fileRes.headers.get("Content-Type") || "application/octet-stream",
-          "Cache-Control": "private, max-age=600",
-        },
-      });
+      // When a filename is supplied the caller wants a real "save file"
+      // download rather than an inline preview: attach a Content-Disposition
+      // so the browser never renders the PDF in a tab.
+      const headers: Record<string, string> = {
+        ...corsHeaders,
+        "Content-Type": fileRes.headers.get("Content-Type") || "application/octet-stream",
+        "Cache-Control": "private, max-age=600",
+      };
+      const len = fileRes.headers.get("Content-Length");
+      if (len) headers["Content-Length"] = len;
+      if (typeof filename === "string" && filename.trim()) {
+        const safe = filename.replace(/[^a-zA-Z0-9._ -]+/g, "_").slice(0, 180);
+        headers["Content-Disposition"] = `attachment; filename="${safe}"`;
+      }
+
+      return new Response(fileRes.body, { status: 200, headers });
     }
+
 
     if (action === "copy") {
       const { source_path, dest_path } = body;

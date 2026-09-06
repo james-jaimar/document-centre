@@ -6,6 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
 import { getObjectSizes } from "@/lib/s3Storage";
+import { downloadObject } from "@/lib/downloadFile";
+
 
 import { useToast } from "@/hooks/use-toast";
 
@@ -156,76 +158,24 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
   };
 
   /**
-   * Large artefacts (print-ready PDFs are routinely hundreds of MB) must never
-   * be buffered into a Blob — that stalls the tab and blows memory. For those
-   * we hand the presigned URL to the browser's own downloader via a hidden
-   * anchor, which streams straight to disk and never trips the pop-up blocker.
+   * Everything comes back through the storage edge function with an explicit
+   * attachment filename, so the browser always saves the file (and never
+   * renders a PDF inline under its raw storage key). Large artefacts stream
+   * straight to the file the operator picks where the browser supports it.
    */
-  const BLOB_DOWNLOAD_LIMIT = 25 * 1024 * 1024;
-
   const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120_000);
     try {
-      const url = await signedUrl(path);
-      if (!url) {
-        toast({
-          title: "Could not prepare the download",
-          description: "The file could not be signed. Try regenerating the PDF.",
-          variant: "destructive",
-        });
-        return;
-      }
       const filename = filenameFor(suffix);
       const knownSize = sizes[path];
-      const big = knownSize == null ? false : knownSize > BLOB_DOWNLOAD_LIMIT;
-
-      const streamToDisk = () => {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.rel = "noopener";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      };
-
-      if (big) {
+      if (knownSize != null && knownSize > 25 * 1024 * 1024) {
         toast({
           title: "Download started",
-          description: `${filename} (${formatBytes(knownSize)}) — this is a large file, check your browser downloads.`,
+          description: `${filename} (${formatBytes(knownSize)}) — large file, this may take a moment.`,
         });
-        streamToDisk();
-        return;
       }
-
-      let triggered = false;
-      try {
-        const res = await fetch(url, { signal: controller.signal });
-        if (res.ok) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = blobUrl;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-          triggered = true;
-        }
-      } catch (err) {
-        // Aborted (slow/hung S3 GET) or blocked by CORS — stream instead.
-        if ((err as Error)?.name === "AbortError") {
-          toast({
-            title: "Download is taking too long",
-            description: "Handing it to the browser downloader instead.",
-          });
-        }
-      }
-      if (!triggered) streamToDisk();
+      await downloadObject(path, filename);
     } catch (e) {
       toast({
         title: "Download failed",
@@ -233,10 +183,10 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
         variant: "destructive",
       });
     } finally {
-      clearTimeout(timer);
       setOpeningPath(null);
     }
   };
+
 
 
 
