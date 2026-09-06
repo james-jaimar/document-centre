@@ -6,6 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
 import { getObjectSizes } from "@/lib/s3Storage";
+import { downloadObject } from "@/lib/downloadFile";
+
 
 import { useToast } from "@/hooks/use-toast";
 
