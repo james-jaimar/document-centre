@@ -421,6 +421,8 @@ export function usePlaceOrder() {
        * customer nothing: their basket is still there when they come back.
        */
       holdForPayment?: boolean;
+      /** Payment method chosen at checkout: "account" | "offline" | "stripe" | "payfast". */
+      paymentMethod?: string;
       deliveryMethod: "collection" | "delivery";
       notes?: string;
       branchId?: string;
