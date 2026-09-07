@@ -115,6 +115,8 @@ export function useCustomerPricingTier(): CustomerPricingTier {
     credit,
     accountBalance,
     availableCredit,
+    ledgerCompanyId: personalCredit ? null : company?.id ?? null,
+    ledgerProfileId: personalCredit ? user?.id ?? null : null,
     isLoading,
   };
 }
