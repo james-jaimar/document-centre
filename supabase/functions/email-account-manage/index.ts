@@ -228,11 +228,11 @@ Deno.serve(async (req) => {
         verifiedApiKey = (await readResendKey(admin, existing.resend_api_key_secret_id)) ?? "";
       }
       const keyProblem = validateResendApiKey(verifiedApiKey);
-      if (keyProblem) return json({ error: keyProblem }, 400);
+      if (keyProblem) return json({ error: keyProblem });
 
       const verification = await verifyResendAccount(verifiedApiKey, body.from_email.trim());
       if (!verification.ok) {
-        return json({ error: verification.message, verification }, 400);
+        return json({ error: verification.message, verification });
       }
 
       let apiKeySecretId: string | null = existing?.resend_api_key_secret_id ?? null;
