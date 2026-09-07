@@ -898,8 +898,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                       ? () => setLibraryFor(p.id)
                       : undefined
                   }
+                  loadError={!!imageErrors[p.id]}
+                  onRetryImage={() => retryImage(p.id)}
                   onChange={(v) => applyValue(p, v)}
                   onClear={() => applyValue(p, null)}
+
                 />
                 {siblingsOf(p).length > 1 && (
                   <p className="px-1 text-[11px] text-muted-foreground">
