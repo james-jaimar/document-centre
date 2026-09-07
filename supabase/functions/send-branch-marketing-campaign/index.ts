@@ -13,6 +13,12 @@ import { renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 import { appendTrackingPixel } from "../_shared/emailTracking.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
+import {
+  type Audience, type CampaignScope, type CampaignTarget,
+  AUDIENCE_COLUMN, callerCanSendForTenant, resolveTargets, resolveSenderAccountId,
+  NO_SENDER_MESSAGE, fetchSuppressedEmails, buildUnsubscribeUrl, withUnsubscribeFooter,
+  upsertActivationPage as upsertAudienceActivationPage, mintToken,
+} from "../_shared/campaignAudience.ts";
 
 declare const EdgeRuntime: {
   waitUntil: (promise: Promise<unknown>) => void;
@@ -35,9 +41,22 @@ interface BranchRow {
   id: string;
   name: string;
   email: string | null;
-  slug: string | null;
-  url_slug: string | null;
-  trading_name: string | null;
+  slug?: string | null;
+  url_slug?: string | null;
+  trading_name?: string | null;
+  /** Audience this recipient came from — branch unless a tenant picked otherwise. */
+  kind?: Audience;
+  contactName?: string;
+}
+
+function toTarget(row: BranchRow): CampaignTarget {
+  return {
+    id: row.id,
+    kind: row.kind ?? "branch",
+    name: row.name,
+    email: row.email,
+    contactName: row.contactName || row.trading_name || row.name,
+  };
 }
 
 interface CampaignRow {
@@ -80,6 +99,10 @@ interface DispatchContext {
   appOrigin: string;
   campaignId: string;
   platformSenderId: string | null;
+  scope: CampaignScope;
+  audience: Audience;
+  supabaseUrl: string;
+  senderLabel: string;
 }
 
 interface PreparedRecipient {
@@ -148,63 +171,40 @@ async function getPlatformSenderId(admin: SupabaseAdmin): Promise<string | null>
   return anyPlatform?.id ?? null;
 }
 
-async function upsertActivationPage(
-  admin: SupabaseAdmin,
-  tenant: DispatchContext["tenant"],
-  branch: BranchRow,
-  email: string,
-  contactName: string,
-): Promise<string> {
-  const { data: existingPage, error: lookupErr } = await admin
-    .from("platform_branch_activation_pages")
-    .select("slug")
-    .eq("branch_id", branch.id)
-    .maybeSingle();
-  if (lookupErr) throw new Error(`activation_page_lookup: ${lookupErr.message}`);
-
-  const pageSlug = existingPage?.slug ?? mintSlug();
-  const payload = {
-    tenant_id: tenant.id,
-    branch_id: branch.id,
-    app_id: tenant.app_id,
-    slug: pageSlug,
-    contact_email: email,
-    contact_name: contactName,
-    is_active: true,
-  };
-
-  const { error: upsertErr } = await admin
-    .from("platform_branch_activation_pages")
-    .upsert(payload, { onConflict: "branch_id" });
-  if (upsertErr) throw new Error(`activation_page_upsert: ${upsertErr.message}`);
-
-  return pageSlug;
-}
-
 async function prepareOneRecipient(
   ctx: DispatchContext,
   branch: BranchRow,
   recipientId: string,
 ): Promise<{ prepared?: PreparedRecipient; failed?: FailedRecipient }> {
   const email = (branch.email ?? "").trim().toLowerCase();
-  const contactName = branch.trading_name || branch.name;
+  const contactName = branch.contactName || branch.trading_name || branch.name;
 
   if (!email) {
-    return { failed: { branch, recipientId, error: "Branch has no email address" } };
+    return { failed: { branch, recipientId, error: "This recipient has no email address" } };
   }
 
   if (!ctx.platformSenderId) {
-    return { failed: { branch, recipientId, error: NO_PLATFORM_SENDER } };
+    return { failed: { branch, recipientId, error: NO_SENDER_MESSAGE[ctx.scope] } };
   }
 
   try {
-    const pageSlug = await upsertActivationPage(ctx.admin, ctx.tenant, branch, email, contactName);
+    const pageSlug = await upsertAudienceActivationPage(
+      ctx.admin, ctx.tenant, toTarget(branch), email, contactName,
+    );
     const activationLink = `${ctx.appOrigin}/activate/${pageSlug}`;
+    const unsubToken = mintToken(18);
+    await ctx.admin.from("platform_email_campaign_recipients")
+      .update({ unsubscribe_token: unsubToken }).eq("id", recipientId);
+    const unsubscribeLink = buildUnsubscribeUrl(ctx.supabaseUrl, unsubToken);
     const vars: Record<string, string> = {
       branch_name: branch.name,
+      company_name: branch.name,
+      customer_name: contactName,
       contact_name: contactName,
       tenant_name: ctx.tenant.name,
       activation_link: activationLink,
+      action_link: activationLink,
+      unsubscribe_link: unsubscribeLink,
     };
 
     const subject = renderTemplate(ctx.template.subject, vars, false);
@@ -228,7 +228,8 @@ async function prepareOneRecipient(
       bodyText: textBody,
       siteLinkUrl: ctx.appOrigin,
     });
-    const trackedHtml = await appendTrackingPixel(html, ctx.campaignId, recipientId, null);
+    const withFooter = withUnsubscribeFooter(html, text, unsubscribeLink, ctx.senderLabel);
+    const trackedHtml = await appendTrackingPixel(withFooter.html, ctx.campaignId, recipientId, null);
 
     return {
       prepared: {
@@ -236,21 +237,22 @@ async function prepareOneRecipient(
         recipientId,
         activationLink,
         outboxRow: {
-          tenant_id: null,
+          tenant_id: ctx.scope === "tenant" ? ctx.tenant.id : null,
           branch_id: null,
           app_id: ctx.tenant.app_id ?? null,
           email_account_id: ctx.platformSenderId,
           to_email: email,
-          from_name: `${ctx.tenant.name} via Document Centre`,
+          from_name: ctx.scope === "tenant" ? ctx.tenant.name : `${ctx.tenant.name} via Document Centre`,
           subject,
           html: trackedHtml,
-          text_body: text,
+          text_body: withFooter.text,
           category: "system",
           related_type: "branch_marketing",
           related_id: branch.id,
           metadata: {
             tenant_id: ctx.tenant.id,
-            branch_id: branch.id,
+            recipient_kind: branch.kind ?? "branch",
+            branch_id: branch.kind && branch.kind !== "branch" ? null : branch.id,
             campaign_id: ctx.campaignId,
             recipient_id: recipientId,
             kind: "branch_marketing",
