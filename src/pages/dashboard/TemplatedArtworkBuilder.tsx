@@ -23,7 +23,7 @@ import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import StockImagePicker from "@/components/artwork/StockImagePicker";
-import { usePhotoLibrarySettings } from "@/hooks/usePhotoLibrarySettings";
+import { usePhotoLibraryForProduct } from "@/hooks/usePhotoLibrarySettings";
 import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
 import { forgetBlob, getCachedBlobUrl, pinBlobPaths, registerBlob, unpinBlobPaths } from "@/lib/photoPrints/photoBlobCache";
 import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
@@ -527,7 +527,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   );
 
   // ── Stock photo library (Pexels)
-  const { settings: photoLibrary } = usePhotoLibrarySettings();
+  const { settings: photoLibrary } = usePhotoLibraryForProduct(family as any);
   const [libraryFor, setLibraryFor] = useState<string | null>(null);
   const libraryPlaceholder = useMemo(
     () => placeholders.find((p) => p.id === libraryFor) ?? null,
