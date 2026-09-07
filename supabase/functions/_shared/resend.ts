@@ -22,6 +22,46 @@ export class ResendApiError extends Error {
   }
 }
 
+export function normalizeResendApiKey(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+export function validateResendApiKey(value: string): string | null {
+  if (!value) return "Paste a Resend API key first.";
+  if (!value.startsWith("re_") || value.length < 12 || /\s/.test(value)) {
+    return "This does not look like a Resend API key. Copy the complete key beginning with re_ from Resend.";
+  }
+  return null;
+}
+
+function resendErrorText(error: ResendApiError): string {
+  try {
+    const parsed = JSON.parse(error.body) as { message?: unknown; name?: unknown };
+    return [parsed.name, parsed.message].filter((value): value is string => typeof value === "string").join(" ");
+  } catch {
+    return error.body;
+  }
+}
+
+export function describeResendVerificationFailure(error: ResendApiError): string {
+  const detail = resendErrorText(error).toLowerCase();
+  if (detail.includes("restricted") || detail.includes("permission") || detail.includes("access denied")) {
+    return "This Resend key does not have enough access. Create a Full access API key so Document Centre can check domains and manage contacts, segments and broadcasts.";
+  }
+  if (
+    error.status === 400 ||
+    error.status === 401 ||
+    detail.includes("api key is invalid") ||
+    detail.includes("invalid api key")
+  ) {
+    return "Resend says this API key is invalid or has been revoked. Create a new Full access key in Resend and copy the complete value beginning with re_.";
+  }
+  if (error.status === 403) {
+    return "Resend refused this key. Make sure it is a Full access API key, not a Sending access key.";
+  }
+  return "Resend could not check this account right now. Please try again shortly.";
+}
+
 async function call<T>(
   apiKey: string,
   path: string,
@@ -54,19 +94,26 @@ export async function verifyAccount(
   apiKey: string,
   fromEmail: string,
 ): Promise<{ ok: boolean; message: string; domains: string[] }> {
+  const normalizedKey = normalizeResendApiKey(apiKey);
+  const keyProblem = validateResendApiKey(normalizedKey);
+  if (keyProblem) return { ok: false, message: keyProblem, domains: [] };
+
+  const wanted = (fromEmail.split("@")[1] ?? "").trim().toLowerCase();
+  if (!wanted) {
+    return { ok: false, message: "Enter a valid sender email address before checking the connection.", domains: [] };
+  }
+
   let domains: Array<{ name: string; status: string }>;
   try {
-    domains = await listDomains(apiKey);
+    domains = await listDomains(normalizedKey);
   } catch (e) {
-    const err = e as ResendApiError;
-    if (err.status === 401 || err.status === 403) {
-      return { ok: false, message: "Resend rejected the API key. Create a new key in Resend and paste it again.", domains: [] };
+    if (e instanceof ResendApiError) {
+      return { ok: false, message: describeResendVerificationFailure(e), domains: [] };
     }
-    return { ok: false, message: err.message, domains: [] };
+    return { ok: false, message: "Resend could not check this account right now. Please try again shortly.", domains: [] };
   }
 
   const names = domains.map((d) => d.name);
-  const wanted = (fromEmail.split("@")[1] ?? "").toLowerCase();
   const match = domains.find((d) => d.name.toLowerCase() === wanted);
   if (!match) {
     return {
@@ -210,5 +257,6 @@ export async function readResendKey(
   if (!secretId) return null;
   const { data, error } = await admin.rpc("read_email_account_secret", { p_secret_id: secretId });
   if (error) throw new Error(`vault: ${error.message}`);
-  return (data as string) || null;
+  const key = normalizeResendApiKey(data as string | null);
+  return key || null;
 }

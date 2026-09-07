@@ -5,7 +5,12 @@
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
-import { verifyAccount as verifyResendAccount } from "../_shared/resend.ts";
+import {
+  normalizeResendApiKey,
+  readResendKey,
+  validateResendApiKey,
+  verifyAccount as verifyResendAccount,
+} from "../_shared/resend.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -217,31 +222,45 @@ Deno.serve(async (req) => {
         existing = data;
       }
 
+      const submittedApiKey = normalizeResendApiKey(body.api_key);
+      let verifiedApiKey = submittedApiKey;
+      if (!verifiedApiKey && existing?.resend_api_key_secret_id) {
+        verifiedApiKey = (await readResendKey(admin, existing.resend_api_key_secret_id)) ?? "";
+      }
+      const keyProblem = validateResendApiKey(verifiedApiKey);
+      if (keyProblem) return json({ error: keyProblem });
+
+      const verification = await verifyResendAccount(verifiedApiKey, body.from_email.trim());
+      if (!verification.ok) {
+        return json({ error: verification.message, verification });
+      }
+
       let apiKeySecretId: string | null = existing?.resend_api_key_secret_id ?? null;
-      if (body.api_key) {
+      let newApiKeySecretId: string | null = null;
+      if (submittedApiKey) {
         const { data: created, error: vErr } = await admin.rpc("create_email_account_secret", {
           p_name: `email_account:${body.tenant_id}:${crypto.randomUUID()}`,
-          p_secret: body.api_key,
+          p_secret: submittedApiKey,
         });
         if (vErr) return json({ error: `vault: ${vErr.message}` }, 500);
         apiKeySecretId = created as string;
-        if (existing?.resend_api_key_secret_id) {
-          await admin.rpc("delete_email_account_secret", { p_secret_id: existing.resend_api_key_secret_id });
-        }
+        newApiKeySecretId = apiKeySecretId;
       }
       if (!apiKeySecretId) return json({ error: "A Resend API key is required." }, 400);
 
       let webhookSecretId: string | null = existing?.resend_webhook_secret_id ?? null;
+      let newWebhookSecretId: string | null = null;
       if (body.webhook_secret) {
         const { data: created, error: wErr } = await admin.rpc("create_email_account_secret", {
           p_name: `email_account:${body.tenant_id}:${crypto.randomUUID()}`,
-          p_secret: body.webhook_secret,
+          p_secret: body.webhook_secret.trim(),
         });
-        if (wErr) return json({ error: `vault: ${wErr.message}` }, 500);
-        webhookSecretId = created as string;
-        if (existing?.resend_webhook_secret_id) {
-          await admin.rpc("delete_email_account_secret", { p_secret_id: existing.resend_webhook_secret_id });
+        if (wErr) {
+          if (newApiKeySecretId) await admin.rpc("delete_email_account_secret", { p_secret_id: newApiKeySecretId });
+          return json({ error: `vault: ${wErr.message}` }, 500);
         }
+        webhookSecretId = created as string;
+        newWebhookSecretId = webhookSecretId;
       }
 
       const row = {
@@ -256,27 +275,55 @@ Deno.serve(async (req) => {
         resend_webhook_secret_id: webhookSecretId,
         is_default: body.is_default ?? false,
         is_active: body.is_active ?? true,
+        last_verified_at: new Date().toISOString(),
+        last_error: null,
       };
 
-      if (row.is_default) {
-        const builder = admin.from("email_accounts").update({ is_default: false }).eq("tenant_id", body.tenant_id);
-        if (body.branch_id) await builder.eq("branch_id", body.branch_id);
-        else await builder.is("branch_id", null);
-      }
-
+      let saved: any = null;
       if (body.id) {
         const { data, error } = await admin
           .from("email_accounts").update(row).eq("id", body.id).select("*").single();
-        if (error) return json({ error: error.message }, 500);
-        return json({ success: true, account: data });
+        if (error) {
+          for (const secretId of [newApiKeySecretId, newWebhookSecretId]) {
+            if (secretId) await admin.rpc("delete_email_account_secret", { p_secret_id: secretId });
+          }
+          return json({ error: error.message }, 500);
+        }
+        saved = data;
+      } else {
+        const { data, error } = await admin.from("email_accounts").insert(row).select("*").single();
+        if (error) {
+          for (const secretId of [newApiKeySecretId, newWebhookSecretId]) {
+            if (secretId) await admin.rpc("delete_email_account_secret", { p_secret_id: secretId });
+          }
+          return json({ error: error.message }, 500);
+        }
+        saved = data;
       }
-      const { data, error } = await admin.from("email_accounts").insert(row).select("*").single();
-      if (error) return json({ error: error.message }, 500);
-      return json({ success: true, account: data });
+
+      if (row.is_default) {
+        let builder = admin
+          .from("email_accounts")
+          .update({ is_default: false })
+          .eq("tenant_id", body.tenant_id)
+          .neq("id", saved.id);
+        builder = body.branch_id ? builder.eq("branch_id", body.branch_id) : builder.is("branch_id", null);
+        await builder;
+      }
+      for (const [previousId, replacementId] of [
+        [existing?.resend_api_key_secret_id, newApiKeySecretId],
+        [existing?.resend_webhook_secret_id, newWebhookSecretId],
+      ]) {
+        if (previousId && replacementId) {
+          await admin.rpc("delete_email_account_secret", { p_secret_id: previousId });
+        }
+      }
+      return json({ success: true, account: saved, message: verification.message });
     }
 
     if (body.action === "verify_resend") {
-      let apiKey = body.api_key ?? null;
+      const submittedApiKey = normalizeResendApiKey(body.api_key);
+      let apiKey = submittedApiKey || null;
       let tenantId = body.tenant_id ?? null;
       let branchId: string | null = null;
 
@@ -294,8 +341,8 @@ Deno.serve(async (req) => {
       if (!(await assertCanManageBranchOrTenant(admin, caller.id, tenantId, branchId))) return json({ error: "Forbidden" }, 403);
       if (!apiKey) return json({ error: "No Resend API key to check." }, 400);
 
-      const result = await verifyResendAccount(apiKey, body.from_email);
-      if (body.id) {
+      const result = await verifyResendAccount(apiKey, body.from_email.trim());
+      if (body.id && !submittedApiKey) {
         await admin.from("email_accounts").update({
           last_verified_at: result.ok ? new Date().toISOString() : null,
           last_error: result.ok ? null : result.message,
