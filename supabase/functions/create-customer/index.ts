@@ -174,11 +174,8 @@ Deno.serve(async (req) => {
       };
       if (branch_id && !keep.branch_id) patch.branch_id = branch_id;
       await admin.from("tenant_memberships").update(patch).eq("id", keep.id);
-      // Clean up any historic duplicate rows for this tenant.
-      const extras = mems.filter((m: any) => m.id !== keep.id).map((m: any) => m.id);
-      if (extras.length > 0) {
-        await admin.from("tenant_memberships").delete().in("id", extras);
-      }
+      // Keep legitimate branch-scoped memberships. Account status is resolved
+      // tenant-wide by the customer UI and pricing layer.
     }
 
 
