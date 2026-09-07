@@ -385,6 +385,17 @@ async function createOrderWithJobs(
       metadata: {
         ...(order?.metadata || {}),
         ...(holdForPayment ? { payment_hold: true, held_at: new Date().toISOString() } : {}),
+        ...(paymentMethod ? { payment_method: paymentMethod } : {}),
+        ...(creditTerms
+          ? {
+              payment_terms_days: creditTerms.payment_terms_days,
+              mis_account_number: creditTerms.account_ref,
+              credit_source: creditTerms.source,
+              payment_due_at: new Date(
+                Date.now() + creditTerms.payment_terms_days * 86400000,
+              ).toISOString(),
+            }
+          : {}),
       },
       submitted_at: holdForPayment ? null : new Date().toISOString(),
       is_demo: payload.is_demo === true,
