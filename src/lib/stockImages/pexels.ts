@@ -4,6 +4,9 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
 export interface StockPhoto {
   id: number;
   width: number;
@@ -52,20 +55,62 @@ export async function searchStockPhotos(opts: {
   return data as StockSearchResult;
 }
 
-/** Download a chosen photo's original bytes as a File, ready for upload. */
+/**
+ * Download a chosen photo's original bytes as a File, ready for upload.
+ *
+ * Uses a direct `fetch` (not `functions.invoke`) so the reply is read as
+ * binary — the JS client decodes non-JSON replies as text, which corrupts
+ * JPEG bytes.
+ */
 export async function fetchStockPhotoFile(photo: StockPhoto): Promise<File> {
-  const { data, error } = await supabase.functions.invoke("stock-images", {
-    body: { action: "fetch", url: photo.original },
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error("Your session has expired — please sign in again.");
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/stock-images`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "fetch", url: photo.original }),
   });
-  if (error) throw new Error("Could not download that photo. Please try another.");
-  const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type: "image/jpeg" });
+  if (!res.ok) throw new Error("Could not download that photo. Please try another.");
+
+  const blob = await res.blob();
+  if (!blob.size || !(blob.type || "").startsWith("image/")) {
+    throw new Error("Could not download that photo. Please try another.");
+  }
+
   const safeName = `pexels-${photo.id}-${(photo.photographer || "photo")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 40)}.jpg`;
-  return new File([blob], safeName, { type: blob.type || "image/jpeg" });
+  const file = new File([blob], safeName, { type: blob.type || "image/jpeg" });
+
+  // Sanity check: the bytes must actually decode as an image.
+  await assertDecodableImage(file);
+  return file;
 }
+
+function assertDecodableImage(file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("That photo could not be read. Please try another."));
+    };
+    img.src = url;
+  });
+}
+
 
 // ── Print-quality scoring ───────────────────────────────────────────
 

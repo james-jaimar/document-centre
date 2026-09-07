@@ -137,10 +137,13 @@ Deno.serve(async (req) => {
       console.error(`[stock-images] photo download failed [${res.status}] ${parsed.pathname}`);
       return json({ error: "Photo download failed", status: res.status }, 502);
     }
+    const contentLength = res.headers.get("Content-Length");
     return new Response(res.body, {
       headers: {
         ...corsHeaders,
         "Content-Type": res.headers.get("Content-Type") ?? "image/jpeg",
+        "Content-Disposition": "attachment",
+        ...(contentLength ? { "Content-Length": contentLength } : {}),
         "Cache-Control": "no-store",
       },
     });
