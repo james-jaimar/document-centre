@@ -16,7 +16,9 @@ import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
 import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
 import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
+import TemplateEditor from "@/components/admin/email/TemplateEditor";
 import { applyMergeTokens, renderEmailShell } from "@/lib/email/renderEmailPreview";
+
 
 type Audience = "branch" | "company" | "customer";
 
