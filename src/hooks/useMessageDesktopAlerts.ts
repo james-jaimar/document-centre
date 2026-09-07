@@ -83,7 +83,7 @@ export async function requestNotificationPermission(): Promise<NotificationSuppo
   }
 }
 
-function playChime() {
+export function playChime() {
   try {
     const Ctx =
       (window as any).AudioContext || (window as any).webkitAudioContext;
