@@ -18,16 +18,48 @@
 const MAX_ENTRIES = 200;
 const cache = new Map<string, string>(); // path -> blob: URL
 const inFlight = new Map<string, Promise<string | null>>();
+/**
+ * Paths that must never be evicted — images currently placed in an artwork
+ * the customer is still editing. Losing one of these leaves a blank box in
+ * the builder, so they stay put for the life of the session.
+ */
+const pinned = new Set<string>();
 
 function evictIfNeeded() {
   while (cache.size > MAX_ENTRIES) {
-    const oldestKey = cache.keys().next().value as string | undefined;
-    if (!oldestKey) break;
-    const url = cache.get(oldestKey);
-    cache.delete(oldestKey);
+    let victim: string | undefined;
+    for (const key of cache.keys()) {
+      if (!pinned.has(key)) {
+        victim = key;
+        break;
+      }
+    }
+    if (!victim) break; // everything left is pinned
+    const url = cache.get(victim);
+    cache.delete(victim);
     if (url) {
       try { URL.revokeObjectURL(url); } catch { /* noop */ }
     }
+  }
+}
+
+/** Keep these paths in the cache regardless of how much else is cached. */
+export function pinBlobPaths(paths: (string | null | undefined)[]) {
+  for (const p of paths) if (p) pinned.add(p);
+}
+
+/** Release previously pinned paths (they become evictable again). */
+export function unpinBlobPaths(paths: (string | null | undefined)[]) {
+  for (const p of paths) if (p) pinned.delete(p);
+}
+
+/** Drop a single cached entry (used when its blob turned out to be unreadable). */
+export function forgetBlob(path: string | null | undefined) {
+  if (!path) return;
+  const url = cache.get(path);
+  cache.delete(path);
+  if (url) {
+    try { URL.revokeObjectURL(url); } catch { /* noop */ }
   }
 }
 
@@ -50,6 +82,7 @@ export function getCachedBlobUrl(path: string | undefined | null): string | unde
   if (!path) return undefined;
   return cache.get(path);
 }
+
 
 /**
  * Background-fetch a signed URL and stash the resulting blob under `path`.
