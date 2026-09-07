@@ -93,14 +93,27 @@ export function useCustomerPricingTier(): CustomerPricingTier {
   const requiresPrepayment =
     (membership?.payment_terms_mode ?? company?.payment_terms_mode ?? "account") === "prepaid";
 
+  const credit = personalCredit ?? companyCredit;
+
+  // Running balance on the ledger: a personal facility keeps its own balance,
+  // a company facility is shared by everyone ordering under that business.
+  const { data: balance } = useAccountBalance({
+    companyId: personalCredit ? null : company?.id ?? null,
+    profileId: personalCredit ? user?.id ?? null : null,
+  });
+  const accountBalance = Number(balance?.balance ?? 0);
+  const limit = Number(credit?.credit_limit ?? 0);
+  const availableCredit = credit && limit > 0 ? limit - accountBalance : null;
+
   return {
     tier: isTrade ? "trade" : "consumer",
     isTrade,
     requiresPrepayment,
     misAccountNumber:
       membership?.mis_account_number ?? company?.mis_account_number ?? null,
-    credit: personalCredit ?? companyCredit,
-
+    credit,
+    accountBalance,
+    availableCredit,
     isLoading,
   };
 }
