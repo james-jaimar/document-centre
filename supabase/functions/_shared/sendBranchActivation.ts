@@ -44,7 +44,14 @@ export interface SendActivationInput {
   anonKey: string;
   authHeader: string;                 // forwarded to send-email
   tenantId: string;
-  branchId: string;
+  branchId: string | null;
+  /** For non-branch recipients (customer contact / business account pages). */
+  recipient?: {
+    email: string;
+    name?: string | null;
+    profileId?: string | null;
+    companyId?: string | null;
+  } | null;
   templateSlug: string;               // platform_email_templates.slug (kind=activation)
   callerOrigin: string | null;
   provisionedBy?: string | null;      // user id for audit (optional)
@@ -73,14 +80,22 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
     .from("tenants").select("id, app_id, name, slug").eq("id", tenantId).maybeSingle();
   if (!tenant) return { ok: false, error: "tenant_not_found" };
 
-  const { data: branch } = await admin
-    .from("branches")
-    .select("id, name, email, slug, url_slug, trading_name")
-    .eq("id", branchId).maybeSingle();
-  if (!branch) return { ok: false, error: "branch_not_found" };
+  let branch: { id: string; name: string; email: string | null; slug: string | null; url_slug: string | null; trading_name: string | null } | null = null;
+  if (branchId) {
+    const { data } = await admin
+      .from("branches")
+      .select("id, name, email, slug, url_slug, trading_name")
+      .eq("id", branchId).maybeSingle();
+    if (!data) return { ok: false, error: "branch_not_found" };
+    branch = data;
+  } else if (!input.recipient?.email) {
+    return { ok: false, error: "branch_not_found" };
+  }
 
-  const email = (branch.email ?? "").trim().toLowerCase();
+  const email = (branch?.email ?? input.recipient?.email ?? "").trim().toLowerCase();
   if (!email) return { ok: false, error: "no_branch_email" };
+  const recipientName =
+    branch?.trading_name || branch?.name || input.recipient?.name || email;
 
   const { data: brandSettings } = await admin
     .from("tenant_settings")
@@ -96,7 +111,7 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
   const tenantOwned = resolved.isTenantOwnedDomain;
   const slugPrefix = tenantOwned ? null : (tenant.slug ?? null);
 
-  const branchSlug = branch.url_slug || branch.slug || "";
+  const branchSlug = branch?.url_slug || branch?.slug || "";
   const storeUrl = tenantOwned
     ? `${appOrigin}${branchSlug ? `/${branchSlug}` : ""}`
     : `${appOrigin}/t/${tenant.slug ?? ""}${branchSlug ? `/${branchSlug}` : ""}`;
@@ -110,7 +125,7 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
   } else {
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email, password: randomPassword(), email_confirm: true,
-      user_metadata: { provisioned_for_branch: branchId, provisioned_by: input.provisionedBy ?? null },
+      user_metadata: { provisioned_for_branch: branchId ?? null, provisioned_by: input.provisionedBy ?? null },
     });
     if (createErr && !createErr.message?.toLowerCase().includes("already")) {
       return { ok: false, error: `createUser: ${createErr.message}` };
@@ -124,7 +139,7 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
       profileId = ex.id;
     }
     await admin.from("profiles").upsert(
-      { id: profileId, email, display_name: branch.name },
+      { id: profileId, email, display_name: recipientName },
       { onConflict: "id" }
     );
   }
@@ -134,6 +149,29 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
   //  (b) be an orphan (branch_id NULL) left behind after a prior branch was
   //      deleted (branch_id FK is ON DELETE SET NULL) → adopt it for this branch
   //  (c) point at a different branch (user manages multiple stores) → add a new row
+  if (!branchId) {
+    // Customer / business-account recipient: ensure a customer membership only.
+    const { data: customerRows } = await admin
+      .from("tenant_memberships")
+      .select("id, is_active, company_id")
+      .eq("profile_id", profileId!)
+      .eq("tenant_id", tenantId)
+      .eq("app_id", tenant.app_id)
+      .eq("role", "customer");
+    const existing = (customerRows ?? [])[0] as { id: string; is_active: boolean } | undefined;
+    if (existing) {
+      if (!existing.is_active) {
+        await admin.from("tenant_memberships").update({ is_active: true }).eq("id", existing.id);
+      }
+    } else {
+      await admin.from("tenant_memberships").insert({
+        profile_id: profileId, tenant_id: tenantId, app_id: tenant.app_id,
+        role: "customer", is_active: true,
+        company_id: input.recipient?.companyId ?? null,
+      });
+    }
+  }
+
   const { data: allMemberships } = await admin
     .from("tenant_memberships")
     .select("id, branch_id, role, is_active")
@@ -141,7 +179,10 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
     .eq("tenant_id", tenantId)
     .eq("app_id", tenant.app_id);
   const rows = (allMemberships ?? []) as Array<{ id: string; branch_id: string | null; role: string; is_active: boolean }>;
-  const exact = rows.find((r) => r.branch_id === branchId);
+  const exact = branchId ? rows.find((r) => r.branch_id === branchId) : rows[0];
+  if (!branchId) {
+    // handled above
+  } else
   if (exact) {
     if (!exact.is_active) {
       await admin.from("tenant_memberships").update({ is_active: true }).eq("id", exact.id);
@@ -169,9 +210,9 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
   const opaqueToken = mintOpaqueToken();
   const actionLink = `${appOrigin}${slugPrefix ? `/t/${slugPrefix}` : ""}/welcome?token=${encodeURIComponent(opaqueToken)}`;
 
-  const contactName = branch.trading_name || branch.name;
+  const contactName = recipientName;
   const vars: Record<string, string> = {
-    branch_name: branch.name,
+    branch_name: branch?.name ?? recipientName,
     contact_name: contactName,
     store_url: storeUrl,
     login_email: email,
@@ -199,7 +240,7 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
     ? renderTemplate(template.body_text, vars, false)
     : htmlToText(htmlBody);
   const preheader = deriveSnippet(bodyTextForSnippet)
-    || `${portalName} — your store ${branch.name} is ready. Set your password and sign in.`;
+    || `${portalName} — your account is ready. Set your password and sign in.`;
   const preheaderBlock = `<div style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:#f5f5f7;">${escapeHtml(preheader)}</div>
 <div style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:#f5f5f7;">&#847; &zwnj; &nbsp; &#8199; &#8203; &#847; &zwnj; &nbsp; &#8199; &#8203; &#847; &zwnj; &nbsp; &#8199; &#8203;</div>`;
 
@@ -237,8 +278,8 @@ ${logoBlock}
       from_name: `${portalName} via Document Centre`,
       category: "system",
       related_type: "branch_activation",
-      related_id: branchId,
-      metadata: { tenant_id: tenantId, branch_id: branchId, kind: "branch_activation" },
+      related_id: branchId ?? profileId,
+      metadata: { tenant_id: tenantId, branch_id: branchId, profile_id: profileId, kind: "branch_activation" },
     }),
   });
   const sendText = await sendResp.text();
