@@ -33,6 +33,8 @@ export interface PhotoLibrarySettings {
   goodDpi: number;
   /** Hide photos below the "Good" threshold instead of showing them greyed. */
   hideBelowMinimum: boolean;
+  /** Per-product overrides keyed by product family id. true/false wins over `enabled`. */
+  productOverrides: Record<string, boolean>;
 }
 
 export const PHOTO_LIBRARY_DEFAULTS: PhotoLibrarySettings = {
