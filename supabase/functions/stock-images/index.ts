@@ -88,8 +88,15 @@ Deno.serve(async (req) => {
 
     const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     if (orientation) params.set("orientation", orientation);
-    // Pexels only returns large originals when asked for.
-    params.set("size", "large");
+    // Minimum photo size bucket — tenant-configurable, defaults to large.
+    const size = ["large", "medium", "small"].includes(String(body.size))
+      ? String(body.size)
+      : "large";
+    params.set("size", size);
+    const locale = String(body.locale ?? "").trim().slice(0, 10);
+    if (/^[a-zA-Z]{2}-[a-zA-Z]{2}$/.test(locale)) params.set("locale", locale);
+    const colour = String(body.colour ?? "").trim().slice(0, 20);
+    if (/^(#[0-9a-fA-F]{6}|[a-zA-Z]{3,20})$/.test(colour)) params.set("color", colour);
 
     let url: string;
     if (query) {

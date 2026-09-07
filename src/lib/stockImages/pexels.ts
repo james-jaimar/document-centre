@@ -31,6 +31,9 @@ export async function searchStockPhotos(opts: {
   page?: number;
   perPage?: number;
   orientation?: StockOrientation;
+  locale?: string;
+  colour?: string;
+  size?: "large" | "medium" | "small";
 }): Promise<StockSearchResult> {
   const { data, error } = await supabase.functions.invoke("stock-images", {
     body: {
@@ -39,6 +42,9 @@ export async function searchStockPhotos(opts: {
       page: opts.page ?? 1,
       per_page: opts.perPage ?? 24,
       orientation: opts.orientation,
+      locale: opts.locale || undefined,
+      colour: opts.colour || undefined,
+      size: opts.size || undefined,
     },
   });
   if (error) throw new Error("Photo search is unavailable right now. Please try again.");
@@ -80,10 +86,13 @@ export function stockPhotoQuality(
   photo: StockPhoto,
   widthMm: number,
   heightMm: number,
+  thresholds?: { excellent?: number; good?: number },
 ): { quality: StockQuality; dpi: number } {
+  const excellent = thresholds?.excellent ?? 240;
+  const good = thresholds?.good ?? 150;
   const dpi = stockPhotoDpi(photo, widthMm, heightMm);
-  if (dpi >= 240) return { quality: "excellent", dpi };
-  if (dpi >= 150) return { quality: "good", dpi };
+  if (dpi >= excellent) return { quality: "excellent", dpi };
+  if (dpi >= good) return { quality: "good", dpi };
   return { quality: "too-small", dpi };
 }
 
