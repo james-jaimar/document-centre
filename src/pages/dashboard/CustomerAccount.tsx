@@ -137,7 +137,23 @@ export default function CustomerAccount() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="addresses">Addresses</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          {hasAccount && <TabsTrigger value="statement">Statement</TabsTrigger>}
         </TabsList>
+
+        {hasAccount && (
+          <TabsContent value="statement">
+            <AccountLedgerPanel
+              companyId={ledgerCompanyId ?? undefined}
+              profileId={ledgerProfileId ?? undefined}
+              creditLimit={credit?.credit_limit}
+              paymentTermsDays={credit?.payment_terms_days}
+              orderPath={(oid) => `${tenantPath}/orders/${oid}`}
+              readOnly
+            />
+          </TabsContent>
+        )}
+
+
 
 
         <TabsContent value="profile">
