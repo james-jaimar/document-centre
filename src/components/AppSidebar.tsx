@@ -154,6 +154,7 @@ const ADMIN_SECTIONS: NavSection[] = [
     appRoles: ["head_office_admin", "platform_admin"],
     membershipRoles: ["owner", "admin"],
     items: [
+      { to: "/admin/communications", icon: <Megaphone size={20} />, label: "Campaigns" },
       { to: "/admin/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
       { to: "/admin/documents", icon: <FileText size={20} />, label: "Documents" },
     ],
