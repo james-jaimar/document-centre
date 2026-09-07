@@ -28,6 +28,9 @@ export interface CustomerPricingTier {
   accountBalance: number;
   /** Credit limit less the outstanding balance; null when there is no facility. */
   availableCredit: number | null;
+  /** Which ledger the balance belongs to — a shared business account or the person's own. */
+  ledgerCompanyId: string | null;
+  ledgerProfileId: string | null;
   /** Customer must pay online before the order is accepted (C.O.D. / prepaid). */
   requiresPrepayment: boolean;
   isLoading: boolean;
