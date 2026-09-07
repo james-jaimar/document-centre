@@ -18,8 +18,11 @@ export interface TradeMembership {
   is_trade_customer?: boolean | null;
   mis_account_number?: string | null;
   payment_terms_mode?: string | null;
+  role?: string | null;
+  job_title?: string | null;
+  is_primary_contact?: boolean | null;
+  created_at?: string | null;
   company?: TradeCompany | null;
-  [key: string]: unknown;
 }
 
 /** Resolve tenant-wide account status while retaining the richest linkage row. */
