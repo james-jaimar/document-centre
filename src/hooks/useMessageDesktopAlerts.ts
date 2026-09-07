@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-export type AlertPrefs = { desktop: boolean; sound: boolean };
+export type AlertPrefs = { desktop: boolean; sound: boolean; newOrders: boolean };
 
-const DEFAULT_PREFS: AlertPrefs = { desktop: true, sound: true };
+const DEFAULT_PREFS: AlertPrefs = { desktop: true, sound: true, newOrders: true };
 
 function prefsKey(userId: string | undefined) {
   return `staff-msg-alerts:${userId ?? "anon"}`;
@@ -18,6 +18,7 @@ export function readAlertPrefs(userId: string | undefined): AlertPrefs {
     return {
       desktop: parsed?.desktop !== false,
       sound: parsed?.sound !== false,
+      newOrders: parsed?.newOrders !== false,
     };
   } catch {
     return DEFAULT_PREFS;
