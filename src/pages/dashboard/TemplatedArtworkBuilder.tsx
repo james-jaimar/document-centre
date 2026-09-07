@@ -315,6 +315,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   // ── Customer images (blob-proxied so canvas stays untainted)
   const [placedImages, setPlacedImages] = useState<Record<string, HTMLImageElement>>({});
+  /** Boxes whose stored image could not be displayed — surfaced in the rail. */
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
+  /** Bumped to force another attempt at the images that failed. */
+  const [imageRetry, setImageRetry] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -322,20 +327,39 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (value.kind !== "image") continue;
         if (placedImages[phId]?.dataset?.path === value.storage_path) continue;
         const path = (value as TemplatedImageValue).storage_path;
-        try {
-          let url = getCachedBlobUrl(path);
-          if (!url) {
-            const blob = await downloadFromS3(path);
-            registerBlob(path, blob);
-            url = getCachedBlobUrl(path);
+        if (!path) continue;
+        // Two attempts: the cached blob first, then a clean re-download in
+        // case the cached copy was revoked or arrived corrupt.
+        let img: HTMLImageElement | null = null;
+        for (let attempt = 0; attempt < 2 && !img; attempt++) {
+          try {
+            if (attempt === 1) forgetBlob(path);
+            let url = getCachedBlobUrl(path);
+            if (!url) {
+              const blob = await downloadFromS3(path);
+              registerBlob(path, blob);
+              url = getCachedBlobUrl(path);
+            }
+            if (!url) continue;
+            const loaded = await loadImage(url);
+            loaded.dataset.path = path;
+            img = loaded;
+          } catch (err) {
+            console.warn("[templated-artwork] image load failed", path, "attempt", attempt, err);
           }
-          if (!url) continue;
-          const img = await loadImage(url);
-          img.dataset.path = path;
-          if (cancelled) return;
-          setPlacedImages((prev) => ({ ...prev, [phId]: img }));
-        } catch (err) {
-          console.warn("[templated-artwork] image load failed", path, err);
+        }
+        if (cancelled) return;
+        if (img) {
+          const ready = img;
+          setPlacedImages((prev) => ({ ...prev, [phId]: ready }));
+          setImageErrors((prev) => {
+            if (!prev[phId]) return prev;
+            const next = { ...prev };
+            delete next[phId];
+            return next;
+          });
+        } else {
+          setImageErrors((prev) => ({ ...prev, [phId]: true }));
         }
       }
     })();
@@ -343,7 +367,28 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values, imageRetry]);
+
+  /** Keep every image currently placed in this artwork out of the cache's
+   *  eviction path — a long proofing session must not lose a picture. */
+  useEffect(() => {
+    const paths = Object.values(values)
+      .filter((v): v is TemplatedImageValue => v?.kind === "image")
+      .map((v) => v.storage_path)
+      .filter(Boolean);
+    pinBlobPaths(paths);
+    return () => unpinBlobPaths(paths);
   }, [values]);
+
+  const retryImage = useCallback((placeholderId: string) => {
+    setImageErrors((prev) => {
+      const next = { ...prev };
+      delete next[placeholderId];
+      return next;
+    });
+    setImageRetry((n) => n + 1);
+  }, []);
+
 
   // ── Preview canvas
   const canvasRef = useRef<HTMLCanvasElement>(null);
