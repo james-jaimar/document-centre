@@ -13,6 +13,12 @@ import { renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 import { appendTrackingPixel } from "../_shared/emailTracking.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
+import {
+  type Audience, type CampaignScope, type CampaignTarget,
+  callerCanSendForTenant, resolveTargets, resolveSenderAccountId,
+  NO_SENDER_MESSAGE, fetchSuppressedEmails, buildUnsubscribeUrl, withUnsubscribeFooter,
+  upsertActivationPage as upsertAudienceActivationPage, mintToken,
+} from "../_shared/campaignAudience.ts";
 
 declare const EdgeRuntime: {
   waitUntil: (promise: Promise<unknown>) => void;
@@ -26,18 +32,28 @@ const corsHeaders = {
 const SYNC_LIMIT = 25;
 const PREPARE_CONCURRENCY = 8;
 const INSERT_CHUNK = 500;
-const NO_PLATFORM_SENDER =
-  "Platform sender mailbox not configured — connect one under Platform → Settings → Email.";
-
 type SupabaseAdmin = ReturnType<typeof createClient>;
 
 interface BranchRow {
   id: string;
   name: string;
   email: string | null;
-  slug: string | null;
-  url_slug: string | null;
-  trading_name: string | null;
+  slug?: string | null;
+  url_slug?: string | null;
+  trading_name?: string | null;
+  /** Audience this recipient came from — branch unless a tenant picked otherwise. */
+  kind?: Audience;
+  contactName?: string;
+}
+
+function toTarget(row: BranchRow): CampaignTarget {
+  return {
+    id: row.id,
+    kind: row.kind ?? "branch",
+    name: row.name,
+    email: row.email,
+    contactName: row.contactName || row.trading_name || row.name,
+  };
 }
 
 interface CampaignRow {
@@ -67,6 +83,10 @@ type FunctionBody = {
   resend_unopened_campaign_id?: string;
   subject_override?: string;
   preview_only?: boolean;
+  /** Tenant campaigns: who to send to. Defaults to branches (platform behaviour). */
+  audience?: Audience;
+  /** Ids for the chosen audience — `branch_ids` remains supported for branches. */
+  recipient_ids?: unknown;
 };
 
 interface DispatchContext {
@@ -80,6 +100,10 @@ interface DispatchContext {
   appOrigin: string;
   campaignId: string;
   platformSenderId: string | null;
+  scope: CampaignScope;
+  audience: Audience;
+  supabaseUrl: string;
+  senderLabel: string;
 }
 
 interface PreparedRecipient {
@@ -103,13 +127,6 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function mintSlug(): string {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function normalizeBranchIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((id) => String(id ?? "").trim()).filter(Boolean))];
@@ -121,90 +138,40 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-async function getPlatformSenderId(admin: SupabaseAdmin): Promise<string | null> {
-  const { data: platformDefault, error: defaultErr } = await admin
-    .from("email_accounts")
-    .select("id")
-    .is("tenant_id", null)
-    .is("branch_id", null)
-    .eq("is_active", true)
-    .eq("is_default", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (defaultErr) throw new Error(`Platform sender lookup failed: ${defaultErr.message}`);
-  if (platformDefault?.id) return platformDefault.id;
-
-  const { data: anyPlatform, error: anyErr } = await admin
-    .from("email_accounts")
-    .select("id")
-    .is("tenant_id", null)
-    .is("branch_id", null)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (anyErr) throw new Error(`Platform sender lookup failed: ${anyErr.message}`);
-  return anyPlatform?.id ?? null;
-}
-
-async function upsertActivationPage(
-  admin: SupabaseAdmin,
-  tenant: DispatchContext["tenant"],
-  branch: BranchRow,
-  email: string,
-  contactName: string,
-): Promise<string> {
-  const { data: existingPage, error: lookupErr } = await admin
-    .from("platform_branch_activation_pages")
-    .select("slug")
-    .eq("branch_id", branch.id)
-    .maybeSingle();
-  if (lookupErr) throw new Error(`activation_page_lookup: ${lookupErr.message}`);
-
-  const pageSlug = existingPage?.slug ?? mintSlug();
-  const payload = {
-    tenant_id: tenant.id,
-    branch_id: branch.id,
-    app_id: tenant.app_id,
-    slug: pageSlug,
-    contact_email: email,
-    contact_name: contactName,
-    is_active: true,
-  };
-
-  const { error: upsertErr } = await admin
-    .from("platform_branch_activation_pages")
-    .upsert(payload, { onConflict: "branch_id" });
-  if (upsertErr) throw new Error(`activation_page_upsert: ${upsertErr.message}`);
-
-  return pageSlug;
-}
-
 async function prepareOneRecipient(
   ctx: DispatchContext,
   branch: BranchRow,
   recipientId: string,
 ): Promise<{ prepared?: PreparedRecipient; failed?: FailedRecipient }> {
   const email = (branch.email ?? "").trim().toLowerCase();
-  const contactName = branch.trading_name || branch.name;
+  const contactName = branch.contactName || branch.trading_name || branch.name;
 
   if (!email) {
-    return { failed: { branch, recipientId, error: "Branch has no email address" } };
+    return { failed: { branch, recipientId, error: "This recipient has no email address" } };
   }
 
   if (!ctx.platformSenderId) {
-    return { failed: { branch, recipientId, error: NO_PLATFORM_SENDER } };
+    return { failed: { branch, recipientId, error: NO_SENDER_MESSAGE[ctx.scope] } };
   }
 
   try {
-    const pageSlug = await upsertActivationPage(ctx.admin, ctx.tenant, branch, email, contactName);
+    const pageSlug = await upsertAudienceActivationPage(
+      ctx.admin, ctx.tenant, toTarget(branch), email, contactName,
+    );
     const activationLink = `${ctx.appOrigin}/activate/${pageSlug}`;
+    const unsubToken = mintToken(18);
+    await ctx.admin.from("platform_email_campaign_recipients")
+      .update({ unsubscribe_token: unsubToken }).eq("id", recipientId);
+    const unsubscribeLink = buildUnsubscribeUrl(ctx.supabaseUrl, unsubToken);
     const vars: Record<string, string> = {
       branch_name: branch.name,
+      company_name: branch.name,
+      customer_name: contactName,
       contact_name: contactName,
       tenant_name: ctx.tenant.name,
       activation_link: activationLink,
+      action_link: activationLink,
+      unsubscribe_link: unsubscribeLink,
     };
 
     const subject = renderTemplate(ctx.template.subject, vars, false);
@@ -228,7 +195,8 @@ async function prepareOneRecipient(
       bodyText: textBody,
       siteLinkUrl: ctx.appOrigin,
     });
-    const trackedHtml = await appendTrackingPixel(html, ctx.campaignId, recipientId, null);
+    const withFooter = withUnsubscribeFooter(html, text, unsubscribeLink, ctx.senderLabel);
+    const trackedHtml = await appendTrackingPixel(withFooter.html, ctx.campaignId, recipientId, null);
 
     return {
       prepared: {
@@ -236,21 +204,22 @@ async function prepareOneRecipient(
         recipientId,
         activationLink,
         outboxRow: {
-          tenant_id: null,
+          tenant_id: ctx.scope === "tenant" ? ctx.tenant.id : null,
           branch_id: null,
           app_id: ctx.tenant.app_id ?? null,
           email_account_id: ctx.platformSenderId,
           to_email: email,
-          from_name: `${ctx.tenant.name} via Document Centre`,
+          from_name: ctx.scope === "tenant" ? ctx.tenant.name : `${ctx.tenant.name} via Document Centre`,
           subject,
           html: trackedHtml,
-          text_body: text,
+          text_body: withFooter.text,
           category: "system",
           related_type: "branch_marketing",
           related_id: branch.id,
           metadata: {
             tenant_id: ctx.tenant.id,
-            branch_id: branch.id,
+            recipient_kind: branch.kind ?? "branch",
+            branch_id: branch.kind && branch.kind !== "branch" ? null : branch.id,
             campaign_id: ctx.campaignId,
             recipient_id: recipientId,
             kind: "branch_marketing",
@@ -417,6 +386,7 @@ async function handleRetry(
   admin: SupabaseAdmin,
   campaignId: string,
   templateSlugFromBody: string,
+  scope: CampaignScope,
 ): Promise<Response> {
   const { data: campaign, error: campErr } = await admin
     .from("platform_email_campaigns")
@@ -484,7 +454,7 @@ async function handleRetry(
   const callerOrigin = null;
   const resolved = await resolveAppOriginDetailed(admin, tenant.id, callerOrigin);
   if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
-  const platformSenderId = await getPlatformSenderId(admin);
+  const platformSenderId = await resolveSenderAccountId(admin, scope, tenant.id);
   const campaignRow = campaign as CampaignRow;
   const ctx: DispatchContext = {
     admin,
@@ -497,6 +467,10 @@ async function handleRetry(
     appOrigin: resolved.origin,
     campaignId,
     platformSenderId,
+    scope,
+    audience: "branch",
+    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
+    senderLabel: scope === "tenant" ? tenant.name : "Document Centre",
   };
 
   await admin.from("platform_email_campaign_recipients")
@@ -645,6 +619,7 @@ async function buildUnopenedAudience(
 
 async function handleResendUnopened(
   admin: SupabaseAdmin,
+  scope: CampaignScope,
   callerId: string,
   callerOrigin: string | null,
   parentCampaignId: string,
@@ -687,7 +662,7 @@ async function handleResendUnopened(
 
   const resolved = await resolveAppOriginDetailed(admin, parent.tenant_id, callerOrigin);
   if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
-  const platformSenderId = await getPlatformSenderId(admin);
+  const platformSenderId = await resolveSenderAccountId(admin, scope, tenant.id);
 
   const finalSubject = (subjectOverride ?? "").trim()
     || (parent.subject_snapshot.startsWith("Re: ")
@@ -750,6 +725,10 @@ async function handleResendUnopened(
     appOrigin: resolved.origin,
     campaignId,
     platformSenderId,
+    scope,
+    audience: "branch",
+    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
+    senderLabel: scope === "tenant" ? tenant.name : "Document Centre",
   };
 
   EdgeRuntime.waitUntil((async () => {
@@ -789,17 +768,29 @@ Deno.serve(async (req) => {
     if (authErr || !caller) return json({ error: "Unauthorized" }, 401);
 
     const admin = createClient(url, serviceKey);
-    const { data: roleRow } = await admin
-      .from("user_roles").select("role").eq("user_id", caller.id)
-      .eq("role", "platform_admin").maybeSingle();
-    if (!roleRow) return json({ error: "Forbidden" }, 403);
-
     const body = await req.json().catch(() => ({})) as FunctionBody;
+
+    // Access: platform admins send for anyone; a tenant owner/admin may send
+    // campaigns for their own tenant only.
+    let accessTenantId = String(body.tenant_id ?? "").trim();
+    if (!accessTenantId) {
+      const lookupId = String(
+        body.retry_campaign_id ?? body.campaign_id ?? body.resend_unopened_campaign_id ?? "",
+      ).trim();
+      if (lookupId) {
+        const { data: camp } = await admin
+          .from("platform_email_campaigns").select("tenant_id").eq("id", lookupId).maybeSingle();
+        accessTenantId = (camp as { tenant_id: string | null } | null)?.tenant_id ?? "";
+      }
+    }
+    const access = await callerCanSendForTenant(admin, caller.id, accessTenantId);
+    if (!access.allowed) return json({ error: "Forbidden" }, 403);
+    const scope = access.scope;
     const retryCampaignId = String(body.retry_campaign_id ?? body.campaign_id ?? "").trim();
     const templateSlug = String(body.template_slug ?? "marketing_branch_offer").trim();
     if (body.retry_failed === true) {
       if (!retryCampaignId) return json({ error: "retry_campaign_id required" }, 400);
-      return await handleRetry(admin, retryCampaignId, templateSlug);
+      return await handleRetry(admin, retryCampaignId, templateSlug, scope);
     }
 
     const resendUnopenedId = String(body.resend_unopened_campaign_id ?? "").trim();
@@ -807,6 +798,7 @@ Deno.serve(async (req) => {
       const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
       return await handleResendUnopened(
         admin,
+        scope,
         caller.id,
         callerOrigin,
         resendUnopenedId,
@@ -816,15 +808,26 @@ Deno.serve(async (req) => {
     }
 
     const tenant_id = String(body.tenant_id ?? "").trim();
-    const branch_ids = normalizeBranchIds(body.branch_ids);
+    const audience: Audience =
+      body.audience === "company" || body.audience === "customer" ? body.audience : "branch";
+    const branch_ids = normalizeBranchIds(
+      audience === "branch" ? (body.recipient_ids ?? body.branch_ids) : body.recipient_ids,
+    );
     const dryRun = body.dry_run === true;
     if (!tenant_id || !branch_ids.length) {
-      return json({ error: "tenant_id and branch_ids required" }, 400);
+      return json({ error: "tenant_id and recipients required" }, 400);
     }
 
-    const { data: template } = await admin
-      .from("platform_email_templates").select("*").eq("slug", templateSlug).maybeSingle();
+    // Tenants only see their own templates plus the shared platform library.
+    const { data: templateRows } = await admin
+      .from("platform_email_templates").select("*").eq("slug", templateSlug);
+    const templateCandidates = (templateRows ?? []) as Array<Record<string, unknown>>;
+    const template = templateCandidates.find((t) => t.tenant_id === tenant_id)
+      ?? templateCandidates.find((t) => t.tenant_id === null);
     if (!template) return json({ error: "Template not found" }, 404);
+    if (scope === "tenant" && template.tenant_id && template.tenant_id !== tenant_id) {
+      return json({ error: "Forbidden" }, 403);
+    }
     if (template.kind !== "marketing") {
       return json({ error: "Template is not a marketing template" }, 400);
     }
@@ -833,15 +836,29 @@ Deno.serve(async (req) => {
       .from("tenants").select("id, app_id, name, slug").eq("id", tenant_id).maybeSingle();
     if (!tenant) return json({ error: "Tenant not found" }, 404);
 
-    const { data: allBranches, error: branchesErr } = await admin
-      .from("branches")
-      .select("id, name, email, slug, url_slug, trading_name")
-      .eq("tenant_id", tenant_id);
-    if (branchesErr) {
-      return json({ error: `Branch lookup failed: ${branchesErr.message}` }, 500);
-    }
     const requestedSet = new Set(branch_ids);
-    const resolvedBranches = ((allBranches ?? []) as BranchRow[]).filter((b) => requestedSet.has(b.id));
+    let resolvedBranches: BranchRow[] = [];
+    if (audience === "branch") {
+      // Fetch the whole tenant and filter in memory: a several-hundred-UUID
+      // `id=in.(...)` blows the PostgREST URL limit.
+      const { data: allBranches, error: branchesErr } = await admin
+        .from("branches")
+        .select("id, name, email, slug, url_slug, trading_name")
+        .eq("tenant_id", tenant_id);
+      if (branchesErr) {
+        return json({ error: `Recipient lookup failed: ${branchesErr.message}` }, 500);
+      }
+      resolvedBranches = ((allBranches ?? []) as BranchRow[]).filter((b) => requestedSet.has(b.id));
+    } else {
+      try {
+        const targets = await resolveTargets(admin, tenant_id, audience, branch_ids);
+        resolvedBranches = targets.map((t) => ({
+          id: t.id, name: t.name, email: t.email, kind: t.kind, contactName: t.contactName,
+        }));
+      } catch (e) {
+        return json({ error: `Recipient lookup failed: ${(e as Error).message}` }, 500);
+      }
+    }
     const resolvedBranchIds = new Set(resolvedBranches.map((b) => b.id));
     const missingBranchIds = branch_ids.filter((id) => !resolvedBranchIds.has(id));
 
@@ -866,10 +883,17 @@ Deno.serve(async (req) => {
     const resolved = await resolveAppOriginDetailed(admin, tenant_id, callerOrigin);
     if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
     const appOrigin = resolved.origin;
-    const platformSenderId = await getPlatformSenderId(admin);
+    const platformSenderId = await resolveSenderAccountId(admin, scope, tenant_id);
 
-    const withEmail = resolvedBranches.filter((b) => (b.email ?? "").trim());
     const noEmail = resolvedBranches.filter((b) => !(b.email ?? "").trim());
+    const hasEmail = resolvedBranches.filter((b) => (b.email ?? "").trim());
+    // Never mail anyone who opted out of this tenant's marketing, or who is
+    // on the hard bounce/complaint suppression list.
+    const suppressedEmails = await fetchSuppressedEmails(
+      admin, tenant_id, hasEmail.map((b) => (b.email ?? "")),
+    );
+    const unsubscribed = hasEmail.filter((b) => suppressedEmails.has((b.email ?? "").toLowerCase()));
+    const withEmail = hasEmail.filter((b) => !suppressedEmails.has((b.email ?? "").toLowerCase()));
 
     if (dryRun) {
       const results: Array<Record<string, unknown>> = [];
@@ -884,11 +908,20 @@ Deno.serve(async (req) => {
       for (const b of noEmail) {
         results.push({ branch_id: b.id, branch: b.name, status: "skipped_no_email" });
       }
+      for (const b of unsubscribed) {
+        results.push({
+          branch_id: b.id, branch: b.name, email: b.email,
+          status: "skipped_unsubscribed",
+          error: "This address has opted out of marketing emails",
+        });
+      }
       let dryRunOk = 0;
       for (const b of withEmail) {
-        const contactName = b.trading_name || b.name;
-        const subject = renderTemplate(template.subject, {
+        const contactName = b.contactName || b.trading_name || b.name;
+        const subject = renderTemplate(String(template.subject), {
           branch_name: b.name,
+          company_name: b.name,
+          customer_name: contactName,
           contact_name: contactName,
           tenant_name: tenant.name,
           activation_link: `${appOrigin}/activate/…`,
@@ -900,7 +933,7 @@ Deno.serve(async (req) => {
           email: b.email,
           status: platformSenderId ? "dry_run_ok" : "dry_run_failed",
           subject,
-          error: platformSenderId ? null : NO_PLATFORM_SENDER,
+          error: platformSenderId ? null : NO_SENDER_MESSAGE[scope],
         });
       }
       return json({
@@ -912,7 +945,7 @@ Deno.serve(async (req) => {
         totals: {
           sent: 0,
           failed: platformSenderId ? 0 : withEmail.length,
-          skipped: missingBranchIds.length + noEmail.length,
+          skipped: missingBranchIds.length + noEmail.length + unsubscribed.length,
           dry_run_ok: platformSenderId ? dryRunOk : 0,
         },
         results,
@@ -931,9 +964,22 @@ Deno.serve(async (req) => {
         created_by: caller.id,
         status: "running",
         kind: "marketing",
+        scope,
+        audience,
       }).select("id").single();
     if (campErr) return json({ error: `Campaign create failed: ${campErr.message}` }, 500);
     const campaignId = campaign.id as string;
+
+    const recipientKeys = (b: BranchRow) => {
+      const kind = b.kind ?? "branch";
+      return {
+        recipient_kind: kind,
+        branch_id: kind === "branch" ? b.id : null,
+        company_id: kind === "company" ? b.id : null,
+        profile_id: kind === "customer" ? b.id : null,
+        contact_name: b.contactName || b.trading_name || b.name,
+      };
+    };
 
     let skipped = 0;
     if (missingBranchIds.length) {
@@ -951,7 +997,7 @@ Deno.serve(async (req) => {
     if (noEmail.length) {
       const rows = noEmail.map((b) => ({
         campaign_id: campaignId,
-        branch_id: b.id,
+        ...recipientKeys(b),
         email: null,
         status: "skipped_no_email",
       }));
@@ -959,18 +1005,30 @@ Deno.serve(async (req) => {
       skipped += noEmail.length;
     }
 
+    if (unsubscribed.length) {
+      const rows = unsubscribed.map((b) => ({
+        campaign_id: campaignId,
+        ...recipientKeys(b),
+        email: (b.email ?? "").trim().toLowerCase(),
+        status: "skipped_unsubscribed",
+        error: "This address has opted out of marketing emails",
+      }));
+      for (const c of chunk(rows, INSERT_CHUNK)) await admin.from("platform_email_campaign_recipients").insert(c);
+      skipped += unsubscribed.length;
+    }
+
     const pending: { branch: BranchRow; recipientId: string }[] = [];
     for (const c of chunk(withEmail, INSERT_CHUNK)) {
       const payload = c.map((b) => ({
         campaign_id: campaignId,
-        branch_id: b.id,
+        ...recipientKeys(b),
         email: (b.email ?? "").trim().toLowerCase(),
         status: "pending",
       }));
       const { data: inserted, error: insErr } = await admin
         .from("platform_email_campaign_recipients")
         .insert(payload)
-        .select("id, branch_id");
+        .select("id, branch_id, company_id, profile_id");
       if (insErr) {
         await admin.from("platform_email_campaigns").update({
           status: "failed",
@@ -978,21 +1036,34 @@ Deno.serve(async (req) => {
         }).eq("id", campaignId);
         return json({ error: `Recipient insert failed: ${insErr.message}`, campaign_id: campaignId }, 500);
       }
-      const byBranch = new Map<string, string>();
-      for (const r of (inserted ?? []) as Array<{ branch_id: string; id: string }>) byBranch.set(r.branch_id, r.id);
+      const byTarget = new Map<string, string>();
+      for (const r of (inserted ?? []) as Array<{
+        id: string; branch_id: string | null; company_id: string | null; profile_id: string | null;
+      }>) {
+        const key = r.branch_id ?? r.company_id ?? r.profile_id;
+        if (key) byTarget.set(key, r.id);
+      }
       for (const b of c) {
-        const rid = byBranch.get(b.id);
+        const rid = byTarget.get(b.id);
         if (rid) pending.push({ branch: b, recipientId: rid });
       }
     }
 
     const ctx: DispatchContext = {
       admin,
-      template,
+      template: {
+        subject: String(template.subject),
+        body_html: String(template.body_html),
+        body_text: (template.body_text as string | null) ?? null,
+      },
       tenant,
       appOrigin,
       campaignId,
       platformSenderId,
+      scope,
+      audience,
+      supabaseUrl: url,
+      senderLabel: scope === "tenant" ? tenant.name : "Document Centre",
     };
 
     if (pending.length <= SYNC_LIMIT) {
@@ -1012,6 +1083,9 @@ Deno.serve(async (req) => {
         results.push({ branch_id: missingId, branch: "Unknown branch", status: "skipped_branch_not_found" });
       }
       for (const b of noEmail) results.push({ branch_id: b.id, branch: b.name, status: "skipped_no_email" });
+      for (const b of unsubscribed) {
+        results.push({ branch_id: b.id, branch: b.name, email: b.email, status: "skipped_unsubscribed" });
+      }
 
       return json({
         campaign_id: campaignId,

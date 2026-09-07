@@ -83,6 +83,7 @@ import AdminDelivery from "@/pages/admin/AdminDelivery";
 import AdminBranchDelivery from "@/pages/admin/AdminBranchDelivery";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
+import AdminCommunications from "@/pages/admin/AdminCommunications";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 import AdminProductionQueue from "@/pages/admin/AdminProductionQueue";
@@ -429,6 +430,11 @@ function AppRoutes() {
         } />
 
         {/* Admin — Communications */}
+        <Route path="/admin/communications" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminCommunications />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/sent-mail" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminSentMail />
