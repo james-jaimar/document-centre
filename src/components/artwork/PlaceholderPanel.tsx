@@ -33,6 +33,8 @@ interface Props {
   step?: number;
   onFocus: () => void;
   onPickFile: (file: File) => void;
+  /** Opens the stock photo library for this box (when available). */
+  onBrowseLibrary?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
 }
