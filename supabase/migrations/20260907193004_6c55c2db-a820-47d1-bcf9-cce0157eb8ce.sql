@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.resolve_account_balance(uuid, uuid, uuid) FROM anon;
