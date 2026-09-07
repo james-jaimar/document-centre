@@ -108,6 +108,8 @@ function ComposeTab() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [resendAccount, setResendAccount] = useState<{ from_email: string } | null>(null);
+  const [useResend, setUseResend] = useState(true);
   const [result, setResult] = useState<any>(null);
 
   useEffect(() => {
@@ -132,6 +134,17 @@ function ComposeTab() {
       setBranches(((b ?? []) as any[]).map((r) => ({
         id: r.id, name: r.name, email: r.email, secondary: r.trading_name,
       })));
+
+      const { data: ra } = await supabase
+        .from("email_accounts")
+        .select("id, from_email")
+        .eq("tenant_id", tenantId)
+        .is("branch_id", null)
+        .eq("transport", "resend")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      setResendAccount((ra as { from_email: string } | null) ?? null);
 
       const { data: c } = await supabase
         .from("customer_companies").select("id, name, trading_name, email")
@@ -200,13 +213,17 @@ function ComposeTab() {
       return;
     }
     setSending(true); setResult(null);
-    const response = await invokeEdgeFunctionVerbose("send-branch-marketing-campaign", {
+    const viaResend = !!resendAccount && useResend;
+    const response = await invokeEdgeFunctionVerbose(
+      viaResend ? "resend-broadcast-send" : "send-branch-marketing-campaign",
+      {
       tenant_id: tenantId,
       template_slug: templateSlug,
       audience,
       recipient_ids: Array.from(selected),
       dry_run: dryRun,
-    });
+    },
+    );
     setSending(false);
     if (!response.ok || !response.data) {
       if (response.data) setResult(response.data);
@@ -305,6 +322,19 @@ function ComposeTab() {
               ))}
             </div>
           </div>
+
+          {resendAccount && (
+            <label className="flex items-start gap-2 rounded border bg-muted/30 p-3 text-sm">
+              <Checkbox checked={useResend} onCheckedChange={(v) => setUseResend(!!v)} className="mt-0.5" />
+              <span>
+                <span className="font-medium">Send as a Resend broadcast</span>
+                <span className="block text-xs text-muted-foreground">
+                  Goes out from {resendAccount.from_email} through your Resend account, with their
+                  hosted unsubscribe link. Untick to send one-by-one from your normal mailbox instead.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size}>
