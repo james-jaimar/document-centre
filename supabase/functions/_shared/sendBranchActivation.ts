@@ -181,9 +181,8 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
   const rows = (allMemberships ?? []) as Array<{ id: string; branch_id: string | null; role: string; is_active: boolean }>;
   const exact = branchId ? rows.find((r) => r.branch_id === branchId) : rows[0];
   if (!branchId) {
-    // handled above
-  } else
-  if (exact) {
+    // customer membership already reconciled above
+  } else if (exact) {
     if (!exact.is_active) {
       await admin.from("tenant_memberships").update({ is_active: true }).eq("id", exact.id);
     }
@@ -201,10 +200,12 @@ export async function sendBranchActivationEmail(input: SendActivationInput): Pro
     }
   }
 
-  const { count: otherMembershipCount } = await admin
+  let otherQuery = admin
     .from("tenant_memberships")
     .select("id", { count: "exact", head: true })
-    .eq("profile_id", profileId!).neq("branch_id", branchId);
+    .eq("profile_id", profileId!);
+  otherQuery = branchId ? otherQuery.neq("branch_id", branchId) : otherQuery.not("branch_id", "is", null);
+  const { count: otherMembershipCount } = await otherQuery;
   const isReturningUser = (otherMembershipCount ?? 0) > 0;
 
   const opaqueToken = mintOpaqueToken();
