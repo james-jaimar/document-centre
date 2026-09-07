@@ -38,7 +38,7 @@ function AddressBlock({
   );
 }
 
-export function CompanyDetailView({ companyId, backPath, customerPath }: Props) {
+export function CompanyDetailView({ companyId, backPath, customerPath, orderPath }: Props) {
   const { data: company, isLoading } = useCustomerCompany(companyId);
   const { data: members = [] } = useCompanyMembers(companyId);
   const [editOpen, setEditOpen] = useState(false);
