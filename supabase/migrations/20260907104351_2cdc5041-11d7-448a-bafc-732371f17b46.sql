@@ -1,0 +1,2 @@
+ALTER TABLE public.product_families ADD COLUMN IF NOT EXISTS photo_library_enabled boolean;
+COMMENT ON COLUMN public.product_families.photo_library_enabled IS 'Per-product photo library switch. NULL = inherit tenant/branch setting.';
