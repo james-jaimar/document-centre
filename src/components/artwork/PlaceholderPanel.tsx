@@ -102,6 +102,8 @@ export default function PlaceholderPanel({
   onFocus,
   onPickFile,
   onBrowseLibrary,
+  loadError,
+  onRetryImage,
   onChange,
   onClear,
 }: Props) {
