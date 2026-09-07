@@ -25,7 +25,7 @@ import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import StockImagePicker from "@/components/artwork/StockImagePicker";
 import { usePhotoLibrarySettings } from "@/hooks/usePhotoLibrarySettings";
 import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
-import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
+import { forgetBlob, getCachedBlobUrl, pinBlobPaths, registerBlob, unpinBlobPaths } from "@/lib/photoPrints/photoBlobCache";
 import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
