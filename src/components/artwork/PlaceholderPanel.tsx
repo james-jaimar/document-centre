@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette, Images } from "lucide-react";
+import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette, Images, RefreshCw } from "lucide-react";
 import {
   DEFAULT_CMYK,
   GOOD_PLACEMENT_DPI,
@@ -35,6 +35,10 @@ interface Props {
   onPickFile: (file: File) => void;
   /** Opens the stock photo library for this box (when available). */
   onBrowseLibrary?: () => void;
+  /** The stored image could not be displayed (missing / unreadable file). */
+  loadError?: boolean;
+  /** Try loading the stored image again. */
+  onRetryImage?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
 }
@@ -98,6 +102,8 @@ export default function PlaceholderPanel({
   onFocus,
   onPickFile,
   onBrowseLibrary,
+  loadError,
+  onRetryImage,
   onChange,
   onClear,
 }: Props) {
@@ -359,11 +365,32 @@ export default function PlaceholderPanel({
             </p>
           )}
 
+          {loadError && (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+              <p className="text-xs font-medium text-destructive">
+                This picture could not be loaded. Try again, or choose another photo.
+              </p>
+              {onRetryImage && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={onRetryImage}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span className="ml-1.5">Try again</span>
+                </Button>
+              )}
+            </div>
+          )}
+
           {onBrowseLibrary && (
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="outline"
               className="w-full"
               disabled={busy}
               onClick={onBrowseLibrary}
@@ -372,6 +399,7 @@ export default function PlaceholderPanel({
               <span className="ml-1.5">Choose a different library photo</span>
             </Button>
           )}
+
 
           {!isVector && dpi < MIN_PLACEMENT_DPI && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
