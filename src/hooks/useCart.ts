@@ -808,6 +808,7 @@ export function usePlaceOrder() {
         body: {
           action: "createOrderWithJobs",
           hold_for_payment: input.holdForPayment === true,
+          payment_method: input.paymentMethod ?? null,
           app_slug: app.slug,
           tenant_id: orderTenantId,
           branch_id: orderBranchId,
