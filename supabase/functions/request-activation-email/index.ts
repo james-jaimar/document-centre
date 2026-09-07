@@ -96,8 +96,9 @@ Deno.serve(async (req) => {
       return json({ ok: true, code: "sent_if_valid" });
     }
 
-    // Build authHeader for forwarding to send-email (use anon — send-email is jwt=false)
-    const authHeader = req.headers.get("Authorization") ?? `Bearer ${anonKey}`;
+    // This is a public, rate-limited flow with no signed-in caller, so we call
+    // send-email as a trusted server-to-server caller.
+    const authHeader = `Bearer ${serviceKey}`;
 
     const result = await sendBranchActivationEmail({
       admin, supabaseUrl: url, anonKey, authHeader,
