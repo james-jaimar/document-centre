@@ -138,7 +138,7 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
           </Card>
         </TabsContent>
 
-        <TabsContent value="account">
+        <TabsContent value="account" className="space-y-4">
           <Card className="p-6 grid gap-6 sm:grid-cols-2 md:grid-cols-4">
             <div>
               <div className="text-xs text-muted-foreground">Pricing tier</div>
@@ -149,10 +149,6 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
               <div className="text-lg font-semibold">{company.mis_account_number || "—"}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Credit limit</div>
-              <div className="text-lg font-semibold">{Number(company.credit_limit ?? 0).toFixed(2)}</div>
-            </div>
-            <div>
               <div className="text-xs text-muted-foreground">Payment terms</div>
               <div className="text-lg font-semibold">
                 {(company as any).payment_terms_mode === "prepaid"
@@ -160,12 +156,18 @@ export function CompanyDetailView({ companyId, backPath, customerPath }: Props) 
                   : `${company.payment_terms_days ?? 0} days`}
               </div>
             </div>
-
             <div>
               <div className="text-xs text-muted-foreground">Default discount</div>
               <div className="text-lg font-semibold">{Number(company.default_discount_pct ?? 0)}%</div>
             </div>
           </Card>
+
+          <AccountLedgerPanel
+            companyId={company.id}
+            creditLimit={company.credit_limit}
+            paymentTermsDays={company.payment_terms_days}
+            orderPath={orderPath}
+          />
         </TabsContent>
       </Tabs>
 
