@@ -267,7 +267,12 @@ ${logoBlock}
   // Sent Mail filtering, but the outbound account is platform-scope.
   const sendResp = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: authHeader, apikey: anonKey },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: authHeader,
+      // The gateway rejects an apikey that conflicts with the bearer token.
+      apikey: authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : anonKey,
+    },
     body: JSON.stringify({
       to: email,
       subject,
