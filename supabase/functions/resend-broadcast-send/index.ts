@@ -158,8 +158,9 @@ Deno.serve(async (req) => {
     const bodyText = template.body_text
       ? renderTemplate(template.body_text, vars, false)
       : htmlToText(bodyHtml);
-    const shellHtml = renderBrandedEmail({ preheader: subject, heading: subject, bodyHtml });
-    const shellText = renderBrandedText({ heading: subject, bodyText });
+    const shellHtml = renderBareEmail({ preheader: subject, bodyHtml });
+    const shellText = bodyText;
+
     const { html, text } = withResendUnsubscribeFooter(shellHtml, shellText, senderLabel);
 
     if (dryRun) {

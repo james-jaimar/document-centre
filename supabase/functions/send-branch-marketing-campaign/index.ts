@@ -182,19 +182,9 @@ async function prepareOneRecipient(
     const preheader = deriveSnippet(textBody)
       || `Activate your ${branch.name} storefront on ${ctx.tenant.name}.`;
 
-    const html = renderBrandedEmail({
-      preheader,
-      heading: subject,
-      bodyHtml: htmlBody,
-      hideLegalLinks: true,
-      siteLinkUrl: ctx.appOrigin,
-      siteLinkLabel: ctx.appOrigin.replace(/^https?:\/\//, ""),
-    });
-    const text = renderBrandedText({
-      heading: subject,
-      bodyText: textBody,
-      siteLinkUrl: ctx.appOrigin,
-    });
+    const html = renderBareEmail({ preheader, bodyHtml: htmlBody });
+    const text = textBody;
+
     const withFooter = withUnsubscribeFooter(html, text, unsubscribeLink, ctx.senderLabel);
     const trackedHtml = await appendTrackingPixel(withFooter.html, ctx.campaignId, recipientId, null);
 
