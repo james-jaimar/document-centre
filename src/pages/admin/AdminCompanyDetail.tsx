@@ -12,6 +12,7 @@ export default function AdminCompanyDetail() {
       companyId={id}
       backPath={buildAdminPath("/admin/companies", tenantId)}
       customerPath={(pid) => buildAdminPath(`/admin/customers/${pid}`, tenantId)}
+      orderPath={(oid) => buildAdminPath(`/admin/orders/${oid}`, tenantId)}
     />
   );
 }
