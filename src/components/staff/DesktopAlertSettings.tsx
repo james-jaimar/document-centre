@@ -34,6 +34,16 @@ export default function DesktopAlertSettings() {
         />
       </div>
       <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="alert-orders" className="text-xs font-medium cursor-pointer">
+          Alert me about new orders
+        </Label>
+        <Switch
+          id="alert-orders"
+          checked={prefs.newOrders}
+          onCheckedChange={(v) => update({ newOrders: v })}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
         <Label htmlFor="alert-sound" className="text-xs font-medium cursor-pointer">
           Play a sound
         </Label>

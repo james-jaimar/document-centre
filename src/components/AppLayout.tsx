@@ -7,6 +7,7 @@ import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { useMessageDesktopAlerts } from "@/hooks/useMessageDesktopAlerts";
+import { useNewOrderDesktopAlerts } from "@/hooks/useNewOrderDesktopAlerts";
 import { buildAdminPath } from "@/lib/adminRouting";
 
 export default function AppLayout() {
@@ -19,6 +20,11 @@ export default function AppLayout() {
   );
   useDocumentTitleUnread(totalUnread);
   useMessageDesktopAlerts({
+    tenantId,
+    branchId,
+    ordersBasePath: buildAdminPath("/admin/orders", tenantId),
+  });
+  useNewOrderDesktopAlerts({
     tenantId,
     branchId,
     ordersBasePath: buildAdminPath("/admin/orders", tenantId),

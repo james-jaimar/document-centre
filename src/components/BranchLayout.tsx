@@ -9,6 +9,7 @@ import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { useMessageDesktopAlerts } from "@/hooks/useMessageDesktopAlerts";
+import { useNewOrderDesktopAlerts } from "@/hooks/useNewOrderDesktopAlerts";
 
 import { BranchSwitcher } from "@/components/branch/BranchSwitcher";
 import { useEnsureBranchPricingSeeded } from "@/hooks/useEnsureBranchPricingSeeded";
@@ -77,6 +78,7 @@ export default function BranchLayout() {
   );
   useDocumentTitleUnread(totalUnread);
   useMessageDesktopAlerts({ tenantId, branchId, ordersBasePath: "/branch/orders" });
+  useNewOrderDesktopAlerts({ tenantId, branchId, ordersBasePath: "/branch/orders" });
   const newOrderCount = useNewOrdersCount(tenantId, branchId);
 
 
