@@ -325,9 +325,11 @@ async function createOrderWithJobs(
       );
     }
     const orderTotal = Number(pricing?.total_amount ?? 0);
-    if (creditTerms.credit_limit > 0 && orderTotal > creditTerms.credit_limit) {
+    const balance = await accountBalance(admin, tenant_id, creditTerms);
+    const available = creditTerms.credit_limit - balance;
+    if (creditTerms.credit_limit > 0 && orderTotal > available) {
       return json(
-        { error: "This order exceeds the available credit limit.", code: "credit_limit_exceeded" },
+        { error: "This order exceeds the available credit on this account.", code: "credit_limit_exceeded" },
         403,
       );
     }
