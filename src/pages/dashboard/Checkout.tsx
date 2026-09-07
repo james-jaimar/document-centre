@@ -343,6 +343,17 @@ export default function Checkout() {
   // account customer: they pay on account only — no card, no EFT.
   const accountOnly = canPayOnAccount && !requiresPrepayment;
 
+  // Account customers can only pay on account; anyone who drops out of that
+  // state (order over the limit) falls back to the normal options.
+  useEffect(() => {
+    if (accountOnly) {
+      setPaymentMethod("account");
+    } else {
+      setPaymentMethod((cur) => (cur === "account" ? (onlineProviders?.[0]?.provider ?? "offline") : cur));
+    }
+  }, [accountOnly, onlineProviders]);
+
+
   const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
 
   const handlePlaceOrder = async () => {
