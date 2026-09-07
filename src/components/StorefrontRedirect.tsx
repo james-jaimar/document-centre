@@ -2,6 +2,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { buildTenantPath } from "@/lib/tenantUrl";
 
 /**
  * Redirects /dashboard/* → /t/{tenant-slug}/*
@@ -14,7 +15,9 @@ export function StorefrontRedirect({ path }: { path?: string }) {
   const [loading, setLoading] = useState(true);
 
   const derivedPath = location.pathname.replace(/^\/dashboard\/?/, "");
-  const targetPath = path ?? (derivedPath || "print-centre");
+  // Default to the tenant index so storefront tenants land on their own
+  // home page (ecommerce landing) rather than the legacy Print Centre.
+  const targetPath = path ?? derivedPath;
 
   useEffect(() => {
     if (ctxLoading) return;
@@ -41,7 +44,7 @@ export function StorefrontRedirect({ path }: { path?: string }) {
     return (
       <Navigate
         to={{
-          pathname: `/t/${slug}/${targetPath}`,
+          pathname: buildTenantPath(slug, null, targetPath),
           search: location.search,
           hash: location.hash,
         }}
