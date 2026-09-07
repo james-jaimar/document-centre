@@ -33,6 +33,8 @@ export interface PhotoLibrarySettings {
   goodDpi: number;
   /** Hide photos below the "Good" threshold instead of showing them greyed. */
   hideBelowMinimum: boolean;
+  /** Per-product overrides keyed by product family id. true/false wins over `enabled`. */
+  productOverrides: Record<string, boolean>;
 }
 
 export const PHOTO_LIBRARY_DEFAULTS: PhotoLibrarySettings = {
@@ -58,6 +60,7 @@ export const PHOTO_LIBRARY_DEFAULTS: PhotoLibrarySettings = {
   excellentDpi: 240,
   goodDpi: 150,
   hideBelowMinimum: true,
+  productOverrides: {},
 };
 
 function unwrap(raw: unknown): unknown {
@@ -104,6 +107,15 @@ const asNum = (v: unknown, fb: number) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : fb;
 };
+const asOverrides = (v: unknown): Record<string, boolean> => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (raw === true || raw === "true") out[k] = true;
+    else if (raw === false || raw === "false") out[k] = false;
+  }
+  return out;
+};
 const asStr = (v: unknown, fb: string) => (typeof v === "string" ? v : fb);
 
 export async function fetchPhotoLibrarySettings(
@@ -122,6 +134,7 @@ export async function fetchPhotoLibrarySettings(
     "excellent_dpi",
     "good_dpi",
     "hide_below_minimum",
+    "product_overrides",
   ] as const;
 
   const values = await Promise.all(keys.map((k) => resolveKey(branchId, tenantId, k)));
@@ -153,6 +166,7 @@ export async function fetchPhotoLibrarySettings(
     excellentDpi: asNum(v.excellent_dpi, PHOTO_LIBRARY_DEFAULTS.excellentDpi),
     goodDpi: asNum(v.good_dpi, PHOTO_LIBRARY_DEFAULTS.goodDpi),
     hideBelowMinimum: asBool(v.hide_below_minimum, PHOTO_LIBRARY_DEFAULTS.hideBelowMinimum),
+    productOverrides: asOverrides(v.product_overrides),
   };
 }
 
@@ -172,4 +186,19 @@ export function usePhotoLibrarySettings() {
     settings: query.data ?? PHOTO_LIBRARY_DEFAULTS,
     isLoading: query.isLoading,
   };
+}
+
+/**
+ * Resolves the photo library for one product. Order of precedence:
+ * tenant/branch per-product override -> the product's own switch -> tenant default.
+ */
+export function usePhotoLibraryForProduct(
+  family: { id?: string | null; photo_library_enabled?: boolean | null } | null | undefined,
+) {
+  const { settings, isLoading } = usePhotoLibrarySettings();
+  const override = family?.id ? settings.productOverrides[family.id] : undefined;
+  const productLevel =
+    typeof family?.photo_library_enabled === "boolean" ? family.photo_library_enabled : undefined;
+  const enabled = settings.enabled && (override ?? productLevel ?? true);
+  return { settings: { ...settings, enabled }, isLoading };
 }

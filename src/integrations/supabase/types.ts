@@ -5731,6 +5731,7 @@ export type Database = {
           is_active: boolean
           kind: string | null
           name: string
+          photo_library_enabled: boolean | null
           pricing_addons: Json
           pricing_engine: string
           pricing_options: Json
@@ -5759,6 +5760,7 @@ export type Database = {
           is_active?: boolean
           kind?: string | null
           name: string
+          photo_library_enabled?: boolean | null
           pricing_addons?: Json
           pricing_engine?: string
           pricing_options?: Json
@@ -5787,6 +5789,7 @@ export type Database = {
           is_active?: boolean
           kind?: string | null
           name?: string
+          photo_library_enabled?: boolean | null
           pricing_addons?: Json
           pricing_engine?: string
           pricing_options?: Json

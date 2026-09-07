@@ -19,6 +19,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useProductFamilies } from "@/hooks/useProductFamilies";
 import { PHOTO_LIBRARY_DEFAULTS, PHOTO_LIBRARY_CATEGORY } from "@/hooks/usePhotoLibrarySettings";
 import { toast } from "sonner";
 import { Save, Images } from "lucide-react";
@@ -44,6 +46,10 @@ export function PhotoLibraryTab() {
   const [excellentDpi, setExcellentDpi] = useState(String(d.excellentDpi));
   const [goodDpi, setGoodDpi] = useState(String(d.goodDpi));
   const [hideBelow, setHideBelow] = useState(d.hideBelowMinimum);
+  const [productOverrides, setProductOverrides] = useState<Record<string, boolean>>({});
+
+  const { tenantId } = useTenantContext();
+  const { data: families = [] } = useProductFamilies(tenantId);
 
   useEffect(() => {
     if (isLoading || !settingsMap) return;
@@ -59,6 +65,9 @@ export function PhotoLibraryTab() {
     if (m.excellent_dpi) setExcellentDpi(String(m.excellent_dpi));
     if (m.good_dpi) setGoodDpi(String(m.good_dpi));
     if (m.hide_below_minimum !== undefined) setHideBelow(m.hide_below_minimum !== false);
+    if (m.product_overrides && typeof m.product_overrides === "object") {
+      setProductOverrides(m.product_overrides as Record<string, boolean>);
+    }
   }, [isLoading, settingsMap]);
 
   const handleSave = async () => {
@@ -85,6 +94,7 @@ export function PhotoLibraryTab() {
         { category: PHOTO_LIBRARY_CATEGORY, setting_key: "excellent_dpi", setting_value: excellent, value_type: "number" },
         { category: PHOTO_LIBRARY_CATEGORY, setting_key: "good_dpi", setting_value: good, value_type: "number" },
         { category: PHOTO_LIBRARY_CATEGORY, setting_key: "hide_below_minimum", setting_value: hideBelow, value_type: "boolean" },
+        { category: PHOTO_LIBRARY_CATEGORY, setting_key: "product_overrides", setting_value: productOverrides, value_type: "json" },
       ]);
       toast.success("Photo library settings saved");
     } catch (e: any) {
@@ -198,6 +208,62 @@ export function PhotoLibraryTab() {
             <Switch checked={hideBelow} onCheckedChange={setHideBelow} />
             <Label>Hide photos that fall below the "Good" level</Label>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Which products offer the photo library</CardTitle>
+          <CardDescription>
+            Set this per product. "Use the default" follows the master switch above (and any
+            setting the product itself carries).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 max-w-2xl">
+          {families.length === 0 && (
+            <p className="text-sm text-muted-foreground">No products to configure yet.</p>
+          )}
+          {families.map((f) => {
+            const ov = productOverrides[f.id];
+            const value = ov === undefined ? "inherit" : ov ? "on" : "off";
+            const productDefault =
+              typeof (f as any).photo_library_enabled === "boolean"
+                ? (f as any).photo_library_enabled
+                  ? "on for this product"
+                  : "off for this product"
+                : enabled
+                  ? "on"
+                  : "off";
+            return (
+              <div
+                key={f.id}
+                className="flex items-center justify-between gap-4 rounded-md border px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm font-medium">{f.name}</p>
+                  <p className="text-xs text-muted-foreground">Default: {productDefault}</p>
+                </div>
+                <Select
+                  value={value}
+                  onValueChange={(v) =>
+                    setProductOverrides((prev) => {
+                      const next = { ...prev };
+                      if (v === "inherit") delete next[f.id];
+                      else next[f.id] = v === "on";
+                      return next;
+                    })
+                  }
+                >
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">Use the default</SelectItem>
+                    <SelectItem value="on">On</SelectItem>
+                    <SelectItem value="off">Off</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 

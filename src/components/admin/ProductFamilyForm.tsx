@@ -96,6 +96,7 @@ interface FormValues {
   quantity_mode: "free" | "blocks";
   supports_editable_artwork: boolean;
   supplied_artwork_only: boolean;
+  photo_library_enabled: boolean | null;
   expected_page_count: number | null;
   expected_trim_width_mm: number | null;
   expected_trim_height_mm: number | null;
@@ -137,6 +138,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       quantity_mode: "free",
       supports_editable_artwork: false,
       supplied_artwork_only: false,
+      photo_library_enabled: null,
       expected_page_count: null,
       expected_trim_width_mm: null,
       expected_trim_height_mm: null,
@@ -165,6 +167,10 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         quantity_mode: fam.quantity_mode ?? "free",
         supports_editable_artwork: fam.supports_editable_artwork ?? false,
         supplied_artwork_only: (fam as any).supplied_artwork_only ?? false,
+        photo_library_enabled:
+          typeof (fam as any).photo_library_enabled === "boolean"
+            ? (fam as any).photo_library_enabled
+            : null,
         expected_page_count: (fam as any).expected_page_count ?? null,
         expected_trim_width_mm: (fam as any).expected_trim_width_mm ?? null,
         expected_trim_height_mm: (fam as any).expected_trim_height_mm ?? null,
@@ -189,6 +195,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         quantity_mode: "free",
         supports_editable_artwork: false,
       supplied_artwork_only: false,
+      photo_library_enabled: null,
       expected_page_count: null,
       expected_trim_width_mm: null,
       expected_trim_height_mm: null,
@@ -319,6 +326,35 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                   <FormControl>
                     <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="photo_library_enabled"
+              render={({ field }) => (
+                <FormItem className="rounded-md border p-4 space-y-2">
+                  <FormLabel>Photo library</FormLabel>
+                  <p className="text-xs text-muted-foreground">
+                    Whether customers may pick a free stock photo for this product instead of
+                    uploading their own picture.
+                  </p>
+                  <Select
+                    value={field.value === null || field.value === undefined ? "inherit" : field.value ? "on" : "off"}
+                    onValueChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-64">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="inherit">Use the tenant's setting</SelectItem>
+                      <SelectItem value="on">Always available</SelectItem>
+                      <SelectItem value="off">Never available</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </FormItem>
               )}
             />
