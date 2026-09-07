@@ -260,43 +260,59 @@ ${logoBlock}
 
   const finalText = textBody ?? htmlToText(htmlBody);
 
-  // Activation is a platform-originated email (Document Centre inviting a new
-  // branch to sign in for the first time), so send from the platform sender —
-  // NOT the branch/tenant sender (the branch has never been configured yet).
-  // We keep the tenant/branch association via related_type + metadata for
-  // Sent Mail filtering, but the outbound account is platform-scope.
-  const sendResp = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: authHeader,
-      // The gateway rejects an apikey that conflicts with the bearer token.
-      apikey: authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : anonKey,
-    },
-    body: JSON.stringify({
-      to: email,
-      subject,
-      html: finalHtml,
-      text: finalText || undefined,
-      tenant_id: null,
-      branch_id: null,
-      app_id: tenant.app_id ?? null,
-      from_name: `${portalName} via Document Centre`,
-      category: "system",
-      related_type: "branch_activation",
-      related_id: branchId ?? profileId,
-      metadata: { tenant_id: tenantId, branch_id: branchId, profile_id: profileId, kind: "branch_activation" },
-    }),
-  });
-  const sendText = await sendResp.text();
-  let sendBody: any = null;
-  try { sendBody = JSON.parse(sendText); } catch { /* not JSON */ }
+  // Send from the tenant's own mailbox so the recipient sees a sender on the
+  // tenant's verified domain (matching every other email in the sequence).
+  // If the tenant has no mailbox configured, fall back to the platform sender.
+  const postSend = async (scoped: boolean) => {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+        // The gateway rejects an apikey that conflicts with the bearer token.
+        apikey: authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : anonKey,
+      },
+      body: JSON.stringify({
+        to: email,
+        subject,
+        html: finalHtml,
+        text: finalText || undefined,
+        tenant_id: scoped ? tenantId : null,
+        branch_id: scoped ? (branchId ?? null) : null,
+        app_id: tenant.app_id ?? null,
+        from_name: scoped ? portalName : `${portalName} via Document Centre`,
+        category: "system",
+        related_type: "branch_activation",
+        related_id: branchId ?? profileId,
+        metadata: {
+          tenant_id: tenantId,
+          branch_id: branchId,
+          profile_id: profileId,
+          kind: "branch_activation",
+          sender_scope: scoped ? "tenant" : "platform",
+        },
+      }),
+    });
+    const bodyText = await resp.text();
+    let parsed: any = null;
+    try { parsed = JSON.parse(bodyText); } catch { /* not JSON */ }
+    return { resp, bodyText, parsed };
+  };
+
+  let { resp: sendResp, bodyText: sendText, parsed: sendBody } = await postSend(true);
+
+  // Tenant mailbox missing/disabled → retry unscoped on the platform sender.
+  if (sendBody?.error === "EMAIL_NOT_CONFIGURED") {
+    ({ resp: sendResp, bodyText: sendText, parsed: sendBody } = await postSend(false));
+  }
+
   if (!sendResp.ok) {
     return { ok: false, error: `send-email ${sendResp.status}: ${sendText}` };
   }
   if (sendBody?.error === "EMAIL_NOT_CONFIGURED") {
     return { ok: false, error: "EMAIL_NOT_CONFIGURED: Platform sender mailbox not configured — connect one under Platform → Settings → Email." };
   }
+
 
   return { ok: true, opaqueToken, actionLink, email, profileId: profileId!, isReturningUser, subject };
 }
