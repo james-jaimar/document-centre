@@ -129,16 +129,30 @@ Deno.serve(async (req) => {
     // Suppress hard failures and opt-outs everywhere, not just this campaign.
     if (type === "email.bounced" || type === "email.complained") {
       await admin.from("email_suppressions")
-        .upsert({ email, reason: type === "email.bounced" ? "bounce" : "complaint" }, { onConflict: "email" });
+        .upsert(
+          { email, reason: type === "email.bounced" ? "bounce" : "complaint", source: "resend" },
+          { onConflict: "email" },
+        );
     }
     if (type === "contact.unsubscribed" || type === "email.complained") {
       const tenantId = (account?.tenant_id as string | null) ?? null;
-      await admin.from("email_unsubscribes").insert({
-        tenant_id: tenantId,
-        email,
-        scope: "marketing",
-        source: "resend",
-      }).select("id").maybeSingle();
+      // The unique index is expression-based (COALESCE on tenant_id), so check
+      // first rather than relying on upsert conflict resolution.
+      const query = admin.from("email_unsubscribes").select("id")
+        .eq("email", email).eq("scope", "marketing");
+      const { data: existing } = tenantId
+        ? await query.eq("tenant_id", tenantId).maybeSingle()
+        : await query.is("tenant_id", null).maybeSingle();
+      if (!existing) {
+        await admin.from("email_unsubscribes").insert({
+          tenant_id: tenantId,
+          email,
+          scope: "marketing",
+          source: "resend",
+          campaign_id: recipient?.campaign_id ?? null,
+          recipient_id: recipient?.id ?? null,
+        });
+      }
     }
 
     return json({ ok: true, type });
