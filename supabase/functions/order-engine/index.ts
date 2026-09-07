@@ -562,10 +562,24 @@ async function createOrderWithJobs(
     console.warn("[order-engine] syncOrderTotals (post-create) failed", e);
   }
 
+  // Account orders are approved on arrival — push the jobs into production too.
+  if (creditTerms && !holdForPayment) {
+    try {
+      await admin
+        .from("order_jobs")
+        .update({ job_status: "approved_for_production" })
+        .eq("order_id", newOrder.id)
+        .not("job_status", "in", "(completed,cancelled)");
+    } catch (e) {
+      console.warn("[order-engine] account order job cascade failed (non-fatal):", e);
+    }
+  }
+
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
     held_for_payment: holdForPayment,
+    on_account: !!creditTerms,
     jobs: newJobs,
   }, 201);
 
