@@ -67,13 +67,31 @@ export async function callerCanSendForTenant(
   return { allowed: !!membership, scope: "tenant" };
 }
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Resolves selected ids into targets. Ids are queried in chunks — a single
+ * `id=in.(...)` with hundreds of UUIDs blows the PostgREST URL length limit.
+ */
 export async function resolveTargets(
   admin: Admin,
   tenantId: string,
   audience: Audience,
-  ids: string[],
+  allIds: string[],
 ): Promise<CampaignTarget[]> {
-  if (!ids.length) return [];
+  if (!allIds.length) return [];
+  if (allIds.length > 100) {
+    const out: CampaignTarget[] = [];
+    for (const part of chunk(allIds, 100)) {
+      out.push(...await resolveTargets(admin, tenantId, audience, part));
+    }
+    return out;
+  }
+  const ids = allIds;
 
   if (audience === "branch") {
     const { data, error } = await admin

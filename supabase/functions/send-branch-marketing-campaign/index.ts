@@ -86,6 +86,10 @@ type FunctionBody = {
   resend_unopened_campaign_id?: string;
   subject_override?: string;
   preview_only?: boolean;
+  /** Tenant campaigns: who to send to. Defaults to branches (platform behaviour). */
+  audience?: Audience;
+  /** Ids for the chosen audience — `branch_ids` remains supported for branches. */
+  recipient_ids?: unknown;
 };
 
 interface DispatchContext {
@@ -419,6 +423,7 @@ async function handleRetry(
   admin: SupabaseAdmin,
   campaignId: string,
   templateSlugFromBody: string,
+  scope: CampaignScope,
 ): Promise<Response> {
   const { data: campaign, error: campErr } = await admin
     .from("platform_email_campaigns")
@@ -486,7 +491,7 @@ async function handleRetry(
   const callerOrigin = null;
   const resolved = await resolveAppOriginDetailed(admin, tenant.id, callerOrigin);
   if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
-  const platformSenderId = await getPlatformSenderId(admin);
+  const platformSenderId = await resolveSenderAccountId(admin, scope, tenant.id);
   const campaignRow = campaign as CampaignRow;
   const ctx: DispatchContext = {
     admin,
@@ -499,6 +504,10 @@ async function handleRetry(
     appOrigin: resolved.origin,
     campaignId,
     platformSenderId,
+    scope,
+    audience: "branch",
+    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
+    senderLabel: scope === "tenant" ? tenant.name : "Document Centre",
   };
 
   await admin.from("platform_email_campaign_recipients")
@@ -647,6 +656,7 @@ async function buildUnopenedAudience(
 
 async function handleResendUnopened(
   admin: SupabaseAdmin,
+  scope: CampaignScope,
   callerId: string,
   callerOrigin: string | null,
   parentCampaignId: string,
@@ -689,7 +699,7 @@ async function handleResendUnopened(
 
   const resolved = await resolveAppOriginDetailed(admin, parent.tenant_id, callerOrigin);
   if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
-  const platformSenderId = await getPlatformSenderId(admin);
+  const platformSenderId = await resolveSenderAccountId(admin, scope, tenant.id);
 
   const finalSubject = (subjectOverride ?? "").trim()
     || (parent.subject_snapshot.startsWith("Re: ")
@@ -752,6 +762,10 @@ async function handleResendUnopened(
     appOrigin: resolved.origin,
     campaignId,
     platformSenderId,
+    scope,
+    audience: "branch",
+    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
+    senderLabel: scope === "tenant" ? tenant.name : "Document Centre",
   };
 
   EdgeRuntime.waitUntil((async () => {
@@ -791,17 +805,29 @@ Deno.serve(async (req) => {
     if (authErr || !caller) return json({ error: "Unauthorized" }, 401);
 
     const admin = createClient(url, serviceKey);
-    const { data: roleRow } = await admin
-      .from("user_roles").select("role").eq("user_id", caller.id)
-      .eq("role", "platform_admin").maybeSingle();
-    if (!roleRow) return json({ error: "Forbidden" }, 403);
-
     const body = await req.json().catch(() => ({})) as FunctionBody;
+
+    // Access: platform admins send for anyone; a tenant owner/admin may send
+    // campaigns for their own tenant only.
+    let accessTenantId = String(body.tenant_id ?? "").trim();
+    if (!accessTenantId) {
+      const lookupId = String(
+        body.retry_campaign_id ?? body.campaign_id ?? body.resend_unopened_campaign_id ?? "",
+      ).trim();
+      if (lookupId) {
+        const { data: camp } = await admin
+          .from("platform_email_campaigns").select("tenant_id").eq("id", lookupId).maybeSingle();
+        accessTenantId = (camp as { tenant_id: string | null } | null)?.tenant_id ?? "";
+      }
+    }
+    const access = await callerCanSendForTenant(admin, caller.id, accessTenantId);
+    if (!access.allowed) return json({ error: "Forbidden" }, 403);
+    const scope = access.scope;
     const retryCampaignId = String(body.retry_campaign_id ?? body.campaign_id ?? "").trim();
     const templateSlug = String(body.template_slug ?? "marketing_branch_offer").trim();
     if (body.retry_failed === true) {
       if (!retryCampaignId) return json({ error: "retry_campaign_id required" }, 400);
-      return await handleRetry(admin, retryCampaignId, templateSlug);
+      return await handleRetry(admin, retryCampaignId, templateSlug, scope);
     }
 
     const resendUnopenedId = String(body.resend_unopened_campaign_id ?? "").trim();
@@ -809,6 +835,7 @@ Deno.serve(async (req) => {
       const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
       return await handleResendUnopened(
         admin,
+        scope,
         caller.id,
         callerOrigin,
         resendUnopenedId,
