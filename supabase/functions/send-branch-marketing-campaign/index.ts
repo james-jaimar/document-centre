@@ -845,15 +845,26 @@ Deno.serve(async (req) => {
     }
 
     const tenant_id = String(body.tenant_id ?? "").trim();
-    const branch_ids = normalizeBranchIds(body.branch_ids);
+    const audience: Audience =
+      body.audience === "company" || body.audience === "customer" ? body.audience : "branch";
+    const branch_ids = normalizeBranchIds(
+      audience === "branch" ? (body.recipient_ids ?? body.branch_ids) : body.recipient_ids,
+    );
     const dryRun = body.dry_run === true;
     if (!tenant_id || !branch_ids.length) {
-      return json({ error: "tenant_id and branch_ids required" }, 400);
+      return json({ error: "tenant_id and recipients required" }, 400);
     }
 
-    const { data: template } = await admin
-      .from("platform_email_templates").select("*").eq("slug", templateSlug).maybeSingle();
+    // Tenants only see their own templates plus the shared platform library.
+    const { data: templateRows } = await admin
+      .from("platform_email_templates").select("*").eq("slug", templateSlug);
+    const templateCandidates = (templateRows ?? []) as Array<Record<string, unknown>>;
+    const template = templateCandidates.find((t) => t.tenant_id === tenant_id)
+      ?? templateCandidates.find((t) => t.tenant_id === null);
     if (!template) return json({ error: "Template not found" }, 404);
+    if (scope === "tenant" && template.tenant_id && template.tenant_id !== tenant_id) {
+      return json({ error: "Forbidden" }, 403);
+    }
     if (template.kind !== "marketing") {
       return json({ error: "Template is not a marketing template" }, 400);
     }
@@ -862,15 +873,29 @@ Deno.serve(async (req) => {
       .from("tenants").select("id, app_id, name, slug").eq("id", tenant_id).maybeSingle();
     if (!tenant) return json({ error: "Tenant not found" }, 404);
 
-    const { data: allBranches, error: branchesErr } = await admin
-      .from("branches")
-      .select("id, name, email, slug, url_slug, trading_name")
-      .eq("tenant_id", tenant_id);
-    if (branchesErr) {
-      return json({ error: `Branch lookup failed: ${branchesErr.message}` }, 500);
-    }
     const requestedSet = new Set(branch_ids);
-    const resolvedBranches = ((allBranches ?? []) as BranchRow[]).filter((b) => requestedSet.has(b.id));
+    let resolvedBranches: BranchRow[] = [];
+    if (audience === "branch") {
+      // Fetch the whole tenant and filter in memory: a several-hundred-UUID
+      // `id=in.(...)` blows the PostgREST URL limit.
+      const { data: allBranches, error: branchesErr } = await admin
+        .from("branches")
+        .select("id, name, email, slug, url_slug, trading_name")
+        .eq("tenant_id", tenant_id);
+      if (branchesErr) {
+        return json({ error: `Recipient lookup failed: ${branchesErr.message}` }, 500);
+      }
+      resolvedBranches = ((allBranches ?? []) as BranchRow[]).filter((b) => requestedSet.has(b.id));
+    } else {
+      try {
+        const targets = await resolveTargets(admin, tenant_id, audience, branch_ids);
+        resolvedBranches = targets.map((t) => ({
+          id: t.id, name: t.name, email: t.email, kind: t.kind, contactName: t.contactName,
+        }));
+      } catch (e) {
+        return json({ error: `Recipient lookup failed: ${(e as Error).message}` }, 500);
+      }
+    }
     const resolvedBranchIds = new Set(resolvedBranches.map((b) => b.id));
     const missingBranchIds = branch_ids.filter((id) => !resolvedBranchIds.has(id));
 
@@ -895,10 +920,17 @@ Deno.serve(async (req) => {
     const resolved = await resolveAppOriginDetailed(admin, tenant_id, callerOrigin);
     if (!resolved) return json({ error: "Could not resolve app origin" }, 500);
     const appOrigin = resolved.origin;
-    const platformSenderId = await getPlatformSenderId(admin);
+    const platformSenderId = await resolveSenderAccountId(admin, scope, tenant_id);
 
-    const withEmail = resolvedBranches.filter((b) => (b.email ?? "").trim());
     const noEmail = resolvedBranches.filter((b) => !(b.email ?? "").trim());
+    const hasEmail = resolvedBranches.filter((b) => (b.email ?? "").trim());
+    // Never mail anyone who opted out of this tenant's marketing, or who is
+    // on the hard bounce/complaint suppression list.
+    const suppressedEmails = await fetchSuppressedEmails(
+      admin, tenant_id, hasEmail.map((b) => (b.email ?? "")),
+    );
+    const unsubscribed = hasEmail.filter((b) => suppressedEmails.has((b.email ?? "").toLowerCase()));
+    const withEmail = hasEmail.filter((b) => !suppressedEmails.has((b.email ?? "").toLowerCase()));
 
     if (dryRun) {
       const results: Array<Record<string, unknown>> = [];
@@ -913,11 +945,20 @@ Deno.serve(async (req) => {
       for (const b of noEmail) {
         results.push({ branch_id: b.id, branch: b.name, status: "skipped_no_email" });
       }
+      for (const b of unsubscribed) {
+        results.push({
+          branch_id: b.id, branch: b.name, email: b.email,
+          status: "skipped_unsubscribed",
+          error: "This address has opted out of marketing emails",
+        });
+      }
       let dryRunOk = 0;
       for (const b of withEmail) {
-        const contactName = b.trading_name || b.name;
-        const subject = renderTemplate(template.subject, {
+        const contactName = b.contactName || b.trading_name || b.name;
+        const subject = renderTemplate(String(template.subject), {
           branch_name: b.name,
+          company_name: b.name,
+          customer_name: contactName,
           contact_name: contactName,
           tenant_name: tenant.name,
           activation_link: `${appOrigin}/activate/…`,
@@ -929,7 +970,7 @@ Deno.serve(async (req) => {
           email: b.email,
           status: platformSenderId ? "dry_run_ok" : "dry_run_failed",
           subject,
-          error: platformSenderId ? null : NO_PLATFORM_SENDER,
+          error: platformSenderId ? null : NO_SENDER_MESSAGE[scope],
         });
       }
       return json({
@@ -941,7 +982,7 @@ Deno.serve(async (req) => {
         totals: {
           sent: 0,
           failed: platformSenderId ? 0 : withEmail.length,
-          skipped: missingBranchIds.length + noEmail.length,
+          skipped: missingBranchIds.length + noEmail.length + unsubscribed.length,
           dry_run_ok: platformSenderId ? dryRunOk : 0,
         },
         results,
@@ -960,9 +1001,22 @@ Deno.serve(async (req) => {
         created_by: caller.id,
         status: "running",
         kind: "marketing",
+        scope,
+        audience,
       }).select("id").single();
     if (campErr) return json({ error: `Campaign create failed: ${campErr.message}` }, 500);
     const campaignId = campaign.id as string;
+
+    const recipientKeys = (b: BranchRow) => {
+      const kind = b.kind ?? "branch";
+      return {
+        recipient_kind: kind,
+        branch_id: kind === "branch" ? b.id : null,
+        company_id: kind === "company" ? b.id : null,
+        profile_id: kind === "customer" ? b.id : null,
+        contact_name: b.contactName || b.trading_name || b.name,
+      };
+    };
 
     let skipped = 0;
     if (missingBranchIds.length) {
@@ -980,7 +1034,7 @@ Deno.serve(async (req) => {
     if (noEmail.length) {
       const rows = noEmail.map((b) => ({
         campaign_id: campaignId,
-        branch_id: b.id,
+        ...recipientKeys(b),
         email: null,
         status: "skipped_no_email",
       }));
@@ -988,18 +1042,30 @@ Deno.serve(async (req) => {
       skipped += noEmail.length;
     }
 
+    if (unsubscribed.length) {
+      const rows = unsubscribed.map((b) => ({
+        campaign_id: campaignId,
+        ...recipientKeys(b),
+        email: (b.email ?? "").trim().toLowerCase(),
+        status: "skipped_unsubscribed",
+        error: "This address has opted out of marketing emails",
+      }));
+      for (const c of chunk(rows, INSERT_CHUNK)) await admin.from("platform_email_campaign_recipients").insert(c);
+      skipped += unsubscribed.length;
+    }
+
     const pending: { branch: BranchRow; recipientId: string }[] = [];
     for (const c of chunk(withEmail, INSERT_CHUNK)) {
       const payload = c.map((b) => ({
         campaign_id: campaignId,
-        branch_id: b.id,
+        ...recipientKeys(b),
         email: (b.email ?? "").trim().toLowerCase(),
         status: "pending",
       }));
       const { data: inserted, error: insErr } = await admin
         .from("platform_email_campaign_recipients")
         .insert(payload)
-        .select("id, branch_id");
+        .select("id, branch_id, company_id, profile_id");
       if (insErr) {
         await admin.from("platform_email_campaigns").update({
           status: "failed",
@@ -1007,21 +1073,34 @@ Deno.serve(async (req) => {
         }).eq("id", campaignId);
         return json({ error: `Recipient insert failed: ${insErr.message}`, campaign_id: campaignId }, 500);
       }
-      const byBranch = new Map<string, string>();
-      for (const r of (inserted ?? []) as Array<{ branch_id: string; id: string }>) byBranch.set(r.branch_id, r.id);
+      const byTarget = new Map<string, string>();
+      for (const r of (inserted ?? []) as Array<{
+        id: string; branch_id: string | null; company_id: string | null; profile_id: string | null;
+      }>) {
+        const key = r.branch_id ?? r.company_id ?? r.profile_id;
+        if (key) byTarget.set(key, r.id);
+      }
       for (const b of c) {
-        const rid = byBranch.get(b.id);
+        const rid = byTarget.get(b.id);
         if (rid) pending.push({ branch: b, recipientId: rid });
       }
     }
 
     const ctx: DispatchContext = {
       admin,
-      template,
+      template: {
+        subject: String(template.subject),
+        body_html: String(template.body_html),
+        body_text: (template.body_text as string | null) ?? null,
+      },
       tenant,
       appOrigin,
       campaignId,
       platformSenderId,
+      scope,
+      audience,
+      supabaseUrl: url,
+      senderLabel: scope === "tenant" ? tenant.name : "Document Centre",
     };
 
     if (pending.length <= SYNC_LIMIT) {
