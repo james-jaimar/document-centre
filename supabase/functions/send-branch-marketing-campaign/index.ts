@@ -15,7 +15,7 @@ import { appendTrackingPixel } from "../_shared/emailTracking.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
 import {
   type Audience, type CampaignScope, type CampaignTarget,
-  AUDIENCE_COLUMN, callerCanSendForTenant, resolveTargets, resolveSenderAccountId,
+  callerCanSendForTenant, resolveTargets, resolveSenderAccountId,
   NO_SENDER_MESSAGE, fetchSuppressedEmails, buildUnsubscribeUrl, withUnsubscribeFooter,
   upsertActivationPage as upsertAudienceActivationPage, mintToken,
 } from "../_shared/campaignAudience.ts";
