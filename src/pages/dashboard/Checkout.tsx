@@ -1205,7 +1205,9 @@ export default function Checkout() {
                 Placing Order…
               </>
             ) : (
-              paymentMethod === "offline" ? "Place Order" : "Place Order & Pay"
+              paymentMethod === "offline" || paymentMethod === "account"
+                ? "Place Order"
+                : "Place Order & Pay"
             )}
           </Button>
         </div>
