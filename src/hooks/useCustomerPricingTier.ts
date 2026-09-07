@@ -23,6 +23,10 @@ export interface CustomerPricingTier {
   misAccountNumber: string | null;
   /** Credit facility that applies at the active branch, if any. */
   credit: CreditAccount | null;
+  /** Outstanding balance on the account ledger. */
+  accountBalance: number;
+  /** Credit limit less the outstanding balance; null when there is no facility. */
+  availableCredit: number | null;
   /** Customer must pay online before the order is accepted (C.O.D. / prepaid). */
   requiresPrepayment: boolean;
   isLoading: boolean;
