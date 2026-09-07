@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette, Images } from "lucide-react";
+import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette, Images, RefreshCw } from "lucide-react";
 import {
   DEFAULT_CMYK,
   GOOD_PLACEMENT_DPI,
