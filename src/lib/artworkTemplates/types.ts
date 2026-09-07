@@ -273,7 +273,19 @@ export interface TemplatedImageValue {
   background_hex?: string | null;
   /** 0–1 — e.g. 0.1 for a watermark. Applied by both preview and PDF server. */
   opacity?: number;
+  /** Set when the image came from a stock library instead of a customer file. */
+  source?: StockImageSource | null;
 }
+
+/** Provenance for a library photo — kept so the photographer can be credited. */
+export interface StockImageSource {
+  provider: "pexels";
+  photo_id: string;
+  photographer: string;
+  photographer_url?: string | null;
+  photo_url?: string | null;
+}
+
 
 export interface TemplatedTextValue {
   placeholder_id: string;
