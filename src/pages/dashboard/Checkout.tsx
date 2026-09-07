@@ -1025,14 +1025,9 @@ export default function Checkout() {
                     </Label>
                   </div>
                 ))}
-                {credit?.is_active && !requiresPrepayment && (
+                {credit?.is_active && !requiresPrepayment && canPayOnAccount && (
                   <div className="flex items-start space-x-2">
-                    <RadioGroupItem
-                      value="account"
-                      id="pm-account"
-                      disabled={!canPayOnAccount}
-                      className="mt-1"
-                    />
+                    <RadioGroupItem value="account" id="pm-account" className="mt-1" />
                     <Label htmlFor="pm-account" className="cursor-pointer">
                       Pay on account
                       {credit.payment_terms_days != null && (
@@ -1040,14 +1035,14 @@ export default function Checkout() {
                           ({credit.payment_terms_days} day terms)
                         </span>
                       )}
-                      {!withinCreditLimit && (
-                        <span className="block text-xs text-destructive">
-                          This order exceeds your available credit limit, so please choose another
-                          payment method.
-                        </span>
-                      )}
                     </Label>
                   </div>
+                )}
+                {credit?.is_active && !requiresPrepayment && !canPayOnAccount && (
+                  <p className="text-xs text-muted-foreground">
+                    This order takes you over your available credit, so please choose one of the
+                    payment options above.
+                  </p>
                 )}
                 {!requiresPrepayment && !accountOnly && (
                   <div className="flex items-center space-x-2">
