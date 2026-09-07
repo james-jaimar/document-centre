@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePhotoLibrarySettings } from "@/hooks/usePhotoLibrarySettings";
 import {
-  STOCK_CATEGORIES,
   searchStockPhotos,
   stockPhotoQuality,
   type StockPhoto,
@@ -43,8 +43,9 @@ export default function StockImagePicker({
   busy,
   onPick,
 }: Props) {
-  const [query, setQuery] = useState("");
-  const [term, setTerm] = useState("");
+  const { settings } = usePhotoLibrarySettings();
+  const [query, setQuery] = useState(settings.defaultQuery);
+  const [term, setTerm] = useState(settings.defaultQuery);
   const [photos, setPhotos] = useState<StockPhoto[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -54,19 +55,28 @@ export default function StockImagePicker({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const orientation = useMemo(() => {
+    if (settings.orientationMode === "any") return undefined;
     if (!boxWidthMm || !boxHeightMm) return undefined;
     const ratio = boxWidthMm / boxHeightMm;
     if (ratio > 1.15) return "landscape" as const;
     if (ratio < 0.87) return "portrait" as const;
     return "square" as const;
-  }, [boxWidthMm, boxHeightMm]);
+  }, [boxWidthMm, boxHeightMm, settings.orientationMode]);
 
   const load = useCallback(
     async (nextPage: number, replace: boolean) => {
       setLoading(true);
       setError(null);
       try {
-        const res = await searchStockPhotos({ query: term, page: nextPage, orientation });
+        const res = await searchStockPhotos({
+          query: term,
+          page: nextPage,
+          orientation,
+          perPage: settings.perPage,
+          locale: settings.locale,
+          colour: settings.colour,
+          size: settings.size,
+        });
         setPhotos((prev) => (replace ? res.photos : [...prev, ...res.photos]));
         setHasMore(res.has_more);
         setPage(nextPage);
@@ -76,8 +86,15 @@ export default function StockImagePicker({
         setLoading(false);
       }
     },
-    [term, orientation],
+    [term, orientation, settings.perPage, settings.locale, settings.colour, settings.size],
   );
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery(settings.defaultQuery);
+    setTerm(settings.defaultQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, settings.defaultQuery]);
 
   useEffect(() => {
     if (!open) return;
@@ -121,7 +138,7 @@ export default function StockImagePicker({
         </form>
 
         <div className="flex flex-wrap gap-1.5">
-          {STOCK_CATEGORIES.map((c) => (
+          {settings.categories.map((c) => (
             <Button
               key={c}
               type="button"
@@ -145,8 +162,11 @@ export default function StockImagePicker({
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {photos.map((p) => {
-              const { quality, dpi } = stockPhotoQuality(p, boxWidthMm, boxHeightMm);
-              if (quality === "too-small") return null;
+              const { quality, dpi } = stockPhotoQuality(p, boxWidthMm, boxHeightMm, {
+                excellent: settings.excellentDpi,
+                good: settings.goodDpi,
+              });
+              if (quality === "too-small" && settings.hideBelowMinimum) return null;
               const used = usedIds.includes(String(p.id));
               const picking = pickedId === p.id && busy;
               return (
@@ -171,10 +191,21 @@ export default function StockImagePicker({
                   />
                   <span className="absolute left-1.5 top-1.5 flex gap-1">
                     <Badge
-                      variant={quality === "excellent" ? "default" : "secondary"}
+                      variant={
+                        quality === "excellent"
+                          ? "default"
+                          : quality === "good"
+                            ? "secondary"
+                            : "destructive"
+                      }
                       className="text-[10px]"
                     >
-                      {quality === "excellent" ? "Excellent" : "Good"} · {dpi} DPI
+                      {quality === "excellent"
+                        ? "Excellent"
+                        : quality === "good"
+                          ? "Good"
+                          : "Low quality"}{" "}
+                      · {dpi} DPI
                     </Badge>
                     {used && (
                       <Badge variant="outline" className="bg-background/90 text-[10px]">

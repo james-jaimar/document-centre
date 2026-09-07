@@ -23,6 +23,7 @@ import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
 import StockImagePicker from "@/components/artwork/StockImagePicker";
+import { usePhotoLibrarySettings } from "@/hooks/usePhotoLibrarySettings";
 import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
@@ -481,6 +482,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   );
 
   // ── Stock photo library (Pexels)
+  const { settings: photoLibrary } = usePhotoLibrarySettings();
   const [libraryFor, setLibraryFor] = useState<string | null>(null);
   const libraryPlaceholder = useMemo(
     () => placeholders.find((p) => p.id === libraryFor) ?? null,
@@ -846,7 +848,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                   active={activeId === p.id}
                   onFocus={() => setActiveId(p.id)}
                   onPickFile={(file) => handlePickFile(p.id, file)}
-                  onBrowseLibrary={p.kind === "image" ? () => setLibraryFor(p.id) : undefined}
+                  onBrowseLibrary={
+                    photoLibrary.enabled && p.kind === "image"
+                      ? () => setLibraryFor(p.id)
+                      : undefined
+                  }
                   onChange={(v) => applyValue(p, v)}
                   onClear={() => applyValue(p, null)}
                 />
