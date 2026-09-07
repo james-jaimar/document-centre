@@ -24,6 +24,7 @@ import { useBranches, type Branch } from "@/hooks/useBranches";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Plus, Trash2, Pencil, Building2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
+import { AccountLedgerPanel } from "@/components/customers/AccountLedgerPanel";
 
 interface Props {
   customerProfileId: string;
