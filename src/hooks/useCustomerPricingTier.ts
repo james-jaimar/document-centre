@@ -16,6 +16,7 @@ import {
 } from "@/hooks/useCustomerCreditAccounts";
 import type { PricingTier } from "@/lib/pricing/packOptions";
 import { resolveTradeMembership, type TradeMembership } from "@/lib/customers/tradeMembership";
+import { useAccountBalance } from "@/hooks/useAccountLedger";
 
 export interface CustomerPricingTier {
   tier: PricingTier;
