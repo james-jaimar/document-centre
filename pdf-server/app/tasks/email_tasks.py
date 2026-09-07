@@ -27,6 +27,7 @@ from app.email.smtp_client import send_smtp
 from app.email.graph_client import send_graph
 from app.email.gmail_client import send_gmail
 from app.email.graph_oauth_client import send_graph_oauth
+from app.email.resend_client import send_resend
 from app.worker import celery_app
 from app.core.queue import enqueue
 
