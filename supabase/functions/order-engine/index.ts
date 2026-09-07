@@ -355,10 +355,8 @@ async function createOrderWithJobs(
     addressInserts.push({ order_id: newOrder.id, address_type: "delivery", ...delivery_address });
   }
 
-  // Idempotent customer membership: select-then-insert. The unique index on
-  // tenant_memberships includes branch_id + role, which makes ON CONFLICT
-  // unreliable across callers — a defensive select avoids that whole class
-  // of bugs.
+  // Any active customer membership already establishes tenant access. Do not
+  // add a tenant-level consumer row beside an existing branch trade record.
   const ensureMembership = (async () => {
     const { data: existing } = await admin
       .from("tenant_memberships")
@@ -367,7 +365,6 @@ async function createOrderWithJobs(
       .eq("tenant_id", tenant_id)
       .eq("app_id", app_id)
       .eq("role", "customer")
-      .is("branch_id", null)
       .limit(1)
       .maybeSingle();
     if (existing) return { error: null };

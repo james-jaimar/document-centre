@@ -54,7 +54,8 @@ export function CustomerTradeSettings({
         } as any)
         .eq("tenant_id", tenantId)
         .eq("app_id", appId)
-        .eq("profile_id", customerProfileId);
+        .eq("profile_id", customerProfileId)
+        .eq("role", "customer");
       if (error) throw error;
     },
     onSuccess: () => {

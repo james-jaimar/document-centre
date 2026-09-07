@@ -126,6 +126,9 @@ Deno.serve(async (req) => {
       .eq("profile_id", profileId)
       .eq("tenant_id", tenant.id)
       .eq("app_id", tenant.app_id)
+      .eq("role", "customer")
+      .order("is_active", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (!membership) {

@@ -765,22 +765,24 @@ export function usePlaceOrder() {
       // Resolve the branch this order belongs to (locked from storefront branch).
       const orderBranchId = input.branchId || cartOrder.branch_id || null;
 
-      // Ensure the customer has a `customer` membership row for this
-      // tenant + branch. This is the "home branch" record — one profile can
-      // hold multiple branch memberships (one per branch they've ordered at).
-      // No unique constraint exists, so we check-then-insert.
+      // Ensure the customer has a membership for this branch. When adding a
+      // legitimate branch row, inherit tenant-wide account settings so the
+      // default values can never compete with an existing trade membership.
       if (orderTenantId) {
         try {
-          let q = supabase
+          const { data: memberships } = await supabase
             .from("tenant_memberships")
-            .select("id")
+            .select("id, branch_id, is_trade_customer, mis_account_number, payment_terms_mode, company_id")
             .eq("profile_id", user.id)
             .eq("tenant_id", orderTenantId)
             .eq("role", "customer")
-            .limit(1);
-          q = orderBranchId ? q.eq("branch_id", orderBranchId) : q.is("branch_id", null);
-          const { data: existing } = await q.maybeSingle();
+            .eq("is_active", true);
+          const existing = (memberships ?? []).find((membership) =>
+            orderBranchId ? membership.branch_id === orderBranchId : membership.branch_id === null);
           if (!existing) {
+            const accountSource = (memberships ?? []).find((membership) => membership.is_trade_customer)
+              ?? (memberships ?? []).find((membership) => membership.company_id)
+              ?? memberships?.[0];
             await supabase.from("tenant_memberships").insert({
               profile_id: user.id,
               tenant_id: orderTenantId,
@@ -788,6 +790,10 @@ export function usePlaceOrder() {
               app_id: cartOrder.app_id || appId || null,
               role: "customer",
               is_active: true,
+              is_trade_customer: accountSource?.is_trade_customer ?? false,
+              mis_account_number: accountSource?.mis_account_number ?? null,
+              payment_terms_mode: accountSource?.payment_terms_mode ?? null,
+              company_id: accountSource?.company_id ?? null,
             });
           }
         } catch (e) {

@@ -15,6 +15,7 @@ import {
   type CreditAccount,
 } from "@/hooks/useCustomerCreditAccounts";
 import type { PricingTier } from "@/lib/pricing/packOptions";
+import { resolveTradeMembership, type TradeMembership } from "@/lib/customers/tradeMembership";
 
 export interface CustomerPricingTier {
   tier: PricingTier;
@@ -45,30 +46,9 @@ export function useCustomerTradeMembership() {
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("profile_id", profileId!)
-        .maybeSingle();
+        .eq("role", "customer");
       if (error) throw error;
-      return data as
-        | {
-            id: string;
-            is_trade_customer: boolean | null;
-            mis_account_number: string | null;
-            payment_terms_mode: string | null;
-            role: string | null;
-            is_active: boolean | null;
-            company_id: string | null;
-            company: {
-              id: string;
-              name: string;
-              is_active: boolean | null;
-              is_trade_customer: boolean | null;
-              mis_account_number: string | null;
-              credit_limit: number | null;
-              payment_terms_days: number | null;
-              payment_terms_mode: string | null;
-              default_discount_pct: number | null;
-            } | null;
-          }
-        | null;
+      return resolveTradeMembership((data ?? []) as TradeMembership[]);
     },
   });
 }
