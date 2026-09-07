@@ -9,7 +9,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
-import { renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.ts";
+import { renderBareEmail } from "../_shared/branded-shell.ts";
 import { htmlToText, deriveSnippet } from "../_shared/htmlToText.ts";
 import { appendTrackingPixel } from "../_shared/emailTracking.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
@@ -182,19 +182,9 @@ async function prepareOneRecipient(
     const preheader = deriveSnippet(textBody)
       || `Activate your ${branch.name} storefront on ${ctx.tenant.name}.`;
 
-    const html = renderBrandedEmail({
-      preheader,
-      heading: subject,
-      bodyHtml: htmlBody,
-      hideLegalLinks: true,
-      siteLinkUrl: ctx.appOrigin,
-      siteLinkLabel: ctx.appOrigin.replace(/^https?:\/\//, ""),
-    });
-    const text = renderBrandedText({
-      heading: subject,
-      bodyText: textBody,
-      siteLinkUrl: ctx.appOrigin,
-    });
+    const html = renderBareEmail({ preheader, bodyHtml: htmlBody });
+    const text = textBody;
+
     const withFooter = withUnsubscribeFooter(html, text, unsubscribeLink, ctx.senderLabel);
     const trackedHtml = await appendTrackingPixel(withFooter.html, ctx.campaignId, recipientId, null);
 

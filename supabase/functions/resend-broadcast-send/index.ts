@@ -15,7 +15,7 @@ import {
   upsertActivationPage,
 } from "../_shared/campaignAudience.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
-import { renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.ts";
+import { renderBareEmail } from "../_shared/branded-shell.ts";
 import { htmlToText } from "../_shared/htmlToText.ts";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
@@ -158,8 +158,9 @@ Deno.serve(async (req) => {
     const bodyText = template.body_text
       ? renderTemplate(template.body_text, vars, false)
       : htmlToText(bodyHtml);
-    const shellHtml = renderBrandedEmail({ preheader: subject, heading: subject, bodyHtml });
-    const shellText = renderBrandedText({ heading: subject, bodyText });
+    const shellHtml = renderBareEmail({ preheader: subject, bodyHtml });
+    const shellText = bodyText;
+
     const { html, text } = withResendUnsubscribeFooter(shellHtml, shellText, senderLabel);
 
     if (dryRun) {
