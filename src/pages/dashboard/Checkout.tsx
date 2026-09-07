@@ -335,9 +335,9 @@ export default function Checkout() {
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
   const total = Math.max(0, subtotal - discountAmount + deliveryFee);
 
-  // Pay on account: an active credit facility, with room for this order.
-  const creditLimit = credit?.is_active ? credit.credit_limit : null;
-  const withinCreditLimit = creditLimit == null || total <= Number(creditLimit);
+  // Pay on account: an active credit facility, with room left on the account
+  // once everything already owing is taken off the limit.
+  const withinCreditLimit = availableCredit == null || total <= availableCredit;
   const canPayOnAccount = !!credit?.is_active && withinCreditLimit;
   // A customer with a live credit facility that covers this order is a 30-day
   // account customer: they pay on account only — no card, no EFT.
