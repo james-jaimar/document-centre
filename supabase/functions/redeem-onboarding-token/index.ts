@@ -20,21 +20,34 @@ function json(d: unknown, status = 200) {
   });
 }
 
-function rewriteVerifyLink(rawLink: string, appOrigin: string, redirectPath: string): string {
+function rewriteVerifyLink(
+  linkData: any,
+  appOrigin: string,
+  redirectPath: string,
+  fallbackType: string,
+): string | null {
+  const rawLink: string = linkData?.properties?.action_link ?? "";
+  // Supabase returns the OTP as `properties.hashed_token`; the action_link
+  // itself carries it as `?token=` (NOT `token_hash`). Reading the wrong key
+  // used to make us fall back to the raw Supabase URL, which then bounced the
+  // user to the project's default site URL instead of the tenant domain.
+  let tokenHash: string | null = linkData?.properties?.hashed_token ?? null;
+  let type: string = linkData?.properties?.verification_type ?? fallbackType;
   try {
     const u = new URL(rawLink);
-    const tokenHash = u.searchParams.get("token_hash");
-    const type = u.searchParams.get("type") ?? "recovery";
-    if (!tokenHash) return rawLink;
-    const target = new URL("/auth/verify", appOrigin);
-    target.searchParams.set("token_hash", tokenHash);
-    target.searchParams.set("type", type);
-    target.searchParams.set("next", redirectPath);
-    return target.toString();
+    tokenHash = tokenHash || u.searchParams.get("token_hash") || u.searchParams.get("token");
+    type = u.searchParams.get("type") ?? type;
   } catch {
-    return rawLink;
+    /* action_link may be missing — properties are enough */
   }
+  if (!tokenHash) return rawLink || null;
+  const target = new URL("/auth/verify", appOrigin);
+  target.searchParams.set("token_hash", tokenHash);
+  target.searchParams.set("type", type);
+  target.searchParams.set("next", redirectPath);
+  return target.toString();
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -63,10 +76,12 @@ Deno.serve(async (req) => {
     // Resolve tenant + branch slug to build the post-reset return path.
     let tenantSlug: string | null = null;
     let branchSlug: string | null = null;
+    let customDomain: string | null = null;
     if (row.tenant_id) {
       const { data: t } = await admin
         .from("tenants").select("slug, custom_domain").eq("id", row.tenant_id).maybeSingle();
       tenantSlug = t?.slug ?? null;
+      customDomain = (t?.custom_domain ?? null)?.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "") || null;
     }
     if (row.branch_id) {
       const { data: b } = await admin
@@ -94,12 +109,20 @@ Deno.serve(async (req) => {
       try { return new URL(callerOrigin).origin; } catch { return appOrigin; }
     })();
 
-    const slugPrefix = tenantSlug ? `/t/${tenantSlug}` : "";
+    // On the tenant's own domain the `/t/<slug>` prefix must not appear.
+    const onTenantOwnHost = (() => {
+      if (!customDomain) return false;
+      try {
+        return new URL(resolvedOrigin).hostname.replace(/^www\./, "") === customDomain.replace(/^www\./, "");
+      } catch { return false; }
+    })();
+
+    const slugPrefix = tenantSlug && !onTenantOwnHost ? `/t/${tenantSlug}` : "";
     const branchPath = branchSlug ? `/${branchSlug}` : "";
     const nextParam = row.branch_id ? `&next=branch` : "";
     const redirectPath = linkType === "recovery"
       ? `${slugPrefix}/reset-password?welcome_token=${encodeURIComponent(token)}${nextParam}`
-      : `${slugPrefix}${branchPath}?welcome_token=${encodeURIComponent(token)}`;
+      : `${slugPrefix}${branchPath || "/"}?welcome_token=${encodeURIComponent(token)}`;
 
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type: linkType,
@@ -110,7 +133,9 @@ Deno.serve(async (req) => {
       return json({ error: "link_failed", detail: linkErr?.message ?? "no link" }, 500);
     }
 
-    const actionLink = rewriteVerifyLink(linkData.properties.action_link, resolvedOrigin, redirectPath);
+    const actionLink = rewriteVerifyLink(linkData, resolvedOrigin, redirectPath, linkType);
+    if (!actionLink) return json({ error: "link_failed", detail: "no token" }, 500);
+
 
     await admin
       .from("platform_onboarding_tokens")
