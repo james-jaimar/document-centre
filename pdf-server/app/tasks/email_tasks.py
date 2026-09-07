@@ -166,6 +166,7 @@ def send_email(self, row: Dict[str, Any]) -> str:
         "graph": send_graph,
         "gmail_oauth": send_gmail,
         "graph_oauth": send_graph_oauth,
+        "resend": send_resend,
     }[provider]
 
     try:

@@ -10,6 +10,7 @@ Supports all active account transports, matching the retired edge dispatcher:
 - graph          → GraphCreds (Microsoft Graph sendMail)
 - gmail_oauth    → GmailCreds (Gmail API users.messages.send)
 - graph_oauth    → GraphOAuthCreds (delegated Microsoft Graph sendMail)
+- resend         → ResendCreds (Resend HTTP API, tenant's own account)
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from supabase import Client
 
 from .gmail_client import GmailCreds, gmail_oauth_client_id, gmail_oauth_client_secret
 from .graph_client import GraphCreds
+from .resend_client import ResendCreds
 from .graph_oauth_client import (
     GraphOAuthCreds,
     _client_fp as graph_oauth_client_fp,
@@ -46,8 +48,8 @@ class SmtpCreds:
     password: str
 
 
-AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds, GraphOAuthCreds]
-SUPPORTED_EMAIL_TRANSPORTS = ("smtp", "graph", "gmail_oauth", "graph_oauth")
+AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds, GraphOAuthCreds, ResendCreds]
+SUPPORTED_EMAIL_TRANSPORTS = ("smtp", "graph", "gmail_oauth", "graph_oauth", "resend")
 
 # id -> (creds, fetched_at_monotonic)
 _CACHE: Dict[str, tuple[AccountCreds, float]] = {}
@@ -171,6 +173,12 @@ def _build_from_row(sb: Client, row: Dict[str, Any]) -> AccountCreds:
             oauth_email=row["oauth_email"],
             **common,
         )
+
+    if transport == "resend":
+        api_key = _read_vault(sb, row.get("resend_api_key_secret_id"))
+        if not api_key:
+            raise CredentialError(f"missing Resend API key for account {row.get('id')}")
+        return ResendCreds(kind="resend", api_key=api_key, **common)
 
     # Include the running Cloud Run service+revision in the error so a stale
     # `not yet implemented in pdf-server` message is unambiguously traceable
