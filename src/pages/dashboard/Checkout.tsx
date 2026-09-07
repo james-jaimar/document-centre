@@ -339,6 +339,9 @@ export default function Checkout() {
   const creditLimit = credit?.is_active ? credit.credit_limit : null;
   const withinCreditLimit = creditLimit == null || total <= Number(creditLimit);
   const canPayOnAccount = !!credit?.is_active && withinCreditLimit;
+  // A customer with a live credit facility that covers this order is a 30-day
+  // account customer: they pay on account only — no card, no EFT.
+  const accountOnly = canPayOnAccount && !requiresPrepayment;
 
   const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
 
