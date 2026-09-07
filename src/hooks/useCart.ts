@@ -421,6 +421,8 @@ export function usePlaceOrder() {
        * customer nothing: their basket is still there when they come back.
        */
       holdForPayment?: boolean;
+      /** Payment method chosen at checkout: "account" | "offline" | "stripe" | "payfast". */
+      paymentMethod?: string;
       deliveryMethod: "collection" | "delivery";
       notes?: string;
       branchId?: string;
@@ -806,6 +808,7 @@ export function usePlaceOrder() {
         body: {
           action: "createOrderWithJobs",
           hold_for_payment: input.holdForPayment === true,
+          payment_method: input.paymentMethod ?? null,
           app_slug: app.slug,
           tenant_id: orderTenantId,
           branch_id: orderBranchId,

@@ -178,7 +178,62 @@ async function checkBranchGate(
   return `This branch's subscription is not active (status: ${status || billing || "unknown"}).`;
 }
 
+/**
+ * Resolve the credit facility that applies to a customer: a personal credit
+ * account (branch-specific first, then tenant-wide), else the linked company's
+ * credit limit. Mirrors `resolveCredit` + the company fallback on the client.
+ */
+async function resolveCreditFacility(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  profileId: string,
+  branchId: string | null,
+): Promise<{ credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null> {
+  const { data: accounts } = await admin
+    .from("customer_credit_accounts")
+    .select("id, branch_id, is_active, credit_limit, payment_terms_days, account_ref")
+    .eq("tenant_id", tenantId)
+    .eq("customer_profile_id", profileId)
+    .eq("is_active", true);
+
+  const list = (accounts ?? []) as any[];
+  const personal =
+    (branchId ? list.find((a) => a.branch_id === branchId) : null) ??
+    list.find((a) => a.branch_id == null) ??
+    null;
+  if (personal) {
+    return {
+      credit_limit: Number(personal.credit_limit ?? 0),
+      payment_terms_days: Number(personal.payment_terms_days ?? 30),
+      account_ref: personal.account_ref ?? null,
+      source: `credit_account:${personal.id}`,
+    };
+  }
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("company:company_id (id, is_active, credit_limit, payment_terms_days, mis_account_number)")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId)
+    .eq("is_active", true);
+
+  for (const m of (memberships ?? []) as any[]) {
+    const c = m.company;
+    if (!c || c.is_active === false) continue;
+    if (Number(c.credit_limit ?? 0) > 0) {
+      return {
+        credit_limit: Number(c.credit_limit),
+        payment_terms_days: Number(c.payment_terms_days ?? 30),
+        account_ref: c.mis_account_number ?? null,
+        source: `company:${c.id}`,
+      };
+    }
+  }
+  return null;
+}
+
 // ── Action handlers ─────────────────────────────────────────
+
 
 async function createOrderWithJobs(
   admin: ReturnType<typeof createClient>,
@@ -225,6 +280,29 @@ async function createOrderWithJobs(
   } catch (e) {
     console.warn("[order-engine] payment terms check failed (non-fatal):", e);
   }
+
+  // On-account orders: re-resolve the credit facility server-side so a tampered
+  // client can't claim account terms it doesn't have.
+  const paymentMethod: string | null = payload.payment_method ?? null;
+  let creditTerms: { credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null = null;
+  if (paymentMethod === "account") {
+    creditTerms = await resolveCreditFacility(admin, tenant_id, customer.profile_id, branch_id || null);
+    if (!creditTerms) {
+      return json(
+        { error: "No credit facility is available for this account.", code: "credit_facility_required" },
+        403,
+      );
+    }
+    const orderTotal = Number(pricing?.total_amount ?? 0);
+    if (creditTerms.credit_limit > 0 && orderTotal > creditTerms.credit_limit) {
+      return json(
+        { error: "This order exceeds the available credit limit.", code: "credit_limit_exceeded" },
+        403,
+      );
+    }
+  }
+
+
 
 
 
@@ -283,8 +361,10 @@ async function createOrderWithJobs(
       customer_name: customer.name || null,
       company_name: customer.company_name || null,
       user_id: customer.profile_id,
-      admin_status: holdForPayment ? "pending_payment" : "new_order",
-      customer_status: holdForPayment ? "pending_payment" : "awaiting_payment",
+      admin_status: holdForPayment ? "pending_payment" : (creditTerms ? "approved" : "new_order"),
+      customer_status: holdForPayment
+        ? "pending_payment"
+        : (creditTerms ? "in_production" : "awaiting_payment"),
       payment_status: "unpaid",
       fulfilment_status: "pending",
       currency: pricing?.currency || order?.currency || "ZAR",
@@ -305,6 +385,17 @@ async function createOrderWithJobs(
       metadata: {
         ...(order?.metadata || {}),
         ...(holdForPayment ? { payment_hold: true, held_at: new Date().toISOString() } : {}),
+        ...(paymentMethod ? { payment_method: paymentMethod } : {}),
+        ...(creditTerms
+          ? {
+              payment_terms_days: creditTerms.payment_terms_days,
+              mis_account_number: creditTerms.account_ref,
+              credit_source: creditTerms.source,
+              payment_due_at: new Date(
+                Date.now() + creditTerms.payment_terms_days * 86400000,
+              ).toISOString(),
+            }
+          : {}),
       },
       submitted_at: holdForPayment ? null : new Date().toISOString(),
       is_demo: payload.is_demo === true,
@@ -471,10 +562,24 @@ async function createOrderWithJobs(
     console.warn("[order-engine] syncOrderTotals (post-create) failed", e);
   }
 
+  // Account orders are approved on arrival — push the jobs into production too.
+  if (creditTerms && !holdForPayment) {
+    try {
+      await admin
+        .from("order_jobs")
+        .update({ job_status: "approved_for_production" })
+        .eq("order_id", newOrder.id)
+        .not("job_status", "in", "(completed,cancelled)");
+    } catch (e) {
+      console.warn("[order-engine] account order job cascade failed (non-fatal):", e);
+    }
+  }
+
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
     held_for_payment: holdForPayment,
+    on_account: !!creditTerms,
     jobs: newJobs,
   }, 201);
 
@@ -2632,8 +2737,13 @@ Deno.serve(async (req) => {
           // gateway confirms — no proforma, no confirmation email.
           if (data?.order_id && !data?.held_for_payment) {
             sideEffects = async () => {
-              // Generate the proforma first so we can attach it to the confirmation email.
-              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              // On-account orders get a real tax invoice due on terms; everyone
+              // else gets a proforma until they pay.
+              const inv = await triggerInvoice(
+                authHeader,
+                data.order_id,
+                data?.on_account ? "invoice" : "proforma",
+              );
               await triggerEmail(
                 authHeader,
                 data.order_id,

@@ -339,6 +339,20 @@ export default function Checkout() {
   const creditLimit = credit?.is_active ? credit.credit_limit : null;
   const withinCreditLimit = creditLimit == null || total <= Number(creditLimit);
   const canPayOnAccount = !!credit?.is_active && withinCreditLimit;
+  // A customer with a live credit facility that covers this order is a 30-day
+  // account customer: they pay on account only — no card, no EFT.
+  const accountOnly = canPayOnAccount && !requiresPrepayment;
+
+  // Account customers can only pay on account; anyone who drops out of that
+  // state (order over the limit) falls back to the normal options.
+  useEffect(() => {
+    if (accountOnly) {
+      setPaymentMethod("account");
+    } else {
+      setPaymentMethod((cur) => (cur === "account" ? (onlineProviders?.[0]?.provider ?? "offline") : cur));
+    }
+  }, [accountOnly, onlineProviders]);
+
 
   const storefrontGate = useBranchStorefrontGate(collectionBranch?.id);
 
@@ -408,6 +422,7 @@ export default function Checkout() {
       const newOrderId = await placeOrder.mutateAsync({
         cartOrderId: cart.id,
         holdForPayment: payingOnline,
+        paymentMethod,
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
@@ -999,7 +1014,7 @@ export default function Checkout() {
                 onValueChange={(v) => { setPaymentTouched(true); setPaymentMethod(v); }}
                 className="space-y-2"
               >
-                {(onlineProviders ?? []).map((p) => (
+                {!accountOnly && (onlineProviders ?? []).map((p) => (
                   <div key={p.provider} className="flex items-center space-x-2">
                     <RadioGroupItem value={p.provider} id={`pm-${p.provider}`} />
                     <Label htmlFor={`pm-${p.provider}`} className="cursor-pointer">
@@ -1027,19 +1042,26 @@ export default function Checkout() {
                       )}
                       {!withinCreditLimit && (
                         <span className="block text-xs text-destructive">
-                          This order exceeds your available credit limit.
+                          This order exceeds your available credit limit, so please choose another
+                          payment method.
                         </span>
                       )}
                     </Label>
                   </div>
                 )}
-                {!requiresPrepayment && (
+                {!requiresPrepayment && !accountOnly && (
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="offline" id="pm-offline" />
                     <Label htmlFor="pm-offline" className="cursor-pointer">
                       EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
                     </Label>
                   </div>
+                )}
+                {accountOnly && (
+                  <p className="text-xs text-muted-foreground">
+                    Your account is on {credit?.payment_terms_days ?? 30} day terms, so this order is
+                    invoiced to your account — no payment is needed now.
+                  </p>
                 )}
                 {requiresPrepayment && (
                   <p className="text-xs text-muted-foreground">
@@ -1205,7 +1227,9 @@ export default function Checkout() {
                 Placing Order…
               </>
             ) : (
-              paymentMethod === "offline" ? "Place Order" : "Place Order & Pay"
+              paymentMethod === "offline" || paymentMethod === "account"
+                ? "Place Order"
+                : "Place Order & Pay"
             )}
           </Button>
         </div>
