@@ -20,7 +20,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Save, Code2, Plus, Copy, Trash2, AlertCircle } from "lucide-react";
+import { Loader2, Save, Code2, Plus, Copy, Trash2, AlertCircle, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
 import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
@@ -75,6 +75,11 @@ export default function TemplateEditor({
   const [rawMode, setRawMode] = useState(false);
   const [tokenTarget, setTokenTarget] = useState<"body" | "text">("body");
   const [newOpen, setNewOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [renaming, setRenaming] = useState<EmailTemplate | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<EmailTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const htmlRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -96,10 +101,33 @@ export default function TemplateEditor({
   /** In tenant mode, shared (master) templates cannot be edited. */
   const readOnly = isTenant && !!draft && !draft.tenant_id;
 
+  const original = useMemo(
+    () => templates.find((t) => t.id === selectedId) ?? null,
+    [templates, selectedId],
+  );
+  const dirty = !!draft && !!original && (
+    draft.name !== original.name ||
+    draft.slug !== original.slug ||
+    draft.kind !== original.kind ||
+    draft.subject !== original.subject ||
+    draft.body_html !== original.body_html ||
+    (draft.body_text ?? "") !== (original.body_text ?? "") ||
+    (draft.description ?? "") !== (original.description ?? "")
+  );
+
+  const visibleTemplates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter((t) =>
+      [t.name, t.slug, t.subject, t.description ?? ""].some((v) => (v ?? "").toLowerCase().includes(q)),
+    );
+  }, [templates, search]);
+
   const tokens = useMemo(
     () => ((draft?.kind ?? kindFilter) === "marketing" ? TOKENS_MARKETING : TOKENS_ACTIVATION),
     [draft?.kind, kindFilter],
   );
+
 
   const previewVars = defaultPreviewVars();
   const previewHtml = draft?.body_html
@@ -111,11 +139,14 @@ export default function TemplateEditor({
 
   const save = async () => {
     if (!draft?.id || readOnly) return;
+    const slug = slugifyName(draft.slug ?? "") || draft.slug;
     setSaving(true);
     const { error } = await supabase
       .from("platform_email_templates" as any)
       .update({
         name: draft.name,
+        slug,
+        kind: draft.kind ?? kindFilter ?? "marketing",
         subject: draft.subject,
         body_html: draft.body_html,
         body_text: draft.body_text,
@@ -123,7 +154,16 @@ export default function TemplateEditor({
       } as any)
       .eq("id", draft.id);
     setSaving(false);
-    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
+    if (error) {
+      toast({
+        title: "Save failed",
+        description: error.message.includes("duplicate")
+          ? "Another template already uses that reference (slug)."
+          : error.message,
+        variant: "destructive",
+      });
+      return;
+    }
     toast({ title: "Saved" });
     load(draft.id);
   };
@@ -156,16 +196,33 @@ export default function TemplateEditor({
     await load((data as any).id);
   };
 
-  const remove = async (t: EmailTemplate) => {
-    if (t.is_system) { toast({ title: "Cannot delete a system template", variant: "destructive" }); return; }
-    if (isTenant && !t.tenant_id) { toast({ title: "Shared templates cannot be deleted here", variant: "destructive" }); return; }
-    if (!window.confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+  const canDelete = (t: EmailTemplate) => (isTenant ? !!t.tenant_id : true);
+
+  const rename = async () => {
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    const { error } = await supabase
+      .from("platform_email_templates" as any).update({ name } as any).eq("id", renaming.id);
+    if (error) { toast({ title: "Rename failed", description: error.message, variant: "destructive" }); return; }
+    setRenaming(null);
+    toast({ title: "Renamed" });
+    load(renaming.id);
+  };
+
+  const confirmDelete = async () => {
+    const t = pendingDelete;
+    if (!t) return;
+    setDeleting(true);
     const { error } = await supabase.from("platform_email_templates" as any).delete().eq("id", t.id);
+    setDeleting(false);
     if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; }
+    setPendingDelete(null);
     toast({ title: "Deleted" });
     setSelectedId("");
     load();
   };
+
 
   const insertIntoTextarea = (
     ref: React.RefObject<HTMLTextAreaElement>,
@@ -202,7 +259,7 @@ export default function TemplateEditor({
         <Select value={selectedId} onValueChange={setSelectedId}>
           <SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger>
           <SelectContent>
-            {templates.map((t) => (
+            {visibleTemplates.map((t) => (
               <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
             ))}
           </SelectContent>
@@ -212,7 +269,7 @@ export default function TemplateEditor({
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
         {/* List */}
         <div className="hidden lg:flex flex-col min-h-0">
           <div className="flex items-center justify-between px-3 py-1.5 border-b">
@@ -221,11 +278,22 @@ export default function TemplateEditor({
               <Plus className="h-3.5 w-3.5 mr-1" /> New
             </Button>
           </div>
+          <div className="p-1.5 border-b">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search templates"
+              className="h-7 text-xs"
+            />
+          </div>
           <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
             {templates.length === 0 && (
               <p className="p-3 text-xs text-muted-foreground">No templates yet — create your first one.</p>
             )}
-            {templates.map((t) => {
+            {templates.length > 0 && visibleTemplates.length === 0 && (
+              <p className="p-3 text-xs text-muted-foreground">No templates match “{search}”.</p>
+            )}
+            {visibleTemplates.map((t) => {
               const shared = isTenant && !t.tenant_id;
               return (
                 <div key={t.id}
@@ -239,7 +307,13 @@ export default function TemplateEditor({
                       t.is_system && <Badge variant="outline" className="mt-0.5 text-[10px] h-4 px-1">system</Badge>
                     )}
                   </button>
-                  <div className="opacity-0 group-hover:opacity-100 flex items-center pr-1">
+                  <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center pr-1">
+                    {!shared && (
+                      <button title="Rename" className="p-1 hover:bg-background rounded"
+                        onClick={(e) => { e.stopPropagation(); setRenaming(t); setRenameValue(t.name); }}>
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
                     <button title="Duplicate" className="p-1 hover:bg-background rounded"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -247,9 +321,9 @@ export default function TemplateEditor({
                       }}>
                       <Copy className="h-3 w-3" />
                     </button>
-                    {!t.is_system && !shared && (
+                    {canDelete(t) && (
                       <button title="Delete" className="p-1 hover:bg-background rounded text-destructive"
-                        onClick={(e) => { e.stopPropagation(); remove(t); }}>
+                        onClick={(e) => { e.stopPropagation(); setPendingDelete(t); }}>
                         <Trash2 className="h-3 w-3" />
                       </button>
                     )}
@@ -257,6 +331,7 @@ export default function TemplateEditor({
                 </div>
               );
             })}
+
           </div>
         </div>
 
@@ -264,13 +339,33 @@ export default function TemplateEditor({
         {draft ? (
           <div className="flex flex-col min-h-0">
             <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-muted/30">
-              <div className="text-sm font-medium truncate">{draft.name}</div>
+              <div className="text-sm font-medium truncate">
+                {draft.name}
+                {dirty && !readOnly && (
+                  <span className="ml-2 text-[11px] font-normal text-amber-600">Unsaved changes</span>
+                )}
+              </div>
               <div className="flex items-center gap-3 shrink-0">
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Code2 className="h-3.5 w-3.5" />
                   Raw HTML
                   <Switch checked={rawMode} onCheckedChange={setRawMode} />
                 </label>
+                <Button size="sm" variant="ghost" className="h-8 px-2"
+                  title="Duplicate"
+                  onClick={() => createTemplate({
+                    name: `${draft.name} (copy)`,
+                    kind: draft.kind ?? kindFilter ?? "marketing",
+                    from: draft,
+                  })}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                {canDelete(draft) && (
+                  <Button size="sm" variant="ghost" className="h-8 px-2 text-destructive"
+                    title="Delete" onClick={() => setPendingDelete(draft)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 {readOnly ? (
                   <Button size="sm" variant="outline"
                     onClick={() => createTemplate({
@@ -281,10 +376,16 @@ export default function TemplateEditor({
                     <Copy className="h-3.5 w-3.5 mr-1.5" /> Duplicate to edit
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={save} disabled={saving}>
-                    {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
-                    Save
-                  </Button>
+                  <>
+                    <Button size="sm" variant="outline" disabled={!dirty}
+                      onClick={() => original && setDraft({ ...original })}>
+                      Revert
+                    </Button>
+                    <Button size="sm" onClick={save} disabled={saving}>
+                      {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                      Save
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -309,11 +410,38 @@ export default function TemplateEditor({
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Reference (slug)</Label>
+                  <Input value={draft.slug ?? ""} disabled={readOnly || !!draft.is_system}
+                    className="font-mono text-xs"
+                    onChange={(e) => setDraft({ ...draft, slug: e.target.value })} />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {draft.is_system
+                      ? "System templates keep their reference."
+                      : "Used when this template is picked for a campaign."}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs">Kind</Label>
+                  <Select value={draft.kind ?? kindFilter ?? "marketing"}
+                    disabled={readOnly || isTenant}
+                    onValueChange={(v) => setDraft({ ...draft, kind: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="marketing">Marketing (no credentials)</SelectItem>
+                      <SelectItem value="activation">Activation (sign-in link)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div>
                 <Label className="text-xs">Description (internal note)</Label>
                 <Input value={draft.description ?? ""} disabled={readOnly}
                   onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
               </div>
+
 
               <div>
                 <Label className="text-xs">Email body</Label>
@@ -402,6 +530,39 @@ export default function TemplateEditor({
         defaultKind={kindFilter ?? "marketing"}
         onCreate={async (name, kind) => { await createTemplate({ name, kind }); setNewOpen(false); }}
       />
+
+      <Dialog open={!!renaming} onOpenChange={(v) => !v && setRenaming(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Rename template</DialogTitle></DialogHeader>
+          <div>
+            <Label className="text-xs">Name</Label>
+            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") rename(); }} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenaming(null)}>Cancel</Button>
+            <Button onClick={rename} disabled={!renameValue.trim()}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Delete template</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            “{pendingDelete?.name}” will be permanently deleted. Campaigns already sent are unaffected,
+            but any scheduled send using it will stop working.
+            {pendingDelete?.is_system && " This is a system template — deleting it may break automatic emails."}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
