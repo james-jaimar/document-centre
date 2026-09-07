@@ -703,6 +703,16 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       toast.error(`Please complete: ${missingRequired.map((p) => p.name).join(", ")}`);
       return;
     }
+    const brokenBoxes = placeholders.filter((p) => imageErrors[p.id]);
+    if (brokenBoxes.length > 0) {
+      toast.error(
+        `These pictures could not be loaded — please replace them: ${brokenBoxes
+          .map((p) => p.name)
+          .join(", ")}`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
