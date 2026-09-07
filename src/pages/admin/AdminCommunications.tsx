@@ -16,7 +16,9 @@ import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
 import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
 import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
+import TemplateEditor from "@/components/admin/email/TemplateEditor";
 import { applyMergeTokens, renderEmailShell } from "@/lib/email/renderEmailPreview";
+
 
 type Audience = "branch" | "company" | "customer";
 
@@ -403,162 +405,13 @@ function ComposeTab() {
 // ─────────────────────────────────────────────────────────────
 // Templates (tenant-owned only; shared platform ones are read-only)
 // ─────────────────────────────────────────────────────────────
-function slugify(name: string, tenantId: string) {
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "template";
-  return `${base}-${tenantId.slice(0, 6)}`;
-}
-
 function TemplatesTab() {
-  const { toast } = useToast();
   const { tenantId } = useTenantContext();
-  const [templates, setTemplates] = useState<TenantTemplate[]>([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [draft, setDraft] = useState<Partial<TenantTemplate> | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const load = async () => {
-    const { data } = await supabase
-      .from("platform_email_templates" as any)
-      .select("*").eq("kind", "marketing").order("name");
-    const rows = ((data ?? []) as unknown) as TenantTemplate[];
-    setTemplates(rows);
-    if (!selectedId && rows.length) setSelectedId(rows[0].id);
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [tenantId]);
-
-  useEffect(() => {
-    const t = templates.find((x) => x.id === selectedId);
-    setDraft(t ? { ...t } : null);
-  }, [selectedId, templates]);
-
-  const readOnly = !!draft && !draft.tenant_id;
-
-  const createTemplate = async (from?: TenantTemplate) => {
-    if (!tenantId) return;
-    const name = from ? `${from.name} (copy)` : "New campaign";
-    const { data, error } = await supabase
-      .from("platform_email_templates" as any)
-      .insert({
-        tenant_id: tenantId,
-        slug: slugify(`${name}-${Date.now().toString(36)}`, tenantId),
-        name,
-        kind: "marketing",
-        subject: from?.subject ?? "A quick note from {{tenant_name}}",
-        body_html: from?.body_html ?? "<p>Hi {{contact_name}},</p><p>Write your message here.</p><p><a href=\"{{activation_link}}\">Open your account</a></p>",
-        body_text: from?.body_text ?? null,
-        is_system: false,
-      } as any)
-      .select("id").single();
-    if (error) { toast({ title: "Could not create template", description: error.message, variant: "destructive" }); return; }
-    await load();
-    setSelectedId((data as any).id);
-  };
-
-  const save = async () => {
-    if (!draft?.id || readOnly) return;
-    setSaving(true);
-    const { error } = await supabase
-      .from("platform_email_templates" as any)
-      .update({
-        name: draft.name,
-        description: draft.description ?? null,
-        subject: draft.subject,
-        body_html: draft.body_html,
-        body_text: draft.body_text ?? null,
-      } as any)
-      .eq("id", draft.id);
-    setSaving(false);
-    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Template saved" });
-    load();
-  };
-
-  const remove = async () => {
-    if (!draft?.id || readOnly) return;
-    if (!window.confirm("Delete this template?")) return;
-    const { error } = await supabase.from("platform_email_templates" as any).delete().eq("id", draft.id);
-    if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; }
-    setSelectedId(""); await load();
-  };
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Templates</CardTitle>
-          <Button size="sm" variant="outline" onClick={() => createTemplate()}>
-            <Plus className="h-4 w-4 mr-1" /> New
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0">
-          {templates.map((t) => (
-            <button key={t.id} type="button" onClick={() => setSelectedId(t.id)}
-              className={`w-full text-left px-4 py-3 border-b last:border-0 text-sm ${selectedId === t.id ? "bg-primary/5 font-medium" : "hover:bg-muted/40"}`}>
-              <div className="truncate">{t.name}</div>
-              <div className="text-xs text-muted-foreground">{t.tenant_id ? "Yours" : "Shared (read-only)"}</div>
-            </button>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle className="text-base">{draft?.name ?? "Select a template"}</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {!draft && <div className="text-sm text-muted-foreground">Pick a template on the left, or create a new one.</div>}
-          {draft && (
-            <>
-              {readOnly && (
-                <div className="rounded border bg-muted/40 p-2 text-xs flex items-center justify-between gap-2">
-                  <span>This is a shared template. Duplicate it to make your own version.</span>
-                  <Button size="sm" variant="outline"
-                    onClick={() => createTemplate(templates.find((t) => t.id === draft.id))}>
-                    Duplicate
-                  </Button>
-                </div>
-              )}
-              <div>
-                <Label>Name</Label>
-                <Input value={draft.name ?? ""} disabled={readOnly}
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-              </div>
-              <div>
-                <Label>Subject</Label>
-                <Input value={draft.subject ?? ""} disabled={readOnly}
-                  onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
-              </div>
-              <div>
-                <Label>Message</Label>
-                <RichTextEditor
-                  value={draft.body_html ?? ""}
-                  onChange={(html) => setDraft({ ...draft, body_html: html })}
-                />
-              </div>
-              <div>
-                <Label>Plain-text version (optional)</Label>
-                <Textarea rows={4} value={draft.body_text ?? ""} disabled={readOnly}
-                  onChange={(e) => setDraft({ ...draft, body_text: e.target.value })} />
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Personalisation tokens: {TOKENS.map((t) => `{{${t}}}`).join(" · ")}
-              </div>
-              {!readOnly && (
-                <div className="flex gap-2">
-                  <Button onClick={save} disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                    Save
-                  </Button>
-                  <Button variant="outline" onClick={remove}>
-                    <Trash2 className="h-4 w-4 mr-2" /> Delete
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <TemplateEditor scope="tenant" tenantId={tenantId} kindFilter="marketing" />
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // History
