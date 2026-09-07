@@ -530,6 +530,39 @@ export default function TemplateEditor({
         defaultKind={kindFilter ?? "marketing"}
         onCreate={async (name, kind) => { await createTemplate({ name, kind }); setNewOpen(false); }}
       />
+
+      <Dialog open={!!renaming} onOpenChange={(v) => !v && setRenaming(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Rename template</DialogTitle></DialogHeader>
+          <div>
+            <Label className="text-xs">Name</Label>
+            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") rename(); }} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenaming(null)}>Cancel</Button>
+            <Button onClick={rename} disabled={!renameValue.trim()}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Delete template</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            “{pendingDelete?.name}” will be permanently deleted. Campaigns already sent are unaffected,
+            but any scheduled send using it will stop working.
+            {pendingDelete?.is_system && " This is a system template — deleting it may break automatic emails."}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
