@@ -84,6 +84,8 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.stock-images]
     verify_jwt = false
+  [functions.email-unsubscribe]
+    verify_jwt = false
 
 
 
