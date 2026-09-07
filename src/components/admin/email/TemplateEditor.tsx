@@ -139,11 +139,14 @@ export default function TemplateEditor({
 
   const save = async () => {
     if (!draft?.id || readOnly) return;
+    const slug = slugifyName(draft.slug ?? "") || draft.slug;
     setSaving(true);
     const { error } = await supabase
       .from("platform_email_templates" as any)
       .update({
         name: draft.name,
+        slug,
+        kind: draft.kind ?? kindFilter ?? "marketing",
         subject: draft.subject,
         body_html: draft.body_html,
         body_text: draft.body_text,
@@ -151,7 +154,16 @@ export default function TemplateEditor({
       } as any)
       .eq("id", draft.id);
     setSaving(false);
-    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
+    if (error) {
+      toast({
+        title: "Save failed",
+        description: error.message.includes("duplicate")
+          ? "Another template already uses that reference (slug)."
+          : error.message,
+        variant: "destructive",
+      });
+      return;
+    }
     toast({ title: "Saved" });
     load(draft.id);
   };
@@ -184,16 +196,33 @@ export default function TemplateEditor({
     await load((data as any).id);
   };
 
-  const remove = async (t: EmailTemplate) => {
-    if (t.is_system) { toast({ title: "Cannot delete a system template", variant: "destructive" }); return; }
-    if (isTenant && !t.tenant_id) { toast({ title: "Shared templates cannot be deleted here", variant: "destructive" }); return; }
-    if (!window.confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+  const canDelete = (t: EmailTemplate) => (isTenant ? !!t.tenant_id : true);
+
+  const rename = async () => {
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    const { error } = await supabase
+      .from("platform_email_templates" as any).update({ name } as any).eq("id", renaming.id);
+    if (error) { toast({ title: "Rename failed", description: error.message, variant: "destructive" }); return; }
+    setRenaming(null);
+    toast({ title: "Renamed" });
+    load(renaming.id);
+  };
+
+  const confirmDelete = async () => {
+    const t = pendingDelete;
+    if (!t) return;
+    setDeleting(true);
     const { error } = await supabase.from("platform_email_templates" as any).delete().eq("id", t.id);
+    setDeleting(false);
     if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; }
+    setPendingDelete(null);
     toast({ title: "Deleted" });
     setSelectedId("");
     load();
   };
+
 
   const insertIntoTextarea = (
     ref: React.RefObject<HTMLTextAreaElement>,
