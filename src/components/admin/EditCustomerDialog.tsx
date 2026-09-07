@@ -110,12 +110,19 @@ export function EditCustomerDialog({ open, onOpenChange, profileId, initial }: P
             .eq("company_id", nextCompanyId);
           if (clearErr) throw clearErr;
         }
-        const { error: mErr } = await supabase
+        const { error: linkErr } = await supabase
           .from("tenant_memberships")
           .update({
             company_id: nextCompanyId,
             job_title: jobTitle.trim() || null,
             is_primary_contact: primary,
+          } as any)
+          .eq("id", membership.id);
+        if (linkErr) throw linkErr;
+
+        const { error: accountErr } = await supabase
+          .from("tenant_memberships")
+          .update({
             is_trade_customer: isTrade,
             mis_account_number: accountNo.trim() || null,
           } as any)
@@ -123,7 +130,7 @@ export function EditCustomerDialog({ open, onOpenChange, profileId, initial }: P
           .eq("app_id", appId!)
           .eq("profile_id", profileId)
           .eq("role", "customer");
-        if (mErr) throw mErr;
+        if (accountErr) throw accountErr;
       }
     },
     onSuccess: () => {
