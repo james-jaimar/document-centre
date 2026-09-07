@@ -608,6 +608,40 @@ async function createOrderWithJobs(
     }
   }
 
+  // Post the charge onto the customer's account ledger so the running balance
+  // (and therefore their available credit) reflects this order.
+  if (creditTerms && !holdForPayment) {
+    try {
+      const { data: fresh } = await admin
+        .from("orders")
+        .select("total_amount, currency, app_id")
+        .eq("id", newOrder.id)
+        .maybeSingle();
+      const chargeAmount = Number((fresh as any)?.total_amount ?? pricing?.total_amount ?? 0);
+      if (chargeAmount > 0) {
+        const due = new Date(Date.now() + creditTerms.payment_terms_days * 86400000);
+        await admin.from("customer_account_ledger").insert({
+          tenant_id: tenant_id,
+          app_id: (fresh as any)?.app_id ?? (newOrder as any).app_id,
+          branch_id: branch_id || null,
+          company_id: creditTerms.company_id,
+          customer_profile_id: creditTerms.company_id ? null : customer.profile_id,
+          entry_type: "charge",
+          amount: chargeAmount,
+          currency: (fresh as any)?.currency ?? pricing?.currency ?? "ZAR",
+          order_id: newOrder.id,
+          reference: newOrder.order_number,
+          note: `Order ${newOrder.order_number}`,
+          entry_date: new Date().toISOString().slice(0, 10),
+          due_date: due.toISOString().slice(0, 10),
+          created_by: userId,
+        });
+      }
+    } catch (e) {
+      console.warn("[order-engine] account ledger charge failed (non-fatal):", e);
+    }
+  }
+
   return json({
     order_id: newOrder.id,
     order_number: newOrder.order_number,
