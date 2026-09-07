@@ -35,6 +35,10 @@ interface Props {
   onPickFile: (file: File) => void;
   /** Opens the stock photo library for this box (when available). */
   onBrowseLibrary?: () => void;
+  /** The stored image could not be displayed (missing / unreadable file). */
+  loadError?: boolean;
+  /** Try loading the stored image again. */
+  onRetryImage?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
 }
