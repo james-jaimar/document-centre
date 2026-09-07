@@ -226,6 +226,29 @@ async function createOrderWithJobs(
     console.warn("[order-engine] payment terms check failed (non-fatal):", e);
   }
 
+  // On-account orders: re-resolve the credit facility server-side so a tampered
+  // client can't claim account terms it doesn't have.
+  const paymentMethod: string | null = payload.payment_method ?? null;
+  let creditTerms: { credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null = null;
+  if (paymentMethod === "account") {
+    creditTerms = await resolveCreditFacility(admin, tenant_id, customer.profile_id, branch_id || null);
+    if (!creditTerms) {
+      return json(
+        { error: "No credit facility is available for this account.", code: "credit_facility_required" },
+        403,
+      );
+    }
+    const orderTotal = Number(pricing?.total_amount ?? 0);
+    if (creditTerms.credit_limit > 0 && orderTotal > creditTerms.credit_limit) {
+      return json(
+        { error: "This order exceeds the available credit limit.", code: "credit_limit_exceeded" },
+        403,
+      );
+    }
+  }
+
+
+
 
 
 
