@@ -124,7 +124,7 @@ export default function ImageSizeDialog({
         </DialogHeader>
 
 
-        <p className="text-sm text-muted-foreground">
+        <p id="image-size-dialog-desc" className="text-sm text-muted-foreground">
           Select the page size for your uploaded image
           {imgDims && originalMm
             ? ` (${fmtSize(originalMm.w, originalMm.h)} at 72 DPI)`
