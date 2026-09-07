@@ -111,7 +111,7 @@ export function ResendMailboxCard({
       toast.error(error?.message || (data as any)?.error);
       return;
     }
-    toast.success("Resend mailbox saved");
+    toast.success((data as { message?: string } | null)?.message ?? "Resend mailbox connected");
     setForm((f) => ({ ...f, api_key: "", webhook_secret: "" }));
     setOpen(false);
     onChanged();
@@ -135,7 +135,7 @@ export function ResendMailboxCard({
     setChecking(false);
     const payload = data as { success?: boolean; message?: string; error?: string } | null;
     if (error || payload?.error) {
-      toast.error(error?.message || payload?.error);
+      toast.error(payload?.error || error?.message || "Could not verify the Resend account");
       return;
     }
     if (payload?.success) toast.success(payload.message ?? "Connected");
@@ -285,7 +285,7 @@ export function ResendMailboxCard({
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label>Resend API key{account ? " (leave blank to keep the current one)" : ""}</Label>
+                <Label>Full access Resend API key{account ? " (leave blank to keep the current one)" : ""}</Label>
                 <Input
                   type="password"
                   autoComplete="off"
@@ -294,7 +294,9 @@ export function ResendMailboxCard({
                   placeholder="re_..."
                 />
                 <p className="text-xs text-muted-foreground">
-                  Stored encrypted. It is never shown again after saving.
+                  In Resend, create an API key with <strong>Full access</strong>, then paste the complete
+                  value beginning with re_. Sending access is not enough for contacts and broadcasts.
+                  The key is stored encrypted and never shown again.
                 </p>
               </div>
               <div className="grid gap-1.5">
