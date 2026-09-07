@@ -1636,6 +1636,81 @@ export type Database = {
           },
         ]
       }
+      customer_account_ledger: {
+        Row: {
+          amount: number
+          app_id: string
+          branch_id: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          customer_profile_id: string | null
+          due_date: string | null
+          entry_date: string
+          entry_type: string
+          id: string
+          note: string | null
+          order_id: string | null
+          reference: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          app_id: string
+          branch_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          customer_profile_id?: string | null
+          due_date?: string | null
+          entry_date?: string
+          entry_type: string
+          id?: string
+          note?: string | null
+          order_id?: string | null
+          reference?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          app_id?: string
+          branch_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          customer_profile_id?: string | null
+          due_date?: string | null
+          entry_date?: string
+          entry_type?: string
+          id?: string
+          note?: string | null
+          order_id?: string | null
+          reference?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_account_ledger_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "customer_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_account_ledger_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_addresses: {
         Row: {
           address_type: string
@@ -8254,6 +8329,14 @@ export type Database = {
         Returns: number
       }
       release_stuck_claims: { Args: never; Returns: number }
+      resolve_account_balance: {
+        Args: {
+          p_company_id?: string
+          p_profile_id?: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       resolve_branch_entitlement: {
         Args: { _branch_id: string }
         Returns: Json
