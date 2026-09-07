@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
 
     const { data: page } = await admin
       .from("platform_branch_activation_pages")
-      .select("id, tenant_id, branch_id, contact_email, is_active")
+      .select("id, tenant_id, branch_id, company_id, profile_id, contact_email, contact_name, is_active")
       .eq("slug", slug).maybeSingle();
     if (!page) {
       await audit("not_found", false);
@@ -96,12 +96,19 @@ Deno.serve(async (req) => {
       return json({ ok: true, code: "sent_if_valid" });
     }
 
-    // Build authHeader for forwarding to send-email (use anon — send-email is jwt=false)
-    const authHeader = req.headers.get("Authorization") ?? `Bearer ${anonKey}`;
+    // This is a public, rate-limited flow with no signed-in caller, so we call
+    // send-email as a trusted server-to-server caller.
+    const authHeader = `Bearer ${serviceKey}`;
 
     const result = await sendBranchActivationEmail({
       admin, supabaseUrl: url, anonKey, authHeader,
-      tenantId: page.tenant_id, branchId: page.branch_id,
+      tenantId: page.tenant_id, branchId: page.branch_id ?? null,
+      recipient: page.branch_id ? null : {
+        email: page.contact_email ?? confirmEmail,
+        name: page.contact_name ?? null,
+        profileId: page.profile_id ?? null,
+        companyId: page.company_id ?? null,
+      },
       templateSlug: "activation_branch_manager",
       callerOrigin,
     });
@@ -124,6 +131,7 @@ Deno.serve(async (req) => {
       token: result.opaqueToken!,
       tenant_id: page.tenant_id,
       branch_id: page.branch_id,
+      company_id: page.company_id ?? null,
       profile_id: result.profileId,
       email: result.email,
       purpose: "branch_activation",
@@ -131,10 +139,15 @@ Deno.serve(async (req) => {
 
     // Mark the most recent marketing-campaign recipient for this branch as activated
     // so "not_activated" follow-up triggers stop firing.
-    await admin.from("platform_email_campaign_recipients")
-      .update({ activated_at: new Date().toISOString() })
-      .eq("branch_id", page.branch_id)
-      .is("activated_at", null);
+    {
+      let actQuery = admin.from("platform_email_campaign_recipients")
+        .update({ activated_at: new Date().toISOString() })
+        .is("activated_at", null);
+      actQuery = page.branch_id
+        ? actQuery.eq("branch_id", page.branch_id)
+        : actQuery.eq("email", (page.contact_email ?? confirmEmail).toLowerCase());
+      await actQuery;
+    }
 
     await audit("sent", true);
     return json({ ok: true, code: "sent_if_valid" });

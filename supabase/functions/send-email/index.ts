@@ -26,15 +26,25 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const userClient = createClient(url, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user: caller }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !caller) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // Trusted server-to-server callers (other edge functions running public,
+    // rate-limited flows such as branch/contact activation) present the
+    // service-role key instead of a user session.
+    const bearer = authHeader.slice("Bearer ".length).trim();
+    const isServiceCaller = bearer === serviceKey;
+
+    let caller: { id: string } | null = null;
+    if (!isServiceCaller) {
+      const userClient = createClient(url, anonKey, {
+        global: { headers: { Authorization: authHeader } },
       });
+      const { data, error: authErr } = await userClient.auth.getUser();
+      caller = data?.user ?? null;
+      if (authErr || !caller) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const body = await req.json();
@@ -65,7 +75,7 @@ Deno.serve(async (req) => {
       from_name: body.from_name ?? null,
       from_email: body.from_email ?? null,
       scheduled_for: body.scheduled_for ?? null,
-      created_by_profile_id: caller.id,
+      created_by_profile_id: caller?.id ?? null,
       metadata: body.metadata ?? {},
     });
 
