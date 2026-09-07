@@ -183,12 +183,21 @@ async function checkBranchGate(
  * account (branch-specific first, then tenant-wide), else the linked company's
  * credit limit. Mirrors `resolveCredit` + the company fallback on the client.
  */
+type CreditFacility = {
+  credit_limit: number;
+  payment_terms_days: number;
+  account_ref: string | null;
+  source: string;
+  company_id: string | null;
+  profile_id: string | null;
+};
+
 async function resolveCreditFacility(
   admin: ReturnType<typeof createClient>,
   tenantId: string,
   profileId: string,
   branchId: string | null,
-): Promise<{ credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null> {
+): Promise<CreditFacility | null> {
   const { data: accounts } = await admin
     .from("customer_credit_accounts")
     .select("id, branch_id, is_active, credit_limit, payment_terms_days, account_ref")
@@ -207,6 +216,8 @@ async function resolveCreditFacility(
       payment_terms_days: Number(personal.payment_terms_days ?? 30),
       account_ref: personal.account_ref ?? null,
       source: `credit_account:${personal.id}`,
+      company_id: null,
+      profile_id: profileId,
     };
   }
 
@@ -226,10 +237,30 @@ async function resolveCreditFacility(
         payment_terms_days: Number(c.payment_terms_days ?? 30),
         account_ref: c.mis_account_number ?? null,
         source: `company:${c.id}`,
+        company_id: c.id,
+        profile_id: null,
       };
     }
   }
   return null;
+}
+
+/** Current outstanding balance on the facility's account ledger. */
+async function accountBalance(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  facility: CreditFacility,
+): Promise<number> {
+  try {
+    const { data } = await admin.rpc("resolve_account_balance", {
+      p_tenant_id: tenantId,
+      p_company_id: facility.company_id,
+      p_profile_id: facility.profile_id,
+    });
+    return Number((data as any)?.balance ?? 0);
+  } catch (_e) {
+    return 0;
+  }
 }
 
 // ── Action handlers ─────────────────────────────────────────
