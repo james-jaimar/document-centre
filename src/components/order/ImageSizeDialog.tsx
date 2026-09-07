@@ -115,13 +115,14 @@ export default function ImageSizeDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby="image-size-dialog-desc">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ImageIcon className="h-5 w-5 text-primary" />
             Choose Output Size
           </DialogTitle>
         </DialogHeader>
+
 
         <p className="text-sm text-muted-foreground">
           Select the page size for your uploaded image
