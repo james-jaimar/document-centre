@@ -422,6 +422,7 @@ export default function Checkout() {
       const newOrderId = await placeOrder.mutateAsync({
         cartOrderId: cart.id,
         holdForPayment: payingOnline,
+        paymentMethod,
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
