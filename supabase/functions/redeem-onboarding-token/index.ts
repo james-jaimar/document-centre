@@ -76,10 +76,12 @@ Deno.serve(async (req) => {
     // Resolve tenant + branch slug to build the post-reset return path.
     let tenantSlug: string | null = null;
     let branchSlug: string | null = null;
+    let customDomain: string | null = null;
     if (row.tenant_id) {
       const { data: t } = await admin
         .from("tenants").select("slug, custom_domain").eq("id", row.tenant_id).maybeSingle();
       tenantSlug = t?.slug ?? null;
+      customDomain = (t?.custom_domain ?? null)?.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "") || null;
     }
     if (row.branch_id) {
       const { data: b } = await admin
@@ -107,12 +109,20 @@ Deno.serve(async (req) => {
       try { return new URL(callerOrigin).origin; } catch { return appOrigin; }
     })();
 
-    const slugPrefix = tenantSlug ? `/t/${tenantSlug}` : "";
+    // On the tenant's own domain the `/t/<slug>` prefix must not appear.
+    const onTenantOwnHost = (() => {
+      if (!customDomain) return false;
+      try {
+        return new URL(resolvedOrigin).hostname.replace(/^www\./, "") === customDomain.replace(/^www\./, "");
+      } catch { return false; }
+    })();
+
+    const slugPrefix = tenantSlug && !onTenantOwnHost ? `/t/${tenantSlug}` : "";
     const branchPath = branchSlug ? `/${branchSlug}` : "";
     const nextParam = row.branch_id ? `&next=branch` : "";
     const redirectPath = linkType === "recovery"
       ? `${slugPrefix}/reset-password?welcome_token=${encodeURIComponent(token)}${nextParam}`
-      : `${slugPrefix}${branchPath}?welcome_token=${encodeURIComponent(token)}`;
+      : `${slugPrefix}${branchPath || "/"}?welcome_token=${encodeURIComponent(token)}`;
 
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type: linkType,
@@ -123,7 +133,9 @@ Deno.serve(async (req) => {
       return json({ error: "link_failed", detail: linkErr?.message ?? "no link" }, 500);
     }
 
-    const actionLink = rewriteVerifyLink(linkData.properties.action_link, resolvedOrigin, redirectPath);
+    const actionLink = rewriteVerifyLink(linkData, resolvedOrigin, redirectPath, linkType);
+    if (!actionLink) return json({ error: "link_failed", detail: "no token" }, 500);
+
 
     await admin
       .from("platform_onboarding_tokens")
