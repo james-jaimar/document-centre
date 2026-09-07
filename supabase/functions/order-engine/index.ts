@@ -2737,8 +2737,13 @@ Deno.serve(async (req) => {
           // gateway confirms — no proforma, no confirmation email.
           if (data?.order_id && !data?.held_for_payment) {
             sideEffects = async () => {
-              // Generate the proforma first so we can attach it to the confirmation email.
-              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              // On-account orders get a real tax invoice due on terms; everyone
+              // else gets a proforma until they pay.
+              const inv = await triggerInvoice(
+                authHeader,
+                data.order_id,
+                data?.on_account ? "invoice" : "proforma",
+              );
               await triggerEmail(
                 authHeader,
                 data.order_id,
