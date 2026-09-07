@@ -508,6 +508,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           photographer_url: photo.photographer_url,
           photo_url: photo.page_url,
         });
+        // Licence record — best effort, never blocks the customer.
+        try {
+          await supabase.from("stock_image_uses").insert({
+            tenant_id: tenantId ?? null,
+            branch_id: activeBranch?.id ?? null,
+            placeholder_id: placeholderId,
+            provider: "pexels",
+            photo_id: String(photo.id),
+            photographer: photo.photographer,
+            photographer_url: photo.photographer_url,
+            photo_url: photo.page_url,
+          } as any);
+        } catch (err) {
+          console.warn("[templated-artwork] stock use log failed", err);
+        }
         setLibraryFor(null);
       } catch (err: any) {
         console.error("[templated-artwork] stock photo failed", err);
@@ -516,7 +531,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [libraryFor, handlePickFile],
+    [libraryFor, handlePickFile, tenantId, activeBranch?.id],
   );
 
   // ── Pricing: pack ladder (with finishing options + paid extras) when the

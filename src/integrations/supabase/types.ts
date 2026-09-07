@@ -6741,6 +6741,54 @@ export type Database = {
           },
         ]
       }
+      stock_image_uses: {
+        Row: {
+          branch_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          order_item_id: string | null
+          photo_id: string
+          photo_url: string | null
+          photographer: string | null
+          photographer_url: string | null
+          placeholder_id: string | null
+          provider: string
+          storage_path: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          order_item_id?: string | null
+          photo_id: string
+          photo_url?: string | null
+          photographer?: string | null
+          photographer_url?: string | null
+          placeholder_id?: string | null
+          provider?: string
+          storage_path?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          order_item_id?: string | null
+          photo_id?: string
+          photo_url?: string | null
+          photographer?: string | null
+          photographer_url?: string | null
+          placeholder_id?: string | null
+          provider?: string
+          storage_path?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: []
+      }
       subscription_acceptances: {
         Row: {
           accepted_at: string
