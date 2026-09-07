@@ -91,6 +91,13 @@ export default function StockImagePicker({
 
   useEffect(() => {
     if (!open) return;
+    setQuery(settings.defaultQuery);
+    setTerm(settings.defaultQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, settings.defaultQuery]);
+
+  useEffect(() => {
+    if (!open) return;
     setPhotos([]);
     setHasMore(false);
     void load(1, true);
