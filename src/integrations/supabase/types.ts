@@ -2886,6 +2886,67 @@ export type Database = {
           },
         ]
       }
+      email_unsubscribes: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          email: string
+          id: string
+          reason: string | null
+          recipient_id: string | null
+          scope: string
+          source: string | null
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          reason?: string | null
+          recipient_id?: string | null
+          scope?: string
+          source?: string | null
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          reason?: string | null
+          recipient_id?: string | null
+          scope?: string
+          source?: string | null
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_unsubscribes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_unsubscribes_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "platform_email_campaign_recipients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_unsubscribes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       impersonation_sessions: {
         Row: {
           actions_count: number
@@ -4696,39 +4757,45 @@ export type Database = {
       platform_branch_activation_pages: {
         Row: {
           app_id: string | null
-          branch_id: string
+          branch_id: string | null
+          company_id: string | null
           contact_email: string
           contact_name: string | null
           created_at: string
           created_by: string | null
           id: string
           is_active: boolean
+          profile_id: string | null
           slug: string
           tenant_id: string
           updated_at: string
         }
         Insert: {
           app_id?: string | null
-          branch_id: string
+          branch_id?: string | null
+          company_id?: string | null
           contact_email: string
           contact_name?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           is_active?: boolean
+          profile_id?: string | null
           slug: string
           tenant_id: string
           updated_at?: string
         }
         Update: {
           app_id?: string | null
-          branch_id?: string
+          branch_id?: string | null
+          company_id?: string | null
           contact_email?: string
           contact_name?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           is_active?: boolean
+          profile_id?: string | null
           slug?: string
           tenant_id?: string
           updated_at?: string
@@ -4739,6 +4806,20 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: true
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_branch_activation_pages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "customer_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_branch_activation_pages_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -4762,6 +4843,7 @@ export type Database = {
           id: string
           max_follow_ups: number
           template_slug: string | null
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4775,6 +4857,7 @@ export type Database = {
           id?: string
           max_follow_ups?: number
           template_slug?: string | null
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4788,6 +4871,7 @@ export type Database = {
           id?: string
           max_follow_ups?: number
           template_slug?: string | null
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4805,6 +4889,13 @@ export type Database = {
             referencedRelation: "platform_email_campaigns"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "platform_campaign_triggers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
         ]
       }
       platform_email_campaign_recipients: {
@@ -4814,6 +4905,8 @@ export type Database = {
           branch_id: string | null
           campaign_id: string
           click_count: number
+          company_id: string | null
+          contact_name: string | null
           created_at: string
           email: string | null
           error: string | null
@@ -4824,8 +4917,11 @@ export type Database = {
           last_clicked_url: string | null
           last_follow_up_at: string | null
           open_count: number
+          profile_id: string | null
+          recipient_kind: string
           sent_at: string | null
           status: string
+          unsubscribe_token: string | null
         }
         Insert: {
           action_link?: string | null
@@ -4833,6 +4929,8 @@ export type Database = {
           branch_id?: string | null
           campaign_id: string
           click_count?: number
+          company_id?: string | null
+          contact_name?: string | null
           created_at?: string
           email?: string | null
           error?: string | null
@@ -4843,8 +4941,11 @@ export type Database = {
           last_clicked_url?: string | null
           last_follow_up_at?: string | null
           open_count?: number
+          profile_id?: string | null
+          recipient_kind?: string
           sent_at?: string | null
           status: string
+          unsubscribe_token?: string | null
         }
         Update: {
           action_link?: string | null
@@ -4852,6 +4953,8 @@ export type Database = {
           branch_id?: string | null
           campaign_id?: string
           click_count?: number
+          company_id?: string | null
+          contact_name?: string | null
           created_at?: string
           email?: string | null
           error?: string | null
@@ -4862,8 +4965,11 @@ export type Database = {
           last_clicked_url?: string | null
           last_follow_up_at?: string | null
           open_count?: number
+          profile_id?: string | null
+          recipient_kind?: string
           sent_at?: string | null
           status?: string
+          unsubscribe_token?: string | null
         }
         Relationships: [
           {
@@ -4880,10 +4986,25 @@ export type Database = {
             referencedRelation: "platform_email_campaigns"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "platform_email_campaign_recipients_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "customer_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_email_campaign_recipients_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       platform_email_campaigns: {
         Row: {
+          audience: string
           body_html_snapshot: string
           body_text_snapshot: string | null
           created_at: string
@@ -4891,7 +5012,9 @@ export type Database = {
           failed_count: number
           id: string
           kind: string
+          link_mode: string
           parent_campaign_id: string | null
+          scope: string
           sent_count: number
           skipped_count: number
           status: string
@@ -4901,6 +5024,7 @@ export type Database = {
           total_recipients: number
         }
         Insert: {
+          audience?: string
           body_html_snapshot: string
           body_text_snapshot?: string | null
           created_at?: string
@@ -4908,7 +5032,9 @@ export type Database = {
           failed_count?: number
           id?: string
           kind?: string
+          link_mode?: string
           parent_campaign_id?: string | null
+          scope?: string
           sent_count?: number
           skipped_count?: number
           status?: string
@@ -4918,6 +5044,7 @@ export type Database = {
           total_recipients?: number
         }
         Update: {
+          audience?: string
           body_html_snapshot?: string
           body_text_snapshot?: string | null
           created_at?: string
@@ -4925,7 +5052,9 @@ export type Database = {
           failed_count?: number
           id?: string
           kind?: string
+          link_mode?: string
           parent_campaign_id?: string | null
+          scope?: string
           sent_count?: number
           skipped_count?: number
           status?: string
@@ -4964,6 +5093,7 @@ export type Database = {
           name: string
           slug: string
           subject: string
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4978,6 +5108,7 @@ export type Database = {
           name: string
           slug: string
           subject: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4992,9 +5123,18 @@ export type Database = {
           name?: string
           slug?: string
           subject?: string
+          tenant_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "platform_email_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       platform_legal_documents: {
         Row: {
@@ -5119,6 +5259,7 @@ export type Database = {
         Row: {
           branch_id: string | null
           campaign_recipient_id: string | null
+          company_id: string | null
           consumed_at: string | null
           created_at: string
           email: string
@@ -5134,6 +5275,7 @@ export type Database = {
         Insert: {
           branch_id?: string | null
           campaign_recipient_id?: string | null
+          company_id?: string | null
           consumed_at?: string | null
           created_at?: string
           email: string
@@ -5149,6 +5291,7 @@ export type Database = {
         Update: {
           branch_id?: string | null
           campaign_recipient_id?: string | null
+          company_id?: string | null
           consumed_at?: string | null
           created_at?: string
           email?: string
@@ -5174,6 +5317,13 @@ export type Database = {
             columns: ["campaign_recipient_id"]
             isOneToOne: false
             referencedRelation: "platform_email_campaign_recipients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_onboarding_tokens_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "customer_companies"
             referencedColumns: ["id"]
           },
           {
