@@ -15,7 +15,7 @@ import {
   upsertActivationPage,
 } from "../_shared/campaignAudience.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
-import { renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.ts";
+import { renderBareEmail } from "../_shared/branded-shell.ts";
 import { htmlToText } from "../_shared/htmlToText.ts";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
