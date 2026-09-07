@@ -183,12 +183,21 @@ async function checkBranchGate(
  * account (branch-specific first, then tenant-wide), else the linked company's
  * credit limit. Mirrors `resolveCredit` + the company fallback on the client.
  */
+type CreditFacility = {
+  credit_limit: number;
+  payment_terms_days: number;
+  account_ref: string | null;
+  source: string;
+  company_id: string | null;
+  profile_id: string | null;
+};
+
 async function resolveCreditFacility(
   admin: ReturnType<typeof createClient>,
   tenantId: string,
   profileId: string,
   branchId: string | null,
-): Promise<{ credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null> {
+): Promise<CreditFacility | null> {
   const { data: accounts } = await admin
     .from("customer_credit_accounts")
     .select("id, branch_id, is_active, credit_limit, payment_terms_days, account_ref")
@@ -207,6 +216,8 @@ async function resolveCreditFacility(
       payment_terms_days: Number(personal.payment_terms_days ?? 30),
       account_ref: personal.account_ref ?? null,
       source: `credit_account:${personal.id}`,
+      company_id: null,
+      profile_id: profileId,
     };
   }
 
@@ -226,10 +237,30 @@ async function resolveCreditFacility(
         payment_terms_days: Number(c.payment_terms_days ?? 30),
         account_ref: c.mis_account_number ?? null,
         source: `company:${c.id}`,
+        company_id: c.id,
+        profile_id: null,
       };
     }
   }
   return null;
+}
+
+/** Current outstanding balance on the facility's account ledger. */
+async function accountBalance(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  facility: CreditFacility,
+): Promise<number> {
+  try {
+    const { data } = await admin.rpc("resolve_account_balance", {
+      p_tenant_id: tenantId,
+      p_company_id: facility.company_id,
+      p_profile_id: facility.profile_id,
+    });
+    return Number((data as any)?.balance ?? 0);
+  } catch (_e) {
+    return 0;
+  }
 }
 
 // ── Action handlers ─────────────────────────────────────────
@@ -294,9 +325,11 @@ async function createOrderWithJobs(
       );
     }
     const orderTotal = Number(pricing?.total_amount ?? 0);
-    if (creditTerms.credit_limit > 0 && orderTotal > creditTerms.credit_limit) {
+    const balance = await accountBalance(admin, tenant_id, creditTerms);
+    const available = creditTerms.credit_limit - balance;
+    if (creditTerms.credit_limit > 0 && orderTotal > available) {
       return json(
-        { error: "This order exceeds the available credit limit.", code: "credit_limit_exceeded" },
+        { error: "This order exceeds the available credit on this account.", code: "credit_limit_exceeded" },
         403,
       );
     }
@@ -572,6 +605,40 @@ async function createOrderWithJobs(
         .not("job_status", "in", "(completed,cancelled)");
     } catch (e) {
       console.warn("[order-engine] account order job cascade failed (non-fatal):", e);
+    }
+  }
+
+  // Post the charge onto the customer's account ledger so the running balance
+  // (and therefore their available credit) reflects this order.
+  if (creditTerms && !holdForPayment) {
+    try {
+      const { data: fresh } = await admin
+        .from("orders")
+        .select("total_amount, currency, app_id")
+        .eq("id", newOrder.id)
+        .maybeSingle();
+      const chargeAmount = Number((fresh as any)?.total_amount ?? pricing?.total_amount ?? 0);
+      if (chargeAmount > 0) {
+        const due = new Date(Date.now() + creditTerms.payment_terms_days * 86400000);
+        await admin.from("customer_account_ledger").insert({
+          tenant_id: tenant_id,
+          app_id: (fresh as any)?.app_id ?? (newOrder as any).app_id,
+          branch_id: branch_id || null,
+          company_id: creditTerms.company_id,
+          customer_profile_id: creditTerms.company_id ? null : customer.profile_id,
+          entry_type: "charge",
+          amount: chargeAmount,
+          currency: (fresh as any)?.currency ?? pricing?.currency ?? "ZAR",
+          order_id: newOrder.id,
+          reference: newOrder.order_number,
+          note: `Order ${newOrder.order_number}`,
+          entry_date: new Date().toISOString().slice(0, 10),
+          due_date: due.toISOString().slice(0, 10),
+          created_by: userId,
+        });
+      }
+    } catch (e) {
+      console.warn("[order-engine] account ledger charge failed (non-fatal):", e);
     }
   }
 

@@ -16,6 +16,7 @@ import {
 } from "@/hooks/useCustomerCreditAccounts";
 import type { PricingTier } from "@/lib/pricing/packOptions";
 import { resolveTradeMembership, type TradeMembership } from "@/lib/customers/tradeMembership";
+import { useAccountBalance } from "@/hooks/useAccountLedger";
 
 export interface CustomerPricingTier {
   tier: PricingTier;
@@ -23,6 +24,10 @@ export interface CustomerPricingTier {
   misAccountNumber: string | null;
   /** Credit facility that applies at the active branch, if any. */
   credit: CreditAccount | null;
+  /** Outstanding balance on the account ledger. */
+  accountBalance: number;
+  /** Credit limit less the outstanding balance; null when there is no facility. */
+  availableCredit: number | null;
   /** Customer must pay online before the order is accepted (C.O.D. / prepaid). */
   requiresPrepayment: boolean;
   isLoading: boolean;
@@ -89,14 +94,27 @@ export function useCustomerPricingTier(): CustomerPricingTier {
   const requiresPrepayment =
     (membership?.payment_terms_mode ?? company?.payment_terms_mode ?? "account") === "prepaid";
 
+  const credit = personalCredit ?? companyCredit;
+
+  // Running balance on the ledger: a personal facility keeps its own balance,
+  // a company facility is shared by everyone ordering under that business.
+  const { data: balance } = useAccountBalance({
+    companyId: personalCredit ? null : company?.id ?? null,
+    profileId: personalCredit ? user?.id ?? null : null,
+  });
+  const accountBalance = Number(balance?.balance ?? 0);
+  const limit = Number(credit?.credit_limit ?? 0);
+  const availableCredit = credit && limit > 0 ? limit - accountBalance : null;
+
   return {
     tier: isTrade ? "trade" : "consumer",
     isTrade,
     requiresPrepayment,
     misAccountNumber:
       membership?.mis_account_number ?? company?.mis_account_number ?? null,
-    credit: personalCredit ?? companyCredit,
-
+    credit,
+    accountBalance,
+    availableCredit,
     isLoading,
   };
 }

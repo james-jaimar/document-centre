@@ -62,7 +62,7 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
-  const { credit, isTrade, requiresPrepayment } = useCustomerPricingTier();
+  const { credit, isTrade, requiresPrepayment, availableCredit } = useCustomerPricingTier();
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
@@ -335,9 +335,9 @@ export default function Checkout() {
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
   const total = Math.max(0, subtotal - discountAmount + deliveryFee);
 
-  // Pay on account: an active credit facility, with room for this order.
-  const creditLimit = credit?.is_active ? credit.credit_limit : null;
-  const withinCreditLimit = creditLimit == null || total <= Number(creditLimit);
+  // Pay on account: an active credit facility, with room left on the account
+  // once everything already owing is taken off the limit.
+  const withinCreditLimit = availableCredit == null || total <= availableCredit;
   const canPayOnAccount = !!credit?.is_active && withinCreditLimit;
   // A customer with a live credit facility that covers this order is a 30-day
   // account customer: they pay on account only — no card, no EFT.
@@ -1025,14 +1025,9 @@ export default function Checkout() {
                     </Label>
                   </div>
                 ))}
-                {credit?.is_active && !requiresPrepayment && (
+                {credit?.is_active && !requiresPrepayment && canPayOnAccount && (
                   <div className="flex items-start space-x-2">
-                    <RadioGroupItem
-                      value="account"
-                      id="pm-account"
-                      disabled={!canPayOnAccount}
-                      className="mt-1"
-                    />
+                    <RadioGroupItem value="account" id="pm-account" className="mt-1" />
                     <Label htmlFor="pm-account" className="cursor-pointer">
                       Pay on account
                       {credit.payment_terms_days != null && (
@@ -1040,14 +1035,14 @@ export default function Checkout() {
                           ({credit.payment_terms_days} day terms)
                         </span>
                       )}
-                      {!withinCreditLimit && (
-                        <span className="block text-xs text-destructive">
-                          This order exceeds your available credit limit, so please choose another
-                          payment method.
-                        </span>
-                      )}
                     </Label>
                   </div>
+                )}
+                {credit?.is_active && !requiresPrepayment && !canPayOnAccount && (
+                  <p className="text-xs text-muted-foreground">
+                    This order takes you over your available credit, so please choose one of the
+                    payment options above.
+                  </p>
                 )}
                 {!requiresPrepayment && !accountOnly && (
                   <div className="flex items-center space-x-2">
