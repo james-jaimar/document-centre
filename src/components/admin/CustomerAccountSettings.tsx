@@ -24,6 +24,7 @@ import { useBranches, type Branch } from "@/hooks/useBranches";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Plus, Trash2, Pencil, Building2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
+import { AccountLedgerPanel } from "@/components/customers/AccountLedgerPanel";
 
 interface Props {
   customerProfileId: string;
@@ -230,6 +231,18 @@ export function CustomerAccountSettings({ customerProfileId, currencyCode = "ZAR
             </Button>
           </div>
         </Card>
+      )}
+
+      {accounts.length > 0 && (
+        <div className="pt-2 space-y-3">
+          <h3 className="text-sm font-semibold">Account statement</h3>
+          <AccountLedgerPanel
+            profileId={customerProfileId}
+            creditLimit={accounts.find((a) => !a.branch_id)?.credit_limit ?? accounts[0]?.credit_limit}
+            paymentTermsDays={accounts.find((a) => !a.branch_id)?.payment_terms_days ?? accounts[0]?.payment_terms_days}
+            currency={currencyCode}
+          />
+        </div>
       )}
 
       {/* ---- Delete Confirmation ---- */}

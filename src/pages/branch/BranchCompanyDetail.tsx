@@ -4,5 +4,11 @@ import { CompanyDetailView } from "@/components/customers/CompanyDetailView";
 export default function BranchCompanyDetail() {
   const { id } = useParams<{ id: string }>();
   if (!id) return null;
-  return <CompanyDetailView companyId={id} backPath="/branch/companies" />;
+  return (
+    <CompanyDetailView
+      companyId={id}
+      backPath="/branch/companies"
+      orderPath={(oid) => `/branch/orders/${oid}`}
+    />
+  );
 }

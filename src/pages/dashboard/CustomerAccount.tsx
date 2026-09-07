@@ -26,12 +26,16 @@ import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerA
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { useFavouriteBranch } from "@/hooks/useFavouriteBranch";
 import { useBranch } from "@/contexts/BranchContext";
+import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { AccountLedgerPanel } from "@/components/customers/AccountLedgerPanel";
 
 export default function CustomerAccount() {
   const { user } = useAuth();
-  const { slug, tenantPath: _tenantPath } = useTenantSlug();
-  void _tenantPath; void slug;
+  const { slug, tenantPath } = useTenantSlug();
+  void slug;
   const qc = useQueryClient();
+  const { credit, ledgerCompanyId, ledgerProfileId } = useCustomerPricingTier();
+  const hasAccount = !!credit?.is_active;
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["profile", user?.id],
@@ -133,7 +137,23 @@ export default function CustomerAccount() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="addresses">Addresses</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          {hasAccount && <TabsTrigger value="statement">Statement</TabsTrigger>}
         </TabsList>
+
+        {hasAccount && (
+          <TabsContent value="statement">
+            <AccountLedgerPanel
+              companyId={ledgerCompanyId ?? undefined}
+              profileId={ledgerProfileId ?? undefined}
+              creditLimit={credit?.credit_limit}
+              paymentTermsDays={credit?.payment_terms_days}
+              orderPath={(oid) => `${tenantPath}/orders/${oid}`}
+              readOnly
+            />
+          </TabsContent>
+        )}
+
+
 
 
         <TabsContent value="profile">
