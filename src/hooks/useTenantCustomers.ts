@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { resolveTradeMembership, type TradeMembership } from "@/lib/customers/tradeMembership";
 
 export interface CustomerListRow {
   profile_id: string;
@@ -38,16 +39,17 @@ export function useTenantCustomers() {
 
       if (mErr) throw mErr;
 
-      // One row per person: a customer can have both a tenant-level and a
-      // branch membership row. Prefer the branch-scoped one.
-      const byProfile = new Map<string, any>();
+      // Trade status is tenant-wide. Preserve the richest branch/company row
+      // for display, but aggregate status across every active membership.
+      const membershipsByProfile = new Map<string, TradeMembership[]>();
       for (const m of (memberships ?? []) as any[]) {
-        const prev = byProfile.get(m.profile_id);
-        if (!prev || (!prev.branch_id && m.branch_id) || (!prev.company_id && m.company_id)) {
-          byProfile.set(m.profile_id, prev ? { ...prev, ...m } : m);
-        }
+        const rows = membershipsByProfile.get(m.profile_id) ?? [];
+        rows.push(m);
+        membershipsByProfile.set(m.profile_id, rows);
       }
-      const rows = [...byProfile.values()];
+      const rows = [...membershipsByProfile.entries()]
+        .map(([profile_id, values]) => ({ profile_id, membership: resolveTradeMembership(values) }))
+        .filter((row) => row.membership !== null);
       const profileIds = rows.map((r) => r.profile_id);
       if (profileIds.length === 0) return [];
 
@@ -82,18 +84,15 @@ export function useTenantCustomers() {
       }
 
       return rows.filter((r) => profileMap.has(r.profile_id)).map((r) => {
+        const membership = r.membership as TradeMembership;
         const s = stats.get(r.profile_id) ?? { count: 0, total: 0, last: null };
         const p = profileMap.get(r.profile_id);
         return {
           profile_id: r.profile_id,
-          membership_id: r.id,
-          is_active: r.is_active,
-          // Company trade status cascades to everyone linked to that company.
-          is_trade_customer:
-            !!r.is_trade_customer ||
-            (r.company?.is_active !== false && !!r.company?.is_trade_customer),
-          mis_account_number:
-            r.mis_account_number ?? r.company?.mis_account_number ?? null,
+          membership_id: membership.id,
+          is_active: membership.is_active !== false,
+          is_trade_customer: !!membership.is_trade_customer,
+          mis_account_number: membership.mis_account_number ?? null,
           display_name: p?.display_name ?? null,
           first_name: p?.first_name ?? null,
           last_name: p?.last_name ?? null,
@@ -115,15 +114,15 @@ export function useTenantCustomer(profileId: string | undefined) {
     queryKey: ["tenant-customer", tenantId, profileId],
     enabled: !!tenantId && !!profileId,
     queryFn: async () => {
-      const [{ data: profile }, { data: membership }, { data: orders }, { data: addresses }] = await Promise.all([
+      const [{ data: profile }, { data: memberships }, { data: orders }, { data: addresses }] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", profileId!).maybeSingle(),
         supabase
           .from("tenant_memberships")
-          .select("*")
+          .select("*, company:company_id (*)")
           .eq("tenant_id", tenantId!)
           .eq("app_id", appId!)
           .eq("profile_id", profileId!)
-          .maybeSingle(),
+          .eq("role", "customer"),
         supabase
           .from("orders")
           .select("id, order_number, created_at, total_amount, customer_status, payment_status, order_status")
@@ -158,6 +157,7 @@ export function useTenantCustomer(profileId: string | undefined) {
         return true;
       });
 
+      const membership = resolveTradeMembership((memberships ?? []) as TradeMembership[]);
       return { profile, membership, orders: orders ?? [], addresses: dedupedAddresses, history };
     },
   });

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveTradeMembership } from "./tradeMembership";
+import { resolveTradeMembership, type TradeMembership } from "./tradeMembership";
 
 describe("resolveTradeMembership", () => {
   it("keeps tenant-wide trade status when a default consumer row also exists", () => {
-    const result = resolveTradeMembership([
+    const result = resolveTradeMembership<TradeMembership>([
       { id: "tenant", branch_id: null, is_active: true, is_trade_customer: false },
       {
         id: "branch",
@@ -21,7 +21,7 @@ describe("resolveTradeMembership", () => {
   });
 
   it("inherits trade status and terms from any active linked company", () => {
-    const result = resolveTradeMembership([
+    const result = resolveTradeMembership<TradeMembership>([
       { id: "default", is_active: true, is_trade_customer: false },
       {
         id: "company",
@@ -42,7 +42,7 @@ describe("resolveTradeMembership", () => {
   });
 
   it("ignores inactive memberships", () => {
-    const result = resolveTradeMembership([
+    const result = resolveTradeMembership<TradeMembership>([
       { id: "old", is_active: false, is_trade_customer: true },
       { id: "current", is_active: true, is_trade_customer: false },
     ]);

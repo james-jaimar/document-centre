@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useCustomerCompanies } from "@/hooks/useCustomerCompanies";
 import { toast } from "sonner";
+import { resolveTradeMembership, type TradeMembership } from "@/lib/customers/tradeMembership";
 
 interface Props {
   open: boolean;
@@ -56,9 +57,9 @@ export function EditCustomerDialog({ open, onOpenChange, profileId, initial }: P
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("profile_id", profileId)
-        .maybeSingle();
+        .eq("role", "customer");
       if (error) throw error;
-      return (data ?? null) as any;
+      return resolveTradeMembership((data ?? []) as TradeMembership[]);
     },
   });
   const membership = membershipQuery.data;
@@ -118,7 +119,10 @@ export function EditCustomerDialog({ open, onOpenChange, profileId, initial }: P
             is_trade_customer: isTrade,
             mis_account_number: accountNo.trim() || null,
           } as any)
-          .eq("id", membership.id);
+          .eq("tenant_id", tenantId!)
+          .eq("app_id", appId!)
+          .eq("profile_id", profileId)
+          .eq("role", "customer");
         if (mErr) throw mErr;
       }
     },
