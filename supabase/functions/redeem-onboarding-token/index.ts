@@ -20,21 +20,34 @@ function json(d: unknown, status = 200) {
   });
 }
 
-function rewriteVerifyLink(rawLink: string, appOrigin: string, redirectPath: string): string {
+function rewriteVerifyLink(
+  linkData: any,
+  appOrigin: string,
+  redirectPath: string,
+  fallbackType: string,
+): string | null {
+  const rawLink: string = linkData?.properties?.action_link ?? "";
+  // Supabase returns the OTP as `properties.hashed_token`; the action_link
+  // itself carries it as `?token=` (NOT `token_hash`). Reading the wrong key
+  // used to make us fall back to the raw Supabase URL, which then bounced the
+  // user to the project's default site URL instead of the tenant domain.
+  let tokenHash: string | null = linkData?.properties?.hashed_token ?? null;
+  let type: string = linkData?.properties?.verification_type ?? fallbackType;
   try {
     const u = new URL(rawLink);
-    const tokenHash = u.searchParams.get("token_hash");
-    const type = u.searchParams.get("type") ?? "recovery";
-    if (!tokenHash) return rawLink;
-    const target = new URL("/auth/verify", appOrigin);
-    target.searchParams.set("token_hash", tokenHash);
-    target.searchParams.set("type", type);
-    target.searchParams.set("next", redirectPath);
-    return target.toString();
+    tokenHash = tokenHash || u.searchParams.get("token_hash") || u.searchParams.get("token");
+    type = u.searchParams.get("type") ?? type;
   } catch {
-    return rawLink;
+    /* action_link may be missing — properties are enough */
   }
+  if (!tokenHash) return rawLink || null;
+  const target = new URL("/auth/verify", appOrigin);
+  target.searchParams.set("token_hash", tokenHash);
+  target.searchParams.set("type", type);
+  target.searchParams.set("next", redirectPath);
+  return target.toString();
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
