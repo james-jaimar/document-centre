@@ -339,13 +339,33 @@ export default function TemplateEditor({
         {draft ? (
           <div className="flex flex-col min-h-0">
             <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-muted/30">
-              <div className="text-sm font-medium truncate">{draft.name}</div>
+              <div className="text-sm font-medium truncate">
+                {draft.name}
+                {dirty && !readOnly && (
+                  <span className="ml-2 text-[11px] font-normal text-amber-600">Unsaved changes</span>
+                )}
+              </div>
               <div className="flex items-center gap-3 shrink-0">
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Code2 className="h-3.5 w-3.5" />
                   Raw HTML
                   <Switch checked={rawMode} onCheckedChange={setRawMode} />
                 </label>
+                <Button size="sm" variant="ghost" className="h-8 px-2"
+                  title="Duplicate"
+                  onClick={() => createTemplate({
+                    name: `${draft.name} (copy)`,
+                    kind: draft.kind ?? kindFilter ?? "marketing",
+                    from: draft,
+                  })}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                {canDelete(draft) && (
+                  <Button size="sm" variant="ghost" className="h-8 px-2 text-destructive"
+                    title="Delete" onClick={() => setPendingDelete(draft)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 {readOnly ? (
                   <Button size="sm" variant="outline"
                     onClick={() => createTemplate({
@@ -356,10 +376,16 @@ export default function TemplateEditor({
                     <Copy className="h-3.5 w-3.5 mr-1.5" /> Duplicate to edit
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={save} disabled={saving}>
-                    {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
-                    Save
-                  </Button>
+                  <>
+                    <Button size="sm" variant="outline" disabled={!dirty}
+                      onClick={() => original && setDraft({ ...original })}>
+                      Revert
+                    </Button>
+                    <Button size="sm" onClick={save} disabled={saving}>
+                      {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                      Save
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -384,11 +410,38 @@ export default function TemplateEditor({
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Reference (slug)</Label>
+                  <Input value={draft.slug ?? ""} disabled={readOnly || !!draft.is_system}
+                    className="font-mono text-xs"
+                    onChange={(e) => setDraft({ ...draft, slug: e.target.value })} />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {draft.is_system
+                      ? "System templates keep their reference."
+                      : "Used when this template is picked for a campaign."}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs">Kind</Label>
+                  <Select value={draft.kind ?? kindFilter ?? "marketing"}
+                    disabled={readOnly || isTenant}
+                    onValueChange={(v) => setDraft({ ...draft, kind: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="marketing">Marketing (no credentials)</SelectItem>
+                      <SelectItem value="activation">Activation (sign-in link)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div>
                 <Label className="text-xs">Description (internal note)</Label>
                 <Input value={draft.description ?? ""} disabled={readOnly}
                   onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
               </div>
+
 
               <div>
                 <Label className="text-xs">Email body</Label>
