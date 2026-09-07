@@ -101,6 +101,9 @@ export default function AdminOrderDetail() {
   const paymentConfig = PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG];
   const adminConfig = ADMIN_STATUS_CONFIG[order.admin_status as keyof typeof ADMIN_STATUS_CONFIG];
   const isCancelled = order.admin_status === "cancelled";
+  const orderMeta = ((order as any).metadata ?? {}) as Record<string, any>;
+  const onAccount = orderMeta.payment_method === "account";
+  const accountTermsDays = Number(orderMeta.payment_terms_days ?? 30);
 
   return (
     <div className="space-y-4">
