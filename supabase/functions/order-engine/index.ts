@@ -361,8 +361,10 @@ async function createOrderWithJobs(
       customer_name: customer.name || null,
       company_name: customer.company_name || null,
       user_id: customer.profile_id,
-      admin_status: holdForPayment ? "pending_payment" : "new_order",
-      customer_status: holdForPayment ? "pending_payment" : "awaiting_payment",
+      admin_status: holdForPayment ? "pending_payment" : (creditTerms ? "approved" : "new_order"),
+      customer_status: holdForPayment
+        ? "pending_payment"
+        : (creditTerms ? "in_production" : "awaiting_payment"),
       payment_status: "unpaid",
       fulfilment_status: "pending",
       currency: pricing?.currency || order?.currency || "ZAR",
