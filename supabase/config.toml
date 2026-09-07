@@ -82,6 +82,8 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.tenant-logo]
     verify_jwt = false
+  [functions.stock-images]
+    verify_jwt = false
 
 
 

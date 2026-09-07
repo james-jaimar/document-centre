@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette } from "lucide-react";
+import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette, Images } from "lucide-react";
 import {
   DEFAULT_CMYK,
   GOOD_PLACEMENT_DPI,
@@ -33,6 +33,8 @@ interface Props {
   step?: number;
   onFocus: () => void;
   onPickFile: (file: File) => void;
+  /** Opens the stock photo library for this box (when available). */
+  onBrowseLibrary?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
 }
@@ -95,6 +97,7 @@ export default function PlaceholderPanel({
   step,
   onFocus,
   onPickFile,
+  onBrowseLibrary,
   onChange,
   onClear,
 }: Props) {
@@ -295,7 +298,22 @@ export default function PlaceholderPanel({
             or drag &amp; drop · JPG, PNG, WEBP or PDF
           </span>
         </button>
-      ) : (
+      ) : null}
+
+      {!v && onBrowseLibrary && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={busy}
+          onClick={onBrowseLibrary}
+        >
+          <Images className="h-4 w-4" />
+          <span className="ml-1.5">Browse photo library</span>
+        </Button>
+      )}
+
+      {v ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
             <span className="truncate text-xs font-medium text-foreground">{v.file_name}</span>
@@ -321,6 +339,39 @@ export default function PlaceholderPanel({
               <span className="ml-1.5">Replace</span>
             </Button>
           </div>
+
+          {v.source?.provider === "pexels" && (
+            <p className="text-[11px] text-muted-foreground">
+              Photo by{" "}
+              {v.source.photographer_url ? (
+                <a
+                  href={v.source.photographer_url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="underline"
+                >
+                  {v.source.photographer}
+                </a>
+              ) : (
+                v.source.photographer
+              )}{" "}
+              on Pexels
+            </p>
+          )}
+
+          {onBrowseLibrary && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="w-full"
+              disabled={busy}
+              onClick={onBrowseLibrary}
+            >
+              <Images className="h-4 w-4" />
+              <span className="ml-1.5">Choose a different library photo</span>
+            </Button>
+          )}
 
           {!isVector && dpi < MIN_PLACEMENT_DPI && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
@@ -416,7 +467,7 @@ export default function PlaceholderPanel({
             </Button>
           </div>
         </div>
-      )}
+      ) : null}
     </CardShell>
   );
 }
