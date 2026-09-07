@@ -365,11 +365,32 @@ export default function PlaceholderPanel({
             </p>
           )}
 
+          {loadError && (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+              <p className="text-xs font-medium text-destructive">
+                This picture could not be loaded. Try again, or choose another photo.
+              </p>
+              {onRetryImage && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={onRetryImage}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span className="ml-1.5">Try again</span>
+                </Button>
+              )}
+            </div>
+          )}
+
           {onBrowseLibrary && (
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="outline"
               className="w-full"
               disabled={busy}
               onClick={onBrowseLibrary}
@@ -378,6 +399,7 @@ export default function PlaceholderPanel({
               <span className="ml-1.5">Choose a different library photo</span>
             </Button>
           )}
+
 
           {!isVector && dpi < MIN_PLACEMENT_DPI && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
