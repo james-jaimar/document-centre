@@ -11,11 +11,13 @@ import {
 import { useCustomerCompany, useCompanyMembers } from "@/hooks/useCustomerCompanies";
 import { CompanyFormDialog } from "@/components/customers/CompanyFormDialog";
 import { CompanyUsersPanel } from "@/components/customers/CompanyUsersPanel";
+import { AccountLedgerPanel } from "@/components/customers/AccountLedgerPanel";
 
 interface Props {
   companyId: string;
   backPath: string;
   customerPath?: (profileId: string) => string;
+  orderPath?: (orderId: string) => string;
 }
 
 function AddressBlock({
