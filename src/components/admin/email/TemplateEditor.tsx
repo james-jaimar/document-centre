@@ -259,7 +259,7 @@ export default function TemplateEditor({
         <Select value={selectedId} onValueChange={setSelectedId}>
           <SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger>
           <SelectContent>
-            {templates.map((t) => (
+            {visibleTemplates.map((t) => (
               <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
             ))}
           </SelectContent>
@@ -269,7 +269,7 @@ export default function TemplateEditor({
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
         {/* List */}
         <div className="hidden lg:flex flex-col min-h-0">
           <div className="flex items-center justify-between px-3 py-1.5 border-b">
@@ -278,11 +278,22 @@ export default function TemplateEditor({
               <Plus className="h-3.5 w-3.5 mr-1" /> New
             </Button>
           </div>
+          <div className="p-1.5 border-b">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search templates"
+              className="h-7 text-xs"
+            />
+          </div>
           <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
             {templates.length === 0 && (
               <p className="p-3 text-xs text-muted-foreground">No templates yet — create your first one.</p>
             )}
-            {templates.map((t) => {
+            {templates.length > 0 && visibleTemplates.length === 0 && (
+              <p className="p-3 text-xs text-muted-foreground">No templates match “{search}”.</p>
+            )}
+            {visibleTemplates.map((t) => {
               const shared = isTenant && !t.tenant_id;
               return (
                 <div key={t.id}
@@ -296,7 +307,13 @@ export default function TemplateEditor({
                       t.is_system && <Badge variant="outline" className="mt-0.5 text-[10px] h-4 px-1">system</Badge>
                     )}
                   </button>
-                  <div className="opacity-0 group-hover:opacity-100 flex items-center pr-1">
+                  <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center pr-1">
+                    {!shared && (
+                      <button title="Rename" className="p-1 hover:bg-background rounded"
+                        onClick={(e) => { e.stopPropagation(); setRenaming(t); setRenameValue(t.name); }}>
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
                     <button title="Duplicate" className="p-1 hover:bg-background rounded"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -304,9 +321,9 @@ export default function TemplateEditor({
                       }}>
                       <Copy className="h-3 w-3" />
                     </button>
-                    {!t.is_system && !shared && (
+                    {canDelete(t) && (
                       <button title="Delete" className="p-1 hover:bg-background rounded text-destructive"
-                        onClick={(e) => { e.stopPropagation(); remove(t); }}>
+                        onClick={(e) => { e.stopPropagation(); setPendingDelete(t); }}>
                         <Trash2 className="h-3 w-3" />
                       </button>
                     )}
@@ -314,6 +331,7 @@ export default function TemplateEditor({
                 </div>
               );
             })}
+
           </div>
         </div>
 
