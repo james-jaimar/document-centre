@@ -184,6 +184,28 @@ export function renderBrandedEmail(opts: BrandedShellOptions): string {
 </html>`;
 }
 
+/**
+ * Bare email document — no Document Centre header, heading or footer.
+ * Used for campaign templates, where the authored HTML is the whole email.
+ */
+export function renderBareEmail(opts: { bodyHtml: string; preheader?: string }): string {
+  const preheaderBlock = opts.preheader
+    ? `<div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(opts.preheader)}</div>`
+    : "";
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+</head>
+<body style="margin:0;padding:0;">
+  ${preheaderBlock}
+  ${opts.bodyHtml}
+</body>
+</html>`;
+}
+
 /** Plain-text fallback derived from the same content. */
 export function renderBrandedText(opts: { heading: string; bodyText: string; ctaLabel?: string; ctaUrl?: string; footerNote?: string; siteLinkUrl?: string }): string {
   const cta = opts.ctaLabel && opts.ctaUrl ? `\n\n${opts.ctaLabel}: ${opts.ctaUrl}` : "";
