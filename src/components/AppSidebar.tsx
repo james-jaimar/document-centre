@@ -24,6 +24,7 @@ import {
   History,
   Truck,
   Inbox,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
