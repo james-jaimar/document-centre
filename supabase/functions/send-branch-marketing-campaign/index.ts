@@ -32,9 +32,6 @@ const corsHeaders = {
 const SYNC_LIMIT = 25;
 const PREPARE_CONCURRENCY = 8;
 const INSERT_CHUNK = 500;
-const NO_PLATFORM_SENDER =
-  "Platform sender mailbox not configured — connect one under Platform → Settings → Email.";
-
 type SupabaseAdmin = ReturnType<typeof createClient>;
 
 interface BranchRow {
@@ -130,13 +127,6 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function mintSlug(): string {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function normalizeBranchIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((id) => String(id ?? "").trim()).filter(Boolean))];
@@ -146,33 +136,6 @@ function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
-}
-
-async function getPlatformSenderId(admin: SupabaseAdmin): Promise<string | null> {
-  const { data: platformDefault, error: defaultErr } = await admin
-    .from("email_accounts")
-    .select("id")
-    .is("tenant_id", null)
-    .is("branch_id", null)
-    .eq("is_active", true)
-    .eq("is_default", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (defaultErr) throw new Error(`Platform sender lookup failed: ${defaultErr.message}`);
-  if (platformDefault?.id) return platformDefault.id;
-
-  const { data: anyPlatform, error: anyErr } = await admin
-    .from("email_accounts")
-    .select("id")
-    .is("tenant_id", null)
-    .is("branch_id", null)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (anyErr) throw new Error(`Platform sender lookup failed: ${anyErr.message}`);
-  return anyPlatform?.id ?? null;
 }
 
 async function prepareOneRecipient(
@@ -1120,6 +1083,9 @@ Deno.serve(async (req) => {
         results.push({ branch_id: missingId, branch: "Unknown branch", status: "skipped_branch_not_found" });
       }
       for (const b of noEmail) results.push({ branch_id: b.id, branch: b.name, status: "skipped_no_email" });
+      for (const b of unsubscribed) {
+        results.push({ branch_id: b.id, branch: b.name, email: b.email, status: "skipped_unsubscribed" });
+      }
 
       return json({
         campaign_id: campaignId,
