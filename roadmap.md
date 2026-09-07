@@ -10,3 +10,10 @@
 - [ ] Per-campaign link type: activation page or one-time sign-in
 - [ ] Send from tenant's own email account
 - [ ] Unsubscribe handling: token link, suppression list, send-time filtering
+
+## Resend for tenant email (2026-09-07)
+- [x] Resend mailbox per tenant (own API key in vault, domain verification check)
+- [x] Mail worker sends via Resend when the tenant's mailbox uses it
+- [x] Campaigns send as Resend broadcasts with hosted unsubscribe
+- [x] Webhook folds opens/clicks/bounces/complaints/unsubscribes into history + suppression
+- [ ] Live run: verify domain in Resend, connect Impress Print, test send, dry run, small broadcast
