@@ -117,6 +117,11 @@ export default function AdminOrderDetail() {
             <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
             {adminConfig && <StatusBadge {...adminConfig} />}
             {paymentConfig && <StatusBadge {...paymentConfig} />}
+            {onAccount && (
+              <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                On account — {accountTermsDays} day terms
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
