@@ -178,7 +178,62 @@ async function checkBranchGate(
   return `This branch's subscription is not active (status: ${status || billing || "unknown"}).`;
 }
 
+/**
+ * Resolve the credit facility that applies to a customer: a personal credit
+ * account (branch-specific first, then tenant-wide), else the linked company's
+ * credit limit. Mirrors `resolveCredit` + the company fallback on the client.
+ */
+async function resolveCreditFacility(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  profileId: string,
+  branchId: string | null,
+): Promise<{ credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null> {
+  const { data: accounts } = await admin
+    .from("customer_credit_accounts")
+    .select("id, branch_id, is_active, credit_limit, payment_terms_days, account_ref")
+    .eq("tenant_id", tenantId)
+    .eq("customer_profile_id", profileId)
+    .eq("is_active", true);
+
+  const list = (accounts ?? []) as any[];
+  const personal =
+    (branchId ? list.find((a) => a.branch_id === branchId) : null) ??
+    list.find((a) => a.branch_id == null) ??
+    null;
+  if (personal) {
+    return {
+      credit_limit: Number(personal.credit_limit ?? 0),
+      payment_terms_days: Number(personal.payment_terms_days ?? 30),
+      account_ref: personal.account_ref ?? null,
+      source: `credit_account:${personal.id}`,
+    };
+  }
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("company:company_id (id, is_active, credit_limit, payment_terms_days, mis_account_number)")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId)
+    .eq("is_active", true);
+
+  for (const m of (memberships ?? []) as any[]) {
+    const c = m.company;
+    if (!c || c.is_active === false) continue;
+    if (Number(c.credit_limit ?? 0) > 0) {
+      return {
+        credit_limit: Number(c.credit_limit),
+        payment_terms_days: Number(c.payment_terms_days ?? 30),
+        account_ref: c.mis_account_number ?? null,
+        source: `company:${c.id}`,
+      };
+    }
+  }
+  return null;
+}
+
 // ── Action handlers ─────────────────────────────────────────
+
 
 async function createOrderWithJobs(
   admin: ReturnType<typeof createClient>,
