@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Send, AlertCircle, CheckCircle2, Mail, Shield, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useTenantSettingsMap, useUpsertTenantSetting } from "@/hooks/useTenantSettings";
+import { ResendMailboxCard } from "@/components/admin/email/ResendMailboxCard";
 
 interface EmailAccount {
   id: string;
@@ -33,7 +34,8 @@ interface EmailAccount {
   is_active: boolean;
   last_verified_at: string | null;
   last_error: string | null;
-  transport: "smtp" | "gmail_oauth" | "graph" | "graph_oauth";
+  transport: "smtp" | "gmail_oauth" | "graph" | "graph_oauth" | "resend";
+  resend_segment_id?: string | null;
   oauth_email: string | null;
 }
 
@@ -170,6 +172,7 @@ export function EmailAccountsTab() {
   const gmailAccount = accounts.find((a) => a.transport === "gmail_oauth");
   const microsoftAccount = accounts.find((a) => a.transport === "graph_oauth");
   const smtpAccounts = accounts.filter((a) => a.transport === "smtp");
+  const resendAccount = accounts.find((a) => a.transport === "resend" && !a.branch_id);
 
   const runOAuthPopup = async (
     fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
@@ -525,6 +528,18 @@ export function EmailAccountsTab() {
         </Card>
 
 
+
+      {/* ── Resend ── */}
+      <ResendMailboxCard
+        tenantId={tenantId}
+        account={resendAccount as any}
+        onChanged={load}
+        onSetDefault={setDefault}
+        onTest={test}
+        testingId={testingId}
+        testRecipient={testRecipient}
+        setTestRecipient={setTestRecipient}
+      />
 
       {/* ── SMTP Accounts ── */}
       <Card>
