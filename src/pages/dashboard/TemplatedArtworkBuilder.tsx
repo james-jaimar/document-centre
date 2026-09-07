@@ -22,6 +22,8 @@ import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
+import StockImagePicker from "@/components/artwork/StockImagePicker";
+import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
@@ -54,6 +56,7 @@ import type {
   ArtworkPlaceholder,
   TemplatedArtworkSpec,
   TemplatedImageValue,
+  StockImageSource,
   TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
 import { DEFAULT_CMYK, normaliseCmyk, placeholdersForPage } from "@/lib/artworkTemplates/types";
@@ -421,7 +424,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handlePickFile = useCallback(
-    async (placeholderId: string, rawFile: File) => {
+    async (placeholderId: string, rawFile: File, source?: StockImageSource | null) => {
       setBusyId(placeholderId);
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
@@ -463,6 +466,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           offset_y: 0,
           background_hex: ph?.background_hex ?? null,
           opacity: ph?.is_watermark ? Math.min(ph?.opacity ?? 0.1, 0.1) : (ph?.opacity ?? 1),
+          source: source ?? null,
         };
         if (ph) applyValue(ph, next);
         else setValues((prev) => ({ ...prev, [placeholderId]: next }));
@@ -474,6 +478,45 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       }
     },
     [ensureOrder, uploadPhoto, placeholders, applyValue],
+  );
+
+  // ── Stock photo library (Pexels)
+  const [libraryFor, setLibraryFor] = useState<string | null>(null);
+  const libraryPlaceholder = useMemo(
+    () => placeholders.find((p) => p.id === libraryFor) ?? null,
+    [placeholders, libraryFor],
+  );
+  const usedStockIds = useMemo(
+    () =>
+      Object.values(values)
+        .filter((v): v is TemplatedImageValue => v?.kind === "image" && !!v.source)
+        .map((v) => String(v.source!.photo_id)),
+    [values],
+  );
+
+  const handlePickStock = useCallback(
+    async (photo: StockPhoto) => {
+      if (!libraryFor) return;
+      const placeholderId = libraryFor;
+      setBusyId(placeholderId);
+      try {
+        const file = await fetchStockPhotoFile(photo);
+        await handlePickFile(placeholderId, file, {
+          provider: "pexels",
+          photo_id: String(photo.id),
+          photographer: photo.photographer,
+          photographer_url: photo.photographer_url,
+          photo_url: photo.page_url,
+        });
+        setLibraryFor(null);
+      } catch (err: any) {
+        console.error("[templated-artwork] stock photo failed", err);
+        toast.error(err?.message ?? "Could not add that photo");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [libraryFor, handlePickFile],
   );
 
   // ── Pricing: pack ladder (with finishing options + paid extras) when the
@@ -788,6 +831,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                   active={activeId === p.id}
                   onFocus={() => setActiveId(p.id)}
                   onPickFile={(file) => handlePickFile(p.id, file)}
+                  onBrowseLibrary={p.kind === "image" ? () => setLibraryFor(p.id) : undefined}
                   onChange={(v) => applyValue(p, v)}
                   onClear={() => applyValue(p, null)}
                 />
@@ -1033,6 +1077,16 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         trimWidthMm={template?.trim_width_mm ?? 0}
         initialPage={pageIndex}
         title={`${family?.name ?? "Artwork"} proof`}
+      />
+
+      <StockImagePicker
+        open={!!libraryFor}
+        onOpenChange={(o) => !o && setLibraryFor(null)}
+        boxWidthMm={libraryPlaceholder?.width_mm ?? 0}
+        boxHeightMm={libraryPlaceholder?.height_mm ?? 0}
+        usedIds={usedStockIds}
+        busy={!!busyId}
+        onPick={handlePickStock}
       />
 
     </div>
