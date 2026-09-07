@@ -75,6 +75,11 @@ export default function TemplateEditor({
   const [rawMode, setRawMode] = useState(false);
   const [tokenTarget, setTokenTarget] = useState<"body" | "text">("body");
   const [newOpen, setNewOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [renaming, setRenaming] = useState<EmailTemplate | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<EmailTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const htmlRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -96,10 +101,33 @@ export default function TemplateEditor({
   /** In tenant mode, shared (master) templates cannot be edited. */
   const readOnly = isTenant && !!draft && !draft.tenant_id;
 
+  const original = useMemo(
+    () => templates.find((t) => t.id === selectedId) ?? null,
+    [templates, selectedId],
+  );
+  const dirty = !!draft && !!original && (
+    draft.name !== original.name ||
+    draft.slug !== original.slug ||
+    draft.kind !== original.kind ||
+    draft.subject !== original.subject ||
+    draft.body_html !== original.body_html ||
+    (draft.body_text ?? "") !== (original.body_text ?? "") ||
+    (draft.description ?? "") !== (original.description ?? "")
+  );
+
+  const visibleTemplates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter((t) =>
+      [t.name, t.slug, t.subject, t.description ?? ""].some((v) => (v ?? "").toLowerCase().includes(q)),
+    );
+  }, [templates, search]);
+
   const tokens = useMemo(
     () => ((draft?.kind ?? kindFilter) === "marketing" ? TOKENS_MARKETING : TOKENS_ACTIVATION),
     [draft?.kind, kindFilter],
   );
+
 
   const previewVars = defaultPreviewVars();
   const previewHtml = draft?.body_html
