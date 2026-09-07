@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
     // tenant only: never create a second row for the same person.
     const { data: existingMems } = await admin
       .from("tenant_memberships")
-      .select("id, branch_id, role, is_active")
+      .select("id, branch_id, role, is_active, is_trade_customer, mis_account_number, payment_terms_mode, company_id")
       .eq("profile_id", profileId!)
       .eq("tenant_id", tenant_id)
       .eq("app_id", tenant.app_id)
@@ -162,7 +162,16 @@ Deno.serve(async (req) => {
     } else {
       // Reuse the existing membership; adopt the branch if one was given.
       const keep = mems.find((m: any) => m.branch_id === branch_id) ?? mems[0];
-      const patch: Record<string, unknown> = { is_active: true };
+      const accountSource = mems.find((m: any) => m.is_trade_customer)
+        ?? mems.find((m: any) => m.company_id)
+        ?? mems[0];
+      const patch: Record<string, unknown> = {
+        is_active: true,
+        is_trade_customer: accountSource?.is_trade_customer ?? false,
+        mis_account_number: accountSource?.mis_account_number ?? null,
+        payment_terms_mode: accountSource?.payment_terms_mode ?? null,
+        company_id: accountSource?.company_id ?? null,
+      };
       if (branch_id && !keep.branch_id) patch.branch_id = branch_id;
       await admin.from("tenant_memberships").update(patch).eq("id", keep.id);
       // Clean up any historic duplicate rows for this tenant.

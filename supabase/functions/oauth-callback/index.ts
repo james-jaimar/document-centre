@@ -85,6 +85,9 @@ Deno.serve(async (req) => {
         .eq("profile_id", user.id)
         .eq("tenant_id", tenant.id)
         .eq("app_id", tenant.app_id)
+        .eq("role", "customer")
+        .order("is_active", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       let action: "created" | "reactivated" | "existing" = "existing";
