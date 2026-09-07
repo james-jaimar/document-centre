@@ -27,6 +27,7 @@ from app.email.smtp_client import send_smtp
 from app.email.graph_client import send_graph
 from app.email.gmail_client import send_gmail
 from app.email.graph_oauth_client import send_graph_oauth
+from app.email.resend_client import send_resend
 from app.worker import celery_app
 from app.core.queue import enqueue
 
@@ -166,6 +167,7 @@ def send_email(self, row: Dict[str, Any]) -> str:
         "graph": send_graph,
         "gmail_oauth": send_gmail,
         "graph_oauth": send_graph_oauth,
+        "resend": send_resend,
     }[provider]
 
     try:

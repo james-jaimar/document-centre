@@ -2500,6 +2500,9 @@ export type Database = {
           oauth_email: string | null
           oauth_refresh_token_secret_id: string | null
           reply_to: string | null
+          resend_api_key_secret_id: string | null
+          resend_segment_id: string | null
+          resend_webhook_secret_id: string | null
           send_delay_ms: number
           smtp_host: string | null
           smtp_password_secret_id: string | null
@@ -2530,6 +2533,9 @@ export type Database = {
           oauth_email?: string | null
           oauth_refresh_token_secret_id?: string | null
           reply_to?: string | null
+          resend_api_key_secret_id?: string | null
+          resend_segment_id?: string | null
+          resend_webhook_secret_id?: string | null
           send_delay_ms?: number
           smtp_host?: string | null
           smtp_password_secret_id?: string | null
@@ -2560,6 +2566,9 @@ export type Database = {
           oauth_email?: string | null
           oauth_refresh_token_secret_id?: string | null
           reply_to?: string | null
+          resend_api_key_secret_id?: string | null
+          resend_segment_id?: string | null
+          resend_webhook_secret_id?: string | null
           send_delay_ms?: number
           smtp_host?: string | null
           smtp_password_secret_id?: string | null
@@ -4919,6 +4928,7 @@ export type Database = {
           open_count: number
           profile_id: string | null
           recipient_kind: string
+          resend_contact_id: string | null
           sent_at: string | null
           status: string
           unsubscribe_token: string | null
@@ -4943,6 +4953,7 @@ export type Database = {
           open_count?: number
           profile_id?: string | null
           recipient_kind?: string
+          resend_contact_id?: string | null
           sent_at?: string | null
           status: string
           unsubscribe_token?: string | null
@@ -4967,6 +4978,7 @@ export type Database = {
           open_count?: number
           profile_id?: string | null
           recipient_kind?: string
+          resend_contact_id?: string | null
           sent_at?: string | null
           status?: string
           unsubscribe_token?: string | null
@@ -5014,6 +5026,9 @@ export type Database = {
           kind: string
           link_mode: string
           parent_campaign_id: string | null
+          provider: string
+          resend_broadcast_id: string | null
+          resend_segment_id: string | null
           scope: string
           sent_count: number
           skipped_count: number
@@ -5034,6 +5049,9 @@ export type Database = {
           kind?: string
           link_mode?: string
           parent_campaign_id?: string | null
+          provider?: string
+          resend_broadcast_id?: string | null
+          resend_segment_id?: string | null
           scope?: string
           sent_count?: number
           skipped_count?: number
@@ -5054,6 +5072,9 @@ export type Database = {
           kind?: string
           link_mode?: string
           parent_campaign_id?: string | null
+          provider?: string
+          resend_broadcast_id?: string | null
+          resend_segment_id?: string | null
           scope?: string
           sent_count?: number
           skipped_count?: number

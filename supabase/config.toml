@@ -86,6 +86,10 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.email-unsubscribe]
     verify_jwt = false
+  [functions.resend-broadcast-send]
+    verify_jwt = false
+  [functions.resend-events]
+    verify_jwt = false
 
 
 
