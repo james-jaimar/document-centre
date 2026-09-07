@@ -7,7 +7,7 @@ import {
   normalizeResendApiKey,
   ResendApiError,
   validateResendApiKey,
-} from "./resend.ts";
+} from "../_shared/resend.ts";
 
 Deno.test("normalizes harmless surrounding whitespace", () => {
   assertEquals(normalizeResendApiKey("  re_abcdefghijklmnopqrstuvwxyz  \n"), "re_abcdefghijklmnopqrstuvwxyz");
