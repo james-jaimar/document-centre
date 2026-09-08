@@ -52,6 +52,8 @@ interface CampaignRow {
   status: string;
   created_at: string;
   audience: string | null;
+  error_message?: string | null;
+
 }
 
 const AUDIENCE_LABEL: Record<Audience, string> = {
