@@ -26,6 +26,8 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
   const [messageText, setMessageText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<SelectedAttachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [messageType, setMessageType] = useState<"customer" | "private">("customer");
+  const isPrivate = messageType === "private";
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
