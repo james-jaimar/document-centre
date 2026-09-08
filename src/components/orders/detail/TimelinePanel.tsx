@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, Clock, Send } from "lucide-react";
+import { MessageSquare, Clock, Send, Lock } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendMessage } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,6 +26,8 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
   const [messageText, setMessageText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<SelectedAttachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [messageType, setMessageType] = useState<"customer" | "private">("customer");
+  const isPrivate = messageType === "private";
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -51,13 +54,14 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
         order_id: orderId,
         message_body: body,
         sender_type: "admin",
-        is_internal: false,
+        is_internal: isPrivate,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
       setMessageText("");
       setPendingFiles([]);
+      setMessageType("customer");
       queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] });
-      toast.success("Message sent");
+      toast.success(isPrivate ? "Private note saved" : "Message sent");
     } catch (err: any) {
       toast.error(err.message || "Failed to send message");
     } finally {
@@ -87,12 +91,35 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
       </div>
 
       {/* Message composer */}
-      <div className="rounded-lg border bg-card p-3 space-y-2">
+      <div
+        className={cn(
+          "rounded-lg border p-3 space-y-2",
+          isPrivate ? "bg-muted border-amber-300" : "bg-card",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground shrink-0">Message type</span>
+          <Select value={messageType} onValueChange={(v) => setMessageType(v as "customer" | "private")}>
+            <SelectTrigger className="h-7 text-xs w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="customer">Message customer</SelectItem>
+              <SelectItem value="private">Private note (internal)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {isPrivate && (
+          <p className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
+            <Lock className="h-3 w-3" />
+            Private note — internal only, the customer will not see this.
+          </p>
+        )}
         <Textarea
           value={messageText}
           onChange={(e) => setMessageText(e.target.value)}
-          placeholder="Type a message..."
-          className="min-h-[60px] text-sm resize-none"
+          placeholder={isPrivate ? "Internal note for the team..." : "Type a message..."}
+          className="min-h-[60px] text-sm resize-none bg-background"
         />
         <MessageAttachmentInput
           files={pendingFiles}
@@ -106,8 +133,8 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
             onClick={handleSend}
             className="h-7 gap-1 text-xs"
           >
-            <Send className="h-3 w-3" />
-            {sending ? "Sending..." : "Send"}
+            {isPrivate ? <Lock className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+            {sending ? "Saving..." : isPrivate ? "Save note" : "Send"}
           </Button>
         </div>
       </div>
@@ -124,14 +151,22 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
               {item._type === "message" ? (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold">
+                    <span className="flex items-center gap-1 text-xs font-semibold">
+                      {item.is_internal && <Lock className="h-3 w-3 text-muted-foreground" />}
                       {item.sender_type === "customer" ? "Customer" : "Admin"}
+                      {item.is_internal && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Internal
+                        </span>
+                      )}
                     </span>
                     <span className="text-[10px] text-muted-foreground">{getTimeAgo(item.created_at)}</span>
                   </div>
                   <div className={cn(
                     "rounded-md px-3 py-2 text-xs",
-                    item.sender_type === "customer"
+                    item.is_internal
+                      ? "bg-muted text-muted-foreground border border-dashed border-border"
+                      : item.sender_type === "customer"
                       ? "bg-amber-50 text-amber-900 border border-amber-200"
                       : "bg-primary/10 text-foreground border border-primary/20"
                   )}>
