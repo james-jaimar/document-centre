@@ -184,9 +184,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     const map: Record<string, TemplatedPlaceholderValue> = {};
     for (const v of s.placeholders ?? []) {
       const def = (s.placeholder_defs ?? []).find((d) => d.id === v.placeholder_id);
-      map[v.placeholder_id] = capWatermark(def, v);
+      const page = v.kind === "image" ? (v.page_index ?? null) : null;
+      map[valueKey(v.placeholder_id, page)] = capWatermark(def, v);
     }
     setValues(map);
+    setPerPageIds(s.per_page_placeholder_ids ?? []);
     const q = (orderItem?.spec as any)?.quantity;
     if (typeof q === "number" && q > 0) setQuantity(q);
   }, [orderItem?.spec]);
