@@ -621,9 +621,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   // ── Stock photo library (Pexels)
   const { settings: photoLibrary } = usePhotoLibraryForProduct(family as any);
   const [libraryFor, setLibraryFor] = useState<string | null>(null);
+  /** `libraryFor` is a value key — it may carry a page suffix. */
+  const libraryTarget = useMemo(() => {
+    if (!libraryFor) return null;
+    const [id, pg] = libraryFor.split("@");
+    return { id, page: pg == null ? null : Number(pg) };
+  }, [libraryFor]);
   const libraryPlaceholder = useMemo(
-    () => placeholders.find((p) => p.id === libraryFor) ?? null,
-    [placeholders, libraryFor],
+    () => placeholders.find((p) => p.id === libraryTarget?.id) ?? null,
+    [placeholders, libraryTarget],
   );
   const usedStockIds = useMemo(
     () =>
