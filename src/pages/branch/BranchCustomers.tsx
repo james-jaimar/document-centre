@@ -55,21 +55,6 @@ export default function BranchCustomers() {
     });
   };
 
-  const handleImpersonate = async (c: BranchCustomerRow) => {
-    if (!tenantId) return;
-    try {
-      const path = branchSlug ? `/${branchSlug}` : "/";
-      await startImpersonation({
-        target_profile_id: c.profile_id,
-        tenant_id: tenantId,
-        branch_id: branchId ?? null,
-        return_to: window.location.pathname + window.location.search,
-        redirect_to: path,
-      });
-    } catch (e: any) {
-      toast({ title: "Could not log in as customer", description: e?.message, variant: "destructive" });
-    }
-  };
 
   return (
     <div className="space-y-6 p-6">
