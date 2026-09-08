@@ -330,7 +330,8 @@ Deno.serve(async (req) => {
     } catch (e) {
       const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
       await admin.from("platform_email_campaigns")
-        .update({ status: "failed", failed_count: sendable.length }).eq("id", campaignId);
+        .update({ status: "failed", failed_count: sendable.length, error_message: msg }).eq("id", campaignId);
+
       return json({ provider: "resend", campaign_id: campaignId, error: msg, results }, 200);
     }
 
