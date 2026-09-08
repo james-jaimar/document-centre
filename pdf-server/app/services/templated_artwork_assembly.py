@@ -976,7 +976,17 @@ def assemble_templated_artwork(
         geo_key = (
             round(page_w_pt, 2), round(page_h_pt, 2),
             round(trim_x_pt, 2), round(trim_top_pt, 2),
-            page_index if has_page_scoped else -1,
+            page_index if (has_page_scoped or has_per_page_values) else -1,
+        )
+
+        # This page's content: its own pictures first, then the repeated ones.
+        pg_values = {**values, **page_values.get(page_index, {})}
+        pg_images = {**images, **page_images.get(page_index, {})}
+        # A shared JPEG cache would reuse one page's photo everywhere.
+        pg_jpeg_cache = (
+            jpeg_cache_by_page.setdefault(page_index, {})
+            if has_per_page_values
+            else jpeg_cache
         )
 
         # 1. Boxes that sit BEHIND the template artwork.
