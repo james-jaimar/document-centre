@@ -522,8 +522,13 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handlePickFile = useCallback(
-    async (placeholderId: string, rawFile: File, source?: StockImageSource | null) => {
-      setBusyId(placeholderId);
+    async (
+      placeholderId: string,
+      rawFile: File,
+      source?: StockImageSource | null,
+      page?: number | null,
+    ) => {
+      setBusyId(valueKey(placeholderId, page ?? null));
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
         const wasPdf = isPdf;
