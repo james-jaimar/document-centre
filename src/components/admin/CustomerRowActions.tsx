@@ -53,6 +53,7 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
   const [password, setPassword] = useState("");
   const [removeOpen, setRemoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [loginAsOpen, setLoginAsOpen] = useState(false);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant-customers"] });
