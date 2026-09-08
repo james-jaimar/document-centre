@@ -429,15 +429,48 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [placeholders],
   );
 
-  /** Write a value to a box and to every box sharing its field name. */
+  /** Write a value to a box and to every box sharing its field name.
+   *  `page` is set when the picture applies to one page only. */
   const applyValue = useCallback(
-    (p: ArtworkPlaceholder, v: TemplatedPlaceholderValue | null) => {
+    (p: ArtworkPlaceholder, v: TemplatedPlaceholderValue | null, page?: number | null) => {
       const targets = siblingsOf(p);
       setValues((prev) => {
         const next = { ...prev };
         for (const t of targets) {
-          if (v == null) delete next[t.id];
-          else next[t.id] = capWatermark(t, { ...v, placeholder_id: t.id });
+          const k = valueKey(t.id, page ?? null);
+          if (v == null) delete next[k];
+          else
+            next[k] = capWatermark(t, {
+              ...v,
+              placeholder_id: t.id,
+              ...(page == null ? {} : { page_index: page }),
+            } as TemplatedPlaceholderValue);
+        }
+        return next;
+      });
+    },
+    [siblingsOf],
+  );
+
+  /** Switch a box between "same picture everywhere" and "one per page". */
+  const setPerPage = useCallback(
+    (p: ArtworkPlaceholder, on: boolean) => {
+      const ids = siblingsOf(p).map((t) => t.id);
+      setPerPageIds((prev) =>
+        on ? Array.from(new Set([...prev, ...ids])) : prev.filter((id) => !ids.includes(id)),
+      );
+      // Keep the first picture, drop the rest, so switching back and forth
+      // never leaves stray artwork behind.
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const id of ids) {
+          const own = Object.entries(prev).filter(([k]) => keyBelongsTo(k, id));
+          const keep = own.find(([, v]) => !!v)?.[1];
+          for (const [k] of own) delete next[k];
+          if (keep) {
+            const k = valueKey(id, on ? 0 : null);
+            next[k] = { ...keep, ...(on ? { page_index: 0 } : { page_index: null }) } as TemplatedPlaceholderValue;
+          }
         }
         return next;
       });
