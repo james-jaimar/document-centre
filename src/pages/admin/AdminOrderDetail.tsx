@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useMarkOrderReadStaff } from "@/hooks/useUnreadMessages";
+import { ImpersonateCustomerButton } from "@/components/admin/ImpersonateCustomer";
 
 
 export default function AdminOrderDetail() {
