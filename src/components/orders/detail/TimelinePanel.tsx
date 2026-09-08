@@ -91,12 +91,35 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
       </div>
 
       {/* Message composer */}
-      <div className="rounded-lg border bg-card p-3 space-y-2">
+      <div
+        className={cn(
+          "rounded-lg border p-3 space-y-2",
+          isPrivate ? "bg-muted border-amber-300" : "bg-card",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground shrink-0">Message type</span>
+          <Select value={messageType} onValueChange={(v) => setMessageType(v as "customer" | "private")}>
+            <SelectTrigger className="h-7 text-xs w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="customer">Message customer</SelectItem>
+              <SelectItem value="private">Private note (internal)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {isPrivate && (
+          <p className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
+            <Lock className="h-3 w-3" />
+            Private note — internal only, the customer will not see this.
+          </p>
+        )}
         <Textarea
           value={messageText}
           onChange={(e) => setMessageText(e.target.value)}
-          placeholder="Type a message..."
-          className="min-h-[60px] text-sm resize-none"
+          placeholder={isPrivate ? "Internal note for the team..." : "Type a message..."}
+          className="min-h-[60px] text-sm resize-none bg-background"
         />
         <MessageAttachmentInput
           files={pendingFiles}
@@ -110,8 +133,8 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
             onClick={handleSend}
             className="h-7 gap-1 text-xs"
           >
-            <Send className="h-3 w-3" />
-            {sending ? "Sending..." : "Send"}
+            {isPrivate ? <Lock className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+            {sending ? "Saving..." : isPrivate ? "Save note" : "Send"}
           </Button>
         </div>
       </div>
