@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useMarkOrderReadStaff } from "@/hooks/useUnreadMessages";
+import { ImpersonateCustomerButton } from "@/components/admin/ImpersonateCustomer";
 
 
 export default function AdminOrderDetail() {
@@ -125,6 +126,20 @@ export default function AdminOrderDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {orderedByProfile?.id && (
+            <ImpersonateCustomerButton
+              profileId={orderedByProfile.id}
+              email={orderedByProfile.email ?? order.customer_email ?? null}
+              name={
+                [orderedByProfile.first_name, orderedByProfile.last_name].filter(Boolean).join(" ") ||
+                orderedByProfile.display_name ||
+                null
+              }
+              branchId={(order as any).branch_id ?? null}
+              rest={`/orders/${order.id}`}
+              label="Open as customer"
+            />
+          )}
           {!isCancelled && !["dispatched", "completed"].includes(order.admin_status) && (
             <Button size="sm" variant="outline" onClick={() => setChangeQtyOpen(true)}>
               <PencilLine className="mr-2 h-4 w-4" /> Change quantities

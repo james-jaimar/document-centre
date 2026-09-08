@@ -19,22 +19,16 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { resolveDisplayName } from "@/lib/displayName";
 import { BranchCustomerEditDialog } from "@/components/branch/BranchCustomerEditDialog";
 import { AddCustomerDialog } from "@/components/branch/AddCustomerDialog";
-import { useImpersonation } from "@/contexts/ImpersonationContext";
-import { useBranch } from "@/contexts/BranchContext";
-import { toast } from "@/hooks/use-toast";
+import { ImpersonateCustomerDialog } from "@/components/admin/ImpersonateCustomer";
 
 export default function BranchCustomers() {
   const { tenantId, appId, branchId } = useTenantContext();
-  const { branches } = useBranch();
   const { data, isLoading, error } = useBranchCustomers();
   const manage = useManageUser();
-  const { startImpersonation } = useImpersonation();
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<BranchCustomerRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-
-  const currentBranch = branches.find((b) => b.id === branchId);
-  const branchSlug = currentBranch ? (currentBranch.url_slug || currentBranch.slug) : null;
+  const [loginAs, setLoginAs] = useState<BranchCustomerRow | null>(null);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -61,21 +55,6 @@ export default function BranchCustomers() {
     });
   };
 
-  const handleImpersonate = async (c: BranchCustomerRow) => {
-    if (!tenantId) return;
-    try {
-      const path = branchSlug ? `/${branchSlug}` : "/";
-      await startImpersonation({
-        target_profile_id: c.profile_id,
-        tenant_id: tenantId,
-        branch_id: branchId ?? null,
-        return_to: window.location.pathname + window.location.search,
-        redirect_to: path,
-      });
-    } catch (e: any) {
-      toast({ title: "Could not log in as customer", description: e?.message, variant: "destructive" });
-    }
-  };
 
   return (
     <div className="space-y-6 p-6">
@@ -160,7 +139,7 @@ export default function BranchCustomers() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => handleImpersonate(c)}
+                            onClick={() => setLoginAs(c)}
                             disabled={!c.email}
                           >
                             <LogIn className="h-4 w-4 mr-2" /> Log in as customer
@@ -202,6 +181,17 @@ export default function BranchCustomers() {
             phone: editTarget.phone,
             email: editTarget.email,
           }}
+        />
+      )}
+
+      {loginAs && (
+        <ImpersonateCustomerDialog
+          open={!!loginAs}
+          onOpenChange={(v) => !v && setLoginAs(null)}
+          profileId={loginAs.profile_id}
+          email={loginAs.email}
+          name={resolveDisplayName(loginAs, "")}
+          branchId={branchId ?? null}
         />
       )}
 

@@ -15,10 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  KeyRound, Mail, MoreHorizontal, Pencil, Trash2, UserCheck, UserMinus, UserX, Lock,
+  KeyRound, LogIn, Mail, MoreHorizontal, Pencil, Trash2, UserCheck, UserMinus, UserX, Lock,
 } from "lucide-react";
 import { useManageUser } from "@/hooks/useManageUser";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
+import { ImpersonateCustomerDialog } from "@/components/admin/ImpersonateCustomer";
 
 export interface CustomerRowActionsTarget {
   profile_id: string;
@@ -52,6 +53,7 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
   const [password, setPassword] = useState("");
   const [removeOpen, setRemoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [loginAsOpen, setLoginAsOpen] = useState(false);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant-customers"] });
@@ -84,6 +86,10 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           {extraItems}
+          <DropdownMenuItem disabled={!customer.email} onClick={() => setLoginAsOpen(true)}>
+            <LogIn className="h-4 w-4 mr-2" /> Log in as customer
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-2" /> Edit details
           </DropdownMenuItem>
@@ -119,6 +125,18 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ImpersonateCustomerDialog
+        open={loginAsOpen}
+        onOpenChange={setLoginAsOpen}
+        profileId={customer.profile_id}
+        email={customer.email}
+        name={
+          [customer.first_name, customer.last_name].filter(Boolean).join(" ") ||
+          customer.display_name ||
+          null
+        }
+      />
 
       <EditCustomerDialog
         open={editOpen}

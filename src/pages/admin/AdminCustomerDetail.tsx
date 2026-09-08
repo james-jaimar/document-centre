@@ -29,6 +29,7 @@ import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerA
 import { buildAdminPath } from "@/lib/adminRouting";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
 import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
+import { ImpersonateCustomerButton } from "@/components/admin/ImpersonateCustomer";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { CustomerAccountSettings } from "@/components/admin/CustomerAccountSettings";
 import { CustomerCompanySettings } from "@/components/admin/CustomerCompanySettings";
@@ -153,6 +154,18 @@ export default function AdminCustomerDetail() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {profile && (
+            <ImpersonateCustomerButton
+              profileId={profile.id}
+              email={profile.email}
+              name={
+                [profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
+                profile.display_name ||
+                null
+              }
+              variant="default"
+            />
+          )}
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-1" /> Edit
           </Button>
