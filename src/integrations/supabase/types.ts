@@ -5105,6 +5105,7 @@ export type Database = {
           body_text_snapshot: string | null
           created_at: string
           created_by: string | null
+          error_message: string | null
           failed_count: number
           id: string
           kind: string
@@ -5128,6 +5129,7 @@ export type Database = {
           body_text_snapshot?: string | null
           created_at?: string
           created_by?: string | null
+          error_message?: string | null
           failed_count?: number
           id?: string
           kind?: string
@@ -5151,6 +5153,7 @@ export type Database = {
           body_text_snapshot?: string | null
           created_at?: string
           created_by?: string | null
+          error_message?: string | null
           failed_count?: number
           id?: string
           kind?: string
