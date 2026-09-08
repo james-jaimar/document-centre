@@ -11,6 +11,7 @@ import {
   DEFAULT_TEXT_STYLE,
   cmykToHex,
   fontCss,
+  pickForPage,
   placeholdersForPage,
   splitByLayer,
   type ArtworkPlaceholder,
