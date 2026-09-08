@@ -278,6 +278,10 @@ export interface TemplatedImageValue {
   opacity?: number;
   /** Set when the image came from a stock library instead of a customer file. */
   source?: StockImageSource | null;
+  /** Zero-based page this picture belongs to. Absent/null = every page. */
+  page_index?: number | null;
+  /** 1-based page of `source_pdf_path` to place (multi-page supplied files). */
+  source_pdf_page?: number;
 }
 
 /** Provenance for a library photo — kept so the photographer can be credited. */
