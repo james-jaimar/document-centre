@@ -532,27 +532,28 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
         const wasPdf = isPdf;
-        // PNG, not JPEG: keeps alpha so white-only vector artwork stays
-        // transparent instead of arriving as a solid white block.
-        const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
         const itemId = await ensureOrder();
-        const uploaded = await uploadPhoto(file, itemId);
-        if (!uploaded) return;
+        const ph = placeholders.find((p) => p.id === placeholderId);
+        const totalPages = template?.page_count ?? pages.length ?? 1;
+
         // Keep the original vector PDF too — the print composer places it as a
         // form XObject (with a transparency group when opacity < 1) instead of
         // using the rasterised proof image.
         let sourcePdfPath: string | null = null;
         if (isPdf) {
           try {
-            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-source.pdf`;
+            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${page ?? "all"}-source.pdf`;
             await uploadToS3(sourcePdfPath, rawFile);
           } catch (err) {
             console.warn("[templated-artwork] original PDF upload failed", err);
             sourcePdfPath = null;
           }
         }
-        const ph = placeholders.find((p) => p.id === placeholderId);
-        const next: TemplatedImageValue = {
+
+        const buildValue = (
+          uploaded: { documentId?: string | null; storagePath: string; fileName: string; mimeType: string; width: number; height: number },
+          pdfPage?: number,
+        ): TemplatedImageValue => ({
           placeholder_id: placeholderId,
           kind: "image",
           document_id: uploaded.documentId,
@@ -561,6 +562,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           mime_type: uploaded.mimeType,
           source_was_pdf: wasPdf,
           source_pdf_path: sourcePdfPath,
+          ...(pdfPage ? { source_pdf_page: pdfPage } : {}),
           source_width_px: uploaded.width,
           source_height_px: uploaded.height,
           fit: ph?.fit_mode ?? "fill",
@@ -570,9 +572,42 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           background_hex: ph?.background_hex ?? null,
           opacity: ph?.is_watermark ? Math.min(ph?.opacity ?? 0.1, 0.1) : (ph?.opacity ?? 1),
           source: source ?? null,
-        };
-        if (ph) applyValue(ph, next);
-        else setValues((prev) => ({ ...prev, [placeholderId]: next }));
+        });
+
+        // A multi-page PDF dropped onto a per-page box fills one page each:
+        // page 1 → first month, page 2 → second, and so on.
+        if (isPdf && page != null) {
+          const rendered = await rasterisePdfPages(rawFile, {
+            targetLongPx: 2000,
+            maxPages: totalPages,
+          });
+          if (rendered.length > 1) {
+            for (let i = 0; i < Math.min(rendered.length, totalPages); i++) {
+              const blob = await (await fetch(rendered[i].dataUrl)).blob();
+              const pageFile = new File(
+                [blob],
+                rawFile.name.replace(/\.pdf$/i, "") + `-p${i + 1}.png`,
+                { type: "image/png" },
+              );
+              const up = await uploadPhoto(pageFile, itemId);
+              if (!up) continue;
+              const v = buildValue(up, i + 1);
+              if (ph) applyValue(ph, v, i);
+              else setValues((prev) => ({ ...prev, [valueKey(placeholderId, i)]: v }));
+            }
+            toast.success(`Placed ${Math.min(rendered.length, totalPages)} pages of your file`);
+            return;
+          }
+        }
+
+        // PNG, not JPEG: keeps alpha so white-only vector artwork stays
+        // transparent instead of arriving as a solid white block.
+        const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
+        const uploaded = await uploadPhoto(file, itemId);
+        if (!uploaded) return;
+        const next = buildValue(uploaded, isPdf ? 1 : undefined);
+        if (ph) applyValue(ph, next, page ?? null);
+        else setValues((prev) => ({ ...prev, [valueKey(placeholderId, page ?? null)]: next }));
       } catch (err: any) {
         console.error("[templated-artwork] upload failed", err);
         toast.error(err?.message ?? "Upload failed");
@@ -580,7 +615,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [ensureOrder, uploadPhoto, placeholders, applyValue],
+    [ensureOrder, uploadPhoto, placeholders, applyValue, template?.page_count, pages.length],
   );
 
   // ── Stock photo library (Pexels)
