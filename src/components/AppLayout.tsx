@@ -4,6 +4,7 @@ import AppSidebar from "@/components/AppSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
+import NewOrderBell from "@/components/admin/NewOrderBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { useMessageDesktopAlerts } from "@/hooks/useMessageDesktopAlerts";
@@ -36,6 +37,7 @@ export default function AppLayout() {
       <AppSidebar unreadOrderCount={totalUnread} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-12 items-center justify-end gap-2 border-b bg-background px-4">
+          <NewOrderBell ordersBasePath={buildAdminPath("/admin/orders", tenantId)} scopeToBranch={false} />
           <StaffMessagesBell ordersBasePath={buildAdminPath("/admin/orders", tenantId)} />
         </header>
         <main className="flex-1 overflow-auto p-6">

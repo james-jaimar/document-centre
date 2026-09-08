@@ -6,6 +6,7 @@ import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import { AlertCircle, Mail } from "lucide-react";
 import StaffMessagesBell from "@/components/staff/StaffMessagesBell";
+import NewOrderBell from "@/components/admin/NewOrderBell";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 import { useDocumentTitleUnread } from "@/hooks/useDocumentTitleUnread";
 import { useMessageDesktopAlerts } from "@/hooks/useMessageDesktopAlerts";
@@ -88,7 +89,10 @@ export default function BranchLayout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-12 items-center justify-between gap-2 border-b bg-background px-4">
           <BranchSwitcher />
-          <StaffMessagesBell ordersBasePath="/branch/orders" />
+          <div className="flex items-center gap-1">
+            <NewOrderBell ordersBasePath="/branch/orders" />
+            <StaffMessagesBell ordersBasePath="/branch/orders" />
+          </div>
         </header>
         <SubscriptionGateBanner />
         <EmailNotConfiguredBanner />

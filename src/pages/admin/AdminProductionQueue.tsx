@@ -29,6 +29,7 @@ const ACTIVE_STATUSES = [
   "awaiting_files",
   "approved_for_production",
   "in_production",
+  "sent_to_print",
   "outsourced",
   "qa",
 ];
