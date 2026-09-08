@@ -205,27 +205,33 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       trim_offset_y_mm: template?.trim_offset_y_mm,
       bleed_mm: template?.bleed_mm,
 
-      placeholders: placeholders
-        .map((p) => {
-          const v = values[p.id];
-          if (v) return v;
-          // Colour boxes always ship a value so the composer paints the default.
-          if (p.kind === "colour") {
-            return {
+      placeholders: placeholders.flatMap((p) => {
+        // Every value belonging to this box: the page-agnostic one and/or a
+        // per-page picture for each page the customer filled in.
+        const own = Object.entries(values)
+          .filter(([k]) => keyBelongsTo(k, p.id))
+          .map(([, v]) => v);
+        if (own.length > 0) return own;
+        // Colour boxes always ship a value so the composer paints the default.
+        if (p.kind === "colour") {
+          return [
+            {
               placeholder_id: p.id,
               kind: "colour" as const,
               cmyk: normaliseCmyk(p.default_cmyk ?? DEFAULT_CMYK),
               opacity: p.opacity ?? 1,
-            };
-          }
-          return null;
-        })
-        .filter(Boolean) as TemplatedPlaceholderValue[],
+            },
+          ];
+        }
+        return [];
+      }) as TemplatedPlaceholderValue[],
+
+      per_page_placeholder_ids: perPageIds,
 
       // Geometry snapshot for the print-ready composer.
       placeholder_defs: placeholders,
     }),
-    [templateId, template, placeholders, values],
+    [templateId, template, placeholders, values, perPageIds],
   );
 
   // Debounced persist onto the order item.
