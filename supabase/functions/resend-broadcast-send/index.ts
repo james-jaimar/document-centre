@@ -144,19 +144,21 @@ Deno.serve(async (req) => {
     const from = `${senderLabel} <${account.from_email}>`;
 
     // Broadcast bodies are rendered once; per-person values come from Resend
-    // contact properties.
+    // contact properties, which share the {{{contact.<key>}}} namespace with
+    // the built-in first_name / last_name / email tags.
     const vars: Record<string, string> = {
-      contact_name: "{{{contact.first_name|there}}}",
-      customer_name: "{{{contact.first_name|there}}}",
-      branch_name: "{{{contact.properties.org_name|}}}",
-      company_name: "{{{contact.properties.org_name|}}}",
+      contact_name: contactTag("first_name", "there"),
+      customer_name: contactTag("first_name", "there"),
+      branch_name: contactTag("org_name", tenant.name),
+      company_name: contactTag("org_name", tenant.name),
       tenant_name: tenant.name,
-      activation_link: "{{{contact.properties.action_link|}}}",
-      action_link: "{{{contact.properties.action_link|}}}",
+      activation_link: contactTag("action_link", origin),
+      action_link: contactTag("action_link", origin),
       store_url: origin,
       portal_name: tenant.name,
-      login_email: "{{{contact.email}}}",
+      login_email: contactTag("email"),
     };
+
     const subject = renderTemplate(template.subject, vars, false);
     const bodyHtml = renderTemplate(template.body_html, vars, true);
     const bodyText = template.body_text
