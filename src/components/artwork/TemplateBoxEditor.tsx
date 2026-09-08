@@ -1019,6 +1019,22 @@ export default function TemplateBoxEditor({
                 />
               </div>
             )}
+
+            {active.kind === "image" && (
+              <div className="flex items-start justify-between gap-3 rounded-md border p-2">
+                <div>
+                  <Label className="text-xs">Allow a different picture per page</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Gives the customer a switch to supply their own picture for every page
+                    instead of one picture repeated throughout.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!active.allow_per_page_artwork}
+                  onCheckedChange={(v) => patch(active.id, { allow_per_page_artwork: v })}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
