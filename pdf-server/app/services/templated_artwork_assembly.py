@@ -957,49 +957,61 @@ def assemble_templated_artwork(
                 )
 
 
-        # Collect vector placements once — geometry is identical on every page.
-        if page_index == 0:
-            for d in defs:
-                pid = str(d.get("id") or "")
-                if pid not in vector_ids:
-                    continue
-                value = values.get(pid) or {}
-                w_pt = _num(d.get("width_mm")) * mm
-                h_pt = _num(d.get("height_mm")) * mm
-                if w_pt <= 0 or h_pt <= 0:
-                    continue
-                x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
-                y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
-                try:
-                    src_reader = PdfReader(str(vector_sources[pid]))
-                    src_box = src_reader.pages[0].mediabox
-                    src_w = float(src_box.width)
-                    src_h = float(src_box.height)
-                except Exception as exc:  # noqa: BLE001
-                    log.warning("templated_artwork: unreadable vector source: %s", exc)
-                    continue
-                dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, src_w, src_h, value)
-                alpha = _num(
-                    value.get("opacity")
-                    if value.get("opacity") is not None
-                    else d.get("opacity"),
-                    1.0,
-                )
-                placements.append(
-                    {
-                        "source": vector_sources[pid],
-                        "clip_x": x_pt,
-                        "clip_y": y_pt,
-                        "clip_w": w_pt,
-                        "clip_h": h_pt,
-                        "x": x_pt + dx,
-                        "y": y_pt + h_pt - dy - dh,
-                        "w": dw,
-                        "h": dh,
-                        "alpha": max(0.0, min(1.0, alpha if alpha else 1.0)),
-                        "layer": _layer_of(d),
-                    }
-                )
+        # Which placeholders are served from the original PDF on THIS sheet.
+        # Per-page artwork means the answer can differ page by page, so the
+        # raster layer's skip list is rebuilt for every sheet.
+        page_vector_ids: set[str] = set()
+        for d in defs:
+            pid = str(d.get("id") or "")
+            per_key = f"{pid}@{page_index}"
+            vkey = per_key if per_key in vector_sources else (
+                pid if pid in vector_sources else None
+            )
+            if not vkey:
+                continue
+            value = (page_values.get(page_index) or {}).get(pid) or values.get(pid) or {}
+            w_pt = _num(d.get("width_mm")) * mm
+            h_pt = _num(d.get("height_mm")) * mm
+            if w_pt <= 0 or h_pt <= 0:
+                continue
+            x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
+            y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
+            src_pdf, src_page_no = vector_sources[vkey]
+            try:
+                src_reader = PdfReader(str(src_pdf))
+                idx0 = min(max(src_page_no, 1), len(src_reader.pages)) - 1
+                src_box = src_reader.pages[idx0].mediabox
+                src_w = float(src_box.width)
+                src_h = float(src_box.height)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("templated_artwork: unreadable vector source: %s", exc)
+                raster_fallbacks.append(f"{vkey}: {exc}")
+                continue
+            dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, src_w, src_h, value)
+            alpha = _num(
+                value.get("opacity")
+                if value.get("opacity") is not None
+                else d.get("opacity"),
+                1.0,
+            )
+            placements.append(
+                {
+                    "source": src_pdf,
+                    "source_page": src_page_no,
+                    "target_page": page_index,
+                    "clip_x": x_pt,
+                    "clip_y": y_pt,
+                    "clip_w": w_pt,
+                    "clip_h": h_pt,
+                    "x": x_pt + dx,
+                    "y": y_pt + h_pt - dy - dh,
+                    "w": dw,
+                    "h": dh,
+                    "alpha": max(0.0, min(1.0, alpha if alpha else 1.0)),
+                    "layer": _layer_of(d),
+                }
+            )
+            page_vector_ids.add(pid)
 
         composed = page
 
@@ -1015,6 +1027,7 @@ def assemble_templated_artwork(
             round(page_w_pt, 2), round(page_h_pt, 2),
             round(trim_x_pt, 2), round(trim_top_pt, 2),
             page_index if (has_page_scoped or has_per_page_values) else -1,
+            tuple(sorted(page_vector_ids)),
         )
 
         # This page's content: its own pictures first, then the repeated ones.
