@@ -15,10 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  KeyRound, Mail, MoreHorizontal, Pencil, Trash2, UserCheck, UserMinus, UserX, Lock,
+  KeyRound, LogIn, Mail, MoreHorizontal, Pencil, Trash2, UserCheck, UserMinus, UserX, Lock,
 } from "lucide-react";
 import { useManageUser } from "@/hooks/useManageUser";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
+import { ImpersonateCustomerDialog } from "@/components/admin/ImpersonateCustomer";
 
 export interface CustomerRowActionsTarget {
   profile_id: string;
