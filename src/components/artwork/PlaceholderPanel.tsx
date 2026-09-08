@@ -261,6 +261,8 @@ export default function PlaceholderPanel({
         )}
       </div>
 
+      {headerExtra}
+
       <input
         ref={fileRef}
         type="file"
