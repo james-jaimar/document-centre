@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, MessageSquare } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, MessageSquare, PackagePlus } from "lucide-react";
+import { orderRowClass, NewMarker } from "@/pages/admin/AdminOrders";
 import {
   ADMIN_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
@@ -25,7 +26,7 @@ import { useLinkedBranches } from "@/hooks/useLinkedBranches";
 import { Layers, Building2 } from "lucide-react";
 
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
-  "new_order", "under_review", "approved", "in_production", "qa",
+  "new_order", "under_review", "approved", "in_production", "sent_to_print", "qa",
   "ready_for_dispatch", "completed", "on_hold", "cancelled",
 ];
 
@@ -45,10 +46,11 @@ export default function BranchOrders() {
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
   const unreadOnly = searchParams.get("unread") === "1";
+  const unopenedOnly = searchParams.get("unopened") === "1";
   const [unreadFirst, setUnreadFirst] = useState(true);
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || !!branchFilterId;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || unopenedOnly || !!branchFilterId;
 
   const filters: AdminOrderListFilters = useMemo(() => ({
     tenant_id: scopeAll ? undefined : tenantId || undefined,
@@ -58,6 +60,7 @@ export default function BranchOrders() {
       : undefined,
     search: search || undefined,
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
+    unopened_only: unopenedOnly || undefined,
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     page,
     page_size: 25,
@@ -236,6 +239,24 @@ export default function BranchOrders() {
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <button
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              if (unopenedOnly) next.delete("unopened");
+              else next.set("unopened", "1");
+              setSearchParams(next, { replace: true });
+              setPage(1);
+            }}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (unopenedOnly
+                ? "border-amber-500 bg-amber-500 text-white"
+                : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100")
+            }
+          >
+            <PackagePlus className="h-3.5 w-3.5" />
+            Not yet opened
+          </button>
+          <button
             onClick={toggleUnreadOnly}
             className={
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
@@ -339,11 +360,12 @@ export default function BranchOrders() {
                   return [
                     <TableRow
                       key={order.id}
-                      className="cursor-pointer hover:bg-muted/50 text-xs"
+                      className={orderRowClass(order)}
                       onClick={() => navigate(`/branch/orders/${order.id}`)}
                     >
                       <TableCell className="font-mono text-xs font-medium">
                         {order.order_number || "—"}
+                        <NewMarker order={order} />
                       </TableCell>
                       {scopeAll && (
                         <TableCell className="text-xs">
@@ -382,11 +404,12 @@ export default function BranchOrders() {
                 return jobs.map((job: any) => (
                   <TableRow
                     key={job.id}
-                    className="cursor-pointer hover:bg-muted/50 text-xs"
+                    className={orderRowClass(order)}
                     onClick={() => navigate(`/branch/orders/${order.id}`)}
                   >
                     <TableCell className="font-mono text-xs font-medium text-primary">
                       {job.job_number}
+                      <NewMarker order={order} />
                     </TableCell>
                     {scopeAll && (
                       <TableCell className="text-xs">
