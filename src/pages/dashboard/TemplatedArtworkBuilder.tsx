@@ -1270,9 +1270,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             {placing && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <p className="text-sm font-medium">
-                  Placing page {Math.min(placing.done + 1, placing.total)} of {placing.total}…
-                </p>
+                <p className="text-sm font-medium">{placing.label}</p>
                 <p className="max-w-xs text-center text-xs text-muted-foreground">
                   Please stay on this screen — your pages are being added one by one.
                 </p>
@@ -1282,8 +1280,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                     style={{ width: `${Math.round((placing.done / Math.max(1, placing.total)) * 100)}%` }}
                   />
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {placing.done} of {placing.total} added
+                  {placing.failed.length > 0 && ` — page ${placing.failed.join(", ")} failed`}
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    cancelPlacing.current = true;
+                    toast.message("Stopping after this page — anything already added is kept.");
+                  }}
+                >
+                  Stop
+                </Button>
               </div>
             )}
+
           </div>
 
           {/* Filmstrip */}
