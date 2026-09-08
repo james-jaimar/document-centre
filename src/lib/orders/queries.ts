@@ -21,6 +21,7 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
        total_amount, amount_paid, amount_due, currency,
        date_required, turnaround_time_text,
        created_at, updated_at, submitted_at, completed_at,
+       first_opened_at, first_opened_by,
        order_jobs (
          id, job_number, sequence_no, product_name, product_category,
          job_name, job_status, customer_job_status, proof_status, file_status,
@@ -41,6 +42,7 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
     query = query.or(`branch_id.in.(${list}),production_branch_id.in.(${list})`);
   }
   if (filters.admin_status?.length) query = query.in("admin_status", filters.admin_status);
+  if (filters.unopened_only) query = query.is("first_opened_at", null);
   if (filters.payment_status?.length) query = query.in("payment_status", filters.payment_status);
   if (filters.customer_status?.length) query = query.in("customer_status", filters.customer_status);
   if (filters.date_from) query = query.gte("created_at", filters.date_from);

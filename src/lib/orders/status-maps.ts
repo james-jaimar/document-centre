@@ -59,6 +59,7 @@ export const JOB_STATUS_CONFIG: Record<JobStatus, { label: string; color: string
   proof_approved:           { label: 'Proof Approved',     color: 'bg-emerald-100 text-emerald-800' },
   approved_for_production:  { label: 'Approved',           color: 'bg-emerald-100 text-emerald-800' },
   in_production:            { label: 'In Production',      color: 'bg-indigo-100 text-indigo-800' },
+  sent_to_print:            { label: 'Sent to Print',      color: 'bg-violet-100 text-violet-800' },
   outsourced:               { label: 'Outsourced',         color: 'bg-cyan-100 text-cyan-800' },
   qa:                       { label: 'QA',                 color: 'bg-purple-100 text-purple-800' },
   ready:                    { label: 'Ready',              color: 'bg-teal-100 text-teal-800' },

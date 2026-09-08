@@ -39,6 +39,7 @@ export type JobStatus =
   | 'proof_approved'
   | 'approved_for_production'
   | 'in_production'
+  | 'sent_to_print'
   | 'outsourced'
   | 'qa'
   | 'ready'
@@ -450,6 +451,8 @@ export interface AdminOrderListFilters {
   customer_status?: OrderCustomerStatus[];
   date_from?: string;
   date_to?: string;
+  /** Only orders that no staff member has opened yet. */
+  unopened_only?: boolean;
   page?: number;
   page_size?: number;
 }
