@@ -1026,7 +1026,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       {/* Three-zone editor */}
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
         {/* Left rail — layout + placeholder controls */}
-        <div className="min-h-0 space-y-3 overflow-y-auto border-b bg-background p-3 lg:border-b-0 lg:border-r">
+        <div
+          className={`min-h-0 space-y-3 overflow-y-auto border-b bg-background p-3 lg:border-b-0 lg:border-r ${
+            placing ? "pointer-events-none opacity-60" : ""
+          }`}
+        >
           {templates.length > 1 && template && (
             <div className="space-y-1.5">
               <Label className="text-xs">Layout</Label>
