@@ -239,6 +239,39 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [proofOpen, setProofOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const persistTimer = useRef<NodeJS.Timeout | null>(null);
+  /** Latest spec + basket item, so a long upload run can force a save. */
+  const specRef = useRef<TemplatedArtworkSpec | null>(null);
+  const persistCtxRef = useRef<{ id?: string; spec?: any }>({});
+  useEffect(() => {
+    specRef.current = specForSave;
+    persistCtxRef.current = { id: orderItem?.id, spec: orderItem?.spec };
+  }, [specForSave, orderItem?.id, orderItem?.spec]);
+
+  /** Write the current artwork straight away (used after a batch placement). */
+  const persistNow = useCallback(async () => {
+    const { id, spec } = persistCtxRef.current;
+    const current = specRef.current;
+    if (!id || !current?.template_id) return;
+    const base = (spec as any) || {};
+    const { error } = await supabase
+      .from("order_items")
+      .update({
+        spec: {
+          ...base,
+          page_count: template?.page_count ?? 1,
+          quantity,
+          is_color: true,
+          is_duplex: false,
+          selected_options: base.selected_options || {},
+          templated_artwork: current,
+        },
+        quantity,
+      })
+      .eq("id", id);
+    if (error) console.error("[templated-artwork] save failed", error);
+    else setSavedAt(Date.now());
+  }, [template?.page_count, quantity]);
+
   useEffect(() => {
     if (!orderItem?.id || !templateId) return;
     if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -265,6 +298,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       if (persistTimer.current) clearTimeout(persistTimer.current);
     };
   }, [specForSave, quantity, orderItem?.id, orderItem?.spec, template?.page_count, templateId]);
+
 
   // ── Render the template pages
   const [pages, setPages] = useState<RasterisedPage[]>([]);
