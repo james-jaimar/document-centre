@@ -290,11 +290,10 @@ export async function rasterisePdfPages(
       const heightPt = trimPt ? trimPt.height : base.height;
       const mm1 = (pt: number) => Math.round(pt * PT_TO_MM * 10) / 10;
 
-      pages.push({
+      const rendered: RasterisedPage = {
         index: i - 1,
         // Always PNG — JPEG cannot carry the alpha channel.
         dataUrl: out.toDataURL("image/png"),
-
 
         widthPx: out.width,
         heightPx: out.height,
@@ -311,10 +310,25 @@ export async function rasterisePdfPages(
         bleedBottomMm: mm1(bleed.bottom),
         canvasWidthMm: mm1(widthPt + bleed.left + bleed.right),
         canvasHeightMm: mm1(heightPt + bleed.top + bleed.bottom),
-      });
+      };
 
+      if (opts.onPage) {
+        // Streamed mode: hand the page over, then release its canvases so a long
+        // document never holds more than one page's pixels at a time.
+        await opts.onPage(rendered);
+      } else {
+        pages.push(rendered);
+      }
 
+      canvas.width = 0;
+      canvas.height = 0;
+      if (out !== canvas) {
+        out.width = 0;
+        out.height = 0;
+      }
+      try { page.cleanup?.(); } catch { /* ignore */ }
     }
+
   } finally {
     try {
       await doc.cleanup();
