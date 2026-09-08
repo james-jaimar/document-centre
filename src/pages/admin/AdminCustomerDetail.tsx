@@ -154,6 +154,18 @@ export default function AdminCustomerDetail() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {profile && (
+            <ImpersonateCustomerButton
+              profileId={profile.id}
+              email={profile.email}
+              name={
+                [profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
+                profile.display_name ||
+                null
+              }
+              variant="default"
+            />
+          )}
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-1" /> Edit
           </Button>
