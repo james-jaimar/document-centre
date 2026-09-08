@@ -60,7 +60,15 @@ import type {
   StockImageSource,
   TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
-import { DEFAULT_CMYK, normaliseCmyk, placeholdersForPage } from "@/lib/artworkTemplates/types";
+import {
+  DEFAULT_CMYK,
+  keyBelongsTo,
+  normaliseCmyk,
+  pickForPage,
+  placeholdersForPage,
+  valueKey,
+} from "@/lib/artworkTemplates/types";
+import { Switch } from "@/components/ui/switch";
 
 
 
