@@ -110,7 +110,10 @@ export default function PlaceholderPanel({
   onRetryImage,
   onChange,
   onClear,
+  nameOverride,
+  headerExtra,
 }: Props) {
+  const displayName = nameOverride ?? placeholder.name;
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
