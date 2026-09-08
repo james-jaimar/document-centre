@@ -176,7 +176,9 @@ function drawPlaceholder(
     ctx.fillRect(box.x, box.y, box.w, box.h);
     ctx.restore();
   } else if (p.kind === "image") {
-    const img = opts.images[p.id] ?? (sharedId ? opts.images[sharedId] : undefined);
+    const img =
+      pickForPage(opts.images, p.id, opts.pageIndex) ??
+      (sharedId ? pickForPage(opts.images, sharedId, opts.pageIndex) : undefined);
     const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
     ctx.save();
     ctx.globalAlpha = alpha;
