@@ -16,6 +16,7 @@ export const ADMIN_STATUS_CONFIG: Record<OrderAdminStatus, { label: string; colo
   under_review:       { label: 'Under Review',    color: 'bg-amber-100 text-amber-800' },
   approved:           { label: 'Approved',         color: 'bg-emerald-100 text-emerald-800' },
   in_production:      { label: 'In Production',   color: 'bg-indigo-100 text-indigo-800' },
+  sent_to_print:      { label: 'Sent to Print',   color: 'bg-violet-100 text-violet-800' },
   qa:                 { label: 'QA',               color: 'bg-purple-100 text-purple-800' },
   ready_for_dispatch: { label: 'Ready',            color: 'bg-teal-100 text-teal-800' },
   dispatched:         { label: 'Dispatched',        color: 'bg-sky-100 text-sky-800' },
