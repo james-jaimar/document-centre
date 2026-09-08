@@ -151,14 +151,22 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
               {item._type === "message" ? (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold">
+                    <span className="flex items-center gap-1 text-xs font-semibold">
+                      {item.is_internal && <Lock className="h-3 w-3 text-muted-foreground" />}
                       {item.sender_type === "customer" ? "Customer" : "Admin"}
+                      {item.is_internal && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Internal
+                        </span>
+                      )}
                     </span>
                     <span className="text-[10px] text-muted-foreground">{getTimeAgo(item.created_at)}</span>
                   </div>
                   <div className={cn(
                     "rounded-md px-3 py-2 text-xs",
-                    item.sender_type === "customer"
+                    item.is_internal
+                      ? "bg-muted text-muted-foreground border border-dashed border-border"
+                      : item.sender_type === "customer"
                       ? "bg-amber-50 text-amber-900 border border-amber-200"
                       : "bg-primary/10 text-foreground border border-primary/20"
                   )}>
