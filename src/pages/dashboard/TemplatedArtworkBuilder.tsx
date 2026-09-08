@@ -641,18 +641,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   const handlePickStock = useCallback(
     async (photo: StockPhoto) => {
-      if (!libraryFor) return;
-      const placeholderId = libraryFor;
-      setBusyId(placeholderId);
+      if (!libraryTarget) return;
+      const placeholderId = libraryTarget.id;
+      setBusyId(libraryFor);
       try {
         const file = await fetchStockPhotoFile(photo);
-        await handlePickFile(placeholderId, file, {
-          provider: "pexels",
-          photo_id: String(photo.id),
-          photographer: photo.photographer,
-          photographer_url: photo.photographer_url,
-          photo_url: photo.page_url,
-        });
+        await handlePickFile(
+          placeholderId,
+          file,
+          {
+            provider: "pexels",
+            photo_id: String(photo.id),
+            photographer: photo.photographer,
+            photographer_url: photo.photographer_url,
+            photo_url: photo.page_url,
+          },
+          libraryTarget.page,
+        );
         // Licence record — best effort, never blocks the customer.
         try {
           await supabase.from("stock_image_uses").insert({
