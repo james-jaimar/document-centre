@@ -696,16 +696,26 @@ def _stamp_vector_placements(
     stamped = 0
     with pikepdf.open(str(pdf_path), allow_overwriting_input=True) as pdf:
         sources: dict[str, Any] = {}
-        for page in pdf.pages:
+        for page_index, page in enumerate(pdf.pages):
             for pl in placements:
+                # `target_page` None = repeats on every sheet (one picture for
+                # the whole job); an integer pins it to that sheet only.
+                target = pl.get("target_page")
+                if target is not None and int(target) != page_index:
+                    continue
                 src_path = str(pl["source"])
                 try:
                     src = sources.get(src_path)
                     if src is None:
                         src = pikepdf.open(src_path)
                         sources[src_path] = src
+                    src_page = max(1, int(pl.get("source_page") or 1))
+                    if src_page > len(src.pages):
+                        raise ValueError(
+                            f"source PDF has {len(src.pages)} pages, page {src_page} requested"
+                        )
                     form = pdf.copy_foreign(
-                        pikepdf.Page(src.pages[0]).as_form_xobject()
+                        pikepdf.Page(src.pages[src_page - 1]).as_form_xobject()
                     )
                     bbox = [float(v) for v in form.BBox]
                     bw = abs(bbox[2] - bbox[0]) or 1.0
