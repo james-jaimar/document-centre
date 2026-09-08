@@ -19,14 +19,18 @@ import { renderBareEmail } from "../_shared/branded-shell.ts";
 import { htmlToText } from "../_shared/htmlToText.ts";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
+  contactTag,
   createBroadcast,
   createSegment,
+  ensureContactProperties,
   readResendKey,
   ResendApiError,
   segmentExists,
   upsertContact,
+  verifyAccount,
   withResendUnsubscribeFooter,
 } from "../_shared/resend.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -140,19 +144,21 @@ Deno.serve(async (req) => {
     const from = `${senderLabel} <${account.from_email}>`;
 
     // Broadcast bodies are rendered once; per-person values come from Resend
-    // contact properties.
+    // contact properties, which share the {{{contact.<key>}}} namespace with
+    // the built-in first_name / last_name / email tags.
     const vars: Record<string, string> = {
-      contact_name: "{{{contact.first_name|there}}}",
-      customer_name: "{{{contact.first_name|there}}}",
-      branch_name: "{{{contact.properties.org_name|}}}",
-      company_name: "{{{contact.properties.org_name|}}}",
+      contact_name: contactTag("first_name", "there"),
+      customer_name: contactTag("first_name", "there"),
+      branch_name: contactTag("org_name", tenant.name),
+      company_name: contactTag("org_name", tenant.name),
       tenant_name: tenant.name,
-      activation_link: "{{{contact.properties.action_link|}}}",
-      action_link: "{{{contact.properties.action_link|}}}",
+      activation_link: contactTag("action_link", origin),
+      action_link: contactTag("action_link", origin),
       store_url: origin,
       portal_name: tenant.name,
-      login_email: "{{{contact.email}}}",
+      login_email: contactTag("email"),
     };
+
     const subject = renderTemplate(template.subject, vars, false);
     const bodyHtml = renderTemplate(template.body_html, vars, true);
     const bodyText = template.body_text
@@ -178,6 +184,27 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── Pre-flight: key access + verified sending domain ───────────────────
+    const check = await verifyAccount(apiKey, account.from_email);
+    if (!check.ok) {
+      return json({ provider: "resend", error: check.message, results }, 200);
+    }
+
+    // ── Custom contact properties must exist before any contact uses them ──
+    try {
+      await ensureContactProperties(apiKey, [
+        { key: "org_name", type: "string", fallback_value: tenant.name },
+        { key: "action_link", type: "string", fallback_value: origin },
+      ]);
+    } catch (e) {
+      const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
+      return json({
+        provider: "resend",
+        error: `Resend would not set up the personalisation fields (org_name, action_link): ${msg}`,
+        results,
+      }, 200);
+    }
+
     // ── Segment ────────────────────────────────────────────────────────────
     let segmentId: string | null = account.resend_segment_id ?? null;
     if (segmentId && !(await segmentExists(apiKey, segmentId))) segmentId = null;
@@ -185,6 +212,7 @@ Deno.serve(async (req) => {
       segmentId = await createSegment(apiKey, `${tenant.name} — Document Centre`);
       await admin.from("email_accounts").update({ resend_segment_id: segmentId }).eq("id", account.id);
     }
+
 
     // ── Campaign row ───────────────────────────────────────────────────────
     const { data: campaign, error: campErr } = await admin
