@@ -140,6 +140,9 @@ export interface ArtworkPlaceholder {
   default_cmyk: ArtworkCmyk | null;
   /** [colour boxes] Whether the customer may change the colour. */
   customer_editable_colour: boolean;
+  /** [image boxes] Customer may supply a different picture for every page
+   *  instead of one picture repeated across the whole document. */
+  allow_per_page_artwork?: boolean;
 
   /** `all` = every page; `page` = only `page_index`; `pages` = `page_indexes`. */
   page_scope: PlaceholderPageScope;
