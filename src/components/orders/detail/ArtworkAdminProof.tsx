@@ -26,6 +26,7 @@ import type {
   TemplatedPlaceholderValue,
   TemplatedImageValue,
 } from "@/lib/artworkTemplates/types";
+import { valueKey } from "@/lib/artworkTemplates/types";
 
 interface Props {
   /** `configuration.templated_artwork` snapshot, if present. */
@@ -54,7 +55,9 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
   const values: Record<string, TemplatedPlaceholderValue> = useMemo(() => {
     const map: Record<string, TemplatedPlaceholderValue> = {};
     for (const v of (templatedArtwork?.placeholders ?? []) as TemplatedPlaceholderValue[]) {
-      if (v?.placeholder_id) map[v.placeholder_id] = v;
+      if (!v?.placeholder_id) continue;
+      const pg = v.kind === "image" ? ((v as TemplatedImageValue).page_index ?? null) : null;
+      map[valueKey(v.placeholder_id, pg)] = v;
     }
     return map;
   }, [templatedArtwork]);
