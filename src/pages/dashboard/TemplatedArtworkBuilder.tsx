@@ -726,11 +726,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
           const buildBatchSpec = (): TemplatedArtworkSpec => ({
             ...specForSave,
-            placeholders: placeholders.flatMap((placeholder) =>
-              Object.entries(batchValues)
+            placeholders: placeholders.flatMap((placeholder) => {
+              const own = Object.entries(batchValues)
                 .filter(([key]) => keyBelongsTo(key, placeholder.id))
-                .map(([, value]) => value),
-            ) as TemplatedPlaceholderValue[],
+                .map(([, value]) => value);
+              if (own.length > 0) return own;
+              return specForSave.placeholders.filter(
+                (value) => value.placeholder_id === placeholder.id,
+              );
+            }) as TemplatedPlaceholderValue[],
             per_page_placeholder_ids: batchPerPageIds,
           });
 
