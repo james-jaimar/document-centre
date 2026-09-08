@@ -19,14 +19,18 @@ import { renderBareEmail } from "../_shared/branded-shell.ts";
 import { htmlToText } from "../_shared/htmlToText.ts";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
+  contactTag,
   createBroadcast,
   createSegment,
+  ensureContactProperties,
   readResendKey,
   ResendApiError,
   segmentExists,
   upsertContact,
+  verifyAccount,
   withResendUnsubscribeFooter,
 } from "../_shared/resend.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
