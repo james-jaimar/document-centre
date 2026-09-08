@@ -43,8 +43,15 @@ export function useNewOrderDesktopAlerts({ tenantId, branchId, ordersBasePath }:
           if (!row?.id) return;
           if (row.tenant_id && row.tenant_id !== tenantId) return;
           if (branchRef.current && row.branch_id && row.branch_id !== branchRef.current) return;
-          if (!row.submitted_at || row.admin_status !== "new_order") return;
+          // A submitted order does not always land as `new_order`: account /
+          // credit-terms customers are auto-approved and go straight into
+          // production. Alert on anything freshly submitted instead.
+          if (!row.submitted_at) return;
+          if (row.admin_status === "pending_payment" || row.admin_status === "cancelled") return;
+          const submittedAt = new Date(row.submitted_at).getTime();
+          if (!Number.isFinite(submittedAt) || Date.now() - submittedAt > 10 * 60 * 1000) return;
           if (seen.current.has(row.id)) return;
+
           seen.current.add(row.id);
 
           const { desktop, sound, newOrders } = prefsRef.current;
