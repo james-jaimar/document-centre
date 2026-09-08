@@ -29,6 +29,7 @@ import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerA
 import { buildAdminPath } from "@/lib/adminRouting";
 import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
 import { CustomerRowActions } from "@/components/admin/CustomerRowActions";
+import { ImpersonateCustomerButton } from "@/components/admin/ImpersonateCustomer";
 import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
 import { CustomerAccountSettings } from "@/components/admin/CustomerAccountSettings";
 import { CustomerCompanySettings } from "@/components/admin/CustomerCompanySettings";
