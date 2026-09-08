@@ -778,34 +778,55 @@ def assemble_templated_artwork(
     if len(reader.pages) == 0:
         raise ValueError("templated-artwork base PDF has no pages")
 
-    # Download every customer asset once — the same content repeats on all pages.
+    # Download every customer asset once. Repeated content is keyed by the
+    # placeholder id; per-page content by "id@page".
+    image_kinds = {
+        str(d.get("id") or ""): (d.get("kind") or "image") for d in defs
+    }
     images: dict[str, Image.Image] = {}
+    page_images: dict[int, dict[str, Image.Image]] = {}
     vector_sources: dict[str, Path] = {}
-    for idx, d in enumerate(defs):
-        pid = str(d.get("id") or "")
-        v = values.get(pid)
-        if (d.get("kind") or "image") != "image" or not v:
-            continue
+
+    def _fetch_asset(idx: int, pid: str, v: dict[str, Any], page: int | None) -> None:
+        if image_kinds.get(pid, "image") != "image":
+            return
+        tag = f"{idx:03d}" if page is None else f"{idx:03d}-p{page:02d}"
         # Prefer the original vector PDF — placed 1:1, never rasterised.
-        pdf_src = v.get("source_pdf_path")
+        # Per-page artwork always goes down the raster path: vector placements
+        # are collected once and reused across pages.
+        pdf_src = v.get("source_pdf_path") if page is None else None
         if pdf_src:
-            local_pdf = workspace.path(f"ph-{idx:03d}-source.pdf")
+            local_pdf = workspace.path(f"ph-{tag}-source.pdf")
             try:
                 storage.download(str(pdf_src), local_pdf)
                 vector_sources[pid] = local_pdf
-                continue
+                return
             except Exception as exc:  # noqa: BLE001 - fall back to the raster
                 log.warning("templated_artwork: vector source %s failed: %s", pdf_src, exc)
         src = v.get("storage_path")
         if not src:
-            continue
-        local_img = workspace.path(f"ph-{idx:03d}-{Path(str(src)).name}")
+            return
+        local_img = workspace.path(f"ph-{tag}-{Path(str(src)).name}")
         storage.download(str(src), local_img)
         img = ImageOps.exif_transpose(Image.open(local_img))
         if img.mode not in ("RGB", "RGBA", "L", "CMYK"):
             # Keep alpha when the source carries it (e.g. palette PNGs).
             img = img.convert("RGBA" if _has_alpha(img) else "RGB")
-        images[pid] = img
+        if page is None:
+            images[pid] = img
+        else:
+            page_images.setdefault(page, {})[pid] = img
+
+    for idx, d in enumerate(defs):
+        pid = str(d.get("id") or "")
+        v = values.get(pid)
+        if v:
+            _fetch_asset(idx, pid, v, None)
+        for pg, bucket in page_values.items():
+            pv = bucket.get(pid)
+            if pv:
+                _fetch_asset(idx, pid, pv, pg)
+
 
     trim_w_mm = _num(ta.get("trim_width_mm"))
     trim_h_mm = _num(ta.get("trim_height_mm"))
