@@ -4478,6 +4478,8 @@ export type Database = {
           dispatched_at: string | null
           external_code: string | null
           external_order_ref: string | null
+          first_opened_at: string | null
+          first_opened_by: string | null
           fulfillment_type:
             | Database["public"]["Enums"]["fulfillment_type"]
             | null
@@ -4534,6 +4536,8 @@ export type Database = {
           dispatched_at?: string | null
           external_code?: string | null
           external_order_ref?: string | null
+          first_opened_at?: string | null
+          first_opened_by?: string | null
           fulfillment_type?:
             | Database["public"]["Enums"]["fulfillment_type"]
             | null
@@ -4590,6 +4594,8 @@ export type Database = {
           dispatched_at?: string | null
           external_code?: string | null
           external_order_ref?: string | null
+          first_opened_at?: string | null
+          first_opened_by?: string | null
           fulfillment_type?:
             | Database["public"]["Enums"]["fulfillment_type"]
             | null
@@ -8248,6 +8254,7 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: undefined
       }
+      mark_order_opened: { Args: { p_order_id: string }; Returns: undefined }
       next_number: {
         Args: {
           p_app_id: string
