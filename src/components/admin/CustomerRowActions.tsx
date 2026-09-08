@@ -86,6 +86,10 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           {extraItems}
+          <DropdownMenuItem disabled={!customer.email} onClick={() => setLoginAsOpen(true)}>
+            <LogIn className="h-4 w-4 mr-2" /> Log in as customer
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-2" /> Edit details
           </DropdownMenuItem>
