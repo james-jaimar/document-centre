@@ -43,6 +43,7 @@ export type Database = {
       }
       artwork_template_placeholders: {
         Row: {
+          allow_per_page_artwork: boolean
           background_hex: string | null
           corner_radius_mm: number
           created_at: string
@@ -74,6 +75,7 @@ export type Database = {
           z_index: number
         }
         Insert: {
+          allow_per_page_artwork?: boolean
           background_hex?: string | null
           corner_radius_mm?: number
           created_at?: string
@@ -105,6 +107,7 @@ export type Database = {
           z_index?: number
         }
         Update: {
+          allow_per_page_artwork?: boolean
           background_hex?: string | null
           corner_radius_mm?: number
           created_at?: string
