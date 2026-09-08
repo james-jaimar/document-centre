@@ -873,7 +873,6 @@ def assemble_templated_artwork(
     knockout_tol = _num(ta.get("base_knockout_tolerance"), 12.0)
 
     under_defs, over_defs = _split_layers(defs)
-    vector_ids = set(vector_sources)
     placements: list[dict[str, Any]] = []
     knocked_out = False
     base_geometry: dict[str, Any] = {}
@@ -1047,7 +1046,7 @@ def assemble_templated_artwork(
                 under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
                 _render_overlay(
                     under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_under, pg_values, pg_images, vector_ids, pg_jpeg_cache,
+                    page_under, pg_values, pg_images, page_vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
@@ -1078,7 +1077,7 @@ def assemble_templated_artwork(
                 overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
                 _render_overlay(
                     overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_over, pg_values, pg_images, vector_ids, pg_jpeg_cache,
+                    page_over, pg_values, pg_images, page_vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
@@ -1142,6 +1141,8 @@ def assemble_templated_artwork(
         "image_placeholders_filled": len(images) + sum(len(m) for m in page_images.values()),
         "vector_placeholders": len(vector_sources),
         "vector_placements_stamped": vector_stamped,
+        "vector_placements_planned": len(placements),
+        "vector_raster_fallbacks": raster_fallbacks,
         "under_layer_count": len(under_defs),
         "over_layer_count": len(over_defs),
         "base_knockout_applied": knocked_out,
