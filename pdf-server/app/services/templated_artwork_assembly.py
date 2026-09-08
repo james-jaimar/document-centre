@@ -302,6 +302,23 @@ def _has_alpha(img: Image.Image) -> bool:
     return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
 
 
+def _has_transparency(img: Image.Image) -> bool:
+    """True only when the image really has see-through pixels.
+
+    An alpha *channel* is not the same as transparency: a browser-rendered PDF
+    page is RGBA but fully opaque. Treating it as transparent forces the PNG
+    path, and the picture then leaves as RGB — unacceptable for press. So the
+    alpha channel is measured, not assumed.
+    """
+    if not _has_alpha(img):
+        return False
+    try:
+        alpha = img.convert("RGBA").getchannel("A")
+        return (alpha.getextrema() or (255, 255))[0] < 255
+    except Exception:  # noqa: BLE001 - if we cannot tell, keep the alpha
+        return True
+
+
 def _encoded_jpeg(
     img: Image.Image,
     pid: str,
@@ -311,16 +328,16 @@ def _encoded_jpeg(
 ) -> tuple[bytes, bool]:
     """Encoded bytes for this image at the placed size, encoded once.
 
-    Opaque images become CMYK JPEG (press-correct). Images carrying an alpha
-    channel are kept as RGBA PNG so the transparency survives into the PDF —
-    flattening them onto white would turn white-only artwork into a white box.
-    Returns (bytes, has_alpha).
+    Opaque images become CMYK JPEG (press-correct). Only images with genuine
+    see-through pixels stay RGBA PNG, so the transparency survives into the
+    PDF — flattening those onto white would turn white-only artwork into a
+    white box. Returns (bytes, has_alpha).
     """
     target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
     target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
     key = (pid, target_w, target_h)
     hit = cache.get(key)
-    alpha = _has_alpha(img)
+    alpha = _has_transparency(img)
     if hit is not None:
         return hit, alpha
     src = img
@@ -679,16 +696,26 @@ def _stamp_vector_placements(
     stamped = 0
     with pikepdf.open(str(pdf_path), allow_overwriting_input=True) as pdf:
         sources: dict[str, Any] = {}
-        for page in pdf.pages:
+        for page_index, page in enumerate(pdf.pages):
             for pl in placements:
+                # `target_page` None = repeats on every sheet (one picture for
+                # the whole job); an integer pins it to that sheet only.
+                target = pl.get("target_page")
+                if target is not None and int(target) != page_index:
+                    continue
                 src_path = str(pl["source"])
                 try:
                     src = sources.get(src_path)
                     if src is None:
                         src = pikepdf.open(src_path)
                         sources[src_path] = src
+                    src_page = max(1, int(pl.get("source_page") or 1))
+                    if src_page > len(src.pages):
+                        raise ValueError(
+                            f"source PDF has {len(src.pages)} pages, page {src_page} requested"
+                        )
                     form = pdf.copy_foreign(
-                        pikepdf.Page(src.pages[0]).as_form_xobject()
+                        pikepdf.Page(src.pages[src_page - 1]).as_form_xobject()
                     )
                     bbox = [float(v) for v in form.BBox]
                     bw = abs(bbox[2] - bbox[0]) or 1.0
@@ -785,24 +812,34 @@ def assemble_templated_artwork(
     }
     images: dict[str, Image.Image] = {}
     page_images: dict[int, dict[str, Image.Image]] = {}
-    vector_sources: dict[str, Path] = {}
+    # Keyed by placeholder id (repeats on every sheet) or "id@page" (that
+    # sheet only). Value = (local PDF, 1-based page of that PDF to place).
+    vector_sources: dict[str, tuple[Path, int]] = {}
+    downloaded_pdfs: dict[str, Path] = {}
+    raster_fallbacks: list[str] = []
 
     def _fetch_asset(idx: int, pid: str, v: dict[str, Any], page: int | None) -> None:
         if image_kinds.get(pid, "image") != "image":
             return
         tag = f"{idx:03d}" if page is None else f"{idx:03d}-p{page:02d}"
-        # Prefer the original vector PDF — placed 1:1, never rasterised.
-        # Per-page artwork always goes down the raster path: vector placements
-        # are collected once and reused across pages.
-        pdf_src = v.get("source_pdf_path") if page is None else None
+        # Always prefer the customer's original PDF — placed 1:1 as vector,
+        # never the browser's screen render. A multi-page file supplies one
+        # page per sheet; each value says which page of it belongs where.
+        pdf_src = v.get("source_pdf_path")
         if pdf_src:
-            local_pdf = workspace.path(f"ph-{tag}-source.pdf")
+            key = pid if page is None else f"{pid}@{page}"
             try:
-                storage.download(str(pdf_src), local_pdf)
-                vector_sources[pid] = local_pdf
+                local_pdf = downloaded_pdfs.get(str(pdf_src))
+                if local_pdf is None:
+                    local_pdf = workspace.path(f"ph-{tag}-source.pdf")
+                    storage.download(str(pdf_src), local_pdf)
+                    downloaded_pdfs[str(pdf_src)] = local_pdf
+                src_page = int(_num(v.get("source_pdf_page"), 1)) or 1
+                vector_sources[key] = (local_pdf, src_page)
                 return
             except Exception as exc:  # noqa: BLE001 - fall back to the raster
                 log.warning("templated_artwork: vector source %s failed: %s", pdf_src, exc)
+                raster_fallbacks.append(f"{key}: {exc}")
         src = v.get("storage_path")
         if not src:
             return
@@ -836,7 +873,6 @@ def assemble_templated_artwork(
     knockout_tol = _num(ta.get("base_knockout_tolerance"), 12.0)
 
     under_defs, over_defs = _split_layers(defs)
-    vector_ids = set(vector_sources)
     placements: list[dict[str, Any]] = []
     knocked_out = False
     base_geometry: dict[str, Any] = {}
@@ -920,49 +956,61 @@ def assemble_templated_artwork(
                 )
 
 
-        # Collect vector placements once — geometry is identical on every page.
-        if page_index == 0:
-            for d in defs:
-                pid = str(d.get("id") or "")
-                if pid not in vector_ids:
-                    continue
-                value = values.get(pid) or {}
-                w_pt = _num(d.get("width_mm")) * mm
-                h_pt = _num(d.get("height_mm")) * mm
-                if w_pt <= 0 or h_pt <= 0:
-                    continue
-                x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
-                y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
-                try:
-                    src_reader = PdfReader(str(vector_sources[pid]))
-                    src_box = src_reader.pages[0].mediabox
-                    src_w = float(src_box.width)
-                    src_h = float(src_box.height)
-                except Exception as exc:  # noqa: BLE001
-                    log.warning("templated_artwork: unreadable vector source: %s", exc)
-                    continue
-                dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, src_w, src_h, value)
-                alpha = _num(
-                    value.get("opacity")
-                    if value.get("opacity") is not None
-                    else d.get("opacity"),
-                    1.0,
-                )
-                placements.append(
-                    {
-                        "source": vector_sources[pid],
-                        "clip_x": x_pt,
-                        "clip_y": y_pt,
-                        "clip_w": w_pt,
-                        "clip_h": h_pt,
-                        "x": x_pt + dx,
-                        "y": y_pt + h_pt - dy - dh,
-                        "w": dw,
-                        "h": dh,
-                        "alpha": max(0.0, min(1.0, alpha if alpha else 1.0)),
-                        "layer": _layer_of(d),
-                    }
-                )
+        # Which placeholders are served from the original PDF on THIS sheet.
+        # Per-page artwork means the answer can differ page by page, so the
+        # raster layer's skip list is rebuilt for every sheet.
+        page_vector_ids: set[str] = set()
+        for d in defs:
+            pid = str(d.get("id") or "")
+            per_key = f"{pid}@{page_index}"
+            vkey = per_key if per_key in vector_sources else (
+                pid if pid in vector_sources else None
+            )
+            if not vkey:
+                continue
+            value = (page_values.get(page_index) or {}).get(pid) or values.get(pid) or {}
+            w_pt = _num(d.get("width_mm")) * mm
+            h_pt = _num(d.get("height_mm")) * mm
+            if w_pt <= 0 or h_pt <= 0:
+                continue
+            x_pt = trim_x_pt + _num(d.get("x_mm")) * mm
+            y_pt = trim_top_pt - (_num(d.get("y_mm")) * mm) - h_pt
+            src_pdf, src_page_no = vector_sources[vkey]
+            try:
+                src_reader = PdfReader(str(src_pdf))
+                idx0 = min(max(src_page_no, 1), len(src_reader.pages)) - 1
+                src_box = src_reader.pages[idx0].mediabox
+                src_w = float(src_box.width)
+                src_h = float(src_box.height)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("templated_artwork: unreadable vector source: %s", exc)
+                raster_fallbacks.append(f"{vkey}: {exc}")
+                continue
+            dx, dy, dw, dh = _image_draw_rect(w_pt, h_pt, src_w, src_h, value)
+            alpha = _num(
+                value.get("opacity")
+                if value.get("opacity") is not None
+                else d.get("opacity"),
+                1.0,
+            )
+            placements.append(
+                {
+                    "source": src_pdf,
+                    "source_page": src_page_no,
+                    "target_page": page_index,
+                    "clip_x": x_pt,
+                    "clip_y": y_pt,
+                    "clip_w": w_pt,
+                    "clip_h": h_pt,
+                    "x": x_pt + dx,
+                    "y": y_pt + h_pt - dy - dh,
+                    "w": dw,
+                    "h": dh,
+                    "alpha": max(0.0, min(1.0, alpha if alpha else 1.0)),
+                    "layer": _layer_of(d),
+                }
+            )
+            page_vector_ids.add(pid)
 
         composed = page
 
@@ -978,6 +1026,7 @@ def assemble_templated_artwork(
             round(page_w_pt, 2), round(page_h_pt, 2),
             round(trim_x_pt, 2), round(trim_top_pt, 2),
             page_index if (has_page_scoped or has_per_page_values) else -1,
+            tuple(sorted(page_vector_ids)),
         )
 
         # This page's content: its own pictures first, then the repeated ones.
@@ -997,7 +1046,7 @@ def assemble_templated_artwork(
                 under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
                 _render_overlay(
                     under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_under, pg_values, pg_images, vector_ids, pg_jpeg_cache,
+                    page_under, pg_values, pg_images, page_vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
@@ -1028,7 +1077,7 @@ def assemble_templated_artwork(
                 overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
                 _render_overlay(
                     overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_over, pg_values, pg_images, vector_ids, pg_jpeg_cache,
+                    page_over, pg_values, pg_images, page_vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
@@ -1092,6 +1141,8 @@ def assemble_templated_artwork(
         "image_placeholders_filled": len(images) + sum(len(m) for m in page_images.values()),
         "vector_placeholders": len(vector_sources),
         "vector_placements_stamped": vector_stamped,
+        "vector_placements_planned": len(placements),
+        "vector_raster_fallbacks": raster_fallbacks,
         "under_layer_count": len(under_defs),
         "over_layer_count": len(over_defs),
         "base_knockout_applied": knocked_out,
