@@ -750,11 +750,20 @@ def assemble_templated_artwork(
         raise ValueError("templated-artwork job has no base_pdf_path")
 
     defs = [d for d in (ta.get("placeholder_defs") or []) if isinstance(d, dict)]
-    values: dict[str, dict[str, Any]] = {
-        str(v.get("placeholder_id")): v
-        for v in (ta.get("placeholders") or [])
-        if isinstance(v, dict) and v.get("placeholder_id")
-    }
+    # Values without a page_index repeat on every page; values carrying one
+    # apply to that page only ("a different picture for each month").
+    values: dict[str, dict[str, Any]] = {}
+    page_values: dict[int, dict[str, dict[str, Any]]] = {}
+    for v in ta.get("placeholders") or []:
+        if not isinstance(v, dict) or not v.get("placeholder_id"):
+            continue
+        pid = str(v.get("placeholder_id"))
+        pg = v.get("page_index")
+        if pg is None:
+            values[pid] = v
+        else:
+            page_values.setdefault(int(pg), {})[pid] = v
+    has_per_page_values = bool(page_values)
     if not defs:
         raise ValueError(
             "templated-artwork job carries no placeholder_defs — the order was "
