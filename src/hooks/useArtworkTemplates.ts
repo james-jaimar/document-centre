@@ -232,6 +232,8 @@ export function useSaveArtworkPlaceholders() {
           is_watermark: !!p.is_watermark,
           default_cmyk: p.kind === "colour" ? normaliseCmyk(p.default_cmyk) : null,
           customer_editable_colour: p.customer_editable_colour !== false,
+          allow_per_page_artwork: p.kind === "image" && !!p.allow_per_page_artwork,
+
 
           page_scope:
             p.page_scope === "page" ? "page" : p.page_scope === "pages" ? "pages" : "all",
