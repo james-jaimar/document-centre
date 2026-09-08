@@ -297,16 +297,21 @@ Deno.serve(async (req) => {
     }
 
     if (!synced) {
+      const firstError = results.find((r) => r.status === "failed")?.error ?? null;
+      const message = `No contacts could be added to Resend — the broadcast was not created.${
+        firstError ? ` Resend said: ${firstError}` : ""
+      }`;
       await admin.from("platform_email_campaigns")
-        .update({ status: "failed", failed_count: failed }).eq("id", campaignId);
+        .update({ status: "failed", failed_count: failed, error_message: message }).eq("id", campaignId);
       return json({
         provider: "resend",
         campaign_id: campaignId,
-        error: "No contacts could be added to Resend — the broadcast was not created.",
+        error: message,
         totals: { sent: 0, failed, skipped: results.filter((r) => r.status === "skipped").length },
         results,
       }, 200);
     }
+
 
     // ── Broadcast ──────────────────────────────────────────────────────────
     let broadcastId: string;
