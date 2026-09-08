@@ -183,6 +183,7 @@ export async function updateOrderStatus(payload: {
     | "under_review"
     | "approved"
     | "in_production"
+    | "sent_to_print"
     | "qa"
     | "ready_for_dispatch"
     | "dispatched"

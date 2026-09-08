@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   useAlertPrefs,
   getNotificationSupport,
@@ -57,6 +58,23 @@ export function useNewOrderDesktopAlerts({ tenantId, branchId, ordersBasePath }:
           const { desktop, sound, newOrders } = prefsRef.current;
           if (!newOrders) return;
           if (sound) playChime();
+
+          const label = row.order_number ? `Order ${row.order_number}` : "New order";
+          const amount =
+            row.total_amount != null ? ` · ${Number(row.total_amount).toFixed(2)}` : "";
+
+          // Always show an in-app pop-up — this needs no browser permission.
+          toast("New order received", {
+            description: `${label}${amount}`,
+            duration: 15000,
+            action: {
+              label: "Open",
+              onClick: () => {
+                window.location.href = `${basePathRef.current}/${row.id}`;
+              },
+            },
+          });
+
           if (!desktop || getNotificationSupport() !== "granted") return;
 
           try {

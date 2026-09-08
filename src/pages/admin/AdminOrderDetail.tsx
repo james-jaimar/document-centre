@@ -18,6 +18,7 @@ import { ChangeQuantitiesDialog } from "@/components/orders/ChangeQuantitiesDial
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
+import { markOrderOpened } from "@/hooks/useUnopenedOrders";
 import { toast } from "sonner";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
@@ -50,6 +51,21 @@ export default function AdminOrderDetail() {
 
   // Mark customer messages as read whenever admin opens an order.
   useMarkOrderReadStaff(id);
+
+  // Clear the "new order" highlight for the whole team the first time anyone opens it.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    markOrderOpened(id).then(() => {
+      if (cancelled) return;
+      queryClient.invalidateQueries({ queryKey: ["unopened-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["new-orders-count"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, queryClient]);
 
 
   if (isLoading) {

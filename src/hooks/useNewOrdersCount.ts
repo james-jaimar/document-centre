@@ -22,7 +22,8 @@ export function useNewOrdersCount(tenantId?: string | null, branchId?: string | 
       let q = supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
-        .eq("admin_status", "new_order")
+        .is("first_opened_at", null)
+        .neq("admin_status", "cancelled")
         .not("app_id", "is", null)
         .not("submitted_at", "is", null);
       if (tenantId) q = q.eq("tenant_id", tenantId);

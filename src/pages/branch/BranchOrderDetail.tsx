@@ -19,6 +19,7 @@ import { TransferProductionDialog } from "@/components/orders/TransferProduction
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
+import { markOrderOpened } from "@/hooks/useUnopenedOrders";
 import { toast } from "sonner";
 import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
@@ -57,6 +58,21 @@ export default function BranchOrderDetail() {
 
   // Mark customer messages as read whenever staff opens an order.
   useMarkOrderReadStaff(id);
+
+  // Clear the "new order" highlight for the whole team the first time anyone opens it.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    markOrderOpened(id).then(() => {
+      if (cancelled) return;
+      queryClient.invalidateQueries({ queryKey: ["unopened-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["new-orders-count"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, queryClient]);
 
 
   if (isLoading) {

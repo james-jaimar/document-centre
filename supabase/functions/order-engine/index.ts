@@ -763,6 +763,7 @@ const ORDER_STATUS_MAP: Record<string, {
   under_review:       { customer_status: "awaiting_payment", fulfilment_status: "pending" },
   approved:           { customer_status: "in_production",    fulfilment_status: "pending", cascade_job_status: "approved_for_production" },
   in_production:      { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "in_production" },
+  sent_to_print:      { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "sent_to_print" },
   qa:                 { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "qa" },
   ready_for_dispatch: { customer_status: "ready",            fulfilment_status: "ready", cascade_job_status: "ready" },
   dispatched:         { customer_status: "dispatched",       fulfilment_status: "dispatched" },
