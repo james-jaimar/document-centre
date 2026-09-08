@@ -842,6 +842,7 @@ def assemble_templated_artwork(
     base_geometry: dict[str, Any] = {}
     # Encode each placed raster once, and render each distinct page layer once.
     jpeg_cache: dict[tuple[str, int, int], bytes] = {}
+    jpeg_cache_by_page: dict[int, dict[tuple[str, int, int], bytes]] = {}
     layer_cache: dict[tuple[Any, ...], Path] = {}
 
 
@@ -996,7 +997,7 @@ def assemble_templated_artwork(
                 under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
                 _render_overlay(
                     under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_under, values, images, vector_ids, jpeg_cache,
+                    page_under, pg_values, pg_images, vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
@@ -1027,7 +1028,7 @@ def assemble_templated_artwork(
                 overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
                 _render_overlay(
                     overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_over, values, images, vector_ids, jpeg_cache,
+                    page_over, pg_values, pg_images, vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
@@ -1088,7 +1089,7 @@ def assemble_templated_artwork(
         "trim_width_mm": trim_w_mm or None,
         "trim_height_mm": trim_h_mm or None,
         "placeholder_count": len(defs),
-        "image_placeholders_filled": len(images),
+        "image_placeholders_filled": len(images) + sum(len(m) for m in page_images.values()),
         "vector_placeholders": len(vector_sources),
         "vector_placements_stamped": vector_stamped,
         "under_layer_count": len(under_defs),
