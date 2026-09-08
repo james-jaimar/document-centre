@@ -140,6 +140,16 @@ function knockoutWhiteInPlace(canvas: HTMLCanvasElement, tolerance: number) {
  * with no white fill, so this is the correct default behaviour.
  */
 
+export async function pdfPageCount(source: Blob | ArrayBuffer): Promise<number> {
+  const buf = source instanceof Blob ? await source.arrayBuffer() : source;
+  const doc = await (pdfjsLib as any).getDocument({ data: buf.slice(0) }).promise;
+  try {
+    return doc.numPages as number;
+  } finally {
+    try { doc.destroy?.(); } catch { /* ignore */ }
+  }
+}
+
 export async function rasterisePdfPages(
   source: Blob | ArrayBuffer,
   opts: {
@@ -153,6 +163,13 @@ export async function rasterisePdfPages(
     cropTo?: "trim" | "bleed";
     /** Bleed to include when the PDF carries no BleedBox (mm, default 3). */
     bleedMm?: number;
+    /**
+     * Called with each page as soon as it is rendered. When supplied, pages are
+     * NOT accumulated in the returned array — the caller consumes (uploads,
+     * places) each one and the canvas is released before the next is rendered,
+     * which keeps memory flat for long documents.
+     */
+    onPage?: (page: RasterisedPage) => void | Promise<void>;
   } = {},
 ): Promise<RasterisedPage[]> {
   const targetLongPx = opts.targetLongPx ?? 1400;
@@ -163,6 +180,7 @@ export async function rasterisePdfPages(
   const boxes = await readPageBoxes(buf.slice(0));
   const doc = await (pdfjsLib as any).getDocument({ data: buf.slice(0) }).promise;
   const pages: RasterisedPage[] = [];
+
 
   try {
     const count = Math.min(doc.numPages, opts.maxPages ?? doc.numPages);
