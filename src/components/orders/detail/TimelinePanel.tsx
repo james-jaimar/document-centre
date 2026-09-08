@@ -54,13 +54,14 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
         order_id: orderId,
         message_body: body,
         sender_type: "admin",
-        is_internal: false,
+        is_internal: isPrivate,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
       setMessageText("");
       setPendingFiles([]);
+      setMessageType("customer");
       queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] });
-      toast.success("Message sent");
+      toast.success(isPrivate ? "Private note saved" : "Message sent");
     } catch (err: any) {
       toast.error(err.message || "Failed to send message");
     } finally {
