@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, ChevronLeft, ChevronRight, MessageSquare, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, MessageSquare, CheckCircle2, AlertTriangle, Clock, PackagePlus } from "lucide-react";
 import {
   ADMIN_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
@@ -28,9 +28,29 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
 
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
-  "new_order", "under_review", "approved", "in_production", "qa",
+  "new_order", "under_review", "approved", "in_production", "sent_to_print", "qa",
   "ready_for_dispatch", "completed", "on_hold", "cancelled",
 ];
+
+/** Submitted, but nobody on the team has opened it yet. */
+export function isUnopened(order: any): boolean {
+  return !!order?.submitted_at && !order?.first_opened_at && order?.admin_status !== "cancelled";
+}
+
+export function orderRowClass(order: any): string {
+  return isUnopened(order)
+    ? "cursor-pointer text-xs bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border-l-2 border-l-amber-500"
+    : "cursor-pointer hover:bg-muted/50 text-xs";
+}
+
+export function NewMarker({ order }: { order: any }) {
+  if (!isUnopened(order)) return null;
+  return (
+    <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">
+      New
+    </span>
+  );
+}
 
 const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
   "unpaid", "part_paid", "paid", "refunded",
@@ -45,6 +65,7 @@ export default function AdminOrders() {
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
   const unreadOnly = searchParams.get("unread") === "1";
+  const unopenedOnly = searchParams.get("unopened") === "1";
   const [unreadFirst, setUnreadFirst] = useState(true);
 
   const filters: AdminOrderListFilters = {
@@ -52,6 +73,7 @@ export default function AdminOrders() {
     search: search || undefined,
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
+    unopened_only: unopenedOnly || undefined,
     page,
     page_size: 25,
   };
@@ -65,7 +87,7 @@ export default function AdminOrders() {
   const totalForTenant = totalData?.total || 0;
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || unopenedOnly;
 
   const { data, isLoading } = useAdminOrders(filters);
   const rawOrders = data?.orders || [];
@@ -85,6 +107,14 @@ export default function AdminOrders() {
     }
     return list;
   }, [rawOrders, unreadOnly, unreadFirst, unreadMap]);
+
+  const toggleUnopenedOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (unopenedOnly) next.delete("unopened");
+    else next.set("unopened", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
 
   const toggleUnreadOnly = () => {
     const next = new URLSearchParams(searchParams);
@@ -116,9 +146,10 @@ export default function AdminOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
-    if (unreadOnly) {
+    if (unreadOnly || unopenedOnly) {
       const next = new URLSearchParams(searchParams);
       next.delete("unread");
+      next.delete("unopened");
       setSearchParams(next, { replace: true });
     }
     setPage(1);
@@ -173,6 +204,18 @@ export default function AdminOrders() {
       {/* Status filter chips */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={toggleUnopenedOnly}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (unopenedOnly
+                ? "border-amber-500 bg-amber-500 text-white"
+                : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100")
+            }
+          >
+            <PackagePlus className="h-3.5 w-3.5" />
+            Not yet opened
+          </button>
           <button
             onClick={toggleUnreadOnly}
             className={
@@ -274,11 +317,12 @@ export default function AdminOrders() {
                   return [
                     <TableRow
                       key={order.id}
-                      className="cursor-pointer hover:bg-muted/50 text-xs"
+                      className={orderRowClass(order)}
                       onClick={() => navigate(buildAdminPath(`/admin/orders/${order.id}`, tenantId))}
                     >
                       <TableCell className="font-mono text-xs font-medium">
                         {order.order_number || "—"}
+                        <NewMarker order={order} />
                       </TableCell>
                       <TableCell>{order.source_channel || "—"}</TableCell>
                       <TableCell>{order.company_name || order.customer_name || "—"}</TableCell>
@@ -307,11 +351,12 @@ export default function AdminOrders() {
                 return jobs.map((job: any) => (
                   <TableRow
                     key={job.id}
-                    className="cursor-pointer hover:bg-muted/50 text-xs"
+                    className={orderRowClass(order)}
                     onClick={() => navigate(buildAdminPath(`/admin/orders/${order.id}`, tenantId))}
                   >
                     <TableCell className="font-mono text-xs font-medium text-primary">
                       {job.job_number}
+                      <NewMarker order={order} />
                     </TableCell>
                     <TableCell>{order.source_channel || "Storefront"}</TableCell>
                     <TableCell className="max-w-[140px] truncate">{order.company_name || order.customer_name || "—"}</TableCell>
