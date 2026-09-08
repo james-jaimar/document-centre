@@ -1126,7 +1126,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         {/* Stage */}
         <div className="flex min-h-0 min-w-0 flex-col">
           <div className="px-4 pt-3 text-xs text-muted-foreground">{sizeCaption}</div>
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
             {pagesLoading ? (
               <Skeleton className="h-full w-full" />
             ) : (
@@ -1136,6 +1136,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 style={{ maxHeight: "100%", maxWidth: "100%", width: "auto", height: "auto" }}
               />
             )}
+            {placing && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-sm font-medium">
+                  Placing page {Math.min(placing.done + 1, placing.total)} of {placing.total}…
+                </p>
+                <p className="max-w-xs text-center text-xs text-muted-foreground">
+                  Please stay on this screen — your pages are being added one by one.
+                </p>
+                <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${Math.round((placing.done / Math.max(1, placing.total)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Filmstrip */}
@@ -1143,7 +1160,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <Button
               size="icon"
               variant="ghost"
-              disabled={pageIndex === 0}
+              disabled={pageIndex === 0 || !!placing}
               onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
               aria-label="Previous page"
             >
@@ -1153,8 +1170,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               {pages.map((p) => (
                 <button
                   key={p.index}
+                  disabled={!!placing}
                   onClick={() => setPageIndex(p.index)}
-                  className={`shrink-0 rounded border-2 p-0.5 ${
+                  className={`shrink-0 rounded border-2 p-0.5 disabled:cursor-not-allowed disabled:opacity-50 ${
                     p.index === pageIndex ? "border-primary" : "border-transparent hover:border-border"
                   }`}
                 >
@@ -1173,13 +1191,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             <Button
               size="icon"
               variant="ghost"
-              disabled={pageIndex >= pages.length - 1}
+              disabled={pageIndex >= pages.length - 1 || !!placing}
               onClick={() => setPageIndex((i) => Math.min(pages.length - 1, i + 1))}
               aria-label="Next page"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+
         </div>
 
         {/* Summary */}
