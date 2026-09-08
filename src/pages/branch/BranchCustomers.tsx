@@ -184,6 +184,17 @@ export default function BranchCustomers() {
         />
       )}
 
+      {loginAs && (
+        <ImpersonateCustomerDialog
+          open={!!loginAs}
+          onOpenChange={(v) => !v && setLoginAs(null)}
+          profileId={loginAs.profile_id}
+          email={loginAs.email}
+          name={resolveDisplayName(loginAs, "")}
+          branchId={branchId ?? null}
+        />
+      )}
+
       <AddCustomerDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
