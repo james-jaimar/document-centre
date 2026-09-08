@@ -10,6 +10,7 @@ export type OrderAdminStatus =
   | 'under_review'
   | 'approved'
   | 'in_production'
+  | 'sent_to_print'
   | 'qa'
   | 'ready_for_dispatch'
   | 'dispatched'
