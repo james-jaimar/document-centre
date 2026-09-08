@@ -184,6 +184,27 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── Pre-flight: key access + verified sending domain ───────────────────
+    const check = await verifyAccount(apiKey, account.from_email);
+    if (!check.ok) {
+      return json({ provider: "resend", error: check.message, results }, 200);
+    }
+
+    // ── Custom contact properties must exist before any contact uses them ──
+    try {
+      await ensureContactProperties(apiKey, [
+        { key: "org_name", type: "string", fallback_value: tenant.name },
+        { key: "action_link", type: "string", fallback_value: origin },
+      ]);
+    } catch (e) {
+      const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
+      return json({
+        provider: "resend",
+        error: `Resend would not set up the personalisation fields (org_name, action_link): ${msg}`,
+        results,
+      }, 200);
+    }
+
     // ── Segment ────────────────────────────────────────────────────────────
     let segmentId: string | null = account.resend_segment_id ?? null;
     if (segmentId && !(await segmentExists(apiKey, segmentId))) segmentId = null;
@@ -191,6 +212,7 @@ Deno.serve(async (req) => {
       segmentId = await createSegment(apiKey, `${tenant.name} — Document Centre`);
       await admin.from("email_accounts").update({ resend_segment_id: segmentId }).eq("id", account.id);
     }
+
 
     // ── Campaign row ───────────────────────────────────────────────────────
     const { data: campaign, error: campErr } = await admin
