@@ -302,6 +302,23 @@ def _has_alpha(img: Image.Image) -> bool:
     return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
 
 
+def _has_transparency(img: Image.Image) -> bool:
+    """True only when the image really has see-through pixels.
+
+    An alpha *channel* is not the same as transparency: a browser-rendered PDF
+    page is RGBA but fully opaque. Treating it as transparent forces the PNG
+    path, and the picture then leaves as RGB — unacceptable for press. So the
+    alpha channel is measured, not assumed.
+    """
+    if not _has_alpha(img):
+        return False
+    try:
+        alpha = img.convert("RGBA").getchannel("A")
+        return (alpha.getextrema() or (255, 255))[0] < 255
+    except Exception:  # noqa: BLE001 - if we cannot tell, keep the alpha
+        return True
+
+
 def _encoded_jpeg(
     img: Image.Image,
     pid: str,
@@ -311,16 +328,16 @@ def _encoded_jpeg(
 ) -> tuple[bytes, bool]:
     """Encoded bytes for this image at the placed size, encoded once.
 
-    Opaque images become CMYK JPEG (press-correct). Images carrying an alpha
-    channel are kept as RGBA PNG so the transparency survives into the PDF —
-    flattening them onto white would turn white-only artwork into a white box.
-    Returns (bytes, has_alpha).
+    Opaque images become CMYK JPEG (press-correct). Only images with genuine
+    see-through pixels stay RGBA PNG, so the transparency survives into the
+    PDF — flattening those onto white would turn white-only artwork into a
+    white box. Returns (bytes, has_alpha).
     """
     target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
     target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
     key = (pid, target_w, target_h)
     hit = cache.get(key)
-    alpha = _has_alpha(img)
+    alpha = _has_transparency(img)
     if hit is not None:
         return hit, alpha
     src = img
