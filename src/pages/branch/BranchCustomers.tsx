@@ -19,22 +19,16 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { resolveDisplayName } from "@/lib/displayName";
 import { BranchCustomerEditDialog } from "@/components/branch/BranchCustomerEditDialog";
 import { AddCustomerDialog } from "@/components/branch/AddCustomerDialog";
-import { useImpersonation } from "@/contexts/ImpersonationContext";
-import { useBranch } from "@/contexts/BranchContext";
-import { toast } from "@/hooks/use-toast";
+import { ImpersonateCustomerDialog } from "@/components/admin/ImpersonateCustomer";
 
 export default function BranchCustomers() {
   const { tenantId, appId, branchId } = useTenantContext();
-  const { branches } = useBranch();
   const { data, isLoading, error } = useBranchCustomers();
   const manage = useManageUser();
-  const { startImpersonation } = useImpersonation();
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<BranchCustomerRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-
-  const currentBranch = branches.find((b) => b.id === branchId);
-  const branchSlug = currentBranch ? (currentBranch.url_slug || currentBranch.slug) : null;
+  const [loginAs, setLoginAs] = useState<BranchCustomerRow | null>(null);
 
   const filtered = useMemo(() => {
     if (!data) return [];
