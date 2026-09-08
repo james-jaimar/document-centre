@@ -126,6 +126,18 @@ export function CustomerRowActions({ customer, tenantId, appId, onRemoved, trigg
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <ImpersonateCustomerDialog
+        open={loginAsOpen}
+        onOpenChange={setLoginAsOpen}
+        profileId={customer.profile_id}
+        email={customer.email}
+        name={
+          [customer.first_name, customer.last_name].filter(Boolean).join(" ") ||
+          customer.display_name ||
+          null
+        }
+      />
+
       <EditCustomerDialog
         open={editOpen}
         onOpenChange={setEditOpen}
