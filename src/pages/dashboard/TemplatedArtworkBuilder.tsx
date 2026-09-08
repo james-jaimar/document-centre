@@ -520,6 +520,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   // ── Uploads
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Set while a multi-page PDF is being spread across the pages. */
+  const [placing, setPlacing] = useState<{ done: number; total: number } | null>(null);
 
   const handlePickFile = useCallback(
     async (
@@ -536,13 +538,43 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         const ph = placeholders.find((p) => p.id === placeholderId);
         const totalPages = template?.page_count ?? pages.length ?? 1;
 
+        // How many pages does the customer's file actually have?
+        let filePages = 1;
+        if (isPdf) {
+          try {
+            filePages = await pdfPageCount(rawFile);
+          } catch (err) {
+            console.warn("[templated-artwork] could not read PDF page count", err);
+          }
+        }
+
+        const allowsPerPage = ph?.kind === "image" && !!(ph as any).allow_per_page_artwork;
+        let targetPage = page ?? null;
+        let spread = false;
+
+        if (isPdf && filePages > 1 && allowsPerPage && totalPages > 1) {
+          if (targetPage != null) {
+            spread = true;
+          } else if (
+            window.confirm(
+              `This file has ${filePages} pages. Use a different page on each of the ${totalPages} pages?\n\nCancel to use page 1 on every page.`,
+            )
+          ) {
+            spread = true;
+            if (ph) setPerPage(ph, true);
+            targetPage = 0;
+          }
+        }
+
         // Keep the original vector PDF too — the print composer places it as a
         // form XObject (with a transparency group when opacity < 1) instead of
         // using the rasterised proof image.
         let sourcePdfPath: string | null = null;
         if (isPdf) {
           try {
-            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${page ?? "all"}-source.pdf`;
+            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${
+              spread ? "multi" : targetPage ?? "all"
+            }-source.pdf`;
             await uploadToS3(sourcePdfPath, rawFile);
           } catch (err) {
             console.warn("[templated-artwork] original PDF upload failed", err);
@@ -575,29 +607,46 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         });
 
         // A multi-page PDF dropped onto a per-page box fills one page each:
-        // page 1 → first month, page 2 → second, and so on.
-        if (isPdf && page != null) {
-          const rendered = await rasterisePdfPages(rawFile, {
-            targetLongPx: 2000,
-            maxPages: totalPages,
+        // page 1 → first month, page 2 → second, and so on. Each page is
+        // rendered, uploaded and placed before the next one starts, so a single
+        // failure never discards the pages that already went through.
+        if (spread) {
+          const count = Math.min(filePages, totalPages);
+          setPlacing({ done: 0, total: count });
+          const failed: number[] = [];
+          const baseName = rawFile.name.replace(/\.pdf$/i, "");
+          await rasterisePdfPages(rawFile, {
+            targetLongPx: 1800,
+            maxPages: count,
+            onPage: async (rp) => {
+              const i = rp.index;
+              try {
+                const blob = await (await fetch(rp.dataUrl)).blob();
+                const pageFile = new File([blob], `${baseName}-p${i + 1}.png`, {
+                  type: "image/png",
+                });
+                const up = await uploadPhoto(pageFile, itemId);
+                if (!up) throw new Error("the upload did not complete");
+                const v = buildValue(up, i + 1);
+                if (ph) applyValue(ph, v, i);
+                else setValues((prev) => ({ ...prev, [valueKey(placeholderId, i)]: v }));
+              } catch (err) {
+                console.error(`[templated-artwork] page ${i + 1} of ${count} failed`, err);
+                failed.push(i + 1);
+              }
+              setPlacing({ done: i + 1, total: count });
+            },
           });
-          if (rendered.length > 1) {
-            for (let i = 0; i < Math.min(rendered.length, totalPages); i++) {
-              const blob = await (await fetch(rendered[i].dataUrl)).blob();
-              const pageFile = new File(
-                [blob],
-                rawFile.name.replace(/\.pdf$/i, "") + `-p${i + 1}.png`,
-                { type: "image/png" },
-              );
-              const up = await uploadPhoto(pageFile, itemId);
-              if (!up) continue;
-              const v = buildValue(up, i + 1);
-              if (ph) applyValue(ph, v, i);
-              else setValues((prev) => ({ ...prev, [valueKey(placeholderId, i)]: v }));
-            }
-            toast.success(`Placed ${Math.min(rendered.length, totalPages)} pages of your file`);
-            return;
-          }
+
+          const placed = count - failed.length;
+          if (placed > 0) toast.success(`Placed ${placed} of ${count} pages of your file`);
+          if (failed.length)
+            toast.error(
+              `Could not place page${failed.length > 1 ? "s" : ""} ${failed.join(", ")} — please add ${
+                failed.length > 1 ? "them" : "it"
+              } again.`,
+            );
+          return;
         }
 
         // PNG, not JPEG: keeps alpha so white-only vector artwork stays
@@ -606,17 +655,19 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         const uploaded = await uploadPhoto(file, itemId);
         if (!uploaded) return;
         const next = buildValue(uploaded, isPdf ? 1 : undefined);
-        if (ph) applyValue(ph, next, page ?? null);
-        else setValues((prev) => ({ ...prev, [valueKey(placeholderId, page ?? null)]: next }));
+        if (ph) applyValue(ph, next, targetPage ?? null);
+        else setValues((prev) => ({ ...prev, [valueKey(placeholderId, targetPage ?? null)]: next }));
       } catch (err: any) {
         console.error("[templated-artwork] upload failed", err);
         toast.error(err?.message ?? "Upload failed");
       } finally {
+        setPlacing(null);
         setBusyId(null);
       }
     },
-    [ensureOrder, uploadPhoto, placeholders, applyValue, template?.page_count, pages.length],
+    [ensureOrder, uploadPhoto, placeholders, applyValue, setPerPage, template?.page_count, pages.length],
   );
+
 
   // ── Stock photo library (Pexels)
   const { settings: photoLibrary } = usePhotoLibraryForProduct(family as any);
