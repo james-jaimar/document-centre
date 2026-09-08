@@ -8100,6 +8100,17 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: undefined
       }
+      company_account_summary: {
+        Args: { p_app_id: string; p_branch_id?: string; p_tenant_id: string }
+        Returns: {
+          balance: number
+          company_id: string
+          last_order_at: string
+          order_count: number
+          overdue: number
+          total_spend: number
+        }[]
+      }
       create_email_account_secret: {
         Args: { p_name: string; p_secret: string }
         Returns: string
