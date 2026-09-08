@@ -27,7 +27,7 @@ import { usePhotoLibraryForProduct } from "@/hooks/usePhotoLibrarySettings";
 import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
 import { forgetBlob, getCachedBlobUrl, pinBlobPaths, registerBlob, unpinBlobPaths } from "@/lib/photoPrints/photoBlobCache";
 import { rasterisePdfPageOneToPng } from "@/lib/canvasPrints/pdfToImage";
-import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
+import { rasterisePdfPages, pdfPageCount, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import { composeTemplatePage } from "@/lib/artworkTemplates/renderTemplate";
 import { useArtworkPlaceholders, useArtworkTemplates } from "@/hooks/useArtworkTemplates";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
