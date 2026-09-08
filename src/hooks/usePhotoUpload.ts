@@ -89,7 +89,11 @@ export function usePhotoUpload(orderItemId: string | undefined) {
   );
 
   const uploadPhoto = useCallback(
-    async (rawFile: File, overrideOrderItemId?: string): Promise<UploadedPhoto | null> => {
+    async (
+      rawFile: File,
+      overrideOrderItemId?: string,
+      options?: { suppressToast?: boolean },
+    ): Promise<UploadedPhoto | null> => {
       const effectiveId = overrideOrderItemId || orderItemId;
       if (!effectiveId || !user || !tenantId) return null;
 
@@ -203,9 +207,11 @@ export function usePhotoUpload(orderItemId: string | undefined) {
           status: "error",
           error: err?.message || "Upload failed",
         });
-        toast.error(`Failed to upload ${originalName}`, {
-          description: err?.message,
-        });
+        if (!options?.suppressToast) {
+          toast.error(`Failed to upload ${originalName}`, {
+            description: err?.message,
+          });
+        }
         return null;
       }
     },

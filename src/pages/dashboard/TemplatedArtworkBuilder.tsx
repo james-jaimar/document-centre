@@ -80,6 +80,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+/** Decode an in-memory data URL without issuing a fetch request.
+ * `fetch(data:...)` is governed by connect-src and is blocked by our production CSP. */
+function dataUrlToBlob(dataUrl: string): Blob {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+  if (!match) throw new Error("The rendered page could not be converted for upload");
+
+  const mimeType = match[1] || "application/octet-stream";
+  const payload = match[3];
+  const decoded = match[2] ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(decoded.length);
+  for (let i = 0; i < decoded.length; i += 1) bytes[i] = decoded.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
 
 
 const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArtworkBuilder(
@@ -258,10 +272,14 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   }, [specForSave, orderItem?.id, orderItem?.spec]);
 
   /** Write the current artwork straight away (used after a batch placement). */
-  const persistNow = useCallback(async () => {
+  const persistNow = useCallback(async (
+    itemIdOverride?: string,
+    artworkOverride?: TemplatedArtworkSpec,
+  ) => {
     const { id, spec } = persistCtxRef.current;
-    const current = specRef.current;
-    if (!id || !current?.template_id) return;
+    const itemId = itemIdOverride ?? id;
+    const current = artworkOverride ?? specRef.current;
+    if (!itemId || !current?.template_id) return;
     const base = (spec as any) || {};
     const { error } = await supabase
       .from("order_items")
@@ -277,9 +295,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         },
         quantity,
       })
-      .eq("id", id);
-    if (error) console.error("[templated-artwork] save failed", error);
-    else setSavedAt(Date.now());
+      .eq("id", itemId);
+    if (error) {
+      console.error("[templated-artwork] save failed", error);
+      throw error;
+    }
+    setSavedAt(Date.now());
   }, [template?.page_count, quantity]);
 
   useEffect(() => {
@@ -566,10 +587,18 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [busyId, setBusyId] = useState<string | null>(null);
   /** Set while a multi-page PDF is being spread across the pages. */
   const [placing, setPlacing] = useState<{
-    done: number;
+    processed: number;
+    placed: number;
     total: number;
     label: string;
     failed: number[];
+  } | null>(null);
+  const [placementResult, setPlacementResult] = useState<{
+    total: number;
+    placed: number;
+    failed: number[];
+    cancelled: boolean;
+    error?: string;
   } | null>(null);
   const cancelPlacing = useRef(false);
 
@@ -670,9 +699,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (spread) {
           const count = Math.min(filePages, totalPages);
           cancelPlacing.current = false;
+          setPlacementResult(null);
           // Show the panel straight away — the customer must never sit in front
           // of a silent screen while the file is being read.
-          setPlacing({ done: 0, total: count, label: "Reading your file…", failed: [] });
+          setPlacing({ processed: 0, placed: 0, total: count, label: "Reading your file…", failed: [] });
 
           // The original vector PDF is kept for the print composer, but it is a
           // big file: upload it alongside the page work instead of making the
@@ -687,14 +717,33 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           );
 
           const failed: number[] = [];
+          const failureMessages: string[] = [];
+          let placed = 0;
           const baseName = rawFile.name.replace(/\.pdf$/i, "");
+          const batchValues = { ...values };
+          const targetIds = ph ? siblingsOf(ph).map((target) => target.id) : [placeholderId];
+          const batchPerPageIds = Array.from(new Set([...perPageIds, ...targetIds]));
+
+          const buildBatchSpec = (): TemplatedArtworkSpec => ({
+            ...specForSave,
+            placeholders: placeholders.flatMap((placeholder) => {
+              const own = Object.entries(batchValues)
+                .filter(([key]) => keyBelongsTo(key, placeholder.id))
+                .map(([, value]) => value);
+              if (own.length > 0) return own;
+              return specForSave.placeholders.filter(
+                (value) => value.placeholder_id === placeholder.id,
+              );
+            }) as TemplatedPlaceholderValue[],
+            per_page_placeholder_ids: batchPerPageIds,
+          });
 
           /** Upload one page, retrying once, and never hanging forever. */
           const uploadPage = async (file: File) => {
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 const up = await Promise.race([
-                  uploadPhoto(file, itemId),
+                  uploadPhoto(file, itemId, { suppressToast: true }),
                   new Promise<never>((_, rej) =>
                     setTimeout(() => rej(new Error("the upload timed out")), 120_000),
                   ),
@@ -716,30 +765,42 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               const i = rp.index;
               if (cancelPlacing.current) return;
               setPlacing({
-                done: i,
+                processed: i,
+                placed,
                 total: count,
                 label: `Adding page ${i + 1} of ${count}…`,
                 failed: [...failed],
               });
               try {
-                const blob = await (await fetch(rp.dataUrl)).blob();
+                const blob = dataUrlToBlob(rp.dataUrl);
                 const pageFile = new File([blob], `${baseName}-p${i + 1}.png`, {
                   type: "image/png",
                 });
                 const up = await uploadPage(pageFile);
                 if (!up) throw new Error("the upload did not complete");
                 const v = buildValue(up, i + 1, sourcePdfPath);
-                if (ph) applyValue(ph, v, i);
-                else setValues((prev) => ({ ...prev, [valueKey(placeholderId, i)]: v }));
+                for (const target of ph ? siblingsOf(ph) : []) {
+                  batchValues[valueKey(target.id, i)] = capWatermark(target, {
+                    ...v,
+                    placeholder_id: target.id,
+                    page_index: i,
+                  } as TemplatedImageValue);
+                }
+                if (!ph) batchValues[valueKey(placeholderId, i)] = { ...v, page_index: i };
+                placed += 1;
+                setValues({ ...batchValues });
+                setPerPageIds(batchPerPageIds);
+                // Save after every successful page so stopping or a later failure
+                // cannot discard work that has already landed.
+                await persistNow(itemId, buildBatchSpec());
               } catch (err: any) {
                 console.error(`[templated-artwork] page ${i + 1} of ${count} failed`, err);
                 failed.push(i + 1);
-                toast.error(`Page ${i + 1} could not be added`, {
-                  description: err?.message ?? undefined,
-                });
+                failureMessages.push(err?.message || "Upload failed");
               }
               setPlacing({
-                done: i + 1,
+                processed: i + 1,
+                placed,
                 total: count,
                 label: `Adding page ${i + 2 <= count ? i + 2 : count} of ${count}…`,
                 failed: [...failed],
@@ -747,21 +808,22 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             },
           });
 
-          setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
+          const cancelled = cancelPlacing.current;
+          if (placed > 0) setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
           await sourceUpload;
-          // Let the state updates settle, then write immediately rather than
-          // relying on the delayed background save.
-          await new Promise((r) => setTimeout(r, 120));
-          await persistNow();
-
-          const placed = count - failed.length;
-          if (placed > 0) toast.success(`Placed ${placed} of ${count} pages of your file`);
-          if (failed.length)
-            toast.error(
-              `Could not place page${failed.length > 1 ? "s" : ""} ${failed.join(", ")} — please add ${
-                failed.length > 1 ? "them" : "it"
-              } again.`,
-            );
+          const commonError = failureMessages[0];
+          setPlacementResult({ total: count, placed, failed: [...failed], cancelled, error: commonError });
+          if (cancelled) {
+            toast.message(`Stopped after placing ${placed} of ${count} pages`);
+          } else if (failed.length === 0) {
+            toast.success(`Placed all ${count} pages of your file`);
+          } else if (placed === 0) {
+            toast.error(`None of the ${count} pages could be added`, { description: commonError });
+          } else {
+            toast.error(`Placed ${placed} of ${count} pages`, {
+              description: `Pages ${failed.join(", ")} failed${commonError ? `: ${commonError}` : ""}`,
+            });
+          }
           return;
         }
 
@@ -798,8 +860,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [
       ensureOrder,
       uploadPhoto,
+      values,
+      perPageIds,
+      specForSave,
       placeholders,
       applyValue,
+      siblingsOf,
       setPerPage,
       askSpread,
       persistNow,
@@ -1287,12 +1353,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${Math.round((placing.done / Math.max(1, placing.total)) * 100)}%` }}
+                    style={{ width: `${Math.round((placing.processed / Math.max(1, placing.total)) * 100)}%` }}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {placing.done} of {placing.total} added
-                  {placing.failed.length > 0 && ` — page ${placing.failed.join(", ")} failed`}
+                  {placing.processed} of {placing.total} processed · {placing.placed} placed
+                  {placing.failed.length > 0 && ` · ${placing.failed.length} failed`}
                 </p>
                 <Button
                   size="sm"
@@ -1308,6 +1374,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             )}
 
           </div>
+
+          {placementResult && !placing && (
+            <div
+              className={`border-t px-4 py-2 text-xs ${
+                placementResult.failed.length > 0 ? "text-destructive" : "text-muted-foreground"
+              }`}
+              role="status"
+            >
+              {placementResult.cancelled
+                ? `Stopped: ${placementResult.placed} of ${placementResult.total} pages placed.`
+                : placementResult.failed.length === 0
+                  ? `All ${placementResult.total} pages were placed successfully.`
+                  : `${placementResult.placed} of ${placementResult.total} pages placed. Pages ${placementResult.failed.join(", ")} failed${
+                      placementResult.error ? `: ${placementResult.error}` : "."
+                    }`}
+            </div>
+          )}
 
           {/* Filmstrip */}
           <div className="flex items-center gap-2 border-t bg-background px-3 py-2">
