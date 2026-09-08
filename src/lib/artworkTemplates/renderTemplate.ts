@@ -160,7 +160,9 @@ function drawPlaceholder(
   const box = boxRectPx(p, pxPerMm);
   // Boxes tagged with the same shared field name reuse one customer value.
   const sharedId = sharedSourceId(p, opts);
-  const value = opts.values[p.id] ?? (sharedId ? opts.values[sharedId] : undefined);
+  const value =
+    pickForPage(opts.values, p.id, opts.pageIndex) ??
+    (sharedId ? pickForPage(opts.values, sharedId, opts.pageIndex) : undefined);
   const alpha = Math.max(0, Math.min(1, value?.opacity ?? p.opacity ?? 1));
 
   if (p.kind === "colour") {
