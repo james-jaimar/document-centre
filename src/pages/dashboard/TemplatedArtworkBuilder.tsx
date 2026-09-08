@@ -1005,34 +1005,66 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               Nothing to fill in on this page — use the pager to move to another page.
             </p>
           ) : (
-            railPlaceholders.map((p, i) => (
-              <div key={p.id} className="space-y-1">
-                <PlaceholderPanel
-                  placeholder={p}
-                  value={values[p.id]}
-                  busy={busyId === p.id}
-                  step={i + 1}
-                  active={activeId === p.id}
-                  onFocus={() => setActiveId(p.id)}
-                  onPickFile={(file) => handlePickFile(p.id, file)}
-                  onBrowseLibrary={
-                    photoLibrary.enabled && p.kind === "image"
-                      ? () => setLibraryFor(p.id)
-                      : undefined
-                  }
-                  loadError={!!imageErrors[p.id]}
-                  onRetryImage={() => retryImage(p.id)}
-                  onChange={(v) => applyValue(p, v)}
-                  onClear={() => applyValue(p, null)}
-
-                />
-                {siblingsOf(p).length > 1 && (
-                  <p className="px-1 text-[11px] text-muted-foreground">
-                    Used in {siblingsOf(p).length} places across the calendar — upload once.
-                  </p>
-                )}
-              </div>
-            ))
+            railPlaceholders.map((p, i) => {
+              const curPage = pages[pageIndex]?.index ?? pageIndex;
+              const perPage = p.kind === "image" && perPageIds.includes(p.id);
+              const slot = perPage ? curPage : null;
+              const key = valueKey(p.id, slot);
+              const filledPages = perPage
+                ? Array.from({ length: totalPageCount }, (_, n) =>
+                    values[valueKey(p.id, n)] ? 1 : 0,
+                  ).reduce((a: number, b: number) => a + b, 0)
+                : 0;
+              return (
+                <div key={p.id} className="space-y-1">
+                  <PlaceholderPanel
+                    placeholder={p}
+                    value={values[key]}
+                    busy={busyId === key}
+                    step={i + 1}
+                    active={activeId === p.id}
+                    onFocus={() => setActiveId(p.id)}
+                    onPickFile={(file) => handlePickFile(p.id, file, null, slot)}
+                    onBrowseLibrary={
+                      photoLibrary.enabled && p.kind === "image"
+                        ? () => setLibraryFor(key)
+                        : undefined
+                    }
+                    loadError={!!imageErrors[key]}
+                    onRetryImage={() => retryImage(key)}
+                    onChange={(v) => applyValue(p, v, slot)}
+                    onClear={() => applyValue(p, null, slot)}
+                    nameOverride={perPage ? `${p.name} — page ${curPage + 1}` : undefined}
+                    headerExtra={
+                      p.kind === "image" && p.allow_per_page_artwork ? (
+                        <div className="flex items-start justify-between gap-3 rounded-md bg-muted/50 p-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">
+                              Same picture on every page
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {perPage
+                                ? `Switched off — add a picture for each of the ${totalPageCount} pages (${filledPages} done). A multi-page PDF fills them all at once.`
+                                : "One picture repeats throughout. Switch off to use a different picture on each page."}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={!perPage}
+                            onCheckedChange={(on) => setPerPage(p, !on)}
+                            aria-label="Same picture on every page"
+                          />
+                        </div>
+                      ) : undefined
+                    }
+                  />
+                  {!perPage && siblingsOf(p).length > 1 && (
+                    <p className="px-1 text-[11px] text-muted-foreground">
+                      Used in {siblingsOf(p).length} places across the calendar — upload once.
+                    </p>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
