@@ -41,6 +41,10 @@ interface Props {
   onRetryImage?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
+  /** Heading shown instead of the placeholder's own name (e.g. "Page 3"). */
+  nameOverride?: string;
+  /** Extra controls rendered under the heading (e.g. the per-page switch). */
+  headerExtra?: React.ReactNode;
 }
 
 /** Shell shared by the text and image cards — carries all the contrast cues. */
