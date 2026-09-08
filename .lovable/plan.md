@@ -1,39 +1,38 @@
-# Multi-page PDF into the A2 deskpad: find the real fault, then fix it
+# Fix the confirmed 12-page deskpad failure
 
-## What the records actually show
+## Confirmed cause
 
-Three attempts this morning, each in a fresh basket item (09:03, 09:17, 09:48) on the "Design 6" 12-page A2 deskpad template:
+The supplied browser log identifies the exact failure. All 12 PDF pages rasterised, but `TemplatedArtworkBuilder.tsx` then called `fetch(rp.dataUrl)` to turn each in-memory PNG into a file. On the published site, the Content Security Policy correctly does not permit `data:` under `connect-src`, so the browser blocked every one of those fetches before any upload began.
 
-- 09:03 attempt: one picture landed (page 1 only), one uploaded file recorded.
-- 09:17 and 09:48 attempts: the "different picture on every page" switch was saved as ON, but **zero** pictures were saved and **zero** files were recorded as uploaded.
+This also explains the screenshot exactly: all 12 pages were processed, all 12 failed at the same conversion line, and the customer-facing progress text incorrectly described processed pages as “added”.
 
-So on the last two runs not a single page got as far as being stored — the progress bar showed "1 of 12" (which is what it shows before any page has finished) and then everything failed. No browser console history is available from those runs, so the exact failing step is not yet proven. This plan does not guess at it: step 1 is to reproduce it and capture the error.
+## Changes
 
-## Step 1 — Reproduce and capture the failure
+1. **Remove the blocked network-style conversion**
+   - Convert each rasterised PNG data URL directly into a `Blob`/`File` in memory, without `fetch` and without any network request.
+   - Keep the existing sequential page rendering and upload path so memory stays bounded and successful pages are retained.
+   - Do not weaken the site security policy by adding `data:` to `connect-src`.
 
-- Build a throwaway 12-page A2 test PDF and run the deskpad builder in a scripted browser session, uploading it into the header box with "same picture on every page" turned off.
-- Capture the console errors, failed network calls and timings for each page, so the failing step (page rendering, image conversion, upload, or saving) is identified from evidence rather than assumption.
+2. **Make progress truthful**
+   - Track processed, successfully placed and failed pages separately.
+   - During the run, show “X of 12 processed” plus the placed/failed counts rather than saying failed pages were added.
+   - When every page fails, skip the misleading saving/success state and show one clear summary instead of 12 repetitive notices plus a final duplicate notice.
 
-## Step 2 — Fix what the reproduction shows
+3. **Preserve recovery behaviour**
+   - Keep the page controls locked while placement is running.
+   - Keep the automatic one-time upload retry for genuine upload failures.
+   - Preserve any pages that succeed and save them immediately; cancellation must report only the pages actually completed.
 
-Fix the confirmed cause. Alongside it, close the gaps that made this silent and unrecoverable:
+## Verification
 
-- Show the real error text in the on-screen message instead of a generic "could not place" note, and keep a per-page result list (placed / failed) visible after the run.
-- Make each page's work retry once automatically before it is counted as failed, and add a "Retry failed pages" button so the customer never has to start over.
-- Save progress as pages land, rather than relying on the delayed background save, so a run that stops half way keeps what already succeeded.
-- Keep the picture area locked while placing (already in place) and add a Cancel control so a stuck run can be abandoned cleanly.
+- Run the supplied `CLS_Deskpad_2027.pdf` through the same 12-page placement path under a Content Security Policy matching production.
+- Confirm there are no `fetch(data:image/...)` calls or CSP violations.
+- Confirm all 12 page files upload, all 12 per-page artwork values are saved with source PDF page numbers 1–12, and each month shows its matching header.
+- Confirm the overlay remains locked throughout and reports accurate processed, placed and failed totals.
+- Run the TypeScript check and a browser regression for the single-page/repeat option.
 
-## Step 3 — Fix the first-attempt behaviour
+## Technical scope
 
-On the first run the pop-up ("use a different page on each of the 12 pages?") was accepted and nothing visibly happened. Replace the browser pop-up with an in-app dialog that names the file, the number of pages found and the two choices, and that hands straight over to the visible progress panel so there is never a dead pause after choosing.
-
-## Step 4 — Verify
-
-- Re-run the scripted 12-page upload and confirm 12 pictures are stored against the item, each tagged with its source page number.
-- Confirm the saved basket item holds 12 per-page entries and that the customer proof shows a different header on each month.
-
-## Technical notes
-
-- Records inspected: `order_items.spec->templated_artwork` for the three items, `documents` rows per item, `artwork_template_placeholders` (per-page allowed, no shared field key) and `artwork_templates.page_count` (12) — the template configuration is correct, so the fault is in the runtime upload path.
-- Code in scope: `src/pages/dashboard/TemplatedArtworkBuilder.tsx` (`handlePickFile` spread branch, `applyValue`, `setPerPage`, debounced persist), `src/lib/artworkTemplates/pdfPages.ts` (streamed `onPage` rasterisation) and `src/hooks/usePhotoUpload.ts` (returns `null` silently on several failure paths — a likely contributor to a run that reports nothing).
-- Reproduction harness lives under `/tmp` only; no test files are added to the project.
+- Primary file: `src/pages/dashboard/TemplatedArtworkBuilder.tsx`.
+- Add a small local, CSP-safe data-URL-to-blob conversion helper or expose the rendered PNG blob from `src/lib/artworkTemplates/pdfPages.ts`; use the smaller change that avoids altering unrelated preview consumers.
+- No database, S3 policy or Content Security Policy change is required for this confirmed fault.
