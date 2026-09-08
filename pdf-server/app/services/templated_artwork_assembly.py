@@ -812,24 +812,34 @@ def assemble_templated_artwork(
     }
     images: dict[str, Image.Image] = {}
     page_images: dict[int, dict[str, Image.Image]] = {}
-    vector_sources: dict[str, Path] = {}
+    # Keyed by placeholder id (repeats on every sheet) or "id@page" (that
+    # sheet only). Value = (local PDF, 1-based page of that PDF to place).
+    vector_sources: dict[str, tuple[Path, int]] = {}
+    downloaded_pdfs: dict[str, Path] = {}
+    raster_fallbacks: list[str] = []
 
     def _fetch_asset(idx: int, pid: str, v: dict[str, Any], page: int | None) -> None:
         if image_kinds.get(pid, "image") != "image":
             return
         tag = f"{idx:03d}" if page is None else f"{idx:03d}-p{page:02d}"
-        # Prefer the original vector PDF — placed 1:1, never rasterised.
-        # Per-page artwork always goes down the raster path: vector placements
-        # are collected once and reused across pages.
-        pdf_src = v.get("source_pdf_path") if page is None else None
+        # Always prefer the customer's original PDF — placed 1:1 as vector,
+        # never the browser's screen render. A multi-page file supplies one
+        # page per sheet; each value says which page of it belongs where.
+        pdf_src = v.get("source_pdf_path")
         if pdf_src:
-            local_pdf = workspace.path(f"ph-{tag}-source.pdf")
+            key = pid if page is None else f"{pid}@{page}"
             try:
-                storage.download(str(pdf_src), local_pdf)
-                vector_sources[pid] = local_pdf
+                local_pdf = downloaded_pdfs.get(str(pdf_src))
+                if local_pdf is None:
+                    local_pdf = workspace.path(f"ph-{tag}-source.pdf")
+                    storage.download(str(pdf_src), local_pdf)
+                    downloaded_pdfs[str(pdf_src)] = local_pdf
+                src_page = int(_num(v.get("source_pdf_page"), 1)) or 1
+                vector_sources[key] = (local_pdf, src_page)
                 return
             except Exception as exc:  # noqa: BLE001 - fall back to the raster
                 log.warning("templated_artwork: vector source %s failed: %s", pdf_src, exc)
+                raster_fallbacks.append(f"{key}: {exc}")
         src = v.get("storage_path")
         if not src:
             return
