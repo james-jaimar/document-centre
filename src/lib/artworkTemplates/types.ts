@@ -243,6 +243,33 @@ export function resolveValueFor<T extends { placeholder_id?: string }>(
   return undefined;
 }
 
+/**
+ * Key used for a customer value in the editor's value/image maps.
+ * Page-agnostic values (the usual "same on every page" case) keep the bare
+ * placeholder id, so nothing about existing orders changes.
+ */
+export function valueKey(placeholderId: string, pageIndex?: number | null): string {
+  return pageIndex == null ? placeholderId : `${placeholderId}@${pageIndex}`;
+}
+
+/** True when `key` belongs to `placeholderId` (with or without a page part). */
+export function keyBelongsTo(key: string, placeholderId: string): boolean {
+  return key === placeholderId || key.startsWith(`${placeholderId}@`);
+}
+
+/** This page's value for a placeholder, else its page-agnostic one. */
+export function pickForPage<T>(
+  map: Record<string, T | undefined>,
+  placeholderId: string,
+  pageIndex?: number | null,
+): T | undefined {
+  if (pageIndex != null) {
+    const hit = map[valueKey(placeholderId, pageIndex)];
+    if (hit) return hit;
+  }
+  return map[placeholderId];
+}
+
 export function splitByLayer(list: ArtworkPlaceholder[]) {
   const sorted = sortPlaceholders(list);
   return {
