@@ -69,6 +69,16 @@ import {
   valueKey,
 } from "@/lib/artworkTemplates/types";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 
 
@@ -239,6 +249,39 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [proofOpen, setProofOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const persistTimer = useRef<NodeJS.Timeout | null>(null);
+  /** Latest spec + basket item, so a long upload run can force a save. */
+  const specRef = useRef<TemplatedArtworkSpec | null>(null);
+  const persistCtxRef = useRef<{ id?: string; spec?: any }>({});
+  useEffect(() => {
+    specRef.current = specForSave;
+    persistCtxRef.current = { id: orderItem?.id, spec: orderItem?.spec };
+  }, [specForSave, orderItem?.id, orderItem?.spec]);
+
+  /** Write the current artwork straight away (used after a batch placement). */
+  const persistNow = useCallback(async () => {
+    const { id, spec } = persistCtxRef.current;
+    const current = specRef.current;
+    if (!id || !current?.template_id) return;
+    const base = (spec as any) || {};
+    const { error } = await supabase
+      .from("order_items")
+      .update({
+        spec: {
+          ...base,
+          page_count: template?.page_count ?? 1,
+          quantity,
+          is_color: true,
+          is_duplex: false,
+          selected_options: base.selected_options || {},
+          templated_artwork: current,
+        },
+        quantity,
+      })
+      .eq("id", id);
+    if (error) console.error("[templated-artwork] save failed", error);
+    else setSavedAt(Date.now());
+  }, [template?.page_count, quantity]);
+
   useEffect(() => {
     if (!orderItem?.id || !templateId) return;
     if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -265,6 +308,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       if (persistTimer.current) clearTimeout(persistTimer.current);
     };
   }, [specForSave, quantity, orderItem?.id, orderItem?.spec, template?.page_count, templateId]);
+
 
   // ── Render the template pages
   const [pages, setPages] = useState<RasterisedPage[]>([]);
@@ -521,7 +565,35 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   // ── Uploads
   const [busyId, setBusyId] = useState<string | null>(null);
   /** Set while a multi-page PDF is being spread across the pages. */
-  const [placing, setPlacing] = useState<{ done: number; total: number } | null>(null);
+  const [placing, setPlacing] = useState<{
+    done: number;
+    total: number;
+    label: string;
+    failed: number[];
+  } | null>(null);
+  const cancelPlacing = useRef(false);
+
+  /** In-app replacement for the old browser confirm box. */
+  const [spreadAsk, setSpreadAsk] = useState<{
+    fileName: string;
+    filePages: number;
+    totalPages: number;
+  } | null>(null);
+  const spreadAnswer = useRef<((v: "spread" | "single" | null) => void) | null>(null);
+  const askSpread = useCallback(
+    (fileName: string, filePages: number, totalPages: number) =>
+      new Promise<"spread" | "single" | null>((resolve) => {
+        spreadAnswer.current = resolve;
+        setSpreadAsk({ fileName, filePages, totalPages });
+      }),
+    [],
+  );
+  const answerSpread = useCallback((v: "spread" | "single" | null) => {
+    setSpreadAsk(null);
+    const fn = spreadAnswer.current;
+    spreadAnswer.current = null;
+    fn?.(v);
+  }, []);
 
   const handlePickFile = useCallback(
     async (
@@ -555,36 +627,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (isPdf && filePages > 1 && allowsPerPage && totalPages > 1) {
           if (targetPage != null) {
             spread = true;
-          } else if (
-            window.confirm(
-              `This file has ${filePages} pages. Use a different page on each of the ${totalPages} pages?\n\nCancel to use page 1 on every page.`,
-            )
-          ) {
-            spread = true;
-            if (ph) setPerPage(ph, true);
-            targetPage = 0;
-          }
-        }
-
-        // Keep the original vector PDF too — the print composer places it as a
-        // form XObject (with a transparency group when opacity < 1) instead of
-        // using the rasterised proof image.
-        let sourcePdfPath: string | null = null;
-        if (isPdf) {
-          try {
-            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${
-              spread ? "multi" : targetPage ?? "all"
-            }-source.pdf`;
-            await uploadToS3(sourcePdfPath, rawFile);
-          } catch (err) {
-            console.warn("[templated-artwork] original PDF upload failed", err);
-            sourcePdfPath = null;
+          } else {
+            const answer = await askSpread(rawFile.name, filePages, totalPages);
+            if (answer == null) return; // customer backed out
+            if (answer === "spread") {
+              spread = true;
+              if (ph) setPerPage(ph, true);
+              targetPage = 0;
+            }
           }
         }
 
         const buildValue = (
           uploaded: { documentId?: string | null; storagePath: string; fileName: string; mimeType: string; width: number; height: number },
           pdfPage?: number,
+          pdfPath?: string | null,
         ): TemplatedImageValue => ({
           placeholder_id: placeholderId,
           kind: "image",
@@ -593,7 +650,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           file_name: uploaded.fileName,
           mime_type: uploaded.mimeType,
           source_was_pdf: wasPdf,
-          source_pdf_path: sourcePdfPath,
+          source_pdf_path: pdfPath ?? null,
           ...(pdfPage ? { source_pdf_page: pdfPage } : {}),
           source_width_px: uploaded.width,
           source_height_px: uploaded.height,
@@ -612,31 +669,90 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         // failure never discards the pages that already went through.
         if (spread) {
           const count = Math.min(filePages, totalPages);
-          setPlacing({ done: 0, total: count });
+          cancelPlacing.current = false;
+          // Show the panel straight away — the customer must never sit in front
+          // of a silent screen while the file is being read.
+          setPlacing({ done: 0, total: count, label: "Reading your file…", failed: [] });
+
+          // The original vector PDF is kept for the print composer, but it is a
+          // big file: upload it alongside the page work instead of making the
+          // customer wait for it before anything visible happens.
+          const sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-multi-source.pdf`;
+          const sourceUpload = uploadToS3(sourcePdfPath, rawFile).then(
+            () => sourcePdfPath,
+            (err) => {
+              console.warn("[templated-artwork] original PDF upload failed", err);
+              return null;
+            },
+          );
+
           const failed: number[] = [];
           const baseName = rawFile.name.replace(/\.pdf$/i, "");
+
+          /** Upload one page, retrying once, and never hanging forever. */
+          const uploadPage = async (file: File) => {
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              try {
+                const up = await Promise.race([
+                  uploadPhoto(file, itemId),
+                  new Promise<never>((_, rej) =>
+                    setTimeout(() => rej(new Error("the upload timed out")), 120_000),
+                  ),
+                ]);
+                if (up) return up;
+                throw new Error("the upload did not complete");
+              } catch (err) {
+                if (attempt === 2) throw err;
+                console.warn("[templated-artwork] retrying page upload", err);
+              }
+            }
+            return null;
+          };
+
           await rasterisePdfPages(rawFile, {
             targetLongPx: 1800,
             maxPages: count,
             onPage: async (rp) => {
               const i = rp.index;
+              if (cancelPlacing.current) return;
+              setPlacing({
+                done: i,
+                total: count,
+                label: `Adding page ${i + 1} of ${count}…`,
+                failed: [...failed],
+              });
               try {
                 const blob = await (await fetch(rp.dataUrl)).blob();
                 const pageFile = new File([blob], `${baseName}-p${i + 1}.png`, {
                   type: "image/png",
                 });
-                const up = await uploadPhoto(pageFile, itemId);
+                const up = await uploadPage(pageFile);
                 if (!up) throw new Error("the upload did not complete");
-                const v = buildValue(up, i + 1);
+                const v = buildValue(up, i + 1, sourcePdfPath);
                 if (ph) applyValue(ph, v, i);
                 else setValues((prev) => ({ ...prev, [valueKey(placeholderId, i)]: v }));
-              } catch (err) {
+              } catch (err: any) {
                 console.error(`[templated-artwork] page ${i + 1} of ${count} failed`, err);
                 failed.push(i + 1);
+                toast.error(`Page ${i + 1} could not be added`, {
+                  description: err?.message ?? undefined,
+                });
               }
-              setPlacing({ done: i + 1, total: count });
+              setPlacing({
+                done: i + 1,
+                total: count,
+                label: `Adding page ${i + 2 <= count ? i + 2 : count} of ${count}…`,
+                failed: [...failed],
+              });
             },
           });
+
+          setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
+          await sourceUpload;
+          // Let the state updates settle, then write immediately rather than
+          // relying on the delayed background save.
+          await new Promise((r) => setTimeout(r, 120));
+          await persistNow();
 
           const placed = count - failed.length;
           if (placed > 0) toast.success(`Placed ${placed} of ${count} pages of your file`);
@@ -649,12 +765,26 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           return;
         }
 
+        // Keep the original vector PDF too — the print composer places it as a
+        // form XObject (with a transparency group when opacity < 1) instead of
+        // using the rasterised proof image.
+        let sourcePdfPath: string | null = null;
+        if (isPdf) {
+          try {
+            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${targetPage ?? "all"}-source.pdf`;
+            await uploadToS3(sourcePdfPath, rawFile);
+          } catch (err) {
+            console.warn("[templated-artwork] original PDF upload failed", err);
+            sourcePdfPath = null;
+          }
+        }
+
         // PNG, not JPEG: keeps alpha so white-only vector artwork stays
         // transparent instead of arriving as a solid white block.
         const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
         const uploaded = await uploadPhoto(file, itemId);
         if (!uploaded) return;
-        const next = buildValue(uploaded, isPdf ? 1 : undefined);
+        const next = buildValue(uploaded, isPdf ? 1 : undefined, sourcePdfPath);
         if (ph) applyValue(ph, next, targetPage ?? null);
         else setValues((prev) => ({ ...prev, [valueKey(placeholderId, targetPage ?? null)]: next }));
       } catch (err: any) {
@@ -665,8 +795,19 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [ensureOrder, uploadPhoto, placeholders, applyValue, setPerPage, template?.page_count, pages.length],
+    [
+      ensureOrder,
+      uploadPhoto,
+      placeholders,
+      applyValue,
+      setPerPage,
+      askSpread,
+      persistNow,
+      template?.page_count,
+      pages.length,
+    ],
   );
+
 
 
   // ── Stock photo library (Pexels)
@@ -1139,9 +1280,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             {placing && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <p className="text-sm font-medium">
-                  Placing page {Math.min(placing.done + 1, placing.total)} of {placing.total}…
-                </p>
+                <p className="text-sm font-medium">{placing.label}</p>
                 <p className="max-w-xs text-center text-xs text-muted-foreground">
                   Please stay on this screen — your pages are being added one by one.
                 </p>
@@ -1151,8 +1290,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                     style={{ width: `${Math.round((placing.done / Math.max(1, placing.total)) * 100)}%` }}
                   />
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {placing.done} of {placing.total} added
+                  {placing.failed.length > 0 && ` — page ${placing.failed.join(", ")} failed`}
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    cancelPlacing.current = true;
+                    toast.message("Stopping after this page — anything already added is kept.");
+                  }}
+                >
+                  Stop
+                </Button>
               </div>
             )}
+
           </div>
 
           {/* Filmstrip */}
@@ -1386,7 +1540,30 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         onPick={handlePickStock}
       />
 
+      <AlertDialog open={!!spreadAsk} onOpenChange={(o) => !o && answerSpread(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Your file has {spreadAsk?.filePages} pages</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{spreadAsk?.fileName}” contains {spreadAsk?.filePages} pages and this product has{" "}
+              {spreadAsk?.totalPages}. Would you like a different page on each one, or the first page
+              repeated throughout?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => answerSpread(null)}>Cancel</AlertDialogCancel>
+            <Button variant="outline" onClick={() => answerSpread("single")}>
+              Use page 1 everywhere
+            </Button>
+            <AlertDialogAction onClick={() => answerSpread("spread")}>
+              A different page on each
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
+
   );
 
 });
