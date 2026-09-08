@@ -139,7 +139,7 @@ export default function BranchCustomers() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => handleImpersonate(c)}
+                            onClick={() => setLoginAs(c)}
                             disabled={!c.email}
                           >
                             <LogIn className="h-4 w-4 mr-2" /> Log in as customer
