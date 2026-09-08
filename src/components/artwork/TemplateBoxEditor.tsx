@@ -91,6 +91,7 @@ export function makePlaceholder(
     is_watermark: false,
     default_cmyk: kind === "colour" ? { ...DEFAULT_CMYK } : null,
     customer_editable_colour: kind === "colour",
+    allow_per_page_artwork: false,
     page_scope: page?.scope ?? "all",
     page_index: page?.scope === "page" ? page.index : null,
     page_indexes: page?.scope === "pages" ? [page.index] : null,
