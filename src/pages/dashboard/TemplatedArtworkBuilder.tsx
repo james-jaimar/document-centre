@@ -783,10 +783,19 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const unitPrice = priced.unitPrice;
 
   // ── Validation + cart
+  const totalPageCount = template?.page_count ?? pages.length ?? 1;
   const missingRequired = placeholders.filter((p) => {
     if (!p.is_required) return false;
     // Colour boxes always carry a default ink build, so they can't be "missing".
     if (p.kind === "colour") return false;
+    // Per-page pictures must be filled in for every page.
+    if (p.kind === "image" && perPageIds.includes(p.id)) {
+      for (let i = 0; i < totalPageCount; i++) {
+        const pv = values[valueKey(p.id, i)] as TemplatedImageValue | undefined;
+        if (!pv?.storage_path) return true;
+      }
+      return false;
+    }
     const v = values[p.id];
     if (!v) return true;
     if (v.kind === "text") return !v.value.trim();
