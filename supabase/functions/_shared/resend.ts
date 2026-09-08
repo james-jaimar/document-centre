@@ -177,37 +177,124 @@ export interface ContactInput {
   unsubscribed?: boolean;
 }
 
+export interface ContactPropertySpec {
+  key: string;
+  type?: "string" | "number";
+  fallback_value?: string | number;
+}
+
+/** Custom contact properties already defined on the Resend account. */
+export async function listContactProperties(
+  apiKey: string,
+): Promise<Array<{ id: string; key: string; type: string }>> {
+  const data = await call<{ data?: Array<{ id: string; key: string; type: string }> }>(
+    apiKey,
+    "/contact-properties",
+  );
+  return data.data ?? [];
+}
+
+/**
+ * Resend rejects a contact outright (422 "One or more properties do not exist")
+ * unless every custom property key has been created on the account first.
+ * Creates whatever is missing; treats "already exists" as success.
+ */
+export async function ensureContactProperties(
+  apiKey: string,
+  specs: ContactPropertySpec[],
+): Promise<void> {
+  if (!specs.length) return;
+  let existing = new Set<string>();
+  try {
+    existing = new Set((await listContactProperties(apiKey)).map((p) => p.key.toLowerCase()));
+  } catch (e) {
+    // A restricted key cannot list properties — let the create attempt below
+    // produce the real, actionable error.
+    if (!(e instanceof ResendApiError)) throw e;
+  }
+
+  for (const spec of specs) {
+    if (existing.has(spec.key.toLowerCase())) continue;
+    try {
+      await call(apiKey, "/contact-properties", {
+        method: "POST",
+        body: {
+          key: spec.key,
+          type: spec.type ?? "string",
+          ...(spec.fallback_value === undefined ? {} : { fallback_value: spec.fallback_value }),
+        },
+      });
+    } catch (e) {
+      const err = e as ResendApiError;
+      if (err.status === 409 || /already exists|duplicate/i.test(err.body ?? "")) continue;
+      throw e;
+    }
+  }
+}
+
+/**
+ * Broadcast merge tag for a contact property. Custom properties live in the
+ * same namespace as the built-ins, e.g. {{{contact.first_name|there}}}.
+ */
+export function contactTag(key: string, fallback = ""): string {
+  return `{{{contact.${key}|${fallback}}}}`;
+}
+
+/** Adds an existing contact to a segment. Safe to call repeatedly. */
+export async function addContactToSegment(
+  apiKey: string,
+  contactRef: string,
+  segmentId: string,
+): Promise<void> {
+  try {
+    await call(apiKey, `/contacts/${encodeURIComponent(contactRef)}/segments/${segmentId}`, {
+      method: "POST",
+    });
+  } catch (e) {
+    const err = e as ResendApiError;
+    // Already a member.
+    if (err.status === 409 || /already/i.test(err.body ?? "")) return;
+    throw e;
+  }
+}
+
 /** Creates or updates a contact inside a segment. Returns the contact id. */
 export async function upsertContact(
   apiKey: string,
   segmentId: string,
   contact: ContactInput,
 ): Promise<string> {
-  const body = {
-    email: contact.email,
+  const base = {
     first_name: contact.first_name ?? undefined,
     last_name: contact.last_name ?? undefined,
     properties: contact.properties ?? undefined,
     unsubscribed: contact.unsubscribed ?? false,
-    segments: [{ id: segmentId }],
   };
   try {
-    const data = await call<{ id: string }>(apiKey, "/contacts", { method: "POST", body });
+    const data = await call<{ id: string }>(apiKey, "/contacts", {
+      method: "POST",
+      body: { email: contact.email, ...base, segments: [{ id: segmentId }] },
+    });
+    await addContactToSegment(apiKey, data.id, segmentId);
     return data.id;
   } catch (e) {
     const err = e as ResendApiError;
-    // Already on the account — update it in place instead.
-    if (err.status === 409 || /already exists/i.test(err.body)) {
+    // Already on the account — update it in place, then make sure it is in the
+    // segment (the update endpoint cannot change segment membership).
+    if (err.status === 409 || /already exists/i.test(err.body ?? "")) {
       const data = await call<{ id: string }>(
         apiKey,
         `/contacts/${encodeURIComponent(contact.email)}`,
-        { method: "PATCH", body },
+        { method: "PATCH", body: base },
       );
-      return data.id;
+      const contactId = data.id ?? contact.email;
+      await addContactToSegment(apiKey, contactId, segmentId);
+      return contactId;
     }
     throw e;
   }
 }
+
 
 export async function createBroadcast(
   apiKey: string,
