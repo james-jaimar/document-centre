@@ -160,7 +160,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const { uploadPhoto } = usePhotoUpload(orderItem?.id);
 
   // ── Spec state
+  /** Keyed by placeholder id, or `id@pageIndex` for per-page pictures. */
   const [values, setValues] = useState<Record<string, TemplatedPlaceholderValue>>({});
+  /** Boxes the customer switched to "a different picture on every page". */
+  const [perPageIds, setPerPageIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
   const hydrated = useRef(false);
 
