@@ -1530,7 +1530,30 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         onPick={handlePickStock}
       />
 
+      <AlertDialog open={!!spreadAsk} onOpenChange={(o) => !o && answerSpread(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Your file has {spreadAsk?.filePages} pages</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{spreadAsk?.fileName}” contains {spreadAsk?.filePages} pages and this product has{" "}
+              {spreadAsk?.totalPages}. Would you like a different page on each one, or the first page
+              repeated throughout?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => answerSpread(null)}>Cancel</AlertDialogCancel>
+            <Button variant="outline" onClick={() => answerSpread("single")}>
+              Use page 1 everywhere
+            </Button>
+            <AlertDialogAction onClick={() => answerSpread("spread")}>
+              A different page on each
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
+
   );
 
 });
