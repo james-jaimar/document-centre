@@ -326,8 +326,11 @@ export interface TemplatedArtworkSpec {
   trim_offset_y_mm?: number;
   bleed_mm?: number;
 
-  /** One entry per placeholder — repeated across every page. */
+  /** Customer values. An entry without `page_index` repeats on every page;
+   *  entries with a `page_index` apply to that page only. */
   placeholders: TemplatedPlaceholderValue[];
+  /** Placeholder ids the customer switched to "different picture per page". */
+  per_page_placeholder_ids?: string[];
   /** Snapshot of the template's placeholder geometry/styling at order time, so
    *  the PDF server can compose without re-reading the admin tables (and so a
    *  later template edit can never change an already-placed order). */
