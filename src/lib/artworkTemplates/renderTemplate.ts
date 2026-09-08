@@ -141,9 +141,12 @@ export interface ComposeOptions {
 /** Id of the sibling box whose value this box borrows via `field_key`. */
 function sharedSourceId(p: ArtworkPlaceholder, opts: ComposeOptions): string | null {
   const key = (p.field_key ?? "").trim();
-  if (!key || opts.values[p.id]) return null;
+  if (!key || pickForPage(opts.values, p.id, opts.pageIndex)) return null;
   const src = opts.placeholders.find(
-    (d) => d.id !== p.id && (d.field_key ?? "").trim() === key && !!opts.values[d.id],
+    (d) =>
+      d.id !== p.id &&
+      (d.field_key ?? "").trim() === key &&
+      !!pickForPage(opts.values, d.id, opts.pageIndex),
   );
   return src?.id ?? null;
 }
