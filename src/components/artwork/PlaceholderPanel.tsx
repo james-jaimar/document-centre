@@ -41,6 +41,10 @@ interface Props {
   onRetryImage?: () => void;
   onChange: (value: TemplatedPlaceholderValue) => void;
   onClear: () => void;
+  /** Heading shown instead of the placeholder's own name (e.g. "Page 3"). */
+  nameOverride?: string;
+  /** Extra controls rendered under the heading (e.g. the per-page switch). */
+  headerExtra?: React.ReactNode;
 }
 
 /** Shell shared by the text and image cards — carries all the contrast cues. */
@@ -106,7 +110,10 @@ export default function PlaceholderPanel({
   onRetryImage,
   onChange,
   onClear,
+  nameOverride,
+  headerExtra,
 }: Props) {
+  const displayName = nameOverride ?? placeholder.name;
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -121,7 +128,7 @@ export default function PlaceholderPanel({
           <StepChip step={step} done />
           <Label className="flex flex-1 items-center gap-1.5 text-base font-semibold text-foreground">
             <Palette className="h-4 w-4 text-primary" />
-            {placeholder.name}
+            {displayName}
           </Label>
           <span
             className="h-6 w-10 shrink-0 rounded border"
@@ -181,7 +188,7 @@ export default function PlaceholderPanel({
           <StepChip step={step} done={filled} />
           <Label className="flex flex-1 items-center gap-1.5 text-base font-semibold text-foreground">
             <Type className="h-4 w-4 text-primary" />
-            {placeholder.name}
+            {displayName}
           </Label>
           {placeholder.is_required && !filled && (
             <Badge className="bg-primary text-primary-foreground text-[10px]">Required</Badge>
@@ -242,7 +249,7 @@ export default function PlaceholderPanel({
         <StepChip step={step} done={!!v} />
         <Label className="flex flex-1 items-center gap-1.5 text-base font-semibold text-foreground">
           <ImageIcon className="h-4 w-4 text-primary" />
-          {placeholder.name}
+          {displayName}
         </Label>
         {placeholder.is_required && !v && (
           <Badge className="bg-primary text-primary-foreground text-[10px]">Required</Badge>
@@ -253,6 +260,8 @@ export default function PlaceholderPanel({
           </Button>
         )}
       </div>
+
+      {headerExtra}
 
       <input
         ref={fileRef}

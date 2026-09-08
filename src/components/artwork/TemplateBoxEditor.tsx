@@ -91,6 +91,7 @@ export function makePlaceholder(
     is_watermark: false,
     default_cmyk: kind === "colour" ? { ...DEFAULT_CMYK } : null,
     customer_editable_colour: kind === "colour",
+    allow_per_page_artwork: false,
     page_scope: page?.scope ?? "all",
     page_index: page?.scope === "page" ? page.index : null,
     page_indexes: page?.scope === "pages" ? [page.index] : null,
@@ -1016,6 +1017,22 @@ export default function TemplateBoxEditor({
                 <Switch
                   checked={!!active.is_watermark}
                   onCheckedChange={(v) => patch(active.id, { is_watermark: v })}
+                />
+              </div>
+            )}
+
+            {active.kind === "image" && (
+              <div className="flex items-start justify-between gap-3 rounded-md border p-2">
+                <div>
+                  <Label className="text-xs">Allow a different picture per page</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Gives the customer a switch to supply their own picture for every page
+                    instead of one picture repeated throughout.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!active.allow_per_page_artwork}
+                  onCheckedChange={(v) => patch(active.id, { allow_per_page_artwork: v })}
                 />
               </div>
             )}

@@ -60,7 +60,15 @@ import type {
   StockImageSource,
   TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
-import { DEFAULT_CMYK, normaliseCmyk, placeholdersForPage } from "@/lib/artworkTemplates/types";
+import {
+  DEFAULT_CMYK,
+  keyBelongsTo,
+  normaliseCmyk,
+  pickForPage,
+  placeholdersForPage,
+  valueKey,
+} from "@/lib/artworkTemplates/types";
+import { Switch } from "@/components/ui/switch";
 
 
 
@@ -152,7 +160,10 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const { uploadPhoto } = usePhotoUpload(orderItem?.id);
 
   // ── Spec state
+  /** Keyed by placeholder id, or `id@pageIndex` for per-page pictures. */
   const [values, setValues] = useState<Record<string, TemplatedPlaceholderValue>>({});
+  /** Boxes the customer switched to "a different picture on every page". */
+  const [perPageIds, setPerPageIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
   const hydrated = useRef(false);
 
@@ -173,9 +184,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     const map: Record<string, TemplatedPlaceholderValue> = {};
     for (const v of s.placeholders ?? []) {
       const def = (s.placeholder_defs ?? []).find((d) => d.id === v.placeholder_id);
-      map[v.placeholder_id] = capWatermark(def, v);
+      const page = v.kind === "image" ? (v.page_index ?? null) : null;
+      map[valueKey(v.placeholder_id, page)] = capWatermark(def, v);
     }
     setValues(map);
+    setPerPageIds(s.per_page_placeholder_ids ?? []);
     const q = (orderItem?.spec as any)?.quantity;
     if (typeof q === "number" && q > 0) setQuantity(q);
   }, [orderItem?.spec]);
@@ -192,27 +205,33 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       trim_offset_y_mm: template?.trim_offset_y_mm,
       bleed_mm: template?.bleed_mm,
 
-      placeholders: placeholders
-        .map((p) => {
-          const v = values[p.id];
-          if (v) return v;
-          // Colour boxes always ship a value so the composer paints the default.
-          if (p.kind === "colour") {
-            return {
+      placeholders: placeholders.flatMap((p) => {
+        // Every value belonging to this box: the page-agnostic one and/or a
+        // per-page picture for each page the customer filled in.
+        const own = Object.entries(values)
+          .filter(([k]) => keyBelongsTo(k, p.id))
+          .map(([, v]) => v);
+        if (own.length > 0) return own;
+        // Colour boxes always ship a value so the composer paints the default.
+        if (p.kind === "colour") {
+          return [
+            {
               placeholder_id: p.id,
               kind: "colour" as const,
               cmyk: normaliseCmyk(p.default_cmyk ?? DEFAULT_CMYK),
               opacity: p.opacity ?? 1,
-            };
-          }
-          return null;
-        })
-        .filter(Boolean) as TemplatedPlaceholderValue[],
+            },
+          ];
+        }
+        return [];
+      }) as TemplatedPlaceholderValue[],
+
+      per_page_placeholder_ids: perPageIds,
 
       // Geometry snapshot for the print-ready composer.
       placeholder_defs: placeholders,
     }),
-    [templateId, template, placeholders, values],
+    [templateId, template, placeholders, values, perPageIds],
   );
 
   // Debounced persist onto the order item.
@@ -410,15 +429,48 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     [placeholders],
   );
 
-  /** Write a value to a box and to every box sharing its field name. */
+  /** Write a value to a box and to every box sharing its field name.
+   *  `page` is set when the picture applies to one page only. */
   const applyValue = useCallback(
-    (p: ArtworkPlaceholder, v: TemplatedPlaceholderValue | null) => {
+    (p: ArtworkPlaceholder, v: TemplatedPlaceholderValue | null, page?: number | null) => {
       const targets = siblingsOf(p);
       setValues((prev) => {
         const next = { ...prev };
         for (const t of targets) {
-          if (v == null) delete next[t.id];
-          else next[t.id] = capWatermark(t, { ...v, placeholder_id: t.id });
+          const k = valueKey(t.id, page ?? null);
+          if (v == null) delete next[k];
+          else
+            next[k] = capWatermark(t, {
+              ...v,
+              placeholder_id: t.id,
+              ...(page == null ? {} : { page_index: page }),
+            } as TemplatedPlaceholderValue);
+        }
+        return next;
+      });
+    },
+    [siblingsOf],
+  );
+
+  /** Switch a box between "same picture everywhere" and "one per page". */
+  const setPerPage = useCallback(
+    (p: ArtworkPlaceholder, on: boolean) => {
+      const ids = siblingsOf(p).map((t) => t.id);
+      setPerPageIds((prev) =>
+        on ? Array.from(new Set([...prev, ...ids])) : prev.filter((id) => !ids.includes(id)),
+      );
+      // Keep the first picture, drop the rest, so switching back and forth
+      // never leaves stray artwork behind.
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const id of ids) {
+          const own = Object.entries(prev).filter(([k]) => keyBelongsTo(k, id));
+          const keep = own.find(([, v]) => !!v)?.[1];
+          for (const [k] of own) delete next[k];
+          if (keep) {
+            const k = valueKey(id, on ? 0 : null);
+            next[k] = { ...keep, ...(on ? { page_index: 0 } : { page_index: null }) } as TemplatedPlaceholderValue;
+          }
         }
         return next;
       });
@@ -470,32 +522,38 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handlePickFile = useCallback(
-    async (placeholderId: string, rawFile: File, source?: StockImageSource | null) => {
-      setBusyId(placeholderId);
+    async (
+      placeholderId: string,
+      rawFile: File,
+      source?: StockImageSource | null,
+      page?: number | null,
+    ) => {
+      setBusyId(valueKey(placeholderId, page ?? null));
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
         const wasPdf = isPdf;
-        // PNG, not JPEG: keeps alpha so white-only vector artwork stays
-        // transparent instead of arriving as a solid white block.
-        const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
         const itemId = await ensureOrder();
-        const uploaded = await uploadPhoto(file, itemId);
-        if (!uploaded) return;
+        const ph = placeholders.find((p) => p.id === placeholderId);
+        const totalPages = template?.page_count ?? pages.length ?? 1;
+
         // Keep the original vector PDF too — the print composer places it as a
         // form XObject (with a transparency group when opacity < 1) instead of
         // using the rasterised proof image.
         let sourcePdfPath: string | null = null;
         if (isPdf) {
           try {
-            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-source.pdf`;
+            sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${page ?? "all"}-source.pdf`;
             await uploadToS3(sourcePdfPath, rawFile);
           } catch (err) {
             console.warn("[templated-artwork] original PDF upload failed", err);
             sourcePdfPath = null;
           }
         }
-        const ph = placeholders.find((p) => p.id === placeholderId);
-        const next: TemplatedImageValue = {
+
+        const buildValue = (
+          uploaded: { documentId?: string | null; storagePath: string; fileName: string; mimeType: string; width: number; height: number },
+          pdfPage?: number,
+        ): TemplatedImageValue => ({
           placeholder_id: placeholderId,
           kind: "image",
           document_id: uploaded.documentId,
@@ -504,6 +562,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           mime_type: uploaded.mimeType,
           source_was_pdf: wasPdf,
           source_pdf_path: sourcePdfPath,
+          ...(pdfPage ? { source_pdf_page: pdfPage } : {}),
           source_width_px: uploaded.width,
           source_height_px: uploaded.height,
           fit: ph?.fit_mode ?? "fill",
@@ -513,9 +572,42 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           background_hex: ph?.background_hex ?? null,
           opacity: ph?.is_watermark ? Math.min(ph?.opacity ?? 0.1, 0.1) : (ph?.opacity ?? 1),
           source: source ?? null,
-        };
-        if (ph) applyValue(ph, next);
-        else setValues((prev) => ({ ...prev, [placeholderId]: next }));
+        });
+
+        // A multi-page PDF dropped onto a per-page box fills one page each:
+        // page 1 → first month, page 2 → second, and so on.
+        if (isPdf && page != null) {
+          const rendered = await rasterisePdfPages(rawFile, {
+            targetLongPx: 2000,
+            maxPages: totalPages,
+          });
+          if (rendered.length > 1) {
+            for (let i = 0; i < Math.min(rendered.length, totalPages); i++) {
+              const blob = await (await fetch(rendered[i].dataUrl)).blob();
+              const pageFile = new File(
+                [blob],
+                rawFile.name.replace(/\.pdf$/i, "") + `-p${i + 1}.png`,
+                { type: "image/png" },
+              );
+              const up = await uploadPhoto(pageFile, itemId);
+              if (!up) continue;
+              const v = buildValue(up, i + 1);
+              if (ph) applyValue(ph, v, i);
+              else setValues((prev) => ({ ...prev, [valueKey(placeholderId, i)]: v }));
+            }
+            toast.success(`Placed ${Math.min(rendered.length, totalPages)} pages of your file`);
+            return;
+          }
+        }
+
+        // PNG, not JPEG: keeps alpha so white-only vector artwork stays
+        // transparent instead of arriving as a solid white block.
+        const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
+        const uploaded = await uploadPhoto(file, itemId);
+        if (!uploaded) return;
+        const next = buildValue(uploaded, isPdf ? 1 : undefined);
+        if (ph) applyValue(ph, next, page ?? null);
+        else setValues((prev) => ({ ...prev, [valueKey(placeholderId, page ?? null)]: next }));
       } catch (err: any) {
         console.error("[templated-artwork] upload failed", err);
         toast.error(err?.message ?? "Upload failed");
@@ -523,15 +615,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [ensureOrder, uploadPhoto, placeholders, applyValue],
+    [ensureOrder, uploadPhoto, placeholders, applyValue, template?.page_count, pages.length],
   );
 
   // ── Stock photo library (Pexels)
   const { settings: photoLibrary } = usePhotoLibraryForProduct(family as any);
   const [libraryFor, setLibraryFor] = useState<string | null>(null);
+  /** `libraryFor` is a value key — it may carry a page suffix. */
+  const libraryTarget = useMemo(() => {
+    if (!libraryFor) return null;
+    const [id, pg] = libraryFor.split("@");
+    return { id, page: pg == null ? null : Number(pg) };
+  }, [libraryFor]);
   const libraryPlaceholder = useMemo(
-    () => placeholders.find((p) => p.id === libraryFor) ?? null,
-    [placeholders, libraryFor],
+    () => placeholders.find((p) => p.id === libraryTarget?.id) ?? null,
+    [placeholders, libraryTarget],
   );
   const usedStockIds = useMemo(
     () =>
@@ -543,18 +641,23 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   const handlePickStock = useCallback(
     async (photo: StockPhoto) => {
-      if (!libraryFor) return;
-      const placeholderId = libraryFor;
-      setBusyId(placeholderId);
+      if (!libraryTarget) return;
+      const placeholderId = libraryTarget.id;
+      setBusyId(libraryFor);
       try {
         const file = await fetchStockPhotoFile(photo);
-        await handlePickFile(placeholderId, file, {
-          provider: "pexels",
-          photo_id: String(photo.id),
-          photographer: photo.photographer,
-          photographer_url: photo.photographer_url,
-          photo_url: photo.page_url,
-        });
+        await handlePickFile(
+          placeholderId,
+          file,
+          {
+            provider: "pexels",
+            photo_id: String(photo.id),
+            photographer: photo.photographer,
+            photographer_url: photo.photographer_url,
+            photo_url: photo.page_url,
+          },
+          libraryTarget.page,
+        );
         // Licence record — best effort, never blocks the customer.
         try {
           await supabase.from("stock_image_uses").insert({
@@ -578,7 +681,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         setBusyId(null);
       }
     },
-    [libraryFor, handlePickFile, tenantId, activeBranch?.id],
+    [libraryFor, libraryTarget, handlePickFile, tenantId, activeBranch?.id],
   );
 
   // ── Pricing: pack ladder (with finishing options + paid extras) when the
@@ -680,10 +783,19 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const unitPrice = priced.unitPrice;
 
   // ── Validation + cart
+  const totalPageCount = template?.page_count ?? pages.length ?? 1;
   const missingRequired = placeholders.filter((p) => {
     if (!p.is_required) return false;
     // Colour boxes always carry a default ink build, so they can't be "missing".
     if (p.kind === "colour") return false;
+    // Per-page pictures must be filled in for every page.
+    if (p.kind === "image" && perPageIds.includes(p.id)) {
+      for (let i = 0; i < totalPageCount; i++) {
+        const pv = values[valueKey(p.id, i)] as TemplatedImageValue | undefined;
+        if (!pv?.storage_path) return true;
+      }
+      return false;
+    }
     const v = values[p.id];
     if (!v) return true;
     if (v.kind === "text") return !v.value.trim();
@@ -893,34 +1005,66 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
               Nothing to fill in on this page — use the pager to move to another page.
             </p>
           ) : (
-            railPlaceholders.map((p, i) => (
-              <div key={p.id} className="space-y-1">
-                <PlaceholderPanel
-                  placeholder={p}
-                  value={values[p.id]}
-                  busy={busyId === p.id}
-                  step={i + 1}
-                  active={activeId === p.id}
-                  onFocus={() => setActiveId(p.id)}
-                  onPickFile={(file) => handlePickFile(p.id, file)}
-                  onBrowseLibrary={
-                    photoLibrary.enabled && p.kind === "image"
-                      ? () => setLibraryFor(p.id)
-                      : undefined
-                  }
-                  loadError={!!imageErrors[p.id]}
-                  onRetryImage={() => retryImage(p.id)}
-                  onChange={(v) => applyValue(p, v)}
-                  onClear={() => applyValue(p, null)}
-
-                />
-                {siblingsOf(p).length > 1 && (
-                  <p className="px-1 text-[11px] text-muted-foreground">
-                    Used in {siblingsOf(p).length} places across the calendar — upload once.
-                  </p>
-                )}
-              </div>
-            ))
+            railPlaceholders.map((p, i) => {
+              const curPage = pages[pageIndex]?.index ?? pageIndex;
+              const perPage = p.kind === "image" && perPageIds.includes(p.id);
+              const slot = perPage ? curPage : null;
+              const key = valueKey(p.id, slot);
+              const filledPages = perPage
+                ? Array.from({ length: totalPageCount }, (_, n) =>
+                    values[valueKey(p.id, n)] ? 1 : 0,
+                  ).reduce((a: number, b: number) => a + b, 0)
+                : 0;
+              return (
+                <div key={p.id} className="space-y-1">
+                  <PlaceholderPanel
+                    placeholder={p}
+                    value={values[key]}
+                    busy={busyId === key}
+                    step={i + 1}
+                    active={activeId === p.id}
+                    onFocus={() => setActiveId(p.id)}
+                    onPickFile={(file) => handlePickFile(p.id, file, null, slot)}
+                    onBrowseLibrary={
+                      photoLibrary.enabled && p.kind === "image"
+                        ? () => setLibraryFor(key)
+                        : undefined
+                    }
+                    loadError={!!imageErrors[key]}
+                    onRetryImage={() => retryImage(key)}
+                    onChange={(v) => applyValue(p, v, slot)}
+                    onClear={() => applyValue(p, null, slot)}
+                    nameOverride={perPage ? `${p.name} — page ${curPage + 1}` : undefined}
+                    headerExtra={
+                      p.kind === "image" && p.allow_per_page_artwork ? (
+                        <div className="flex items-start justify-between gap-3 rounded-md bg-muted/50 p-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">
+                              Same picture on every page
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {perPage
+                                ? `Switched off — add a picture for each of the ${totalPageCount} pages (${filledPages} done). A multi-page PDF fills them all at once.`
+                                : "One picture repeats throughout. Switch off to use a different picture on each page."}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={!perPage}
+                            onCheckedChange={(on) => setPerPage(p, !on)}
+                            aria-label="Same picture on every page"
+                          />
+                        </div>
+                      ) : undefined
+                    }
+                  />
+                  {!perPage && siblingsOf(p).length > 1 && (
+                    <p className="px-1 text-[11px] text-muted-foreground">
+                      Used in {siblingsOf(p).length} places across the calendar — upload once.
+                    </p>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 

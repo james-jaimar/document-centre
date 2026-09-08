@@ -750,11 +750,20 @@ def assemble_templated_artwork(
         raise ValueError("templated-artwork job has no base_pdf_path")
 
     defs = [d for d in (ta.get("placeholder_defs") or []) if isinstance(d, dict)]
-    values: dict[str, dict[str, Any]] = {
-        str(v.get("placeholder_id")): v
-        for v in (ta.get("placeholders") or [])
-        if isinstance(v, dict) and v.get("placeholder_id")
-    }
+    # Values without a page_index repeat on every page; values carrying one
+    # apply to that page only ("a different picture for each month").
+    values: dict[str, dict[str, Any]] = {}
+    page_values: dict[int, dict[str, dict[str, Any]]] = {}
+    for v in ta.get("placeholders") or []:
+        if not isinstance(v, dict) or not v.get("placeholder_id"):
+            continue
+        pid = str(v.get("placeholder_id"))
+        pg = v.get("page_index")
+        if pg is None:
+            values[pid] = v
+        else:
+            page_values.setdefault(int(pg), {})[pid] = v
+    has_per_page_values = bool(page_values)
     if not defs:
         raise ValueError(
             "templated-artwork job carries no placeholder_defs — the order was "
@@ -769,34 +778,55 @@ def assemble_templated_artwork(
     if len(reader.pages) == 0:
         raise ValueError("templated-artwork base PDF has no pages")
 
-    # Download every customer asset once — the same content repeats on all pages.
+    # Download every customer asset once. Repeated content is keyed by the
+    # placeholder id; per-page content by "id@page".
+    image_kinds = {
+        str(d.get("id") or ""): (d.get("kind") or "image") for d in defs
+    }
     images: dict[str, Image.Image] = {}
+    page_images: dict[int, dict[str, Image.Image]] = {}
     vector_sources: dict[str, Path] = {}
-    for idx, d in enumerate(defs):
-        pid = str(d.get("id") or "")
-        v = values.get(pid)
-        if (d.get("kind") or "image") != "image" or not v:
-            continue
+
+    def _fetch_asset(idx: int, pid: str, v: dict[str, Any], page: int | None) -> None:
+        if image_kinds.get(pid, "image") != "image":
+            return
+        tag = f"{idx:03d}" if page is None else f"{idx:03d}-p{page:02d}"
         # Prefer the original vector PDF — placed 1:1, never rasterised.
-        pdf_src = v.get("source_pdf_path")
+        # Per-page artwork always goes down the raster path: vector placements
+        # are collected once and reused across pages.
+        pdf_src = v.get("source_pdf_path") if page is None else None
         if pdf_src:
-            local_pdf = workspace.path(f"ph-{idx:03d}-source.pdf")
+            local_pdf = workspace.path(f"ph-{tag}-source.pdf")
             try:
                 storage.download(str(pdf_src), local_pdf)
                 vector_sources[pid] = local_pdf
-                continue
+                return
             except Exception as exc:  # noqa: BLE001 - fall back to the raster
                 log.warning("templated_artwork: vector source %s failed: %s", pdf_src, exc)
         src = v.get("storage_path")
         if not src:
-            continue
-        local_img = workspace.path(f"ph-{idx:03d}-{Path(str(src)).name}")
+            return
+        local_img = workspace.path(f"ph-{tag}-{Path(str(src)).name}")
         storage.download(str(src), local_img)
         img = ImageOps.exif_transpose(Image.open(local_img))
         if img.mode not in ("RGB", "RGBA", "L", "CMYK"):
             # Keep alpha when the source carries it (e.g. palette PNGs).
             img = img.convert("RGBA" if _has_alpha(img) else "RGB")
-        images[pid] = img
+        if page is None:
+            images[pid] = img
+        else:
+            page_images.setdefault(page, {})[pid] = img
+
+    for idx, d in enumerate(defs):
+        pid = str(d.get("id") or "")
+        v = values.get(pid)
+        if v:
+            _fetch_asset(idx, pid, v, None)
+        for pg, bucket in page_values.items():
+            pv = bucket.get(pid)
+            if pv:
+                _fetch_asset(idx, pid, pv, pg)
+
 
     trim_w_mm = _num(ta.get("trim_width_mm"))
     trim_h_mm = _num(ta.get("trim_height_mm"))
@@ -812,6 +842,7 @@ def assemble_templated_artwork(
     base_geometry: dict[str, Any] = {}
     # Encode each placed raster once, and render each distinct page layer once.
     jpeg_cache: dict[tuple[str, int, int], bytes] = {}
+    jpeg_cache_by_page: dict[int, dict[tuple[str, int, int], bytes]] = {}
     layer_cache: dict[tuple[Any, ...], Path] = {}
 
 
@@ -946,7 +977,17 @@ def assemble_templated_artwork(
         geo_key = (
             round(page_w_pt, 2), round(page_h_pt, 2),
             round(trim_x_pt, 2), round(trim_top_pt, 2),
-            page_index if has_page_scoped else -1,
+            page_index if (has_page_scoped or has_per_page_values) else -1,
+        )
+
+        # This page's content: its own pictures first, then the repeated ones.
+        pg_values = {**values, **page_values.get(page_index, {})}
+        pg_images = {**images, **page_images.get(page_index, {})}
+        # A shared JPEG cache would reuse one page's photo everywhere.
+        pg_jpeg_cache = (
+            jpeg_cache_by_page.setdefault(page_index, {})
+            if has_per_page_values
+            else jpeg_cache
         )
 
         # 1. Boxes that sit BEHIND the template artwork.
@@ -956,7 +997,7 @@ def assemble_templated_artwork(
                 under_path = workspace.path(f"underlay-{page_index:03d}.pdf")
                 _render_overlay(
                     under_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_under, values, images, vector_ids, jpeg_cache,
+                    page_under, pg_values, pg_images, vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("under", *geo_key)] = under_path
             under_page = PdfReader(str(under_path)).pages[0]
@@ -987,7 +1028,7 @@ def assemble_templated_artwork(
                 overlay_path = workspace.path(f"overlay-{page_index:03d}.pdf")
                 _render_overlay(
                     overlay_path, page_w_pt, page_h_pt, trim_x_pt, trim_top_pt,
-                    page_over, values, images, vector_ids, jpeg_cache,
+                    page_over, pg_values, pg_images, vector_ids, pg_jpeg_cache,
                 )
                 layer_cache[("over", *geo_key)] = overlay_path
             composed.merge_page(PdfReader(str(overlay_path)).pages[0])
@@ -1048,7 +1089,7 @@ def assemble_templated_artwork(
         "trim_width_mm": trim_w_mm or None,
         "trim_height_mm": trim_h_mm or None,
         "placeholder_count": len(defs),
-        "image_placeholders_filled": len(images),
+        "image_placeholders_filled": len(images) + sum(len(m) for m in page_images.values()),
         "vector_placeholders": len(vector_sources),
         "vector_placements_stamped": vector_stamped,
         "under_layer_count": len(under_defs),

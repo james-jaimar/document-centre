@@ -11,6 +11,7 @@ import {
   DEFAULT_TEXT_STYLE,
   cmykToHex,
   fontCss,
+  pickForPage,
   placeholdersForPage,
   splitByLayer,
   type ArtworkPlaceholder,
@@ -140,9 +141,12 @@ export interface ComposeOptions {
 /** Id of the sibling box whose value this box borrows via `field_key`. */
 function sharedSourceId(p: ArtworkPlaceholder, opts: ComposeOptions): string | null {
   const key = (p.field_key ?? "").trim();
-  if (!key || opts.values[p.id]) return null;
+  if (!key || pickForPage(opts.values, p.id, opts.pageIndex)) return null;
   const src = opts.placeholders.find(
-    (d) => d.id !== p.id && (d.field_key ?? "").trim() === key && !!opts.values[d.id],
+    (d) =>
+      d.id !== p.id &&
+      (d.field_key ?? "").trim() === key &&
+      !!pickForPage(opts.values, d.id, opts.pageIndex),
   );
   return src?.id ?? null;
 }
@@ -156,7 +160,9 @@ function drawPlaceholder(
   const box = boxRectPx(p, pxPerMm);
   // Boxes tagged with the same shared field name reuse one customer value.
   const sharedId = sharedSourceId(p, opts);
-  const value = opts.values[p.id] ?? (sharedId ? opts.values[sharedId] : undefined);
+  const value =
+    pickForPage(opts.values, p.id, opts.pageIndex) ??
+    (sharedId ? pickForPage(opts.values, sharedId, opts.pageIndex) : undefined);
   const alpha = Math.max(0, Math.min(1, value?.opacity ?? p.opacity ?? 1));
 
   if (p.kind === "colour") {
@@ -170,7 +176,9 @@ function drawPlaceholder(
     ctx.fillRect(box.x, box.y, box.w, box.h);
     ctx.restore();
   } else if (p.kind === "image") {
-    const img = opts.images[p.id] ?? (sharedId ? opts.images[sharedId] : undefined);
+    const img =
+      pickForPage(opts.images, p.id, opts.pageIndex) ??
+      (sharedId ? pickForPage(opts.images, sharedId, opts.pageIndex) : undefined);
     const bg = (value && "background_hex" in value ? value.background_hex : null) ?? p.background_hex;
     ctx.save();
     ctx.globalAlpha = alpha;

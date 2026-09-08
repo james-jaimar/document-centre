@@ -140,6 +140,9 @@ export interface ArtworkPlaceholder {
   default_cmyk: ArtworkCmyk | null;
   /** [colour boxes] Whether the customer may change the colour. */
   customer_editable_colour: boolean;
+  /** [image boxes] Customer may supply a different picture for every page
+   *  instead of one picture repeated across the whole document. */
+  allow_per_page_artwork?: boolean;
 
   /** `all` = every page; `page` = only `page_index`; `pages` = `page_indexes`. */
   page_scope: PlaceholderPageScope;
@@ -240,6 +243,33 @@ export function resolveValueFor<T extends { placeholder_id?: string }>(
   return undefined;
 }
 
+/**
+ * Key used for a customer value in the editor's value/image maps.
+ * Page-agnostic values (the usual "same on every page" case) keep the bare
+ * placeholder id, so nothing about existing orders changes.
+ */
+export function valueKey(placeholderId: string, pageIndex?: number | null): string {
+  return pageIndex == null ? placeholderId : `${placeholderId}@${pageIndex}`;
+}
+
+/** True when `key` belongs to `placeholderId` (with or without a page part). */
+export function keyBelongsTo(key: string, placeholderId: string): boolean {
+  return key === placeholderId || key.startsWith(`${placeholderId}@`);
+}
+
+/** This page's value for a placeholder, else its page-agnostic one. */
+export function pickForPage<T>(
+  map: Record<string, T | undefined>,
+  placeholderId: string,
+  pageIndex?: number | null,
+): T | undefined {
+  if (pageIndex != null) {
+    const hit = map[valueKey(placeholderId, pageIndex)];
+    if (hit) return hit;
+  }
+  return map[placeholderId];
+}
+
 export function splitByLayer(list: ArtworkPlaceholder[]) {
   const sorted = sortPlaceholders(list);
   return {
@@ -275,6 +305,10 @@ export interface TemplatedImageValue {
   opacity?: number;
   /** Set when the image came from a stock library instead of a customer file. */
   source?: StockImageSource | null;
+  /** Zero-based page this picture belongs to. Absent/null = every page. */
+  page_index?: number | null;
+  /** 1-based page of `source_pdf_path` to place (multi-page supplied files). */
+  source_pdf_page?: number;
 }
 
 /** Provenance for a library photo — kept so the photographer can be credited. */
@@ -319,8 +353,11 @@ export interface TemplatedArtworkSpec {
   trim_offset_y_mm?: number;
   bleed_mm?: number;
 
-  /** One entry per placeholder — repeated across every page. */
+  /** Customer values. An entry without `page_index` repeats on every page;
+   *  entries with a `page_index` apply to that page only. */
   placeholders: TemplatedPlaceholderValue[];
+  /** Placeholder ids the customer switched to "different picture per page". */
+  per_page_placeholder_ids?: string[];
   /** Snapshot of the template's placeholder geometry/styling at order time, so
    *  the PDF server can compose without re-reading the admin tables (and so a
    *  later template edit can never change an already-placed order). */

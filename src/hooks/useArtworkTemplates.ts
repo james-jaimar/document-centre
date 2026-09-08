@@ -41,6 +41,7 @@ function asPlaceholder(row: any): ArtworkPlaceholder {
     is_watermark: !!row.is_watermark,
     default_cmyk: row.default_cmyk ? normaliseCmyk(row.default_cmyk) : null,
     customer_editable_colour: row.customer_editable_colour !== false,
+    allow_per_page_artwork: !!row.allow_per_page_artwork,
     text_style: (row.text_style ?? {}) as ArtworkPlaceholder["text_style"],
     page_scope:
       row.page_scope === "page" ? "page" : row.page_scope === "pages" ? "pages" : "all",
@@ -231,6 +232,8 @@ export function useSaveArtworkPlaceholders() {
           is_watermark: !!p.is_watermark,
           default_cmyk: p.kind === "colour" ? normaliseCmyk(p.default_cmyk) : null,
           customer_editable_colour: p.customer_editable_colour !== false,
+          allow_per_page_artwork: p.kind === "image" && !!p.allow_per_page_artwork,
+
 
           page_scope:
             p.page_scope === "page" ? "page" : p.page_scope === "pages" ? "pages" : "all",
