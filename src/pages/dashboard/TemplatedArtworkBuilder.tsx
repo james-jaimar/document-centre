@@ -743,7 +743,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 const up = await Promise.race([
-                  uploadPhoto(file, itemId),
+                  uploadPhoto(file, itemId, { suppressToast: true }),
                   new Promise<never>((_, rej) =>
                     setTimeout(() => rej(new Error("the upload timed out")), 120_000),
                   ),
