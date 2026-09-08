@@ -1,0 +1,1 @@
+ALTER TABLE public.platform_email_campaigns ADD COLUMN IF NOT EXISTS error_message text;
