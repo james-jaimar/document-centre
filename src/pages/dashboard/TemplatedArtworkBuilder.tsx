@@ -953,8 +953,13 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   const { tier: pricingTier } = useCustomerPricingTier();
   const pricingOptions = useMemo(
-    () => visibleOptions(allPricingOptions, pricingTier),
-    [allPricingOptions, pricingTier],
+    () =>
+      optionsWithPricedRows(
+        packBlocks,
+        visibleOptions(allPricingOptions, pricingTier),
+        pricingTier,
+      ),
+    [allPricingOptions, pricingTier, packBlocks],
   );
 
   const [pricingOption, setPricingOption] = useState<string | null>(null);

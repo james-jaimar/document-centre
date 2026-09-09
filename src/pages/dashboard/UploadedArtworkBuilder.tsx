@@ -332,8 +332,13 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
 
   const { tier: pricingTier } = useCustomerPricingTier();
   const pricingOptions = useMemo(
-    () => visibleOptions(allPricingOptions, pricingTier),
-    [allPricingOptions, pricingTier],
+    () =>
+      optionsWithPricedRows(
+        packBlocks,
+        visibleOptions(allPricingOptions, pricingTier),
+        pricingTier,
+      ),
+    [allPricingOptions, pricingTier, packBlocks],
   );
 
   const [pricingOption, setPricingOption] = useState<string | null>(null);
