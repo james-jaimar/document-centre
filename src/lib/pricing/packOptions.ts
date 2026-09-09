@@ -106,6 +106,22 @@ export function visibleOptions(
   return options.filter((o) => !o.trade_only);
 }
 
+/**
+ * Keep only the options that actually have at least one priced pack row for
+ * this tier. An option whose ladder rows were deleted must not be offered to
+ * customers (it would render a selector with no price).
+ */
+export function optionsWithPricedRows(
+  blocks: QuantityBlock[],
+  options: PricingOption[],
+  tier: PricingTier = "consumer",
+): PricingOption[] {
+  if (options.length === 0) return options;
+  return options.filter(
+    (o) => packQuantitiesForOption(blocks, o.slug, tier, options).length > 0,
+  );
+}
+
 /** Slugs of options this tier may not use. */
 export function hiddenOptionSlugs(
   options: PricingOption[],

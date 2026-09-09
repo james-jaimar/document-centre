@@ -17,6 +17,7 @@ import {
 import {
   normalizeOptions,
   visibleOptions,
+  optionsWithPricedRows,
   blockMatchesOption,
   packQuantitiesForOption,
 } from "@/lib/pricing/packOptions";
@@ -92,10 +93,12 @@ export default function StorefrontProduct() {
 
   // Finishing options (e.g. "with Gloss Lam" / "with Matt Lam"). Trade-only
   // options are never shown to consumers.
-  const options = useMemo(
-    () => visibleOptions(normalizeOptions((entry?.family as any)?.pricing_options), pricingTier),
-    [entry?.family, pricingTier],
-  );
+  const options = useMemo(() => {
+    const all = normalizeOptions((entry?.family as any)?.pricing_options);
+    // Hide options with no priced rows in this scope — a deleted ladder must
+    // remove the choice, not leave a selector with no price.
+    return optionsWithPricedRows(allBlocks, visibleOptions(all, pricingTier), pricingTier);
+  }, [entry?.family, pricingTier, allBlocks]);
   const [option, setOption] = useState<string | null>(null);
   const activeOption =
     (option && options.some((o) => o.slug === option) ? option : options[0]?.slug) ?? null;

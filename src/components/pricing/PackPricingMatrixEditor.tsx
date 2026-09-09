@@ -139,6 +139,19 @@ export default function PackPricingMatrixEditor({
   const hasOverride = isOverrideScope && (initialBlocks?.length ?? 0) > 0;
   const noCatalogueReady = sizeOptions.length === 0 || allPapers.length === 0;
 
+  // Options with no priced rows in the current ladder — customers no longer see these.
+  const unpricedOptions = useMemo(() => {
+    if (pricingOptions.length === 0) return [];
+    return pricingOptions.filter(
+      (o) =>
+        !blocks.some((b) => {
+          const raw = (b.option ?? "*").toLowerCase();
+          const matches = raw === "*" || raw === o.slug.toLowerCase();
+          return matches && (Number(b.qty) || 0) > 0 && (Number(b.price_minor) || 0) > 0;
+        }),
+    );
+  }, [blocks, pricingOptions]);
+
   const optionLabel = (slug: string) => {
     if (!slug || slug === "*") return "All options";
     return pricingOptions.find((o) => o.slug.toLowerCase() === slug.toLowerCase())?.label ?? slug;
@@ -374,6 +387,15 @@ export default function PackPricingMatrixEditor({
           {sizeOptions.length === 0
             ? "No sizes available — configure the master catalogue first."
             : "No papers found in the master catalogue."}
+        </p>
+      )}
+
+      {unpricedOptions.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          No prices in this scope — hidden from customers:{" "}
+          <span className="font-medium">
+            {unpricedOptions.map((o) => o.label).join(", ")}
+          </span>
         </p>
       )}
 
