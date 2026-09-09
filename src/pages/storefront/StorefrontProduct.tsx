@@ -17,6 +17,7 @@ import {
 import {
   normalizeOptions,
   visibleOptions,
+  optionsWithPricedRows,
   blockMatchesOption,
   packQuantitiesForOption,
 } from "@/lib/pricing/packOptions";

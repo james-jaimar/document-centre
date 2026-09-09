@@ -49,6 +49,7 @@ import {
   packQuantitiesForOption,
   snapQuantity,
   visibleOptions,
+  optionsWithPricedRows,
 } from "@/lib/pricing/packOptions";
 
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
