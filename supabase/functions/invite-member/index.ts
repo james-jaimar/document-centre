@@ -396,6 +396,7 @@ Deno.serve(async (req) => {
         profile_id: profileId,
         invited: isNewAccount,
         email_sent: emailSent,
+        sent_from: sentFrom,
         message: isNewAccount
           ? (emailSent ? "Invitation sent" : "User created — invite email failed to send")
           : "Existing user added to tenant",
