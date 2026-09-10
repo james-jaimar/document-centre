@@ -328,33 +328,67 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Send branded email via SMTP send-email function
+    // Send branded email via the tenant's own mailbox. Falls back to the
+    // platform sender only when the tenant has no mailbox configured.
     let emailSent = false;
+    let sentFrom: "tenant" | "platform" | null = null;
     if (shouldSendEmail && actionLink) {
       try {
         const brand = await getTenantBranding(admin, tenant_id);
         const { subject, html, text } = buildInviteEmail(brand, actionLink, isNewAccount);
 
-        const sendResp = await fetch(`${url}/functions/v1/send-email`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: authHeader,
-            apikey: anonKey,
-          },
-          body: JSON.stringify({ to: cleanEmail, subject, html, text }),
-        });
+        const post = (scoped: boolean) =>
+          fetch(`${url}/functions/v1/send-email`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: authHeader,
+              apikey: anonKey,
+            },
+            body: JSON.stringify({
+              to: cleanEmail,
+              subject,
+              html,
+              text,
+              tenant_id: scoped ? tenant_id : null,
+              branch_id: scoped ? (branch_id ?? null) : null,
+              app_id: app_id ?? null,
+              from_name: brand.portalName,
+              category: "auth",
+              metadata: {
+                kind: "member_invite",
+                tenant_id,
+                branch_id: branch_id ?? null,
+                profile_id: profileId,
+                sender_scope: scoped ? "tenant" : "platform",
+              },
+            }),
+          });
+
+        let sendResp = await post(true);
+        let bodyText = await sendResp.text();
+        let bodyJson: any = null;
+        try { bodyJson = JSON.parse(bodyText); } catch { /* not JSON */ }
+
+        if (!sendResp.ok && bodyJson?.error === "EMAIL_NOT_CONFIGURED") {
+          console.warn("invite-member: tenant mailbox not configured, using platform sender", { tenant_id });
+          sendResp = await post(false);
+          bodyText = await sendResp.text();
+          if (sendResp.ok) sentFrom = "platform";
+        } else if (sendResp.ok) {
+          sentFrom = "tenant";
+        }
 
         if (sendResp.ok) {
           emailSent = true;
         } else {
-          const body = await sendResp.text();
-          console.error("send-email failed:", sendResp.status, body);
+          console.error("send-email failed:", sendResp.status, bodyText);
         }
       } catch (e) {
         console.error("send-email threw:", e);
       }
     }
+
 
     return json(
       {
@@ -362,6 +396,7 @@ Deno.serve(async (req) => {
         profile_id: profileId,
         invited: isNewAccount,
         email_sent: emailSent,
+        sent_from: sentFrom,
         message: isNewAccount
           ? (emailSent ? "Invitation sent" : "User created — invite email failed to send")
           : "Existing user added to tenant",
