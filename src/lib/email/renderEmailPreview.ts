@@ -47,6 +47,9 @@ export function defaultPreviewVars(
     login_email: branch?.email || "owner@example.com",
     action_link: `${domain}/welcome?token=sample`,
     activation_link: `${domain}/activate/sample-slug`,
+    tenant_website: domain,
+    sender_postal_address: "123 Example Street, Johannesburg, South Africa",
+    unsubscribe_url: "https://example.com/unsubscribe",
     is_returning_user: "false",
     existing_branch_count: "0",
   };
@@ -61,7 +64,7 @@ export interface EmailShellOptions {
 
 /** Wraps body HTML in the same branded card shell the sender uses. */
 export function renderEmailShell(opts: EmailShellOptions): string {
-  // The template's own HTML is the whole email — no injected brand header.
+  if (/<!doctype\s+html|<html[\s>]/i.test(opts.bodyHtml)) return opts.bodyHtml;
   return `<!doctype html><html><body style="margin:0;padding:0;">${opts.bodyHtml}</body></html>`;
 }
 

@@ -15,12 +15,13 @@ interface EmailImageUploadProps {
   onOpenChange: (open: boolean) => void;
   /** Called with the public URL to insert into the editor. */
   onInsert: (url: string, alt: string) => void;
+  tenantId?: string | null;
 }
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const ACCEPT = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
-export function EmailImageUpload({ open, onOpenChange, onInsert }: EmailImageUploadProps) {
+export function EmailImageUpload({ open, onOpenChange, onInsert, tenantId }: EmailImageUploadProps) {
   const [tab, setTab] = useState<"upload" | "url">("upload");
   const [uploading, setUploading] = useState(false);
   const [urlInput, setUrlInput] = useState("");
@@ -47,7 +48,7 @@ export function EmailImageUpload({ open, onOpenChange, onInsert }: EmailImageUpl
     try {
       const ext = file.name.split(".").pop()?.toLowerCase() || "png";
       const safeName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-]+/gi, "-").slice(0, 40) || "image";
-      const path = `${crypto.randomUUID()}-${safeName}.${ext}`;
+      const path = `${tenantId ? `${tenantId}/` : "platform/"}${crypto.randomUUID()}-${safeName}.${ext}`;
       const { error } = await supabase.storage.from("email-assets").upload(path, file, {
         contentType: file.type,
         cacheControl: "31536000",

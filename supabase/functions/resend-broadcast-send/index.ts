@@ -15,7 +15,7 @@ import {
   upsertActivationPage,
 } from "../_shared/campaignAudience.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
-import { renderBareEmail } from "../_shared/branded-shell.ts";
+import { findRelativeImages, normalizeBroadcastTokens, renderAuthoredEmail } from "../_shared/advancedEmail.ts";
 import { htmlToText } from "../_shared/htmlToText.ts";
 import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
@@ -25,7 +25,6 @@ import {
   ensureContactProperties,
   readResendKey,
   ResendApiError,
-  segmentExists,
   upsertContact,
   verifyAccount,
   withResendUnsubscribeFooter,
@@ -85,7 +84,7 @@ Deno.serve(async (req) => {
     if (!allowed) return json({ error: "Forbidden" }, 403);
 
     const { data: tenant } = await admin
-      .from("tenants").select("id, app_id, name, slug").eq("id", tenantId).maybeSingle();
+      .from("tenants").select("id, app_id, name, slug, website_url").eq("id", tenantId).maybeSingle();
     if (!tenant) return json({ error: "Tenant not found" }, 404);
 
     // ── Sender: the tenant's Resend mailbox ────────────────────────────────
@@ -146,6 +145,12 @@ Deno.serve(async (req) => {
     // Broadcast bodies are rendered once; per-person values come from Resend
     // contact properties, which share the {{{contact.<key>}}} namespace with
     // the built-in first_name / last_name / email tags.
+    const { data: addressSetting } = await admin.from("tenant_settings")
+      .select("setting_value").eq("tenant_id", tenantId)
+      .eq("category", "documents").eq("setting_key", "invoice_address").maybeSingle();
+    const senderPostalAddress = typeof addressSetting?.setting_value === "string"
+      ? addressSetting.setting_value : "";
+
     const vars: Record<string, string> = {
       contact_name: contactTag("first_name", "there"),
       customer_name: contactTag("first_name", "there"),
@@ -157,14 +162,25 @@ Deno.serve(async (req) => {
       store_url: origin,
       portal_name: tenant.name,
       login_email: contactTag("email"),
+      tenant_website: tenant.website_url || origin,
+      sender_postal_address: senderPostalAddress,
     };
 
     const subject = renderTemplate(template.subject, vars, false);
-    const bodyHtml = renderTemplate(template.body_html, vars, true);
+    const bodyHtml = normalizeBroadcastTokens(renderTemplate(template.body_html, vars, true));
     const bodyText = template.body_text
       ? renderTemplate(template.body_text, vars, false)
       : htmlToText(bodyHtml);
-    const shellHtml = renderBareEmail({ preheader: subject, bodyHtml });
+    const missingImages = findRelativeImages(bodyHtml);
+    if (missingImages.length) {
+      return json({
+        provider: "resend",
+        error: `Replace the unresolved template images before sending: ${missingImages.join(", ")}`,
+        missing_images: missingImages,
+        results,
+      }, 200);
+    }
+    const shellHtml = renderAuthoredEmail(bodyHtml, template.preheader || subject);
     const shellText = bodyText;
 
     const { html, text } = withResendUnsubscribeFooter(shellHtml, shellText, senderLabel);
@@ -206,12 +222,12 @@ Deno.serve(async (req) => {
     }
 
     // ── Segment ────────────────────────────────────────────────────────────
-    let segmentId: string | null = account.resend_segment_id ?? null;
-    if (segmentId && !(await segmentExists(apiKey, segmentId))) segmentId = null;
-    if (!segmentId) {
-      segmentId = await createSegment(apiKey, `${tenant.name} — Document Centre`);
-      await admin.from("email_accounts").update({ resend_segment_id: segmentId }).eq("id", account.id);
-    }
+    // A fresh segment per campaign guarantees a broadcast cannot inherit
+    // contacts selected for an earlier campaign.
+    const segmentId = await createSegment(
+      apiKey,
+      `${tenant.name} — ${template.name ?? templateSlug} — ${new Date().toISOString().slice(0, 19)}`,
+    );
 
 
     // ── Campaign row ───────────────────────────────────────────────────────

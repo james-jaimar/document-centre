@@ -18,6 +18,7 @@ import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
 import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import TemplateEditor from "@/components/admin/email/TemplateEditor";
 import { applyMergeTokens, renderEmailShell } from "@/lib/email/renderEmailPreview";
+import { unknownEmailTokens, unresolvedEmailImages } from "@/lib/email/advancedEmail";
 
 
 type Audience = "branch" | "company" | "customer";
@@ -39,6 +40,8 @@ interface TenantTemplate {
   body_text: string | null;
   tenant_id: string | null;
   kind: string | null;
+  editor_mode?: "simple" | "advanced" | null;
+  preheader?: string | null;
 }
 
 interface CampaignRow {
@@ -64,7 +67,8 @@ const AUDIENCE_LABEL: Record<Audience, string> = {
 
 const TOKENS = [
   "contact_name", "customer_name", "company_name", "branch_name",
-  "tenant_name", "activation_link", "action_link", "unsubscribe_link",
+  "tenant_name", "tenant_website", "sender_postal_address",
+  "activation_link", "action_link", "unsubscribe_url",
 ];
 
 export default function AdminCommunications() {
@@ -181,6 +185,10 @@ function ComposeTab() {
   useEffect(() => { setSelected(new Set()); setResult(null); }, [audience]);
 
   const template = templates.find((t) => t.slug === templateSlug);
+  const templateIssues = template ? [
+    ...unresolvedEmailImages(template.body_html).map((image) => `Replace image: ${image}`),
+    ...unknownEmailTokens(template.body_html).map((token) => `Unknown field: {{${token}}}`),
+  ] : [];
   const sample = pool.find((r) => selected.has(r.id)) ?? pool[0];
 
   const previewVars: Record<string, string> = {
@@ -192,6 +200,9 @@ function ComposeTab() {
     activation_link: "https://example.com/activate/sample-slug",
     action_link: "https://example.com/activate/sample-slug",
     unsubscribe_link: "https://example.com/unsubscribe",
+    unsubscribe_url: "https://example.com/unsubscribe",
+    tenant_website: "https://example.com",
+    sender_postal_address: "123 Example Street, Johannesburg, South Africa",
   };
 
   const toggle = (id: string) => {
@@ -211,7 +222,7 @@ function ComposeTab() {
     }
   };
 
-  const send = async (dryRun: boolean) => {
+  const send = async (dryRun: boolean, testOnly = false) => {
     if (!tenantId || !templateSlug || selected.size === 0) {
       toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
       return;
@@ -224,7 +235,7 @@ function ComposeTab() {
       tenant_id: tenantId,
       template_slug: templateSlug,
       audience,
-      recipient_ids: Array.from(selected),
+       recipient_ids: testOnly ? [Array.from(selected)[0]] : Array.from(selected),
       dry_run: dryRun,
     },
     );
@@ -242,7 +253,7 @@ function ComposeTab() {
     const totals = data.totals ?? {};
     setResult(data);
     toast({
-      title: dryRun ? "Dry run complete" : data.queued ? "Campaign queued" : "Campaign sent",
+      title: dryRun ? "Dry run complete" : testOnly ? "Test email sent" : data.queued ? "Campaign queued" : "Campaign sent",
       description: dryRun
         ? `Ready ${totals.dry_run_ok ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`
         : `Sending ${totals.sent ?? totals.pending ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`,
@@ -341,14 +352,20 @@ function ComposeTab() {
           )}
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size}>
+            <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size || templateIssues.length > 0}>
               {sending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Dry run
             </Button>
-            <Button onClick={() => send(false)} disabled={sending || !selected.size}>
+            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || selected.size !== 1 || templateIssues.length > 0}>
+              <Send className="h-4 w-4 mr-2" /> Send test
+            </Button>
+            <Button onClick={() => send(false)} disabled={sending || !selected.size || templateIssues.length > 0}>
               {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
               Send to {selected.size}
             </Button>
           </div>
+          {templateIssues.length > 0 && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+            This template is not ready to send: {templateIssues.join(" · ")}
+          </div>}
 
           {noSender && (
             <div className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive flex items-start gap-2">
@@ -408,9 +425,9 @@ function ComposeTab() {
 // Templates (tenant-owned only; shared platform ones are read-only)
 // ─────────────────────────────────────────────────────────────
 function TemplatesTab() {
-  const { tenantId } = useTenantContext();
+  const { tenantId, tenantName } = useTenantContext();
   return (
-    <TemplateEditor scope="tenant" tenantId={tenantId} kindFilter="marketing" />
+    <TemplateEditor scope="tenant" tenantId={tenantId} kindFilter="marketing" portalName={tenantName ?? "Your storefront"} />
   );
 }
 

@@ -7,24 +7,28 @@
  * shared platform rows are fully read-only with a Duplicate action.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { html as htmlLanguage } from "@codemirror/lang-html";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Save, Code2, Plus, Copy, Trash2, AlertCircle, Pencil } from "lucide-react";
+import { Loader2, Save, Plus, Copy, Trash2, AlertCircle, Pencil, Upload, Image as ImageIcon, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/admin/RichTextEditor";
 import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
+import { EmailImageUpload } from "@/components/admin/EmailImageUpload";
 import { applyMergeTokens, defaultPreviewVars, renderEmailShell } from "@/lib/email/renderEmailPreview";
+import { htmlToPlainText, isCompleteEmailDocument, replaceEmailImage, unknownEmailTokens, unresolvedEmailImages } from "@/lib/email/advancedEmail";
 
 export interface EmailTemplate {
   id: string;
@@ -37,6 +41,8 @@ export interface EmailTemplate {
   is_system?: boolean | null;
   tenant_id?: string | null;
   kind?: string | null;
+  editor_mode?: "simple" | "advanced" | null;
+  preheader?: string | null;
 }
 
 export const TOKENS_ACTIVATION = [
@@ -45,7 +51,8 @@ export const TOKENS_ACTIVATION = [
 ];
 export const TOKENS_MARKETING = [
   "contact_name", "customer_name", "company_name", "branch_name",
-  "tenant_name", "activation_link", "action_link", "unsubscribe_link",
+  "tenant_name", "tenant_website", "sender_postal_address",
+  "activation_link", "action_link", "unsubscribe_url",
 ];
 
 function slugifyName(name: string) {
@@ -72,7 +79,8 @@ export default function TemplateEditor({
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<EmailTemplate | null>(null);
   const [saving, setSaving] = useState(false);
-  const [rawMode, setRawMode] = useState(false);
+  const [editorTab, setEditorTab] = useState<"preview" | "content" | "code">("content");
+  const [imageTarget, setImageTarget] = useState<string | null>(null);
   const [tokenTarget, setTokenTarget] = useState<"body" | "text">("body");
   const [newOpen, setNewOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -81,7 +89,7 @@ export default function TemplateEditor({
   const [pendingDelete, setPendingDelete] = useState<EmailTemplate | null>(null);
   const [deleting, setDeleting] = useState(false);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
-  const htmlRef = useRef<HTMLTextAreaElement | null>(null);
+  const importRef = useRef<HTMLInputElement | null>(null);
 
   const load = async (selectId?: string) => {
     let q = supabase.from("platform_email_templates" as any).select("*").order("name");
@@ -96,6 +104,9 @@ export default function TemplateEditor({
   useEffect(() => {
     const t = templates.find((x) => x.id === selectedId);
     setDraft(t ? { ...t } : null);
+    if (t && (t.editor_mode === "advanced" || isCompleteEmailDocument(t.body_html ?? ""))) {
+      setEditorTab("preview");
+    }
   }, [selectedId, templates]);
 
   /** In tenant mode, shared (master) templates cannot be edited. */
@@ -113,6 +124,8 @@ export default function TemplateEditor({
     draft.body_html !== original.body_html ||
     (draft.body_text ?? "") !== (original.body_text ?? "") ||
     (draft.description ?? "") !== (original.description ?? "")
+    || (draft.editor_mode ?? "simple") !== (original.editor_mode ?? "simple")
+    || (draft.preheader ?? "") !== (original.preheader ?? "")
   );
 
   const visibleTemplates = useMemo(() => {
@@ -136,6 +149,10 @@ export default function TemplateEditor({
         bodyHtml: applyMergeTokens(draft.body_html, previewVars),
       })
     : "";
+  const missingImages = unresolvedEmailImages(draft?.body_html ?? "");
+  const unknownTokens = unknownEmailTokens(draft?.body_html ?? "");
+  const advanced = draft?.editor_mode === "advanced" || isCompleteEmailDocument(draft?.body_html ?? "");
+  const ready = missingImages.length === 0 && unknownTokens.length === 0 && !!draft?.subject.trim() && !!draft?.body_html.trim();
 
   const save = async () => {
     if (!draft?.id || readOnly) return;
@@ -151,6 +168,8 @@ export default function TemplateEditor({
         body_html: draft.body_html,
         body_text: draft.body_text,
         description: draft.description ?? null,
+        editor_mode: advanced ? "advanced" : "simple",
+        preheader: draft.preheader ?? null,
       } as any)
       .eq("id", draft.id);
     setSaving(false);
@@ -189,6 +208,8 @@ export default function TemplateEditor({
           ?? "<p>Hi {{contact_name}},</p><p>Write your message here.</p>",
         body_text: opts.from?.body_text ?? "Hi {{contact_name}},\n\nWrite your message here.",
         description: opts.from?.description ?? null,
+        editor_mode: opts.from?.editor_mode ?? "simple",
+        preheader: opts.from?.preheader ?? null,
       } as any)
       .select("id").single();
     if (error) { toast({ title: "Create failed", description: error.message, variant: "destructive" }); return; }
@@ -248,8 +269,21 @@ export default function TemplateEditor({
   const handleTokenClick = (token: string) => {
     if (readOnly || !draft) return;
     if (tokenTarget === "text") return insertIntoTextarea(textRef, "body_text", token);
-    if (rawMode) return insertIntoTextarea(htmlRef, "body_html", token);
     setDraft({ ...draft, body_html: `${draft.body_html ?? ""}{{${token}}}` });
+  };
+
+  const importHtml = async (file: File) => {
+    if (!draft || readOnly) return;
+    const bodyHtml = await file.text();
+    const title = bodyHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim();
+    setDraft({
+      ...draft,
+      body_html: bodyHtml,
+      subject: title || draft.subject,
+      editor_mode: isCompleteEmailDocument(bodyHtml) ? "advanced" : "simple",
+      body_text: htmlToPlainText(bodyHtml),
+    });
+    setEditorTab("preview");
   };
 
   return (
@@ -346,11 +380,6 @@ export default function TemplateEditor({
                 )}
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Code2 className="h-3.5 w-3.5" />
-                  Raw HTML
-                  <Switch checked={rawMode} onCheckedChange={setRawMode} />
-                </label>
                 <Button size="sm" variant="ghost" className="h-8 px-2"
                   title="Duplicate"
                   onClick={() => createTemplate({
@@ -410,6 +439,13 @@ export default function TemplateEditor({
                 </div>
               </div>
 
+              <div>
+                <Label className="text-xs">Inbox preview text</Label>
+                <Input value={draft.preheader ?? ""} disabled={readOnly}
+                  placeholder="Short summary shown beside the subject"
+                  onChange={(e) => setDraft({ ...draft, preheader: e.target.value })} />
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Reference (slug)</Label>
@@ -443,21 +479,59 @@ export default function TemplateEditor({
               </div>
 
 
-              <div>
-                <Label className="text-xs">Email body</Label>
-                {rawMode ? (
-                  <Textarea ref={htmlRef} rows={14} className="font-mono text-xs" disabled={readOnly}
-                    value={draft.body_html ?? ""}
-                    onChange={(e) => setDraft({ ...draft, body_html: e.target.value })} />
-                ) : readOnly ? (
-                  <div className="rounded border bg-muted/20 p-3 text-sm prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: draft.body_html ?? "" }} />
-                ) : (
-                  <RichTextEditor
-                    value={draft.body_html ?? ""}
-                    onChange={(html) => setDraft({ ...draft, body_html: html })}
-                  />
+              <Tabs value={editorTab} onValueChange={(value) => setEditorTab(value as typeof editorTab)}>
+                <div className="flex items-center justify-between gap-2">
+                  <TabsList>
+                    <TabsTrigger value="preview">Preview</TabsTrigger>
+                    <TabsTrigger value="content" disabled={advanced}>Content</TabsTrigger>
+                    <TabsTrigger value="code">Code</TabsTrigger>
+                  </TabsList>
+                  {!readOnly && (
+                    <>
+                      <input ref={importRef} className="hidden" type="file" accept=".html,.htm,text/html"
+                        onChange={(e) => { const file = e.target.files?.[0]; if (file) void importHtml(file); e.currentTarget.value = ""; }} />
+                      <Button size="sm" variant="outline" onClick={() => importRef.current?.click()}>
+                        <Upload className="h-3.5 w-3.5 mr-1.5" /> Import HTML
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {advanced && (
+                  <div className="mt-2 rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
+                    Protected imported layout. Use Preview or Code; the visual editor is disabled so tables, mobile rules and Outlook formatting remain intact.
+                  </div>
                 )}
+                <TabsContent value="preview" className="mt-2 h-[460px]">
+                  <EmailPreviewFrame fill subject={applyMergeTokens(draft.subject ?? "", previewVars)} html={previewHtml} />
+                </TabsContent>
+                <TabsContent value="content" className="mt-2">
+                  {readOnly ? <div className="rounded border bg-muted/20 p-3 text-sm prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: draft.body_html ?? "" }} /> :
+                    <RichTextEditor value={draft.body_html ?? ""} onChange={(body_html) => setDraft({ ...draft, body_html })} />}
+                </TabsContent>
+                <TabsContent value="code" className="mt-2 overflow-hidden rounded border">
+                  <CodeMirror value={draft.body_html ?? ""} height="460px" readOnly={readOnly}
+                    extensions={[htmlLanguage()]} onChange={(body_html) => setDraft({ ...draft, body_html, editor_mode: isCompleteEmailDocument(body_html) ? "advanced" : draft.editor_mode })} />
+                </TabsContent>
+              </Tabs>
+
+              {missingImages.length > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="text-xs font-medium text-amber-900">Replace {missingImages.length} local image{missingImages.length === 1 ? "" : "s"} before sending</div>
+                  {missingImages.map((src) => <div key={src} className="flex items-center justify-between gap-2 text-xs">
+                    <code className="truncate">{src}</code>
+                    <Button size="sm" variant="outline" onClick={() => setImageTarget(src)} disabled={readOnly}>
+                      <ImageIcon className="h-3.5 w-3.5 mr-1.5" /> Replace
+                    </Button>
+                  </div>)}
+                </div>
+              )}
+              {unknownTokens.length > 0 && <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+                Unknown dynamic fields: {unknownTokens.map((token) => `{{${token}}}`).join(", ")}
+              </div>}
+              <div className={`flex items-center gap-2 rounded border p-2 text-xs ${ready ? "text-emerald-700" : "text-amber-700"}`}>
+                {ready ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                {ready ? "Ready for a dry run or test send." : "Complete the subject, content, image replacements and dynamic fields before sending."}
               </div>
 
               {(draft.kind ?? kindFilter) === "marketing" && (
@@ -498,6 +572,9 @@ export default function TemplateEditor({
                   </button>
                 ))}
               </div>
+              {!readOnly && <Button size="sm" variant="outline" onClick={() => setDraft({ ...draft, body_text: htmlToPlainText(draft.body_html) })}>
+                Generate plain text from HTML
+              </Button>}
             </div>
           </div>
         ) : (
@@ -529,6 +606,17 @@ export default function TemplateEditor({
         allowKindChoice={!isTenant && !kindFilter}
         defaultKind={kindFilter ?? "marketing"}
         onCreate={async (name, kind) => { await createTemplate({ name, kind }); setNewOpen(false); }}
+      />
+
+      <EmailImageUpload
+        open={!!imageTarget}
+        onOpenChange={(open) => { if (!open) setImageTarget(null); }}
+        tenantId={tenantId}
+        onInsert={(url, alt) => {
+          if (!draft || !imageTarget) return;
+          setDraft({ ...draft, body_html: replaceEmailImage(draft.body_html, imageTarget, url, alt) });
+          setImageTarget(null);
+        }}
       />
 
       <Dialog open={!!renaming} onOpenChange={(v) => !v && setRenaming(null)}>

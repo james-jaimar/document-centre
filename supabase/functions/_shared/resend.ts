@@ -322,15 +322,19 @@ export function withResendUnsubscribeFooter(
   text: string,
   senderLabel: string,
 ): { html: string; text: string } {
-  if (html.includes(RESEND_UNSUBSCRIBE_TOKEN)) return { html, text };
+  const normalizedHtml = html.replace(
+    /\{\{\s*(?:unsubscribe_url|unsubscribe_link)\s*\}\}/gi,
+    RESEND_UNSUBSCRIBE_TOKEN,
+  );
+  if (normalizedHtml.includes(RESEND_UNSUBSCRIBE_TOKEN)) return { html: normalizedHtml, text };
   const footer = `<div style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e5e5;font-size:12px;line-height:1.5;color:#8a8a8a;text-align:center;">
 You received this email from ${senderLabel}.<br />
 <a href="${RESEND_UNSUBSCRIBE_TOKEN}" style="color:#8a8a8a;text-decoration:underline;">Unsubscribe from these emails</a>
 </div>`;
-  const closing = html.lastIndexOf("</body>");
+  const closing = normalizedHtml.lastIndexOf("</body>");
   const nextHtml = closing >= 0
-    ? `${html.slice(0, closing)}${footer}${html.slice(closing)}`
-    : `${html}${footer}`;
+    ? `${normalizedHtml.slice(0, closing)}${footer}${normalizedHtml.slice(closing)}`
+    : `${normalizedHtml}${footer}`;
   const nextText = `${text}\n\n—\nYou received this email from ${senderLabel}.\nUnsubscribe: ${RESEND_UNSUBSCRIBE_TOKEN}\n`;
   return { html: nextHtml, text: nextText };
 }
