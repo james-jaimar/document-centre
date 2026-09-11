@@ -5195,10 +5195,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          editor_mode: string
           id: string
           is_system: boolean
           kind: string
           name: string
+          preheader: string | null
           slug: string
           subject: string
           tenant_id: string | null
@@ -5210,10 +5212,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          editor_mode?: string
           id?: string
           is_system?: boolean
           kind?: string
           name: string
+          preheader?: string | null
           slug: string
           subject: string
           tenant_id?: string | null
@@ -5225,10 +5229,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          editor_mode?: string
           id?: string
           is_system?: boolean
           kind?: string
           name?: string
+          preheader?: string | null
           slug?: string
           subject?: string
           tenant_id?: string | null
