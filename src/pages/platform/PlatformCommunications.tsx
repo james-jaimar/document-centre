@@ -55,7 +55,7 @@ export default function PlatformCommunications() {
 
   const isTemplates = tab === "templates";
   return (
-    <div className={`py-4 space-y-4 ${isTemplates ? "px-4" : "px-6 max-w-7xl mx-auto"}`}>
+    <div className={`py-4 space-y-4 ${isTemplates ? "px-4 w-[90vw] mx-auto" : "px-6 w-[90vw] mx-auto"}`}>
       <div className="flex items-center gap-3">
         <Megaphone className="h-6 w-6 text-primary" />
         <div>

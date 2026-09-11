@@ -74,7 +74,7 @@ const TOKENS = [
 export default function AdminCommunications() {
   const [tab, setTab] = useState("compose");
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-6 space-y-4 w-[90vw] mx-auto">
       <div className="flex items-center gap-3">
         <Megaphone className="h-6 w-6 text-primary" />
         <div>
