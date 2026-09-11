@@ -137,8 +137,9 @@ export default function Checkout() {
   const [paymentTouched, setPaymentTouched] = useState(false);
   useEffect(() => {
     if (!onlineProviders || onlineProviders.length === 0) return;
-    // Prepaid (C.O.D.) accounts may only pay online — always pin to a provider.
-    if (requiresPrepayment) {
+    // Prepaid (C.O.D.) accounts normally pay online. Tenants that explicitly
+    // allow pro formas must be able to keep the customer's invoice selection.
+    if (requiresPrepayment && !allowPrepaidInvoice) {
       setPaymentMethod((cur) =>
         onlineProviders.some((p: any) => p.provider === cur) ? cur : onlineProviders[0].provider,
       );
@@ -146,7 +147,7 @@ export default function Checkout() {
     }
     if (paymentTouched) return;
     setPaymentMethod(onlineProviders[0].provider);
-  }, [onlineProviders, paymentTouched, requiresPrepayment]);
+  }, [onlineProviders, paymentTouched, requiresPrepayment, allowPrepaidInvoice]);
 
 
 
