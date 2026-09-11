@@ -287,88 +287,56 @@ export default function TemplateEditor({
   };
 
   return (
-    <div className="border rounded-lg bg-card overflow-hidden h-[calc(100vh-12rem)] min-h-[560px] flex flex-col">
-      {/* Narrow screens: template picker */}
-      <div className="lg:hidden border-b p-2 flex items-center gap-2">
-        <Select value={selectedId} onValueChange={setSelectedId}>
-          <SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger>
-          <SelectContent>
-            {visibleTemplates.map((t) => (
-              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button size="sm" variant="outline" onClick={() => setNewOpen(true)}>
-          <Plus className="h-4 w-4" />
+    <div className="border rounded-lg bg-card overflow-hidden h-[90vh] min-h-[560px] flex flex-col">
+      {/* Templates row */}
+      <div className="border-b px-3 py-2 flex items-center gap-2 bg-muted/30">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Templates</span>
+        <Button size="sm" variant="ghost" className="h-7 px-2 shrink-0" onClick={() => setNewOpen(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> New
         </Button>
-      </div>
-
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] divide-x">
-        {/* List */}
-        <div className="hidden lg:flex flex-col min-h-0">
-          <div className="flex items-center justify-between px-3 py-1.5 border-b">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Templates</span>
-            <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setNewOpen(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1" /> New
-            </Button>
-          </div>
-          <div className="p-1.5 border-b">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search templates"
-              className="h-7 text-xs"
-            />
-          </div>
-          <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
+        <div className="w-px h-5 bg-border shrink-0" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search templates"
+          className="h-7 text-xs max-w-[180px] shrink-0"
+        />
+        <div className="flex-1 min-w-0 overflow-x-auto">
+          <div className="flex items-center gap-1 px-1">
             {templates.length === 0 && (
-              <p className="p-3 text-xs text-muted-foreground">No templates yet — create your first one.</p>
+              <span className="text-xs text-muted-foreground px-2">No templates yet — create your first one.</span>
             )}
             {templates.length > 0 && visibleTemplates.length === 0 && (
-              <p className="p-3 text-xs text-muted-foreground">No templates match “{search}”.</p>
+              <span className="text-xs text-muted-foreground px-2">No templates match “{search}”.</span>
             )}
             {visibleTemplates.map((t) => {
               const shared = isTenant && !t.tenant_id;
+              const active = selectedId === t.id;
               return (
-                <div key={t.id}
-                  className={`group flex items-center rounded ${selectedId === t.id ? "bg-primary/10" : "hover:bg-muted"}`}>
-                  <button onClick={() => setSelectedId(t.id)}
-                    className={`flex-1 min-w-0 text-left px-2 py-1.5 text-sm ${selectedId === t.id ? "font-medium" : ""}`}>
-                    <div className="truncate">{t.name}</div>
-                    {isTenant ? (
-                      <div className="text-[11px] text-muted-foreground">{shared ? "Shared (read-only)" : "Yours"}</div>
-                    ) : (
-                      t.is_system && <Badge variant="outline" className="mt-0.5 text-[10px] h-4 px-1">system</Badge>
-                    )}
-                  </button>
-                  <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center pr-1">
-                    {!shared && (
-                      <button title="Rename" className="p-1 hover:bg-background rounded"
-                        onClick={(e) => { e.stopPropagation(); setRenaming(t); setRenameValue(t.name); }}>
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                    )}
-                    <button title="Duplicate" className="p-1 hover:bg-background rounded"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        createTemplate({ name: `${t.name} (copy)`, kind: t.kind ?? kindFilter ?? "marketing", from: t });
-                      }}>
-                      <Copy className="h-3 w-3" />
-                    </button>
-                    {canDelete(t) && (
-                      <button title="Delete" className="p-1 hover:bg-background rounded text-destructive"
-                        onClick={(e) => { e.stopPropagation(); setPendingDelete(t); }}>
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedId(t.id)}
+                  title={shared ? "Shared (read-only)" : undefined}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs whitespace-nowrap border transition-colors ${
+                    active
+                      ? "bg-primary/10 border-primary/30 text-primary font-medium"
+                      : "bg-background border-border hover:bg-muted/60"
+                  }`}
+                >
+                  <span className="truncate max-w-[160px]">{t.name}</span>
+                  {isTenant ? (
+                    shared && <Badge variant="outline" className="text-[9px] h-3.5 px-1 shrink-0">shared</Badge>
+                  ) : (
+                    t.is_system && <Badge variant="outline" className="text-[9px] h-3.5 px-1 shrink-0">system</Badge>
+                  )}
+                </button>
               );
             })}
-
           </div>
         </div>
+      </div>
 
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 divide-x">
         {/* Editor */}
         {draft ? (
           <div className="flex flex-col min-h-0">
