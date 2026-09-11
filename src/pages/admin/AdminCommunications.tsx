@@ -18,6 +18,7 @@ import { EmailPreviewFrame } from "@/components/admin/EmailPreviewFrame";
 import { invokeEdgeFunctionVerbose } from "@/lib/invokeEdgeFunctionVerbose";
 import TemplateEditor from "@/components/admin/email/TemplateEditor";
 import { applyMergeTokens, renderEmailShell } from "@/lib/email/renderEmailPreview";
+import { unknownEmailTokens, unresolvedEmailImages } from "@/lib/email/advancedEmail";
 
 
 type Audience = "branch" | "company" | "customer";
@@ -184,6 +185,10 @@ function ComposeTab() {
   useEffect(() => { setSelected(new Set()); setResult(null); }, [audience]);
 
   const template = templates.find((t) => t.slug === templateSlug);
+  const templateIssues = template ? [
+    ...unresolvedEmailImages(template.body_html).map((image) => `Replace image: ${image}`),
+    ...unknownEmailTokens(template.body_html).map((token) => `Unknown field: {{${token}}}`),
+  ] : [];
   const sample = pool.find((r) => selected.has(r.id)) ?? pool[0];
 
   const previewVars: Record<string, string> = {
@@ -347,17 +352,20 @@ function ComposeTab() {
           )}
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size}>
+            <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size || templateIssues.length > 0}>
               {sending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Dry run
             </Button>
-            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || selected.size !== 1}>
+            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || selected.size !== 1 || templateIssues.length > 0}>
               <Send className="h-4 w-4 mr-2" /> Send test
             </Button>
-            <Button onClick={() => send(false)} disabled={sending || !selected.size}>
+            <Button onClick={() => send(false)} disabled={sending || !selected.size || templateIssues.length > 0}>
               {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
               Send to {selected.size}
             </Button>
           </div>
+          {templateIssues.length > 0 && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+            This template is not ready to send: {templateIssues.join(" · ")}
+          </div>}
 
           {noSender && (
             <div className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive flex items-start gap-2">
