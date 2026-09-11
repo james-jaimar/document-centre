@@ -39,6 +39,8 @@ interface TenantTemplate {
   body_text: string | null;
   tenant_id: string | null;
   kind: string | null;
+  editor_mode?: "simple" | "advanced" | null;
+  preheader?: string | null;
 }
 
 interface CampaignRow {
@@ -64,7 +66,8 @@ const AUDIENCE_LABEL: Record<Audience, string> = {
 
 const TOKENS = [
   "contact_name", "customer_name", "company_name", "branch_name",
-  "tenant_name", "activation_link", "action_link", "unsubscribe_link",
+  "tenant_name", "tenant_website", "sender_postal_address",
+  "activation_link", "action_link", "unsubscribe_url",
 ];
 
 export default function AdminCommunications() {
@@ -192,6 +195,9 @@ function ComposeTab() {
     activation_link: "https://example.com/activate/sample-slug",
     action_link: "https://example.com/activate/sample-slug",
     unsubscribe_link: "https://example.com/unsubscribe",
+    unsubscribe_url: "https://example.com/unsubscribe",
+    tenant_website: "https://example.com",
+    sender_postal_address: "123 Example Street, Johannesburg, South Africa",
   };
 
   const toggle = (id: string) => {
@@ -211,7 +217,7 @@ function ComposeTab() {
     }
   };
 
-  const send = async (dryRun: boolean) => {
+  const send = async (dryRun: boolean, testOnly = false) => {
     if (!tenantId || !templateSlug || selected.size === 0) {
       toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
       return;
@@ -224,7 +230,7 @@ function ComposeTab() {
       tenant_id: tenantId,
       template_slug: templateSlug,
       audience,
-      recipient_ids: Array.from(selected),
+       recipient_ids: testOnly ? [Array.from(selected)[0]] : Array.from(selected),
       dry_run: dryRun,
     },
     );
@@ -242,7 +248,7 @@ function ComposeTab() {
     const totals = data.totals ?? {};
     setResult(data);
     toast({
-      title: dryRun ? "Dry run complete" : data.queued ? "Campaign queued" : "Campaign sent",
+      title: dryRun ? "Dry run complete" : testOnly ? "Test email sent" : data.queued ? "Campaign queued" : "Campaign sent",
       description: dryRun
         ? `Ready ${totals.dry_run_ok ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`
         : `Sending ${totals.sent ?? totals.pending ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`,
@@ -344,6 +350,9 @@ function ComposeTab() {
             <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size}>
               {sending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Dry run
             </Button>
+            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || selected.size !== 1}>
+              <Send className="h-4 w-4 mr-2" /> Send test
+            </Button>
             <Button onClick={() => send(false)} disabled={sending || !selected.size}>
               {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
               Send to {selected.size}
@@ -408,9 +417,9 @@ function ComposeTab() {
 // Templates (tenant-owned only; shared platform ones are read-only)
 // ─────────────────────────────────────────────────────────────
 function TemplatesTab() {
-  const { tenantId } = useTenantContext();
+  const { tenantId, tenantName } = useTenantContext();
   return (
-    <TemplateEditor scope="tenant" tenantId={tenantId} kindFilter="marketing" />
+    <TemplateEditor scope="tenant" tenantId={tenantId} kindFilter="marketing" portalName={tenantName ?? "Your storefront"} />
   );
 }
 
