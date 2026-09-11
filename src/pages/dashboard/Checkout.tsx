@@ -63,6 +63,19 @@ export default function Checkout() {
   const [redirecting, setRedirecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
   const { credit, isTrade, requiresPrepayment, availableCredit } = useCustomerPricingTier();
+  const { data: allowPrepaidInvoice = false, isLoading: invoiceOptionLoading } = useQuery({
+    queryKey: ["tenant-payment-setting", tenantId, "allow_prepaid_invoice"],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("resolve_tenant_setting", {
+        p_tenant_id: tenantId!,
+        p_category: "payments",
+        p_key: "allow_prepaid_invoice",
+      });
+      if (error) throw error;
+      return data === true;
+    },
+  });
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
   const [poNumber, setPoNumber] = useState("");
   const [costCentre, setCostCentre] = useState("");
@@ -406,7 +419,7 @@ export default function Checkout() {
       return;
     }
 
-    if (requiresPrepayment && paymentMethod !== "stripe" && paymentMethod !== "payfast") {
+    if (requiresPrepayment && !allowPrepaidInvoice && paymentMethod !== "stripe" && paymentMethod !== "payfast") {
       toast.error(
         "Your account must pay online at checkout (C.O.D.). Please select an online payment method.",
       );
@@ -1044,11 +1057,11 @@ export default function Checkout() {
                     payment options above.
                   </p>
                 )}
-                {!requiresPrepayment && !accountOnly && (
+                {(!requiresPrepayment || allowPrepaidInvoice) && !accountOnly && (
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="offline" id="pm-offline" />
                     <Label htmlFor="pm-offline" className="cursor-pointer">
-                      EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
+                      Pay by invoice — we'll email a Pro Forma with banking details
                     </Label>
                   </div>
                 )}
@@ -1211,7 +1224,7 @@ export default function Checkout() {
             className="w-full"
             onClick={handlePlaceOrder}
             disabled={
-              isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading ||
+              isSubmitting || !user || storefrontGate.checkoutBlocked || !legalAccept || providersLoading || invoiceOptionLoading ||
               (deliveryMethod === "delivery" && (quotingShipping || !shippingQuote || shippingQuote.price == null))
             }
 

@@ -19,6 +19,7 @@ export function PaymentsTab() {
   const bulkUpsert = useBulkUpsertTenantSettings();
 
   const [eftEnabled, setEftEnabled] = useState(true);
+  const [allowPrepaidInvoice, setAllowPrepaidInvoice] = useState(false);
   const [bankName, setBankName] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -29,6 +30,7 @@ export function PaymentsTab() {
   useEffect(() => {
     if (!isLoading && settingsMap) {
       setEftEnabled(settingsMap.eft_enabled !== false);
+      setAllowPrepaidInvoice(settingsMap.allow_prepaid_invoice === true);
       setBankName((settingsMap.bank_name as string) ?? "");
       setAccountName((settingsMap.account_name as string) ?? "");
       setAccountNumber((settingsMap.account_number as string) ?? "");
@@ -42,6 +44,7 @@ export function PaymentsTab() {
     try {
       await bulkUpsert.mutateAsync([
         { category: "payments", setting_key: "eft_enabled", setting_value: eftEnabled, value_type: "boolean" },
+        { category: "payments", setting_key: "allow_prepaid_invoice", setting_value: allowPrepaidInvoice, value_type: "boolean" },
         { category: "payments", setting_key: "bank_name", setting_value: bankName, value_type: "string" },
         { category: "payments", setting_key: "account_name", setting_value: accountName, value_type: "string" },
         { category: "payments", setting_key: "account_number", setting_value: accountNumber, value_type: "string" },
@@ -87,6 +90,13 @@ export function PaymentsTab() {
               <p className="text-xs text-muted-foreground mt-1">Customers receive bank details on the invoice and order email</p>
             </div>
             <Switch checked={eftEnabled} onCheckedChange={setEftEnabled} />
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+            <div>
+              <Label className="font-medium">Allow pro forma for prepaid customers</Label>
+              <p className="text-xs text-muted-foreground mt-1">Shows Pay by invoice alongside online payment when no account credit is available</p>
+            </div>
+            <Switch checked={allowPrepaidInvoice} onCheckedChange={setAllowPrepaidInvoice} />
           </div>
         </CardContent>
       </Card>

@@ -300,6 +300,17 @@ async function createOrderWithJobs(
       : (membership as any)?.company?.payment_terms_mode ?? null;
     const mode = (membership as any)?.payment_terms_mode ?? companyMode ?? "account";
     if (mode === "prepaid" && !holdForPayment) {
+      const { data: invoiceSetting } = await admin
+        .from("tenant_settings")
+        .select("setting_value")
+        .eq("tenant_id", tenant_id)
+        .eq("category", "payments")
+        .eq("setting_key", "allow_prepaid_invoice")
+        .maybeSingle();
+      const allowPrepaidInvoice = invoiceSetting?.setting_value === true;
+      if (allowPrepaidInvoice && payload.payment_method === "offline") {
+        // Tenant explicitly permits a pro forma invoice instead of immediate online payment.
+      } else {
       return json(
         {
           error: "This account must pay online at checkout (C.O.D.).",
@@ -307,6 +318,7 @@ async function createOrderWithJobs(
         },
         403,
       );
+      }
     }
   } catch (e) {
     console.warn("[order-engine] payment terms check failed (non-fatal):", e);
