@@ -26,6 +26,7 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import { useSamplePackConfig } from "@/hooks/useSamplePack";
 import PriceTotals from "@/components/order/PriceTotals";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
