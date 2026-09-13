@@ -12,6 +12,7 @@ import ShopFilters, {
   type ShopFilterState,
 } from "@/components/storefront/ShopFilters";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
+import SamplePackBanner from "@/components/storefront/SamplePackBanner";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -123,6 +124,9 @@ export default function StorefrontShop() {
       <AssuranceBar items={config.assurance_items} />
 
       <div className="sf-container py-9">
+        <div className="mb-6">
+          <SamplePackBanner />
+        </div>
         {activeCategory && (
           <nav className="mb-3 text-xs text-muted-foreground" aria-label="Breadcrumb">
             <Link to={tenantPath("shop")} className="hover:text-foreground">

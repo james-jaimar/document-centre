@@ -52,6 +52,15 @@ export function NewMarker({ order }: { order: any }) {
   );
 }
 
+export function SamplePackMarker({ order }: { order: any }) {
+  if (!order?.is_sample_pack) return null;
+  return (
+    <span className="ml-1.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary align-middle">
+      Sample pack
+    </span>
+  );
+}
+
 const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
   "unpaid", "part_paid", "paid", "refunded",
 ];
@@ -66,6 +75,7 @@ export default function AdminOrders() {
   const [page, setPage] = useState(1);
   const unreadOnly = searchParams.get("unread") === "1";
   const unopenedOnly = searchParams.get("unopened") === "1";
+  const samplePackOnly = searchParams.get("sample_pack") === "1";
   const [unreadFirst, setUnreadFirst] = useState(true);
 
   const filters: AdminOrderListFilters = {
@@ -74,6 +84,7 @@ export default function AdminOrders() {
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     unopened_only: unopenedOnly || undefined,
+    sample_pack_only: samplePackOnly || undefined,
     page,
     page_size: 25,
   };
@@ -87,7 +98,7 @@ export default function AdminOrders() {
   const totalForTenant = totalData?.total || 0;
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || unopenedOnly;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || unopenedOnly || samplePackOnly;
 
   const { data, isLoading } = useAdminOrders(filters);
   const rawOrders = data?.orders || [];
@@ -112,6 +123,14 @@ export default function AdminOrders() {
     const next = new URLSearchParams(searchParams);
     if (unopenedOnly) next.delete("unopened");
     else next.set("unopened", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
+
+  const toggleSamplePackOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (samplePackOnly) next.delete("sample_pack");
+    else next.set("sample_pack", "1");
     setSearchParams(next, { replace: true });
     setPage(1);
   };
@@ -146,10 +165,11 @@ export default function AdminOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
-    if (unreadOnly || unopenedOnly) {
+    if (unreadOnly || unopenedOnly || samplePackOnly) {
       const next = new URLSearchParams(searchParams);
       next.delete("unread");
       next.delete("unopened");
+      next.delete("sample_pack");
       setSearchParams(next, { replace: true });
     }
     setPage(1);
@@ -215,6 +235,18 @@ export default function AdminOrders() {
           >
             <PackagePlus className="h-3.5 w-3.5" />
             Not yet opened
+          </button>
+          <button
+            onClick={toggleSamplePackOnly}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (samplePackOnly
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:bg-muted")
+            }
+          >
+            <PackagePlus className="h-3.5 w-3.5" />
+            Sample packs
           </button>
           <button
             onClick={toggleUnreadOnly}
@@ -323,6 +355,7 @@ export default function AdminOrders() {
                       <TableCell className="font-mono text-xs font-medium">
                         {order.order_number || "—"}
                         <NewMarker order={order} />
+                      <SamplePackMarker order={order} />
                       </TableCell>
                       <TableCell>{order.source_channel || "—"}</TableCell>
                       <TableCell>{order.company_name || order.customer_name || "—"}</TableCell>
@@ -357,6 +390,7 @@ export default function AdminOrders() {
                     <TableCell className="font-mono text-xs font-medium text-primary">
                       {job.job_number}
                       <NewMarker order={order} />
+                      <SamplePackMarker order={order} />
                     </TableCell>
                     <TableCell>{order.source_channel || "Storefront"}</TableCell>
                     <TableCell className="max-w-[140px] truncate">{order.company_name || order.customer_name || "—"}</TableCell>

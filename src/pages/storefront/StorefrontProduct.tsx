@@ -6,6 +6,8 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { useSamplePackConfig } from "@/hooks/useSamplePack";
+import SamplePackBanner from "@/components/storefront/SamplePackBanner";
 import {
   useProductCopy,
   resolveProductCopy,
@@ -74,6 +76,9 @@ export default function StorefrontProduct() {
   const { entries, isLoading } = useStorefrontCatalogue();
   const { format, inclSuffix } = useStorefrontPrice();
   const { tier: pricingTier } = useCustomerPricingTier();
+
+  const { config: samplePackConfig } = useSamplePackConfig();
+  const samplePackFamilyIds = samplePackConfig.familyIds;
 
   const entry = entries.find((e) => e.family.slug === familySlug);
   const allBlocks = entry?.blocks ?? [];
@@ -198,6 +203,12 @@ export default function StorefrontProduct() {
           <ChevronRight className="h-3 w-3" aria-hidden />
           <span className="text-foreground">{family.name}</span>
         </nav>
+
+        {samplePackFamilyIds.includes(family.id) && (
+          <div className="mb-6">
+            <SamplePackBanner compact />
+          </div>
+        )}
 
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <ProductGallery images={images} alt={family.name} />

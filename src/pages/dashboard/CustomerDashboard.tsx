@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import SamplePackBanner from "@/components/storefront/SamplePackBanner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -354,6 +355,8 @@ const CustomerDashboard = () => {
           Upload a file or pick a product to get started.
         </p>
       </div>
+
+      <SamplePackBanner />
 
       {/* ── Product Picker ── */}
       <ProductCarousel

@@ -12,6 +12,9 @@ import { useCustomerCompany, useCompanyMembers } from "@/hooks/useCustomerCompan
 import { CompanyFormDialog } from "@/components/customers/CompanyFormDialog";
 import { CompanyUsersPanel } from "@/components/customers/CompanyUsersPanel";
 import { AccountLedgerPanel } from "@/components/customers/AccountLedgerPanel";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 interface Props {
   companyId: string;
@@ -42,6 +45,8 @@ export function CompanyDetailView({ companyId, backPath, customerPath, orderPath
   const { data: company, isLoading } = useCustomerCompany(companyId);
   const { data: members = [] } = useCompanyMembers(companyId);
   const [editOpen, setEditOpen] = useState(false);
+  const [allowanceSaving, setAllowanceSaving] = useState(false);
+  const qc = useQueryClient();
 
   if (isLoading || !company) {
     return (
@@ -162,6 +167,38 @@ export function CompanyDetailView({ companyId, backPath, customerPath, orderPath
               <div className="text-xs text-muted-foreground">Default discount</div>
               <div className="text-lg font-semibold">{Number(company.default_discount_pct ?? 0)}%</div>
             </div>
+          </Card>
+
+          <Card className="flex flex-wrap items-center justify-between gap-4 p-6">
+            <div>
+              <div className="text-xs text-muted-foreground">Sample packs</div>
+              <div className="text-lg font-semibold">
+                {Number((company as any).sample_pack_allowance ?? 1)} allowed
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Raise this if this business genuinely needs another sample pack.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              disabled={allowanceSaving}
+              onClick={async () => {
+                setAllowanceSaving(true);
+                const next = Number((company as any).sample_pack_allowance ?? 1) + 1;
+                const { error } = await supabase
+                  .from("customer_companies")
+                  .update({ sample_pack_allowance: next } as any)
+                  .eq("id", company.id);
+                setAllowanceSaving(false);
+                if (error) toast.error("Couldn't update", { description: error.message });
+                else {
+                  toast.success("Another sample pack allowed");
+                  qc.invalidateQueries({ queryKey: ["customer-companies"] });
+                }
+              }}
+            >
+              Allow another sample pack
+            </Button>
           </Card>
 
           <AccountLedgerPanel
