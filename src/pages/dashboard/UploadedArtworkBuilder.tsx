@@ -445,6 +445,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           pricing_tier: pricingTier,
           pricing_addons: priced.addonLines,
           uploaded_artwork: { ...spec, approved_at: new Date().toISOString() },
+          ...(samplePack ? { sample_pack: true } : {}),
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
       });
