@@ -7,6 +7,8 @@ import {
   usePackPricingOverridesForFamily,
 } from "@/hooks/useProductPackPricingOverrides";
 import PackPricingMatrixEditor from "@/components/pricing/PackPricingMatrixEditor";
+import SupplierPricingPanel from "@/components/pricing/SupplierPricingPanel";
+import { useOutsourcedPricing } from "@/hooks/useOutsourcedPricing";
 import FamilyPricingOptionsEditor from "@/components/pricing/FamilyPricingOptionsEditor";
 import { normalizeAddons, normalizeOptions, type PricingAddon, type PricingOption } from "@/lib/pricing/packOptions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -203,6 +205,20 @@ function BranchFamilyRow({
           reverting={remove.isPending}
           onSave={handleSave}
           onRevertToParent={branchOverride ? handleRevert : undefined}
+          lockedCosts={outsourced.isOutsourced ? outsourced.costByKey : undefined}
+          headerExtra={
+            outsourced.isOutsourced ? (
+              <SupplierPricingPanel
+                outsourced={outsourced}
+                tenantId={tenantId}
+                familyId={familyId}
+                familyName={familyName}
+                currentBlocks={initialBlocks}
+                onApply={handleSave}
+                readOnly
+              />
+            ) : null
+          }
         />
       </AccordionContent>
     </AccordionItem>
