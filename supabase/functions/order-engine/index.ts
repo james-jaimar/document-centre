@@ -336,6 +336,14 @@ async function createOrderWithJobs(
   const fulMsg = await checkFulfilmentAllowed(admin, tenant_id, branch_id, resolvedFulfilment);
   if (fulMsg) return err(fulMsg);
 
+  // Address gate — the browser is not the only check. A delivery order must
+  // carry a deliverable address (someone to receive it, a street, a town, a
+  // province, a valid postal code and a way to contact them).
+  if (resolvedFulfilment === "delivery") {
+    const addrMsg = validateDeliveryAddress(delivery_address);
+    if (addrMsg) return err(addrMsg);
+  }
+
   // Prepaid (C.O.D.) customers may only place orders that are held for an
   // online payment — no account / EFT bypass from a tampered client.
   try {
