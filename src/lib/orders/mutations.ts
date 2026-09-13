@@ -124,7 +124,15 @@ export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
   const eq = (a: any, b: any) => Number(a ?? 0).toFixed(2) === Number(b ?? 0).toFixed(2);
   const newerThanIssue = (ts: string | null | undefined) =>
     !!ts && !!inv.issued_at && new Date(ts) > new Date(inv.issued_at);
+  // A change to the PDF layout itself (wording, columns, VAT handling) doesn't
+  // touch the order or its settings, so version-stamp comparison is the only
+  // thing that invalidates those stored files.
+  const outdatedLayout =
+    Number((inv as { renderer_version?: number | null }).renderer_version ?? 0) <
+    CURRENT_INVOICE_RENDERER_VERSION;
+
   const stale =
+    outdatedLayout ||
     !eq(inv.total_amount, order.total_amount) ||
     (inv.kind === "invoice" && !eq(inv.amount_paid, order.amount_paid)) ||
     newerThanIssue(order.updated_at) ||
