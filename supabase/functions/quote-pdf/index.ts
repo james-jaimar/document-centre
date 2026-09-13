@@ -259,6 +259,36 @@ Deno.serve(async (req) => {
     }
     const tBranding = { ...tBrandingJson, ...tBrandingTable };
 
+    // Tax on/off (tenant financial settings, branch overrides win) — when tax
+    // is off we drop the VAT column and the VAT totals row entirely.
+    const [{ data: tenantFinRows }, { data: branchFinRows }] = await Promise.all([
+      supa
+        .from("tenant_settings")
+        .select("setting_key, setting_value")
+        .eq("tenant_id", q.tenant_id)
+        .eq("category", "financial"),
+      q.branch_id
+        ? supa
+            .from("branch_settings" as any)
+            .select("setting_key, setting_value")
+            .eq("branch_id", q.branch_id)
+            .eq("category", "financial")
+        : Promise.resolve({ data: [] } as any),
+    ]);
+    const financial: Record<string, any> = {};
+    for (const r of (tenantFinRows as any[]) ?? []) financial[r.setting_key] = r.setting_value;
+    for (const r of (branchFinRows as any[]) ?? []) {
+      if (r?.setting_value !== undefined && r?.setting_value !== null) {
+        financial[r.setting_key] = r.setting_value;
+      }
+    }
+    const quoteTaxRate = Number(financial.tax_rate ?? 0) || 0;
+    const taxEnabled =
+      (financial.tax_enabled === undefined || financial.tax_enabled === null
+        ? quoteTaxRate > 0
+        : !!financial.tax_enabled) && quoteTaxRate > 0;
+    const taxLabel = String(financial.tax_label ?? "VAT");
+
     const brand = hexToRgb(tBranding.primary_color ?? tBranding.brand_color ?? tenant?.brand_color);
     const brandSoft = tint(brand, 0.85);
 
@@ -621,15 +651,18 @@ Deno.serve(async (req) => {
       return out;
     };
 
-    // Column layout (sum = W_in = 507)
+    // Column layout (sum = W_in = 507). With tax off the VAT column collapses
+    // and the description column absorbs its width.
+    const VAT_W = taxEnabled ? 42 : 0;
+    const DESC_W = 175 + (taxEnabled ? 0 : 42);
     const C = {
-      code:  { x: M,         w: 50 },
-      desc:  { x: M + 50,    w: 175 },
-      qty:   { x: M + 225,   w: 50 },
-      unit:  { x: M + 275,   w: 60 },
-      disc:  { x: M + 335,   w: 38 },
-      vat:   { x: M + 373,   w: 42 },
-      total: { x: M + 415,   w: W_in - 415 },
+      code:  { x: M,                    w: 50 },
+      desc:  { x: M + 50,               w: DESC_W },
+      qty:   { x: M + 50 + DESC_W,      w: 50 },
+      unit:  { x: M + 100 + DESC_W,     w: 60 },
+      disc:  { x: M + 160 + DESC_W,     w: 38 },
+      vat:   { x: M + 198 + DESC_W,     w: VAT_W },
+      total: { x: M + 198 + DESC_W + VAT_W, w: W_in - (198 + DESC_W + VAT_W) },
     };
 
     const drawItemsHeader = (yy: number): number => {
@@ -639,7 +672,9 @@ Deno.serve(async (req) => {
       drawText(page, "Quantity",    C.qty.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.qty.w - 4 });
       drawText(page, "Unit Price",  C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
       drawText(page, "Disc %",      C.disc.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.disc.w - 4 });
-      drawText(page, "VAT %",       C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      if (taxEnabled) {
+        drawText(page, "VAT %",     C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      }
       drawText(page, "Line Total",  C.total.x,     yy - 11, { size: 8, bold: true, align: "right", width: C.total.w - 4 });
       // Bottom rule
       page.drawLine({ start: { x: M, y: yy - 14 }, end: { x: W - M, y: yy - 14 }, thickness: 0.6, color: border });
@@ -702,7 +737,9 @@ Deno.serve(async (req) => {
       drawText(page, qty.toFixed(2),                  C.qty.x,   fy, { size: 9, align: "right", width: C.qty.w - 4 });
       drawText(page, up.toFixed(2),                   C.unit.x,  fy, { size: 9, align: "right", width: C.unit.w - 4 });
       drawText(page, "",                              C.disc.x,  fy, { size: 9, align: "right", width: C.disc.w - 4 });
-      drawText(page, vr ? `${vr.toFixed(2)}%` : "",   C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      if (taxEnabled) {
+        drawText(page, vr ? `${vr.toFixed(2)}%` : "", C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      }
       drawText(page, lt.toFixed(2),                   C.total.x, fy, { size: 9, align: "right", width: C.total.w - 4 });
 
       // Specification breakdown — two columns of "Label: Value"
@@ -805,8 +842,8 @@ Deno.serve(async (req) => {
       });
       yR -= rowH + 4;
     };
-    totalRow("Subtotal (Exclusive)", fmtMoney(sub, currency));
-    totalRow("VAT", fmtMoney(vat, currency));
+    totalRow(taxEnabled ? "Subtotal (Exclusive)" : "Subtotal", fmtMoney(sub, currency));
+    if (taxEnabled) totalRow(taxLabel, fmtMoney(vat, currency));
     yR -= 4;
     totalRow("Total", fmtMoney(total, currency), { bold: true, size: 12, color: brand });
 

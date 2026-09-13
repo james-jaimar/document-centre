@@ -297,6 +297,16 @@ Deno.serve(async (req) => {
         : Promise.resolve({ data: null } as any),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
     ]);
+
+    // Branch-level financial overrides (tax on/off, rate, label) mirror the
+    // tenant keys — see src/lib/tax/resolveBranchTax.ts.
+    const { data: branchFinancialRows } = order.branch_id
+      ? await admin
+          .from("branch_settings" as any)
+          .select("setting_key, setting_value")
+          .eq("branch_id", order.branch_id)
+          .eq("category", "financial")
+      : ({ data: [] } as any);
     const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;
 
     // Buying company (for the customer VAT / account-number strip). The seller's
@@ -335,6 +345,23 @@ Deno.serve(async (req) => {
       if (s.category === "documents") docs[s.setting_key] = s.setting_value;
       if (s.category === "invoices") invoicesCat[s.setting_key] = s.setting_value;
     });
+
+    // Branch overrides win over tenant financial defaults.
+    for (const r of (branchFinancialRows as any[]) ?? []) {
+      if (r?.setting_value !== undefined && r?.setting_value !== null) {
+        financial[r.setting_key] = r.setting_value;
+      }
+    }
+
+    // VAT is only printed when the tenant/branch actually has tax switched on.
+    // Historic tenants with a rate but no explicit flag stay "on".
+    const resolvedTaxRate = Number(financial.tax_rate ?? 0) || 0;
+    const taxEnabled =
+      (financial.tax_enabled === undefined || financial.tax_enabled === null
+        ? resolvedTaxRate > 0
+        : !!financial.tax_enabled) && resolvedTaxRate > 0;
+
+
 
     // Branding merge: tenant.settings.branding + tenant_settings table
     const tSettingsJson = (tenant?.settings ?? {}) as any;
@@ -688,14 +715,18 @@ Deno.serve(async (req) => {
     const currency = (order.currency as string) ?? "ZAR";
     const items = (jobs ?? []) as any[];
 
+    // When VAT is off the VAT column is dropped and the description column
+    // absorbs the freed width so the table still fills the page.
+    const VAT_W = taxEnabled ? 42 : 0;
+    const DESC_W = 175 + (taxEnabled ? 0 : 42);
     const C = {
-      code:  { x: M,         w: 50 },
-      desc:  { x: M + 50,    w: 175 },
-      qty:   { x: M + 225,   w: 50 },
-      unit:  { x: M + 275,   w: 60 },
-      disc:  { x: M + 335,   w: 38 },
-      vat:   { x: M + 373,   w: 42 },
-      total: { x: M + 415,   w: W_in - 415 },
+      code:  { x: M,                    w: 50 },
+      desc:  { x: M + 50,               w: DESC_W },
+      qty:   { x: M + 50 + DESC_W,      w: 50 },
+      unit:  { x: M + 100 + DESC_W,     w: 60 },
+      disc:  { x: M + 160 + DESC_W,     w: 38 },
+      vat:   { x: M + 198 + DESC_W,     w: VAT_W },
+      total: { x: M + 198 + DESC_W + VAT_W, w: W_in - (198 + DESC_W + VAT_W) },
     };
 
     const drawItemsHeader = (yy: number): number => {
@@ -705,7 +736,9 @@ Deno.serve(async (req) => {
       drawText(page, "Quantity",    C.qty.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.qty.w - 4 });
       drawText(page, "Unit Price",  C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
       drawText(page, "Disc %",      C.disc.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.disc.w - 4 });
-      drawText(page, "VAT %",       C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      if (taxEnabled) {
+        drawText(page, "VAT %",     C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      }
       drawText(page, "Line Total",  C.total.x,     yy - 11, { size: 8, bold: true, align: "right", width: C.total.w - 4 });
       page.drawLine({ start: { x: M, y: yy - 14 }, end: { x: W - M, y: yy - 14 }, thickness: 0.6, color: border });
       return yy - 16;
@@ -728,8 +761,8 @@ Deno.serve(async (req) => {
     const specColW = specBlockW / 2;
     const specRowH = 10;
 
-    // Never assume a tax rate — an unconfigured tenant is 0%, not 15%.
-    const taxRate = Number(financial.tax_rate ?? 0);
+    // Never assume a tax rate — an unconfigured or tax-off tenant is 0%.
+    const taxRate = taxEnabled ? resolvedTaxRate : 0;
 
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
@@ -767,7 +800,9 @@ Deno.serve(async (req) => {
       drawText(page, qty.toFixed(2),                  C.qty.x,   fy, { size: 9, align: "right", width: C.qty.w - 4 });
       drawText(page, up.toFixed(2),                   C.unit.x,  fy, { size: 9, align: "right", width: C.unit.w - 4 });
       drawText(page, "",                              C.disc.x,  fy, { size: 9, align: "right", width: C.disc.w - 4 });
-      drawText(page, vr ? `${vr.toFixed(2)}%` : "",   C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      if (taxEnabled) {
+        drawText(page, vr ? `${vr.toFixed(2)}%` : "", C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      }
       drawText(page, lt.toFixed(2),                   C.total.x, fy, { size: 9, align: "right", width: C.total.w - 4 });
 
       if (specs.length) {
@@ -807,7 +842,7 @@ Deno.serve(async (req) => {
     labelChip(page, "Terms and Conditions", M, yL); yL -= 14;
     const paymentDays = Number(financial.payment_terms_days ?? 30);
     const defaultTerms = kind === "proforma"
-      ? `1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma a 50% deposit will be required.`
+      ? `1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma full payment will be required.`
       : kind === "credit_note"
       ? `1. This credit note has been applied to your account.`
       : kind === "receipt"
@@ -892,22 +927,26 @@ Deno.serve(async (req) => {
       });
       yR -= rowH + 4;
     };
-    const taxInclusive = !!financial.tax_inclusive;
+    const taxInclusive = taxEnabled && !!financial.tax_inclusive;
     // Show the rate that was actually charged. When the tenant has no tax
     // settings, fall back to the rate implied by the order amounts rather than
     // printing a hard-coded 15% next to a zero.
-    const configuredRate = financial.tax_rate == null ? null : Number(financial.tax_rate);
+    const configuredRate = taxEnabled ? resolvedTaxRate : 0;
     const netBase = subAmt - discAmt + delAmt;
     const impliedRate = netBase > 0 && vatAmt > 0
       ? (taxInclusive ? (vatAmt / Math.max(netBase - vatAmt, 0.01)) : (vatAmt / netBase)) * 100
       : 0;
-    const effectiveRate = configuredRate ?? impliedRate;
-    totalRow(taxInclusive ? "Subtotal (Inclusive)" : "Subtotal (Exclusive)", fmtMoney(subAmt, currency));
+    const effectiveRate = configuredRate || impliedRate;
+    totalRow(
+      taxEnabled ? (taxInclusive ? "Subtotal (Inclusive)" : "Subtotal (Exclusive)") : "Subtotal",
+      fmtMoney(subAmt, currency),
+    );
     if (discAmt > 0) totalRow("Discount", `-${fmtMoney(discAmt, currency)}`);
     if (delAmt > 0) totalRow("Delivery", fmtMoney(delAmt, currency));
     const vatLabel = (financial.tax_label as string) || "VAT";
-    // Omit the tax row entirely when nothing was charged and no rate is set.
-    if (effectiveRate > 0 || vatAmt > 0) {
+    // Omit the tax row entirely when tax is switched off, or when nothing was
+    // charged and no rate is set.
+    if (taxEnabled && (effectiveRate > 0 || vatAmt > 0)) {
       const vatRowLabel = taxInclusive
         ? `${vatLabel} included (${effectiveRate.toFixed(2)}%)`
         : `${vatLabel} (${effectiveRate.toFixed(2)}%)`;

@@ -416,7 +416,12 @@ async function createOrderWithJobs(
   const app_id = app.id;
 
   // Generate order number
-  const { data: orderNum, error: numErr } = await admin.rpc("generate_order_number", { p_app_id: app_id });
+  // Tenant-scoped series when the tenant has its own prefix configured;
+  // falls back to the shared app-wide series inside the function.
+  const { data: orderNum, error: numErr } = await admin.rpc("generate_order_number", {
+    p_app_id: app_id,
+    p_tenant_id: tenant_id,
+  });
   if (numErr || !orderNum) {
     console.error("[order-engine] generate_order_number failed", numErr);
     return err(`generate_order_number failed: ${numErr?.message ?? "no number returned"}`);
