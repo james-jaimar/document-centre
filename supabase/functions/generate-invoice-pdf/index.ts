@@ -13,6 +13,17 @@ import {
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
 
+/* ─── Layout version ──────────────────────────────────────────────────────────
+ * BUMP THIS whenever the invoice/proforma layout or wording changes. Stored
+ * PDFs stamped with an older version are treated as stale and re-rendered the
+ * next time they are viewed, downloaded or emailed.
+ * Must stay in sync with CURRENT_INVOICE_RENDERER_VERSION in
+ * src/lib/orders/invoiceRenderer.ts.
+ * v2 — hide VAT column/row when tax is disabled; proforma terms reworded.
+ */
+const RENDERER_VERSION = 2;
+
+
 /* ─── Embedded TrueType font (cached across warm invocations) ─────────────── */
 const FONT_REG_URL =
   "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans@5.0.22/files/noto-sans-latin-400-normal.ttf";
