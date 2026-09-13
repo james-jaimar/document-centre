@@ -251,10 +251,15 @@ export default function Checkout() {
 
 
   const items = (cart?.order_items as any[]) ?? [];
-  const subtotal = items.reduce(
-    (sum, item) => sum + Number(item.unit_price) * item.quantity,
-    0
-  );
+  // A sample pack basket is charged as one flat fee with delivery included,
+  // so the individual items carry no price of their own.
+  const samplePackCart =
+    samplePackConfig.enabled &&
+    items.length > 0 &&
+    items.every((item) => (item.spec as any)?.sample_pack === true);
+  const subtotal = samplePackCart
+    ? samplePackConfig.price
+    : items.reduce((sum, item) => sum + Number(item.unit_price) * item.quantity, 0);
 
   // Shipping quote (only relevant when delivery is selected)
   const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null);
