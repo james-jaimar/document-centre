@@ -6176,9 +6176,12 @@ export type Database = {
       }
       product_supplier_assignments: {
         Row: {
+          cost_fingerprint: string | null
           created_at: string
           id: string
           is_active: boolean
+          last_synced_at: string | null
+          markup_percent: number | null
           product_family_id: string
           supplier_link_id: string
           supplier_product_family_id: string
@@ -6186,9 +6189,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cost_fingerprint?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
+          last_synced_at?: string | null
+          markup_percent?: number | null
           product_family_id: string
           supplier_link_id: string
           supplier_product_family_id: string
@@ -6196,9 +6202,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cost_fingerprint?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
+          last_synced_at?: string | null
+          markup_percent?: number | null
           product_family_id?: string
           supplier_link_id?: string
           supplier_product_family_id?: string
@@ -8740,6 +8749,10 @@ export type Database = {
         Returns: boolean
       }
       supplier_trade_blocks: {
+        Args: { p_link_id: string; p_supplier_family_id: string }
+        Returns: Json
+      }
+      supplier_trade_terms: {
         Args: { p_link_id: string; p_supplier_family_id: string }
         Returns: Json
       }

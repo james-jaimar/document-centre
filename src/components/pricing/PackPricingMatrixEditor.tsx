@@ -38,6 +38,13 @@ interface Props {
   /** Only meaningful for tenant/branch scopes — clears the override row. */
   onRevertToParent?: () => Promise<void> | void;
   reverting?: boolean;
+  /**
+   * packBlockKey → buy price (minor units) coming from a trade supplier.
+   * When present the Cost column is read-only and a margin is shown.
+   */
+  lockedCosts?: Map<string, number>;
+  /** Panel rendered above the ladders (supplier banner / pull action). */
+  headerExtra?: React.ReactNode;
 }
 
 const DEFAULT_QTY_TIERS = [100, 250, 500, 1000];
@@ -63,6 +70,8 @@ export default function PackPricingMatrixEditor({
   onSave,
   onRevertToParent,
   reverting = false,
+  lockedCosts,
+  headerExtra,
 }: Props) {
   const [blocks, setBlocks] = useState<QuantityBlock[]>(initialBlocks ?? []);
   const [dirty, setDirty] = useState(false);
@@ -422,6 +431,8 @@ export default function PackPricingMatrixEditor({
         </div>
       )}
 
+      {headerExtra}
+
       {/* Groups */}
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground italic py-6 text-center border border-dashed rounded-md">
@@ -449,6 +460,7 @@ export default function PackPricingMatrixEditor({
               onFillTrade={fillTradeFromConsumer}
               onAutoWeigh={autoWeighGroup}
               parentBlocks={parentBlocks}
+              lockedCosts={lockedCosts}
               onDeleteGroup={deleteGroup}
             />
           ))}
@@ -492,6 +504,7 @@ function GroupCard({
   onFillTrade,
   onAutoWeigh,
   parentBlocks,
+  lockedCosts,
   onDeleteGroup,
 }: {
   group: Group;
@@ -509,6 +522,7 @@ function GroupCard({
   onFillTrade: (group: Group) => void;
   onAutoWeigh: (group: Group) => void;
   parentBlocks: QuantityBlock[];
+  lockedCosts?: Map<string, number>;
   onDeleteGroup: (group: Group) => void;
 
 }) {
@@ -597,6 +611,7 @@ function GroupCard({
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "single")}
           parentBlocks={parentBlocks}
+          lockedCosts={lockedCosts}
         />
         <SidesColumn
           heading="Double-sided"
@@ -606,6 +621,7 @@ function GroupCard({
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "double")}
           parentBlocks={parentBlocks}
+          lockedCosts={lockedCosts}
         />
       </div>
 
@@ -651,6 +667,7 @@ function SidesColumn({
   onDeleteBlock,
   onAddRow,
   parentBlocks,
+  lockedCosts,
 }: {
   heading: string;
   rows: { block: QuantityBlock; index: number }[];
@@ -659,6 +676,7 @@ function SidesColumn({
   onDeleteBlock: (idx: number) => void;
   onAddRow: () => void;
   parentBlocks: QuantityBlock[];
+  lockedCosts?: Map<string, number>;
 }) {
   /** Spreadsheet-style paste: fills downwards (and sideways for tab-separated data). */
   const handlePaste = (rowPos: number, column: PasteColumn) => (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -723,6 +741,13 @@ function SidesColumn({
           {rows.map(({ block, index }, rowPos) => {
             const parent = parentBlocks.find((candidate) => packBlockKey(candidate) === packBlockKey(block));
             const inheritedTrade = parent?.trade_price_minor;
+            const lockedCost = lockedCosts?.get(packBlockKey(block));
+            const marginMinor =
+              lockedCost != null ? (Number(block.price_minor) || 0) - lockedCost : null;
+            const marginPct =
+              marginMinor != null && Number(block.price_minor) > 0
+                ? (marginMinor / Number(block.price_minor)) * 100
+                : null;
             return (
             <div key={index} className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 items-center">
               <Input
@@ -762,21 +787,37 @@ function SidesColumn({
                   });
                 }}
               />
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                className="h-8 text-xs"
-                placeholder="—"
-                value={block.cost_minor != null ? (block.cost_minor / 100).toString() : ""}
-                onPaste={handlePaste(rowPos, "cost")}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  onUpdateBlock(index, {
-                    cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
-                  });
-                }}
-              />
+              {lockedCost != null ? (
+                <div
+                  className="h-8 rounded-md border border-dashed bg-muted/50 px-2 flex flex-col justify-center leading-tight"
+                  title="Buy price from your supplier, including their VAT. Read-only."
+                >
+                  <span className="text-xs font-mono">{(lockedCost / 100).toFixed(2)}</span>
+                  {marginPct != null && (
+                    <span
+                      className={`text-[10px] ${marginPct <= 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
+                    >
+                      margin {marginPct.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="h-8 text-xs"
+                  placeholder="—"
+                  value={block.cost_minor != null ? (block.cost_minor / 100).toString() : ""}
+                  onPaste={handlePaste(rowPos, "cost")}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    onUpdateBlock(index, {
+                      cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                    });
+                  }}
+                />
+              )}
               <Input
                 type="number"
                 min={0}
