@@ -308,6 +308,32 @@ async function accountBalance(
   }
 }
 
+/**
+ * Server-side mirror of src/lib/validation/addressSchema.ts. Returns an error
+ * message when the delivery address isn't good enough to ship to, else null.
+ */
+function validateDeliveryAddress(addr: any): string | null {
+  const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  if (!addr || typeof addr !== "object") return "A delivery address is required";
+  if (!s(addr.contact_name) && !s(addr.company_name)) {
+    return "Delivery address needs a contact name or company";
+  }
+  if (!s(addr.line1)) return "Delivery address needs a street address";
+  if (!s(addr.city)) return "Delivery address needs a city or town";
+  if (!s(addr.province)) return "Delivery address needs a province";
+  const country = s(addr.country).toLowerCase();
+  const isZA = country === "" || country === "za" || country === "south africa";
+  const pc = s(addr.postal_code).replace(/\s+/g, "");
+  if (isZA ? !/^\d{4}$/.test(pc) : !/^[A-Za-z0-9-]{3,10}$/.test(pc)) {
+    return "Delivery address needs a valid postal code";
+  }
+  const digits = s(addr.phone).replace(/[^\d]/g, "");
+  if (digits.length < 9 || digits.length > 15) return "Delivery address needs a valid phone number";
+  const email = s(addr.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return "Delivery address needs a valid email address";
+  return null;
+}
+
 // ── Action handlers ─────────────────────────────────────────
 
 
@@ -335,6 +361,14 @@ async function createOrderWithJobs(
   const resolvedFulfilment = fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null));
   const fulMsg = await checkFulfilmentAllowed(admin, tenant_id, branch_id, resolvedFulfilment);
   if (fulMsg) return err(fulMsg);
+
+  // Address gate — the browser is not the only check. A delivery order must
+  // carry a deliverable address (someone to receive it, a street, a town, a
+  // province, a valid postal code and a way to contact them).
+  if (resolvedFulfilment === "delivery") {
+    const addrMsg = validateDeliveryAddress(delivery_address);
+    if (addrMsg) return err(addrMsg);
+  }
 
   // Prepaid (C.O.D.) customers may only place orders that are held for an
   // online payment — no account / EFT bypass from a tampered client.

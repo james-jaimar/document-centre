@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCustomerAddresses, type CustomerAddress, type CustomerAddressInput } from "@/hooks/useCustomerAddresses";
+import { validateAddress, normalizeAddress, type AddressErrors } from "@/lib/validation/addressSchema";
 
 interface Props {
   open: boolean;
@@ -48,13 +49,29 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
     }
   }, [open, initial]);
 
-  const handle = (k: keyof CustomerAddressInput, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const [errors, setErrors] = useState<AddressErrors>({});
+
+  const handle = (k: keyof CustomerAddressInput, v: any) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setErrors((e) => (Object.keys(e).length ? {} : e));
+  };
 
   const submit = () => {
+    const found = validateAddress(form);
+    if (Object.keys(found).length) {
+      setErrors(found);
+      return;
+    }
+    const clean = normalizeAddress(form);
     const cb = { onSuccess: () => onOpenChange(false) };
-    if (initial) update.mutate({ id: initial.id, patch: form }, cb);
-    else create.mutate(form, cb);
+    if (initial) update.mutate({ id: initial.id, patch: clean }, cb);
+    else create.mutate(clean, cb);
   };
+
+  const err = (k: keyof AddressErrors) => errors[k];
+  const cls = (k: keyof AddressErrors) => (errors[k] ? "border-destructive" : "");
+  const Msg = ({ k }: { k: keyof AddressErrors }) =>
+    errors[k] ? <p className="text-xs text-destructive">{errors[k]}</p> : null;
 
   const pending = create.isPending || update.isPending;
 
@@ -82,24 +99,28 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Contact name</Label>
-            <Input value={form.contact_name ?? ""} onChange={(e) => handle("contact_name", e.target.value)} />
+            <Label>Contact name *</Label>
+            <Input className={cls("contact_name")} value={form.contact_name ?? ""} onChange={(e) => handle("contact_name", e.target.value)} />
+            <Msg k="contact_name" />
           </div>
           <div className="space-y-1">
             <Label>Company</Label>
-            <Input value={form.company_name ?? ""} onChange={(e) => handle("company_name", e.target.value)} />
+            <Input className={cls("company_name")} value={form.company_name ?? ""} onChange={(e) => handle("company_name", e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>Phone</Label>
-            <Input value={form.phone ?? ""} onChange={(e) => handle("phone", e.target.value)} />
+            <Label>Phone *</Label>
+            <Input className={cls("phone")} value={form.phone ?? ""} onChange={(e) => handle("phone", e.target.value)} />
+            <Msg k="phone" />
           </div>
           <div className="space-y-1">
-            <Label>Email</Label>
-            <Input type="email" value={form.email ?? ""} onChange={(e) => handle("email", e.target.value)} />
+            <Label>Email *</Label>
+            <Input type="email" className={cls("email")} value={form.email ?? ""} onChange={(e) => handle("email", e.target.value)} />
+            <Msg k="email" />
           </div>
           <div className="space-y-1 col-span-2">
-            <Label>Address line 1</Label>
-            <Input value={form.line1 ?? ""} onChange={(e) => handle("line1", e.target.value)} />
+            <Label>Address line 1 *</Label>
+            <Input className={cls("line1")} value={form.line1 ?? ""} onChange={(e) => handle("line1", e.target.value)} />
+            <Msg k="line1" />
           </div>
           <div className="space-y-1 col-span-2">
             <Label>Address line 2</Label>
@@ -110,16 +131,19 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
             <Input value={form.suburb ?? ""} onChange={(e) => handle("suburb", e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>City</Label>
-            <Input value={form.city ?? ""} onChange={(e) => handle("city", e.target.value)} />
+            <Label>City *</Label>
+            <Input className={cls("city")} value={form.city ?? ""} onChange={(e) => handle("city", e.target.value)} />
+            <Msg k="city" />
           </div>
           <div className="space-y-1">
-            <Label>Province</Label>
-            <Input value={form.province ?? ""} onChange={(e) => handle("province", e.target.value)} />
+            <Label>Province *</Label>
+            <Input className={cls("province")} value={form.province ?? ""} onChange={(e) => handle("province", e.target.value)} />
+            <Msg k="province" />
           </div>
           <div className="space-y-1">
-            <Label>Postal code</Label>
-            <Input value={form.postal_code ?? ""} onChange={(e) => handle("postal_code", e.target.value)} />
+            <Label>Postal code *</Label>
+            <Input className={cls("postal_code")} value={form.postal_code ?? ""} onChange={(e) => handle("postal_code", e.target.value)} />
+            <Msg k="postal_code" />
           </div>
           <div className="space-y-1 col-span-2">
             <Label>Country</Label>

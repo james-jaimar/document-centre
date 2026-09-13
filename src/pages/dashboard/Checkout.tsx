@@ -1,5 +1,5 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +37,19 @@ import { useFulfilmentMethods } from "@/hooks/useFulfilmentMethods";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
 import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
+import {
+  validateAddress,
+  normalizeAddress,
+  firstInvalidField,
+  type AddressErrors,
+  type AddressLike,
+} from "@/lib/validation/addressSchema";
+
+/** Small inline error line under a checkout field. */
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-xs text-destructive">{message}</p>;
+}
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
@@ -199,6 +212,42 @@ export default function Checkout() {
     phone: "",
     email: "",
   });
+
+  // --- Address validation state -------------------------------------------
+  // Errors only surface once a field has been left (blurred) or the customer
+  // has attempted to place the order — Shopify-style, no shouting while typing.
+  const [addressTouched, setAddressTouched] = useState<Record<string, boolean>>({});
+  const [billingTouched, setBillingTouched] = useState<Record<string, boolean>>({});
+  const [showAllErrors, setShowAllErrors] = useState(false);
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const setFieldRef = (key: string) => (el: HTMLElement | null) => { fieldRefs.current[key] = el; };
+
+  const addressErrors: AddressErrors = useMemo(
+    () => (deliveryMethod === "delivery" ? validateAddress({ ...address, country: "South Africa" }) : {}),
+    [address, deliveryMethod],
+  );
+  const billingErrors: AddressErrors = useMemo(
+    () => (billingRequired ? validateAddress(billing, { requireProvince: false }) : {}),
+    [billing, billingRequired],
+  );
+  const addrErr = (f: keyof AddressLike) =>
+    showAllErrors || addressTouched[f as string] ? addressErrors[f] : undefined;
+  const billErr = (f: keyof AddressLike) =>
+    showAllErrors || billingTouched[f as string] ? billingErrors[f] : undefined;
+  const errClass = (msg?: string) => (msg ? "border-destructive focus-visible:ring-destructive" : "");
+
+  const focusField = (prefix: string, field: string) => {
+    const el = fieldRefs.current[`${prefix}.${field}`];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => (el as HTMLInputElement).focus?.(), 250);
+  };
+
+  // Pre-fill the delivery email with the signed-in customer's address.
+  useEffect(() => {
+    if (!user?.email) return;
+    setAddress((p) => (p.email ? p : { ...p, email: user.email as string }));
+  }, [user?.email]);
 
 
   const items = (cart?.order_items as any[]) ?? [];
@@ -405,8 +454,11 @@ export default function Checkout() {
       toast.error("No collection branch selected");
       return;
     }
-    if (deliveryMethod === "delivery" && !address.line1.trim()) {
-      toast.error("Please enter a delivery address");
+    if (deliveryMethod === "delivery" && Object.keys(addressErrors).length > 0) {
+      setShowAllErrors(true);
+      const f = firstInvalidField(addressErrors);
+      if (f) focusField("delivery", f as string);
+      toast.error("Please complete the delivery address before continuing.");
       return;
     }
     if (deliveryMethod === "delivery" && quotingShipping) {
@@ -418,20 +470,12 @@ export default function Checkout() {
       return;
     }
 
-    if (billingRequired) {
-      const missing =
-        !billing.contact_name.trim() ||
-        !billing.line1.trim() ||
-        !billing.city.trim() ||
-        !billing.postal_code.trim() ||
-        !billing.country.trim() ||
-        (!billing.phone.trim() && !billing.email.trim());
-      if (missing) {
-        toast.error(
-          "Please complete your billing address (name, address, city, postal code, country and a phone or email).",
-        );
-        return;
-      }
+    if (billingRequired && Object.keys(billingErrors).length > 0) {
+      setShowAllErrors(true);
+      const f = firstInvalidField(billingErrors);
+      if (f) focusField("billing", f as string);
+      toast.error("Please complete your billing address before continuing.");
+      return;
     }
 
     if (!legalAccept) {
@@ -458,14 +502,17 @@ export default function Checkout() {
       const payingOnline = paymentMethod === "stripe" || paymentMethod === "payfast";
       if (payingOnline) setRedirecting(true);
 
+      const cleanAddress = normalizeAddress(address);
+      const cleanBilling = normalizeAddress(billing);
+
       const newOrderId = await placeOrder.mutateAsync({
         cartOrderId: cart.id,
         holdForPayment: payingOnline,
         paymentMethod,
         deliveryMethod,
         notes: notes.trim() || undefined,
-        deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
-        billingAddress: billingRequired ? billing : undefined,
+        deliveryAddress: deliveryMethod === "delivery" ? cleanAddress : undefined,
+        billingAddress: billingRequired ? cleanBilling : undefined,
         branchId: deliveryMethod === "collection" ? collectionBranch?.id : undefined,
         deliveryAmount: deliveryFee,
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
@@ -532,21 +579,21 @@ export default function Checkout() {
 
       // Save the billing address to the customer's address book so it is
       // pre-selected next time (only when they typed a new one).
-      if (billingRequired && user && !selectedBillingId && billing.line1.trim()) {
+      if (billingRequired && user && !selectedBillingId && cleanBilling.line1.trim()) {
         try {
           await createSavedAddress.mutateAsync({
             address_type: "billing",
             is_default: true,
-            contact_name: billing.contact_name || null,
-            company_name: billing.company_name || null,
-            phone: billing.phone || null,
-            email: billing.email || null,
-            line1: billing.line1 || null,
-            line2: billing.line2 || null,
-            city: billing.city || null,
-            province: billing.province || null,
-            postal_code: billing.postal_code || null,
-            country: billing.country || "South Africa",
+            contact_name: cleanBilling.contact_name || null,
+            company_name: cleanBilling.company_name || null,
+            phone: cleanBilling.phone || null,
+            email: cleanBilling.email || null,
+            line1: cleanBilling.line1 || null,
+            line2: cleanBilling.line2 || null,
+            city: cleanBilling.city || null,
+            province: cleanBilling.province || null,
+            postal_code: cleanBilling.postal_code || null,
+            country: cleanBilling.country || "South Africa",
           });
         } catch (e) {
           console.warn("Failed to save billing address to address book:", e);
@@ -554,19 +601,19 @@ export default function Checkout() {
       }
 
       // Save delivery address to the customer's address book if requested.
-      if (saveAddress && deliveryMethod === "delivery" && user && address.line1.trim()) {
+      if (saveAddress && deliveryMethod === "delivery" && user && cleanAddress.line1.trim()) {
         try {
           await createSavedAddress.mutateAsync({
             address_type: "delivery",
-            contact_name: address.contact_name || null,
-            company_name: address.company_name || null,
-            phone: address.phone || null,
-            email: address.email || null,
-            line1: address.line1 || null,
-            line2: address.line2 || null,
-            city: address.city || null,
-            province: address.province || null,
-            postal_code: address.postal_code || null,
+            contact_name: cleanAddress.contact_name || null,
+            company_name: cleanAddress.company_name || null,
+            phone: cleanAddress.phone || null,
+            email: cleanAddress.email || null,
+            line1: cleanAddress.line1 || null,
+            line2: cleanAddress.line2 || null,
+            city: cleanAddress.city || null,
+            province: cleanAddress.province || null,
+            postal_code: cleanAddress.postal_code || null,
             country: "South Africa",
           });
         } catch (e) {
@@ -787,20 +834,30 @@ export default function Checkout() {
                 />
               )}
 
+              <p className="text-xs text-muted-foreground">
+                Fields marked * are required so we know exactly where this is going.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Contact Name</Label>
+                  <Label className="text-xs">Contact Name *</Label>
                   <Input
+                    ref={setFieldRef("delivery.contact_name") as any}
                     value={address.contact_name}
                     onChange={(e) => setAddress((p) => ({ ...p, contact_name: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, contact_name: true }))}
+                    className={errClass(addrErr("contact_name"))}
                     placeholder="John Smith"
                   />
+                  <FieldError message={addrErr("contact_name")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Company</Label>
                   <Input
+                    ref={setFieldRef("delivery.company_name") as any}
                     value={address.company_name}
                     onChange={(e) => setAddress((p) => ({ ...p, company_name: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, company_name: true }))}
+                    className={errClass(addrErr("company_name"))}
                     placeholder="Acme Corp"
                   />
                 </div>
@@ -808,10 +865,14 @@ export default function Checkout() {
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 1 *</Label>
                 <Input
+                  ref={setFieldRef("delivery.line1") as any}
                   value={address.line1}
                   onChange={(e) => setAddress((p) => ({ ...p, line1: e.target.value }))}
+                  onBlur={() => setAddressTouched((t) => ({ ...t, line1: true }))}
+                  className={errClass(addrErr("line1"))}
                   placeholder="123 Main Street"
                 />
+                <FieldError message={addrErr("line1")} />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 2</Label>
@@ -823,19 +884,31 @@ export default function Checkout() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">City</Label>
+                  <Label className="text-xs">City *</Label>
                   <Input
+                    ref={setFieldRef("delivery.city") as any}
                     value={address.city}
                     onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, city: true }))}
+                    className={errClass(addrErr("city"))}
                   />
+                  <FieldError message={addrErr("city")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Province *</Label>
                   <Select
                     value={address.province}
-                    onValueChange={(v) => setAddress((p) => ({ ...p, province: v }))}
+                    onValueChange={(v) => {
+                      setAddress((p) => ({ ...p, province: v }));
+                      setAddressTouched((t) => ({ ...t, province: true }));
+                    }}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectTrigger
+                      ref={setFieldRef("delivery.province") as any}
+                      className={errClass(addrErr("province"))}
+                    >
+                      <SelectValue placeholder="Select…" />
+                    </SelectTrigger>
                     <SelectContent>
                       {[
                         "Eastern Cape","Free State","Gauteng","KwaZulu-Natal",
@@ -845,30 +918,47 @@ export default function Checkout() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError message={addrErr("province")} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Postal Code</Label>
+                  <Label className="text-xs">Postal Code *</Label>
                   <Input
+                    ref={setFieldRef("delivery.postal_code") as any}
+                    inputMode="numeric"
+                    maxLength={10}
                     value={address.postal_code}
                     onChange={(e) => setAddress((p) => ({ ...p, postal_code: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, postal_code: true }))}
+                    className={errClass(addrErr("postal_code"))}
                   />
+                  <FieldError message={addrErr("postal_code")} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Phone</Label>
+                  <Label className="text-xs">Phone *</Label>
                   <Input
+                    ref={setFieldRef("delivery.phone") as any}
+                    inputMode="tel"
                     value={address.phone}
                     onChange={(e) => setAddress((p) => ({ ...p, phone: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, phone: true }))}
+                    className={errClass(addrErr("phone"))}
+                    placeholder="082 123 4567"
                   />
+                  <FieldError message={addrErr("phone")} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Email</Label>
+                  <Label className="text-xs">Email *</Label>
                   <Input
+                    ref={setFieldRef("delivery.email") as any}
                     type="email"
                     value={address.email}
                     onChange={(e) => setAddress((p) => ({ ...p, email: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, email: true }))}
+                    className={errClass(addrErr("email"))}
                   />
+                  <FieldError message={addrErr("email")} />
                 </div>
               </div>
               {user && (
@@ -946,16 +1036,23 @@ export default function Checkout() {
                 <div className="space-y-1">
                   <Label className="text-xs">Contact Name *</Label>
                   <Input
+                    ref={setFieldRef("billing.contact_name") as any}
                     value={billing.contact_name}
                     onChange={(e) => setBilling((p) => ({ ...p, contact_name: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, contact_name: true }))}
+                    className={errClass(billErr("contact_name"))}
                     placeholder="John Smith"
                   />
+                  <FieldError message={billErr("contact_name")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Company</Label>
                   <Input
+                    ref={setFieldRef("billing.company_name") as any}
                     value={billing.company_name}
                     onChange={(e) => setBilling((p) => ({ ...p, company_name: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, company_name: true }))}
+                    className={errClass(billErr("company_name"))}
                     placeholder="Acme Corp"
                   />
                 </div>
@@ -963,10 +1060,14 @@ export default function Checkout() {
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 1 *</Label>
                 <Input
+                  ref={setFieldRef("billing.line1") as any}
                   value={billing.line1}
                   onChange={(e) => setBilling((p) => ({ ...p, line1: e.target.value }))}
+                  onBlur={() => setBillingTouched((t) => ({ ...t, line1: true }))}
+                  className={errClass(billErr("line1"))}
                   placeholder="123 Main Street"
                 />
+                <FieldError message={billErr("line1")} />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 2</Label>
@@ -979,9 +1080,13 @@ export default function Checkout() {
                 <div className="space-y-1">
                   <Label className="text-xs">City *</Label>
                   <Input
+                    ref={setFieldRef("billing.city") as any}
                     value={billing.city}
                     onChange={(e) => setBilling((p) => ({ ...p, city: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, city: true }))}
+                    className={errClass(billErr("city"))}
                   />
+                  <FieldError message={billErr("city")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Province</Label>
@@ -993,9 +1098,13 @@ export default function Checkout() {
                 <div className="space-y-1">
                   <Label className="text-xs">Postal Code *</Label>
                   <Input
+                    ref={setFieldRef("billing.postal_code") as any}
                     value={billing.postal_code}
                     onChange={(e) => setBilling((p) => ({ ...p, postal_code: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, postal_code: true }))}
+                    className={errClass(billErr("postal_code"))}
                   />
+                  <FieldError message={billErr("postal_code")} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -1007,19 +1116,27 @@ export default function Checkout() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Phone</Label>
+                  <Label className="text-xs">Phone *</Label>
                   <Input
+                    ref={setFieldRef("billing.phone") as any}
                     value={billing.phone}
                     onChange={(e) => setBilling((p) => ({ ...p, phone: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, phone: true }))}
+                    className={errClass(billErr("phone"))}
                   />
+                  <FieldError message={billErr("phone")} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Email</Label>
+                  <Label className="text-xs">Email *</Label>
                   <Input
+                    ref={setFieldRef("billing.email") as any}
                     type="email"
                     value={billing.email}
                     onChange={(e) => setBilling((p) => ({ ...p, email: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, email: true }))}
+                    className={errClass(billErr("email"))}
                   />
+                  <FieldError message={billErr("email")} />
                 </div>
               </div>
             </div>
