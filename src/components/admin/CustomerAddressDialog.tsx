@@ -49,13 +49,29 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
     }
   }, [open, initial]);
 
-  const handle = (k: keyof CustomerAddressInput, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const [errors, setErrors] = useState<AddressErrors>({});
+
+  const handle = (k: keyof CustomerAddressInput, v: any) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setErrors((e) => (Object.keys(e).length ? {} : e));
+  };
 
   const submit = () => {
+    const found = validateAddress(form);
+    if (Object.keys(found).length) {
+      setErrors(found);
+      return;
+    }
+    const clean = normalizeAddress(form);
     const cb = { onSuccess: () => onOpenChange(false) };
-    if (initial) update.mutate({ id: initial.id, patch: form }, cb);
-    else create.mutate(form, cb);
+    if (initial) update.mutate({ id: initial.id, patch: clean }, cb);
+    else create.mutate(clean, cb);
   };
+
+  const err = (k: keyof AddressErrors) => errors[k];
+  const cls = (k: keyof AddressErrors) => (errors[k] ? "border-destructive" : "");
+  const Msg = ({ k }: { k: keyof AddressErrors }) =>
+    errors[k] ? <p className="text-xs text-destructive">{errors[k]}</p> : null;
 
   const pending = create.isPending || update.isPending;
 
