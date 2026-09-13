@@ -310,7 +310,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         tenant_id: link.supplier_tenant_id,
         order_id: mirror.id,
         event_type: "order_created",
-        visibility: "internal",
+        visibility: "admin",
         actor_type: "system",
         description: `Trade order received from ${buyerCompanyName ?? "a trade partner"} (${order.order_number})`,
         metadata: { source_order_id: order.id },
