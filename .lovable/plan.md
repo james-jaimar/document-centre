@@ -59,12 +59,16 @@ The pack is printed by Impress Print, so the order has to land there as somethin
 - `useCart.ts` surfaces `isSamplePack` for basket display; `Checkout.tsx` skips the delivery quote when the flag is set but still requires a delivery address.
 - Admin: badge and filter in `AdminOrders.tsx`, the settings panel under `src/pages/admin/settings/`, and the re-issue action on `AdminCompanyDetail.tsx`.
 - Storefront entry points: a `SamplePackBanner` component used on `StorefrontShop.tsx`, `StorefrontProduct.tsx` and the customer dashboard, hidden unless eligible.
+- Supplier side: a `sample_pack` row on the supplier tenant (`supplier_offerings` gains `is_sample_pack` + `sample_trade_price_minor`, or an equivalent single settings row), surfaced in `AdminSuppliers.tsx` → wholesale catalogue.
+- `supabase/functions/_shared/supplier-mirror.ts`: when the source order has `is_sample_pack`, bypass `supplierTradePriceMinor` (qty 1 never matches a ladder row), set every mirrored job's `net_price`/`cost_price`/`gross_price` to 0, append one synthetic job/adjustment line "Trade sample pack" at the configured trade price, set `is_sample_pack` on the mirror, and write `metadata.sample_pack_unpriced` plus an admin-visibility `timeline_events` note when no price is configured. Carriage pricing stays exactly as it is today.
+- Buyer-side margin view: the admin order's supplier panel shows trade price + supplier carriage vs the R495 taken.
 
 ## Order of work
 
-1. Migration: `orders.is_sample_pack` + the tenant setting defaults.
+1. Migration: `orders.is_sample_pack`, supplier sample-pack price fields, tenant setting defaults.
 2. Server-side pricing and eligibility guard in `order-engine`.
 3. The guided sample pack page and eligibility hook.
 4. Basket and checkout display, delivery skip.
 5. Admin settings, badge, filter, re-issue action.
-6. Storefront and dashboard entry points.
+6. Supplier wholesale-catalogue entry and the mirror's sample-pack path.
+7. Storefront and dashboard entry points.
