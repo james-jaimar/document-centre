@@ -297,6 +297,16 @@ Deno.serve(async (req) => {
         : Promise.resolve({ data: null } as any),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
     ]);
+
+    // Branch-level financial overrides (tax on/off, rate, label) mirror the
+    // tenant keys — see src/lib/tax/resolveBranchTax.ts.
+    const { data: branchFinancialRows } = order.branch_id
+      ? await admin
+          .from("branch_settings" as any)
+          .select("setting_key, setting_value")
+          .eq("branch_id", order.branch_id)
+          .eq("category", "financial")
+      : ({ data: [] } as any);
     const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;
 
     // Buying company (for the customer VAT / account-number strip). The seller's
