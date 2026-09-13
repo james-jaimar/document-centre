@@ -1843,6 +1843,7 @@ export type Database = {
           payment_terms_mode: string
           phone: string | null
           registration_number: string | null
+          sample_pack_allowance: number
           tenant_id: string
           trading_name: string | null
           updated_at: string
@@ -1883,6 +1884,7 @@ export type Database = {
           payment_terms_mode?: string
           phone?: string | null
           registration_number?: string | null
+          sample_pack_allowance?: number
           tenant_id: string
           trading_name?: string | null
           updated_at?: string
@@ -1923,6 +1925,7 @@ export type Database = {
           payment_terms_mode?: string
           phone?: string | null
           registration_number?: string | null
+          sample_pack_allowance?: number
           tenant_id?: string
           trading_name?: string | null
           updated_at?: string
@@ -4490,6 +4493,7 @@ export type Database = {
           id: string
           impersonated_by: string | null
           is_demo: boolean
+          is_sample_pack: boolean
           metadata: Json
           notes: string | null
           notes_customer: string | null
@@ -4552,6 +4556,7 @@ export type Database = {
           id?: string
           impersonated_by?: string | null
           is_demo?: boolean
+          is_sample_pack?: boolean
           metadata?: Json
           notes?: string | null
           notes_customer?: string | null
@@ -4614,6 +4619,7 @@ export type Database = {
           id?: string
           impersonated_by?: string | null
           is_demo?: boolean
+          is_sample_pack?: boolean
           metadata?: Json
           notes?: string | null
           notes_customer?: string | null
@@ -7295,10 +7301,12 @@ export type Database = {
           created_at: string
           id: string
           is_offered: boolean
+          is_sample_pack: boolean
           lead_time_days: number | null
           min_quantity: number | null
           notes: string | null
           product_family_id: string
+          sample_trade_price_minor: number | null
           supplier_tenant_id: string
           updated_at: string
         }
@@ -7306,10 +7314,12 @@ export type Database = {
           created_at?: string
           id?: string
           is_offered?: boolean
+          is_sample_pack?: boolean
           lead_time_days?: number | null
           min_quantity?: number | null
           notes?: string | null
           product_family_id: string
+          sample_trade_price_minor?: number | null
           supplier_tenant_id: string
           updated_at?: string
         }
@@ -7317,10 +7327,12 @@ export type Database = {
           created_at?: string
           id?: string
           is_offered?: boolean
+          is_sample_pack?: boolean
           lead_time_days?: number | null
           min_quantity?: number | null
           notes?: string | null
           product_family_id?: string
+          sample_trade_price_minor?: number | null
           supplier_tenant_id?: string
           updated_at?: string
         }
