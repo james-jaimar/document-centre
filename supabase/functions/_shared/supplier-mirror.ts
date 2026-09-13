@@ -201,11 +201,16 @@ async function quoteSupplierDelivery(
       : Promise.resolve({ data: null }),
   ]);
 
+  // Carriage carries the supplier's VAT too, just like their product prices.
+  const uplift = await supplierTaxUplift(admin, supplierTenantId);
+  const gross = Math.round(((Number(rate.price) || 0) * uplift + Number.EPSILON) * 100) / 100;
+
   return {
-    amount: Number(rate.price) || 0,
+    amount: gross,
     zoneCode: zoneRow?.code ?? zoneRow?.label ?? null,
     methodCode: methodRow?.code ?? methodRow?.label ?? null,
   };
+
 }
 
 export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promise<void> {
