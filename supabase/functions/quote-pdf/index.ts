@@ -651,15 +651,18 @@ Deno.serve(async (req) => {
       return out;
     };
 
-    // Column layout (sum = W_in = 507)
+    // Column layout (sum = W_in = 507). With tax off the VAT column collapses
+    // and the description column absorbs its width.
+    const VAT_W = taxEnabled ? 42 : 0;
+    const DESC_W = 175 + (taxEnabled ? 0 : 42);
     const C = {
-      code:  { x: M,         w: 50 },
-      desc:  { x: M + 50,    w: 175 },
-      qty:   { x: M + 225,   w: 50 },
-      unit:  { x: M + 275,   w: 60 },
-      disc:  { x: M + 335,   w: 38 },
-      vat:   { x: M + 373,   w: 42 },
-      total: { x: M + 415,   w: W_in - 415 },
+      code:  { x: M,                    w: 50 },
+      desc:  { x: M + 50,               w: DESC_W },
+      qty:   { x: M + 50 + DESC_W,      w: 50 },
+      unit:  { x: M + 100 + DESC_W,     w: 60 },
+      disc:  { x: M + 160 + DESC_W,     w: 38 },
+      vat:   { x: M + 198 + DESC_W,     w: VAT_W },
+      total: { x: M + 198 + DESC_W + VAT_W, w: W_in - (198 + DESC_W + VAT_W) },
     };
 
     const drawItemsHeader = (yy: number): number => {
@@ -669,7 +672,9 @@ Deno.serve(async (req) => {
       drawText(page, "Quantity",    C.qty.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.qty.w - 4 });
       drawText(page, "Unit Price",  C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
       drawText(page, "Disc %",      C.disc.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.disc.w - 4 });
-      drawText(page, "VAT %",       C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      if (taxEnabled) {
+        drawText(page, "VAT %",     C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      }
       drawText(page, "Line Total",  C.total.x,     yy - 11, { size: 8, bold: true, align: "right", width: C.total.w - 4 });
       // Bottom rule
       page.drawLine({ start: { x: M, y: yy - 14 }, end: { x: W - M, y: yy - 14 }, thickness: 0.6, color: border });
