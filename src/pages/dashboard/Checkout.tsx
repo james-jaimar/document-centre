@@ -213,6 +213,42 @@ export default function Checkout() {
     email: "",
   });
 
+  // --- Address validation state -------------------------------------------
+  // Errors only surface once a field has been left (blurred) or the customer
+  // has attempted to place the order — Shopify-style, no shouting while typing.
+  const [addressTouched, setAddressTouched] = useState<Record<string, boolean>>({});
+  const [billingTouched, setBillingTouched] = useState<Record<string, boolean>>({});
+  const [showAllErrors, setShowAllErrors] = useState(false);
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const setFieldRef = (key: string) => (el: HTMLElement | null) => { fieldRefs.current[key] = el; };
+
+  const addressErrors: AddressErrors = useMemo(
+    () => (deliveryMethod === "delivery" ? validateAddress({ ...address, country: "South Africa" }) : {}),
+    [address, deliveryMethod],
+  );
+  const billingErrors: AddressErrors = useMemo(
+    () => (billingRequired ? validateAddress(billing, { requireProvince: false }) : {}),
+    [billing, billingRequired],
+  );
+  const addrErr = (f: keyof AddressLike) =>
+    showAllErrors || addressTouched[f as string] ? addressErrors[f] : undefined;
+  const billErr = (f: keyof AddressLike) =>
+    showAllErrors || billingTouched[f as string] ? billingErrors[f] : undefined;
+  const errClass = (msg?: string) => (msg ? "border-destructive focus-visible:ring-destructive" : "");
+
+  const focusField = (prefix: string, field: string) => {
+    const el = fieldRefs.current[`${prefix}.${field}`];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => (el as HTMLInputElement).focus?.(), 250);
+  };
+
+  // Pre-fill the delivery email with the signed-in customer's address.
+  useEffect(() => {
+    if (!user?.email) return;
+    setAddress((p) => (p.email ? p : { ...p, email: user.email as string }));
+  }, [user?.email]);
+
 
   const items = (cart?.order_items as any[]) ?? [];
   const subtotal = items.reduce(
