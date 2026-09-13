@@ -61,6 +61,10 @@ function CustomerLayoutInner() {
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
   const { settingsMap: integrations } = useTenantSettingsMap("integrations");
   const { pathname } = useLocation();
+  // Live chat is per-branch (each branch runs its own Tawk inbox) and falls
+  // back to the tenant-wide default when the branch hasn't configured one.
+  const { activeBranch } = useBranch();
+  const liveChat = useLiveChatSettings(tenant?.id ?? null, activeBranch?.id ?? null, !!tenant?.is_demo);
   const { config, isPageEnabled } = useStorefrontPages(tenant?.id ?? null);
 
   // Storefront mode: the ecommerce landing/shop/product pages run full-bleed
