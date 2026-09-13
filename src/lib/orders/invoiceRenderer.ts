@@ -8,5 +8,6 @@
  * download or email.
  *
  * v2 — hide VAT column/row when tax is disabled; proforma terms reworded.
+ * v3 — fall back to the tenant's branch for seller details when the order has none.
  */
-export const CURRENT_INVOICE_RENDERER_VERSION = 2;
+export const CURRENT_INVOICE_RENDERER_VERSION = 3;
