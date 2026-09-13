@@ -6,6 +6,8 @@ import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 import { useStorefrontCatalogue } from "@/hooks/useStorefrontCatalogue";
 import { useStorefrontPrice } from "@/hooks/useStorefrontPrice";
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { useSamplePackConfig } from "@/hooks/useSamplePack";
+import SamplePackBanner from "@/components/storefront/SamplePackBanner";
 import {
   useProductCopy,
   resolveProductCopy,
@@ -58,8 +60,6 @@ function Field({ title, children }: { title: string; children: React.ReactNode }
 }
 
 function StaticValue({ children }: { children: React.ReactNode }) {
-  // eslint-disable-next-line
-
   return (
     <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-foreground">{children}</p>
   );
