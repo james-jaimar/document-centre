@@ -112,6 +112,14 @@ export async function activateHeldOrder(
   // Now that it's a real order, clear the cart it came from.
   await clearCartForOrder(sb, cartOrderId);
 
+  // Push any outsourced lines into the supplier tenant (idempotent).
+  try {
+    await mirrorSupplierOrders(sb, orderId);
+  } catch (e) {
+    console.warn("[activate-held-order] supplier mirror failed (non-fatal):", e);
+  }
+
+
   // Proforma + "order received" confirmation, exactly once.
   // For paid orders the caller also issues the tax invoice afterwards.
   const inv = await callFunction("generate-invoice-pdf", { order_id: orderId, kind: "proforma" });
