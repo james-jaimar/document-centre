@@ -23,6 +23,7 @@ import {
 } from "@/lib/orders/mutations";
 import { isCustomerEditable } from "@/lib/orders/editability";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useFulfilmentMethods } from "@/hooks/useFulfilmentMethods";
 
 type Job = {
   id: string;
@@ -45,6 +46,7 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
   const [qtyOpen, setQtyOpen] = useState(false);
   const [fulOpen, setFulOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const fulfilment = useFulfilmentMethods();
 
   const editable = isCustomerEditable(order, jobs);
 
@@ -92,10 +94,12 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
             <Package className="h-3.5 w-3.5 mr-1.5" />
             Change items / quantities
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setFulOpen(true)}>
-            {isCollection ? <Truck className="h-3.5 w-3.5 mr-1.5" /> : <Store className="h-3.5 w-3.5 mr-1.5" />}
-            Switch to {isCollection ? "delivery" : "collection"}
-          </Button>
+          {(isCollection ? fulfilment.allowDelivery : fulfilment.allowCollection) && (
+            <Button size="sm" variant="outline" onClick={() => setFulOpen(true)}>
+              {isCollection ? <Truck className="h-3.5 w-3.5 mr-1.5" /> : <Store className="h-3.5 w-3.5 mr-1.5" />}
+              Switch to {isCollection ? "delivery" : "collection"}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"

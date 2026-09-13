@@ -33,6 +33,7 @@ import AddressPicker from "@/components/customer/AddressPicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
 import { useRequireBillingAddress } from "@/hooks/useRequireBillingAddress";
+import { useFulfilmentMethods } from "@/hooks/useFulfilmentMethods";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
 import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
@@ -58,6 +59,18 @@ export default function Checkout() {
   const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
+  // Which fulfilment options this tenant/branch actually offers.
+  const fulfilment = useFulfilmentMethods();
+  // Keep the selected method inside what's allowed (and default to the first
+  // allowed one rather than always starting on collection).
+  useEffect(() => {
+    if (fulfilment.isLoading) return;
+    setDeliveryMethod((cur) => {
+      if (cur === "collection" && !fulfilment.allowCollection && fulfilment.allowDelivery) return "delivery";
+      if (cur === "delivery" && !fulfilment.allowDelivery && fulfilment.allowCollection) return "collection";
+      return cur;
+    });
+  }, [fulfilment.isLoading, fulfilment.allowCollection, fulfilment.allowDelivery]);
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
@@ -376,6 +389,18 @@ export default function Checkout() {
       toast.error(storefrontGate.reason || "Checkout is temporarily unavailable for this branch.");
       return;
     }
+    if (fulfilment.none) {
+      toast.error("This store isn't accepting online orders at the moment.");
+      return;
+    }
+    if (deliveryMethod === "collection" && !fulfilment.allowCollection) {
+      toast.error("Collection isn't available from this store.");
+      return;
+    }
+    if (deliveryMethod === "delivery" && !fulfilment.allowDelivery) {
+      toast.error("Delivery isn't available from this store.");
+      return;
+    }
     if (deliveryMethod === "collection" && !collectionBranch) {
       toast.error("No collection branch selected");
       return;
@@ -630,24 +655,38 @@ export default function Checkout() {
           {/* Delivery Method */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Delivery Method</h3>
-            <RadioGroup
-              value={deliveryMethod}
-              onValueChange={(v) => setDeliveryMethod(v as "collection" | "delivery")}
-              className="space-y-2"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="collection" id="collection" />
-                <Label htmlFor="collection" className="cursor-pointer">
-                  Collection — Pick up from our branch
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="delivery" id="delivery" />
-                <Label htmlFor="delivery" className="cursor-pointer">
-                  Delivery — Ship to your address
-                </Label>
-              </div>
-            </RadioGroup>
+            {fulfilment.none ? (
+              <p className="text-sm text-destructive">
+                This store isn't accepting online orders at the moment — no delivery or
+                collection option has been set up. Please contact us to place your order.
+              </p>
+            ) : fulfilment.allowCollection && fulfilment.allowDelivery ? (
+              <RadioGroup
+                value={deliveryMethod}
+                onValueChange={(v) => setDeliveryMethod(v as "collection" | "delivery")}
+                className="space-y-2"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="collection" id="collection" />
+                  <Label htmlFor="collection" className="cursor-pointer">
+                    Collection — Pick up from our branch
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="delivery" id="delivery" />
+                  <Label htmlFor="delivery" className="cursor-pointer">
+                    Delivery — Ship to your address
+                  </Label>
+                </div>
+              </RadioGroup>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {fulfilment.allowDelivery
+                  ? "Delivery — Ship to your address"
+                  : "Collection — Pick up from our branch"}
+              </p>
+            )}
+
 
             {/* Branch is locked to the active storefront branch */}
             {deliveryMethod === "collection" && collectionBranch && (

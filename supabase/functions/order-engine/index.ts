@@ -137,6 +137,50 @@ function clients(authHeader: string) {
   return { userClient, admin };
 }
 
+// ── Fulfilment gate ─────────────────────────────────────────
+// The tenant setting `delivery.methods_enabled` decides which fulfilment
+// options the storefront may offer. Enforce it server-side so a tampered
+// client can't place a collection order at a delivery-only tenant.
+// Returns null when allowed, or an error string.
+async function checkFulfilmentAllowed(
+  admin: ReturnType<typeof createClient>,
+  tenant_id: string | null | undefined,
+  branch_id: string | null | undefined,
+  fulfillment_type: string | null | undefined,
+): Promise<string | null> {
+  if (!tenant_id || !fulfillment_type) return null;
+  if (fulfillment_type !== "collection" && fulfillment_type !== "delivery") return null;
+
+  let methods: string[] | null = null;
+  try {
+    const { data } = await admin.rpc("resolve_tenant_setting", {
+      p_tenant_id: tenant_id,
+      p_category: "delivery",
+      p_key: "methods_enabled",
+    });
+    const raw = typeof data === "string" ? JSON.parse(data) : data;
+    if (Array.isArray(raw)) methods = raw.filter((m: unknown) => typeof m === "string") as string[];
+  } catch (_e) {
+    return null; // never block on a settings read failure
+  }
+  if (methods === null) return null; // unconfigured → legacy behaviour
+
+  if (fulfillment_type === "collection") {
+    if (!methods.includes("collection")) return "Collection is not available from this store";
+    if (branch_id) {
+      const { data: b } = await admin.from("branches").select("settings").eq("id", branch_id).maybeSingle();
+      const s = (b as any)?.settings ?? null;
+      if (s && s.collection_available === false) return "Collection is not available from this branch";
+    }
+    return null;
+  }
+
+  const deliveryLike = ["courier", "delivery", "postal"];
+  if (!methods.some((m) => deliveryLike.includes(m))) return "Delivery is not available from this store";
+  return null;
+}
+
+
 // ── Branch subscription gate ────────────────────────────────
 // Returns null when allowed, or an error string when the branch is
 // read-only (no/cancelled/past_due subscription) AND the caller cannot bypass
@@ -285,6 +329,11 @@ async function createOrderWithJobs(
   // Branch subscription gate
   const gateMsg = await checkBranchGate(admin, userId, branch_id);
   if (gateMsg) return json({ error: gateMsg, code: "branch_subscription_blocked" }, 402);
+
+  // Fulfilment gate — only methods the tenant has enabled may be used.
+  const resolvedFulfilment = fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null));
+  const fulMsg = await checkFulfilmentAllowed(admin, tenant_id, branch_id, resolvedFulfilment);
+  if (fulMsg) return err(fulMsg);
 
   // Prepaid (C.O.D.) customers may only place orders that are held for an
   // online payment — no account / EFT bypass from a tampered client.
@@ -2432,6 +2481,15 @@ async function customerChangeFulfillment(
   }
   const { error: e, order } = await loadCustomerEditableOrder(admin, userId, order_id);
   if (e) return err(e, 403);
+
+  const fulMsg = await checkFulfilmentAllowed(
+    admin,
+    (order as any).tenant_id,
+    (order as any).branch_id,
+    fulfillment_type,
+  );
+  if (fulMsg) return err(fulMsg);
+
 
   const newDelivery = fulfillment_type === "collection" ? 0 : Number(delivery_amount ?? 0);
   if (fulfillment_type === "delivery" && newDelivery < 0) return err("Delivery amount required for delivery");
