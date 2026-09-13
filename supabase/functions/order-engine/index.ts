@@ -330,6 +330,11 @@ async function createOrderWithJobs(
   const gateMsg = await checkBranchGate(admin, userId, branch_id);
   if (gateMsg) return json({ error: gateMsg, code: "branch_subscription_blocked" }, 402);
 
+  // Fulfilment gate — only methods the tenant has enabled may be used.
+  const resolvedFulfilment = fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null));
+  const fulMsg = await checkFulfilmentAllowed(admin, tenant_id, branch_id, resolvedFulfilment);
+  if (fulMsg) return err(fulMsg);
+
   // Prepaid (C.O.D.) customers may only place orders that are held for an
   // online payment — no account / EFT bypass from a tampered client.
   try {
