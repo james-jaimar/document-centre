@@ -1126,6 +1126,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           pricing_tier: pricingTier,
           pricing_addons: priced.addonLines,
           templated_artwork: specForSave,
+          ...(samplePack ? { sample_pack: true } : {}),
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
       });
@@ -1484,7 +1485,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           )}
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
-            {packMode ? (
+            {samplePack ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                1 sample — included in your pack price
+              </div>
+            ) : packMode ? (
               <Select value={String(quantity)} onValueChange={(v) => setQuantity(Number(v))}>
                 <SelectTrigger>
                   <SelectValue />
