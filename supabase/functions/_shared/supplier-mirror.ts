@@ -541,6 +541,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       order_id: mirror.id,
       app_id: order.app_id,
       tenant_id: link.supplier_tenant_id,
+      branch_id: mirrorBranchId,
       job_number: `${mirror.order_number}-${idx + 1}`,
       sequence_no: idx + 1,
       product_name: j.product_name,
