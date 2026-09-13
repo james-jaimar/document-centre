@@ -393,6 +393,11 @@ function AppRoutes() {
             <AdminCatalogPricing />
           </ProtectedRoute>
         } />
+        <Route path="/admin/suppliers" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminSuppliers />
+          </ProtectedRoute>
+        } />
 
         <Route path="/admin/delivery" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
