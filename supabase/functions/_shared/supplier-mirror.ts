@@ -522,8 +522,45 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       })
       .eq("id", order.id);
 
+    // Post the charge to the buyer's account with this supplier.
+    if (credit && total > 0) {
+      try {
+        await admin.from("customer_account_ledger").insert({
+          tenant_id: link.supplier_tenant_id,
+          app_id: order.app_id,
+          branch_id: null,
+          company_id: link.buyer_company_id,
+          customer_profile_id: null,
+          entry_type: "charge",
+          amount: total,
+          currency,
+          order_id: mirror.id,
+          reference: mirror.order_number,
+          note: `Trade order ${mirror.order_number} (${order.order_number})`,
+          entry_date: new Date().toISOString().slice(0, 10),
+          due_date: new Date(Date.now() + credit.payment_terms_days * 86400000)
+            .toISOString().slice(0, 10),
+        });
+      } catch (e) {
+        console.error("[supplier-mirror] ledger charge failed (non-fatal)", e);
+      }
+    }
+
+    // Same paperwork as any other order in the supplier's tenant: a tax
+    // invoice on account, otherwise a proforma, plus the received email.
+    const inv = await callFunction("generate-invoice-pdf", {
+      order_id: mirror.id,
+      kind: credit ? "invoice" : "proforma",
+    });
+    await callFunction("send-order-email", {
+      order_id: mirror.id,
+      event_key: "order_received",
+      ...(inv?.invoice_id ? { invoice_id: inv.invoice_id } : {}),
+    });
+
     firstMirrorId = firstMirrorId ?? mirror.id;
     firstLinkId = firstLinkId ?? link.id;
+
   }
 
   if (firstMirrorId && !order.supplier_order_id) {
