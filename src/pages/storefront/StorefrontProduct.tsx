@@ -58,6 +58,8 @@ function Field({ title, children }: { title: string; children: React.ReactNode }
 }
 
 function StaticValue({ children }: { children: React.ReactNode }) {
+  // eslint-disable-next-line
+
   return (
     <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-foreground">{children}</p>
   );
@@ -74,6 +76,9 @@ export default function StorefrontProduct() {
   const { entries, isLoading } = useStorefrontCatalogue();
   const { format, inclSuffix } = useStorefrontPrice();
   const { tier: pricingTier } = useCustomerPricingTier();
+
+  const { config: samplePackConfig } = useSamplePackConfig();
+  const samplePackFamilyIds = samplePackConfig.familyIds;
 
   const entry = entries.find((e) => e.family.slug === familySlug);
   const allBlocks = entry?.blocks ?? [];
