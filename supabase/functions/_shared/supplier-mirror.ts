@@ -382,10 +382,11 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         customer_status: "in_production",
         payment_status: "unpaid",
         fulfilment_status: "pending",
-        currency: order.currency || "ZAR",
+        currency,
         subtotal,
-        total_amount: subtotal,
-        amount_due: subtotal,
+        delivery_amount: deliveryAmount,
+        total_amount: total,
+        amount_due: total,
         date_required: order.date_required,
         fulfillment_type: order.fulfillment_type,
         notes_customer: order.notes_customer,
@@ -394,6 +395,8 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
           trade_order: true,
           source_order_number: order.order_number,
           source_tenant_id: order.tenant_id,
+          ...(shippingMeta ? { shipping: shippingMeta } : {}),
+          ...(deliveryUnpriced ? { supplier_delivery_unpriced: deliveryUnpriced } : {}),
         },
       })
       .select("id, order_number")
