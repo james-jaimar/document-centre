@@ -453,6 +453,8 @@ export interface AdminOrderListFilters {
   date_to?: string;
   /** Only orders that no staff member has opened yet. */
   unopened_only?: boolean;
+  /** Only sample pack orders. */
+  sample_pack_only?: boolean;
   page?: number;
   page_size?: number;
 }
