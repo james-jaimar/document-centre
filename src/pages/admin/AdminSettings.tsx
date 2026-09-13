@@ -67,6 +67,7 @@ const AdminSettings = () => {
         <TabsContent value="workflow"><WorkflowTab /></TabsContent>
         <TabsContent value="financial"><FinancialTab /></TabsContent>
         <TabsContent value="quotes"><QuotesTab /></TabsContent>
+        <TabsContent value="sample-pack"><SamplePackTab /></TabsContent>
         <TabsContent value="uploads"><UploadsTab /></TabsContent>
         <TabsContent value="photo-library"><PhotoLibraryTab /></TabsContent>
         <TabsContent value="notifications"><NotificationsTab /></TabsContent>
