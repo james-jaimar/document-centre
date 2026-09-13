@@ -842,8 +842,8 @@ Deno.serve(async (req) => {
       });
       yR -= rowH + 4;
     };
-    totalRow("Subtotal (Exclusive)", fmtMoney(sub, currency));
-    totalRow("VAT", fmtMoney(vat, currency));
+    totalRow(taxEnabled ? "Subtotal (Exclusive)" : "Subtotal", fmtMoney(sub, currency));
+    if (taxEnabled) totalRow(taxLabel, fmtMoney(vat, currency));
     yR -= 4;
     totalRow("Total", fmtMoney(total, currency), { bold: true, size: 12, color: brand });
 
