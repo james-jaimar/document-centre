@@ -470,6 +470,7 @@ export default function Checkout() {
         deliveryAmount: deliveryFee,
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
+        deliveryBillableKg: shippingQuote?.billableKg ?? undefined,
       });
 
       // Record immutable Terms / Privacy acceptance against the new order.
