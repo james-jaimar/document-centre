@@ -371,17 +371,24 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
 
   // Snap the quantity onto a valid pack as soon as pack pricing is available.
   useEffect(() => {
+    if (samplePack) {
+      if (quantity !== 1) setQuantity(1);
+      return;
+    }
     if (!packMode) return;
     if (!packOptions.some((o) => o.qty === quantity)) {
       setQuantity(snapQuantity(packOptions, quantity) ?? packOptions[0].qty);
     }
-  }, [packMode, packOptions, quantity]);
+  }, [packMode, packOptions, quantity, samplePack]);
 
-  const activePack = packMode
+  const activePack = packMode && !samplePack
     ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
     : null;
   const flatUnit = Number((family as any)?.printing_rules?.templated_unit_price ?? 0);
-  const baseNet = activePack
+  // The pack is charged as one flat fee on the order, so the items are zero.
+  const baseNet = samplePack
+    ? 0
+    : activePack
     ? convert(activePack.priceMinor / 100)
     : convert(flatUnit) * Math.max(quantity, 1);
   const priced = useMemo(
