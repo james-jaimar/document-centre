@@ -8226,6 +8226,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_supplier_invite: {
+        Args: { p_buyer_tenant_id: string; p_code: string }
+        Returns: {
+          accepted_at: string | null
+          buyer_company_id: string | null
+          buyer_tenant_id: string | null
+          created_at: string
+          id: string
+          invite_code: string
+          invite_expires_at: string
+          notes: string | null
+          status: string
+          supplier_tenant_id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "supplier_links"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       apply_tenant_plan_to_branches: {
         Args: { p_tenant_id: string }
         Returns: number
@@ -8702,9 +8724,24 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      supplier_catalogue: {
+        Args: { p_link_id: string }
+        Returns: {
+          lead_time_days: number
+          min_quantity: number
+          name: string
+          notes: string
+          product_family_id: string
+          slug: string
+        }[]
+      }
       supplier_link_is_active: {
         Args: { p_buyer_tenant: string; p_supplier_tenant: string }
         Returns: boolean
+      }
+      supplier_trade_blocks: {
+        Args: { p_link_id: string; p_supplier_family_id: string }
+        Returns: Json
       }
       sync_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
