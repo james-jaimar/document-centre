@@ -124,6 +124,9 @@ export default function StorefrontShop() {
       <AssuranceBar items={config.assurance_items} />
 
       <div className="sf-container py-9">
+        <div className="mb-6">
+          <SamplePackBanner />
+        </div>
         {activeCategory && (
           <nav className="mb-3 text-xs text-muted-foreground" aria-label="Breadcrumb">
             <Link to={tenantPath("shop")} className="hover:text-foreground">

@@ -199,6 +199,12 @@ export default function StorefrontProduct() {
           <span className="text-foreground">{family.name}</span>
         </nav>
 
+        {samplePackFamilyIds.includes(family.id) && (
+          <div className="mb-6">
+            <SamplePackBanner compact />
+          </div>
+        )}
+
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <ProductGallery images={images} alt={family.name} />
 
