@@ -278,16 +278,17 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       job_name: j.job_name,
       quantity: j.quantity,
       unit_label: j.unit_label,
-      net_price: Number(j.cost_price || j.net_price || 0),
-      cost_price: Number(j.cost_price || 0),
+      net_price: tradeByJob.get(j.id) ?? 0,
+      cost_price: tradeByJob.get(j.id) ?? 0,
       vat_rate: j.vat_rate ?? 15,
-      gross_price: Number(j.cost_price || j.net_price || 0),
+      gross_price: tradeByJob.get(j.id) ?? 0,
       product_snapshot: {
         ...(j.product_snapshot || {}),
         product_family_id:
-          group.assignment.supplier_product_family_id ?? j.product_snapshot?.product_family_id,
+          group.assignment.supplier_product_family_id ?? snapshotFamilyId(j.product_snapshot),
         source_job_number: j.job_number,
       },
+
       configuration: j.configuration || {},
       production_specs: j.production_specs || {},
       integration_payload: j.integration_payload || {},
