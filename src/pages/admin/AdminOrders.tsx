@@ -75,6 +75,7 @@ export default function AdminOrders() {
   const [page, setPage] = useState(1);
   const unreadOnly = searchParams.get("unread") === "1";
   const unopenedOnly = searchParams.get("unopened") === "1";
+  const samplePackOnly = searchParams.get("sample_pack") === "1";
   const [unreadFirst, setUnreadFirst] = useState(true);
 
   const filters: AdminOrderListFilters = {
@@ -83,6 +84,7 @@ export default function AdminOrders() {
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     unopened_only: unopenedOnly || undefined,
+    sample_pack_only: samplePackOnly || undefined,
     page,
     page_size: 25,
   };
