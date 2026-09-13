@@ -11,6 +11,7 @@ import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTe
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Save, Globe, ExternalLink, Copy, MessageSquare } from "lucide-react";
+import { chatEmbedSrc, parseChatPaste, unwrapSetting } from "@/lib/liveChat";
 
 const CURRENCIES = ["ZAR", "USD", "GBP", "EUR", "AUD", "CAD", "NZD"];
 const COUNTRIES = [
