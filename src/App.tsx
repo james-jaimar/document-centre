@@ -182,6 +182,7 @@ function customerRoutes() {
       <Route path="shop" element={<StorefrontShop />} />
       <Route path="shop/c/:categorySlug" element={<StorefrontShop />} />
       <Route path="shop/:familySlug" element={<StorefrontProduct />} />
+      <Route path="sample-pack" element={<SamplePack />} />
 
       {/* Public routes */}
       <Route path="orders/new" element={<NewOrder />} />
