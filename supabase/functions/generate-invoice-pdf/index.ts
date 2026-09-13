@@ -761,8 +761,8 @@ Deno.serve(async (req) => {
     const specColW = specBlockW / 2;
     const specRowH = 10;
 
-    // Never assume a tax rate — an unconfigured tenant is 0%, not 15%.
-    const taxRate = Number(financial.tax_rate ?? 0);
+    // Never assume a tax rate — an unconfigured or tax-off tenant is 0%.
+    const taxRate = taxEnabled ? resolvedTaxRate : 0;
 
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
