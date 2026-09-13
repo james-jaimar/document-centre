@@ -1036,16 +1036,23 @@ export default function Checkout() {
                 <div className="space-y-1">
                   <Label className="text-xs">Contact Name *</Label>
                   <Input
+                    ref={setFieldRef("billing.contact_name") as any}
                     value={billing.contact_name}
                     onChange={(e) => setBilling((p) => ({ ...p, contact_name: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, contact_name: true }))}
+                    className={errClass(billErr("contact_name"))}
                     placeholder="John Smith"
                   />
+                  <FieldError message={billErr("contact_name")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Company</Label>
                   <Input
+                    ref={setFieldRef("billing.company_name") as any}
                     value={billing.company_name}
                     onChange={(e) => setBilling((p) => ({ ...p, company_name: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, company_name: true }))}
+                    className={errClass(billErr("company_name"))}
                     placeholder="Acme Corp"
                   />
                 </div>
@@ -1053,10 +1060,14 @@ export default function Checkout() {
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 1 *</Label>
                 <Input
+                  ref={setFieldRef("billing.line1") as any}
                   value={billing.line1}
                   onChange={(e) => setBilling((p) => ({ ...p, line1: e.target.value }))}
+                  onBlur={() => setBillingTouched((t) => ({ ...t, line1: true }))}
+                  className={errClass(billErr("line1"))}
                   placeholder="123 Main Street"
                 />
+                <FieldError message={billErr("line1")} />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 2</Label>
@@ -1069,9 +1080,13 @@ export default function Checkout() {
                 <div className="space-y-1">
                   <Label className="text-xs">City *</Label>
                   <Input
+                    ref={setFieldRef("billing.city") as any}
                     value={billing.city}
                     onChange={(e) => setBilling((p) => ({ ...p, city: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, city: true }))}
+                    className={errClass(billErr("city"))}
                   />
+                  <FieldError message={billErr("city")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Province</Label>
@@ -1083,9 +1098,13 @@ export default function Checkout() {
                 <div className="space-y-1">
                   <Label className="text-xs">Postal Code *</Label>
                   <Input
+                    ref={setFieldRef("billing.postal_code") as any}
                     value={billing.postal_code}
                     onChange={(e) => setBilling((p) => ({ ...p, postal_code: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, postal_code: true }))}
+                    className={errClass(billErr("postal_code"))}
                   />
+                  <FieldError message={billErr("postal_code")} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -1097,19 +1116,27 @@ export default function Checkout() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Phone</Label>
+                  <Label className="text-xs">Phone *</Label>
                   <Input
+                    ref={setFieldRef("billing.phone") as any}
                     value={billing.phone}
                     onChange={(e) => setBilling((p) => ({ ...p, phone: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, phone: true }))}
+                    className={errClass(billErr("phone"))}
                   />
+                  <FieldError message={billErr("phone")} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Email</Label>
+                  <Label className="text-xs">Email *</Label>
                   <Input
+                    ref={setFieldRef("billing.email") as any}
                     type="email"
                     value={billing.email}
                     onChange={(e) => setBilling((p) => ({ ...p, email: e.target.value }))}
+                    onBlur={() => setBillingTouched((t) => ({ ...t, email: true }))}
+                    className={errClass(billErr("email"))}
                   />
+                  <FieldError message={billErr("email")} />
                 </div>
               </div>
             </div>
