@@ -163,6 +163,11 @@ function TenantFamilyRow({
           ) : (
             <Badge variant="outline" className="text-[10px]">Inheriting</Badge>
           )}
+          {outsourced.isOutsourced && (
+            <Badge className="text-[10px]">
+              Printed by {outsourced.supplierName ?? "supplier"}
+            </Badge>
+          )}
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-4 pb-4 space-y-4">
@@ -195,6 +200,19 @@ function TenantFamilyRow({
           reverting={remove.isPending}
           onSave={handleSave}
           onRevertToParent={tenantOverride ? handleRevert : undefined}
+          lockedCosts={outsourced.isOutsourced ? outsourced.costByKey : undefined}
+          headerExtra={
+            outsourced.isOutsourced ? (
+              <SupplierPricingPanel
+                outsourced={outsourced}
+                tenantId={tenantId}
+                familyId={familyId}
+                familyName={familyName}
+                currentBlocks={effectiveBlocks}
+                onApply={handleSave}
+              />
+            ) : null
+          }
         />
       </AccordionContent>
     </AccordionItem>
