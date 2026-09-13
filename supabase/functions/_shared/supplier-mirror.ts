@@ -454,7 +454,33 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         description: `Trade order received from ${buyerCompanyName ?? "a trade partner"} (${order.order_number})`,
         metadata: { source_order_id: order.id },
       }),
+      deliveryUnpriced
+        ? admin.from("timeline_events").insert({
+            app_id: order.app_id,
+            tenant_id: link.supplier_tenant_id,
+            order_id: mirror.id,
+            event_type: "note",
+            visibility: "admin",
+            actor_type: "system",
+            description:
+              "Delivery not priced — no rate found for this address/weight. Add carriage manually.",
+            metadata: { reason: deliveryUnpriced },
+          })
+        : Promise.resolve(null),
     ]);
+
+    // Make the supplier's carriage visible on the buyer's order.
+    await admin
+      .from("orders")
+      .update({
+        metadata: {
+          ...(order.metadata || {}),
+          supplier_delivery: shippingMeta
+            ? { amount: deliveryAmount, currency, order_number: mirror.order_number }
+            : { unpriced: deliveryUnpriced, order_number: mirror.order_number },
+        },
+      })
+      .eq("id", order.id);
 
     firstMirrorId = firstMirrorId ?? mirror.id;
     firstLinkId = firstLinkId ?? link.id;
