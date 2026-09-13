@@ -12,6 +12,9 @@ import { useCustomerCompany, useCompanyMembers } from "@/hooks/useCustomerCompan
 import { CompanyFormDialog } from "@/components/customers/CompanyFormDialog";
 import { CompanyUsersPanel } from "@/components/customers/CompanyUsersPanel";
 import { AccountLedgerPanel } from "@/components/customers/AccountLedgerPanel";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 interface Props {
   companyId: string;
