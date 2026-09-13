@@ -1,31 +1,54 @@
-# Invite sign-in: stop dropping people at a form that fills in the wrong account
+# Link outsourced products to their supplier's pricing
 
-## What actually happened
+Right now the supplier link, the wholesale catalogue and the buyer's own catalogue pricing are three separate islands. This joins them up so that "this product is printed by Impress Print" actually drives what the buyer sells, at what cost, and in what quantities.
 
-Nothing is wrong with the company or the user you created.
+## What changes for you
 
-- "The 2027 Edition" exists as a company in Impress Print.
-- `hello@the2027edition.com` was created there at 13:20, is active, and is linked to that company and branch.
-- At 13:25 that invite link was opened and the password was set successfully.
+### 1. The product itself knows it's outsourced
 
-Immediately after the password was saved, the app signed the person out and sent them to the Impress Print sign-in page. The browser then filled the form with your own saved login, `james_b_hawkins@me.com` — that is the address in your screenshot. That account has no place in Impress Print (it belongs to The 2027 Edition, Demo and PostNet), so the portal correctly refused it.
+- In the 2027 Edition's Products list and Catalogue Pricing, any product assigned to a supplier shows a **"Printed by Impress Print"** badge, with a link through to the Suppliers screen.
+- The badge also appears on the pack pricing panel for that product, so nobody edits prices without realising it's bought in.
 
-So the error is accurate, but the app created the trap: it forced a fresh sign-in right after someone proved who they were, and the saved-password autofill quietly swapped the account.
+### 2. The supplier's ladder drives your ladder
 
-## The fix
+- On an outsourced product, a **Pull supplier pricing** action builds your pack ladder from the supplier's offered ladder: same sizes, papers, options and quantity breaks.
+- Each row carries the supplier's trade figure as your **locked cost** — read-only, never typed by hand.
+- You fill in the **sell price** per row. A quick **Apply markup %** button fills every empty sell price at cost + markup, which you can then fine-tune row by row.
+- The table gains **Cost / Sell / Margin / Margin %** columns so the position is obvious at a glance.
 
-1. **Stay signed in after setting a password from an invite.** Once the new password is saved, take the person straight into the portal they were invited to, instead of signing them out and showing a sign-in form. This is already how the branch welcome link behaves; the customer invite should match it.
+### 3. Prices stay honest over time
 
-2. **Make the mismatch message say who is signed in.** When an account genuinely doesn't belong to that portal, say "You're signed in as james_b_hawkins@me.com, which isn't part of Impress Press (Pty) Ltd" and offer a "Use a different account" action that clears the fields. Right now it's impossible to tell that the form silently changed the email.
+- If the supplier changes their trade price, the cost column updates live and the affected rows get a **"cost changed"** flag with the old and new figure. Your sell prices never move on their own.
+- Any row where sell is at or below cost is flagged in red.
+- If the supplier removes or stops offering a size/quantity, that row is marked **no longer supplied** rather than silently disappearing.
 
-3. **Stop the sign-in form being pre-filled with a stale account on a tenant portal** by marking the email field so browsers offer the address rather than silently overwriting it.
+### 4. Customers only see what the supplier can actually make
+
+- On the storefront, an outsourced product offers only the sizes, papers, options and quantities the supplier actually prices.
+- The supplier's **minimum quantity** is enforced, and the **lead time** is shown on the product page and at checkout.
+
+### 5. Branches
+
+- Branches of the buying tenant inherit the locked cost. They can set their own sell price, with the same margin columns and the same below-cost warning. They cannot edit cost.
+
+### 6. Orders
+
+- When the order mirrors into the supplier tenant (already built), the trade cost used at the time is snapshotted onto the buyer's job, so margin reporting later can't drift.
 
 ## Technical notes
 
-- `src/pages/ResetPassword.tsx` (lines 117-123): the non-`welcome_token` branch signs out and navigates to the tenant auth path. Change it to resolve the user's active `tenant_memberships` and navigate via the existing `pickPrimaryMembership` / `resolveTenantLanding` helpers, keeping the session. Fall back to the current sign-out behaviour only when no membership resolves.
-- `src/pages/Auth.tsx` (lines 119-131): include `session.user.email` in the mismatch message, and render a secondary button that signs out and clears the email/password state.
-- No database or edge function changes — the invite path (`invite-member`, membership insert) is working correctly.
+- Small migration on `product_supplier_assignments`: `markup_percent numeric`, `last_synced_at timestamptz`, `cost_fingerprint text` (hash of the supplier ladder at last pull) — plus `updated_at` trigger already present.
+- New `src/hooks/useOutsourcedPricing.ts`: given tenant + family, resolves the active assignment, reads live trade blocks via the existing `supplier_trade_blocks` RPC, and returns a `Map<packBlockKey, costMinor>` keyed with the existing `packBlockKey()` from `src/lib/storefront/catalogue.ts`.
+- `PackPricingMatrixEditor.tsx`: accepts an optional `lockedCosts` map + `supplierName`. When present, the cost input becomes read-only and sourced from the map, margin columns render, and the "Pull supplier pricing" / "Apply markup %" actions appear. Existing master/tenant/branch inheritance behaviour is untouched for in-house products.
+- Wired through `TenantPackPricingEditor.tsx` and `BranchPackPricingEditor.tsx` (branch: read-only cost, editable sell).
+- Storefront filtering: `resolvePackBlocks` output is intersected with the supplier ladder keys for outsourced families, in `useStorefrontCatalogue.ts` / `useFamilyPackBlocks.ts`, with min-quantity applied in the quantity dropdown.
+- Snapshot: `supplier-mirror.ts` writes `cost_price` from the resolved trade block rather than the buyer's stored cost column.
 
-## Verification
+## Decision taken (say if you'd rather it went the other way)
 
-Re-run the real flow: create a test user on the 2027 Edition company in Impress Print, open the invite in a fresh browser profile, set the password, and confirm it lands in the Impress Print portal without a sign-in step.
+**Pull supplier pricing replaces your existing ladder for that product** (after a confirm dialog listing how many rows will be added, kept or dropped), rather than merging into it. Merging tends to leave orphan rows the supplier can't actually print.
+
+## Out of scope
+
+- Inter-tenant invoicing/settlement between the two tenants.
+- Automatic re-pull on supplier price change — you'll be flagged, but the pull stays a deliberate action.
