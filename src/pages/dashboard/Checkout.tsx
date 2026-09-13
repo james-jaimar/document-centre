@@ -37,6 +37,19 @@ import { useFulfilmentMethods } from "@/hooks/useFulfilmentMethods";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
 import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
+import {
+  validateAddress,
+  normalizeAddress,
+  firstInvalidField,
+  type AddressErrors,
+  type AddressLike,
+} from "@/lib/validation/addressSchema";
+
+/** Small inline error line under a checkout field. */
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-xs text-destructive">{message}</p>;
+}
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
