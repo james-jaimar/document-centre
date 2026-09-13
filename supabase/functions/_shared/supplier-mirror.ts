@@ -461,7 +461,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         supplier_status: "received",
         ordered_by_profile_id: ownerProfileId,
         user_id: ownerProfileId,
-        customer_email: order.customer_email,
+        customer_email: buyerContactEmail,
         customer_name: buyerCompanyName ?? order.customer_name,
         company_name: buyerCompanyName ?? order.company_name,
         admin_status: credit ? "approved" : "new_order",
