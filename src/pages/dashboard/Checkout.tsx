@@ -454,8 +454,11 @@ export default function Checkout() {
       toast.error("No collection branch selected");
       return;
     }
-    if (deliveryMethod === "delivery" && !address.line1.trim()) {
-      toast.error("Please enter a delivery address");
+    if (deliveryMethod === "delivery" && Object.keys(addressErrors).length > 0) {
+      setShowAllErrors(true);
+      const f = firstInvalidField(addressErrors);
+      if (f) focusField("delivery", f as string);
+      toast.error("Please complete the delivery address before continuing.");
       return;
     }
     if (deliveryMethod === "delivery" && quotingShipping) {
@@ -467,20 +470,12 @@ export default function Checkout() {
       return;
     }
 
-    if (billingRequired) {
-      const missing =
-        !billing.contact_name.trim() ||
-        !billing.line1.trim() ||
-        !billing.city.trim() ||
-        !billing.postal_code.trim() ||
-        !billing.country.trim() ||
-        (!billing.phone.trim() && !billing.email.trim());
-      if (missing) {
-        toast.error(
-          "Please complete your billing address (name, address, city, postal code, country and a phone or email).",
-        );
-        return;
-      }
+    if (billingRequired && Object.keys(billingErrors).length > 0) {
+      setShowAllErrors(true);
+      const f = firstInvalidField(billingErrors);
+      if (f) focusField("billing", f as string);
+      toast.error("Please complete your billing address before continuing.");
+      return;
     }
 
     if (!legalAccept) {
