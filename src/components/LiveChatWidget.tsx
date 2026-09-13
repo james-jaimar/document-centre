@@ -1,36 +1,27 @@
 import { useEffect, useRef } from "react";
 
-const PLATFORM_TAWK_SRC = "https://embed.tawk.to/69f09c163aaa4c1c3adc10c6/1jn9u3enj";
-
-interface TenantChatWidgetProps {
-  isDemo: boolean;
-  tawkEnabled: boolean;
-  tawkPropertyId: string; // format: "propertyId/widgetId"
+interface LiveChatWidgetProps {
+  /** Fully resolved Tawk embed URL, or null when chat is off. */
+  src: string | null;
 }
 
 /**
- * Renders a Tawk.to chat widget scoped per tenant.
+ * Injects the Tawk.to widget for a resolved embed URL.
  *
- * - Demo tenants get the platform's own Tawk.to widget.
- * - Real tenants only get a widget if they've enabled it and provided their
- *   own Tawk.to property ID in admin settings.
+ * Only ever mounted on customer-facing surfaces — never on auth/login,
+ * admin, platform or branch back-office pages (a third-party chat widget on
+ * a login page is a known phishing heuristic for Google Safe Browsing).
  */
-export default function TenantChatWidget({ isDemo, tawkEnabled, tawkPropertyId }: TenantChatWidgetProps) {
+export default function LiveChatWidget({ src }: LiveChatWidgetProps) {
   const scriptRef = useRef<HTMLScriptElement | null>(null);
 
-  const src = isDemo
-    ? PLATFORM_TAWK_SRC
-    : tawkEnabled && tawkPropertyId
-      ? `https://embed.tawk.to/${tawkPropertyId}`
-      : null;
-
   useEffect(() => {
-    if (!src) return;
-
-    // Avoid double-injection of the same src
+    if (!src) {
+      cleanup();
+      return;
+    }
     if (scriptRef.current?.getAttribute("src") === src) return;
 
-    // Clean up any previous widget
     cleanup();
 
     // @ts-expect-error - Tawk attaches to window
@@ -54,7 +45,6 @@ export default function TenantChatWidget({ isDemo, tawkEnabled, tawkPropertyId }
       scriptRef.current.remove();
       scriptRef.current = null;
     }
-    // Remove the Tawk iframe / widget container if present
     document.querySelectorAll("iframe[title='chat widget']").forEach((el) => el.remove());
     document.querySelectorAll("[id^='tawk-']").forEach((el) => el.remove());
     // @ts-expect-error - Tawk attaches to window

@@ -15,10 +15,11 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import TenantChatWidget from "@/components/TenantChatWidget";
+import LiveChatWidget from "@/components/LiveChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
+import { useLiveChatSettings } from "@/hooks/useLiveChatSettings";
 import { useTenantGA } from "@/hooks/useTenantGA";
-import { BranchProvider } from "@/contexts/BranchContext";
+import { BranchProvider, useBranch } from "@/contexts/BranchContext";
 import BranchPicker from "@/components/BranchPicker";
 import { useDeviceKind } from "@/hooks/useDeviceKind";
 import CustomerMobileLayout from "@/components/customer/mobile/CustomerMobileLayout";
@@ -60,6 +61,10 @@ function CustomerLayoutInner() {
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
   const { settingsMap: integrations } = useTenantSettingsMap("integrations");
   const { pathname } = useLocation();
+  // Live chat is per-branch (each branch runs its own Tawk inbox) and falls
+  // back to the tenant-wide default when the branch hasn't configured one.
+  const { activeBranch } = useBranch();
+  const liveChat = useLiveChatSettings(tenant?.id ?? null, activeBranch?.id ?? null, !!tenant?.is_demo);
   const { config, isPageEnabled } = useStorefrontPages(tenant?.id ?? null);
 
   // Storefront mode: the ecommerce landing/shop/product pages run full-bleed
@@ -244,11 +249,7 @@ function CustomerLayoutInner() {
       <div style={tenantStyle}>
         <BranchPicker />
         <CustomerMobileLayout />
-        <TenantChatWidget
-          isDemo={!!tenant?.is_demo}
-          tawkEnabled={integrations.tawk_enabled === true}
-          tawkPropertyId={String(integrations.tawk_property_id || "")}
-        />
+        <LiveChatWidget src={liveChat.src} />
       </div>
     );
   }
@@ -314,11 +315,7 @@ function CustomerLayoutInner() {
         </div>
       </div>
 
-      <TenantChatWidget
-        isDemo={!!tenant?.is_demo}
-        tawkEnabled={integrations.tawk_enabled === true}
-        tawkPropertyId={String(integrations.tawk_property_id || "")}
-      />
+      <LiveChatWidget src={liveChat.src} />
     </div>
   );
 }
