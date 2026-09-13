@@ -107,7 +107,53 @@ async function supplierTaxUplift(admin: Admin, supplierTenantId: string): Promis
 }
 
 
+/** Invoke another edge function with the service role; never throws. */
+async function callFunction(
+  name: string,
+  body: Record<string, unknown>,
+): Promise<{ invoice_id?: string } | null> {
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${url}/functions/v1/${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      console.error(`[supplier-mirror] ${name} failed: ${res.status} ${await res.text().catch(() => "")}`);
+      return null;
+    }
+    return await res.json().catch(() => null);
+  } catch (e) {
+    console.error(`[supplier-mirror] ${name} threw`, e);
+    return null;
+  }
+}
+
+/** The buyer company's credit facility inside the supplier's tenant. */
+async function buyerCreditTerms(
+  admin: Admin,
+  supplierTenantId: string,
+  buyerCompanyId: string | null,
+): Promise<{ payment_terms_days: number; account_ref: string | null } | null> {
+  if (!buyerCompanyId) return null;
+  const { data: company } = await admin
+    .from("customer_companies")
+    .select("id, is_active, credit_limit, payment_terms_days, mis_account_number, tenant_id")
+    .eq("id", buyerCompanyId)
+    .eq("tenant_id", supplierTenantId)
+    .maybeSingle();
+  if (!company || company.is_active === false) return null;
+  if (!(Number(company.credit_limit ?? 0) > 0)) return null;
+  return {
+    payment_terms_days: Number(company.payment_terms_days ?? 30),
+    account_ref: company.mis_account_number ?? null,
+  };
+}
+
 /** Minimum billable weight configured on the supplier tenant. */
+
 async function supplierMinBillableKg(admin: Admin, tenantId: string): Promise<number> {
   try {
     const { data } = await admin.rpc("resolve_tenant_setting", {
@@ -378,7 +424,19 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       }
     }
 
-    const total = Math.round((subtotal + deliveryAmount) * 100) / 100;
+    // The trade figures are VAT inclusive. Split them the way the supplier's
+    // own books expect (net + VAT) so the invoice adds up.
+    const uplift = await supplierTaxUplift(admin, link.supplier_tenant_id);
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const grossTotal = round2(subtotal + deliveryAmount);
+    const netSubtotal = round2(subtotal / uplift);
+    const netDelivery = round2(deliveryAmount / uplift);
+    const vatAmount = round2(grossTotal - netSubtotal - netDelivery);
+    const total = grossTotal;
+
+    // Does the buyer hold an account with this supplier? If so the order is
+    // approved on arrival and gets a tax invoice; otherwise a proforma.
+    const credit = await buyerCreditTerms(admin, link.supplier_tenant_id, link.buyer_company_id);
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
@@ -394,13 +452,14 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         customer_email: order.customer_email,
         customer_name: buyerCompanyName ?? order.customer_name,
         company_name: buyerCompanyName ?? order.company_name,
-        admin_status: "new_order",
+        admin_status: credit ? "approved" : "new_order",
         customer_status: "in_production",
         payment_status: "unpaid",
         fulfilment_status: "pending",
         currency,
-        subtotal,
-        delivery_amount: deliveryAmount,
+        subtotal: netSubtotal,
+        delivery_amount: netDelivery,
+        vat_amount: vatAmount,
         total_amount: total,
         amount_due: total,
         date_required: order.date_required,
@@ -411,12 +470,22 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
           trade_order: true,
           source_order_number: order.order_number,
           source_tenant_id: order.tenant_id,
-          ...(shippingMeta ? { shipping: shippingMeta } : {}),
+          ...(shippingMeta ? { shipping: { ...shippingMeta, amount: netDelivery, amount_incl_tax: deliveryAmount } } : {}),
           ...(deliveryUnpriced ? { supplier_delivery_unpriced: deliveryUnpriced } : {}),
+          ...(credit
+            ? {
+                payment_terms_days: credit.payment_terms_days,
+                mis_account_number: credit.account_ref,
+                due_date: new Date(
+                  Date.now() + credit.payment_terms_days * 86400000,
+                ).toISOString().slice(0, 10),
+              }
+            : {}),
         },
       })
       .select("id, order_number")
       .single();
+
     if (mErr || !mirror) {
       console.error("[supplier-mirror] mirror insert failed", mErr);
       continue;
@@ -433,10 +502,11 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       job_name: j.job_name,
       quantity: j.quantity,
       unit_label: j.unit_label,
-      net_price: tradeByJob.get(j.id) ?? 0,
-      cost_price: tradeByJob.get(j.id) ?? 0,
-      vat_rate: j.vat_rate ?? 15,
+      net_price: round2((tradeByJob.get(j.id) ?? 0) / uplift),
+      cost_price: round2((tradeByJob.get(j.id) ?? 0) / uplift),
+      vat_rate: uplift > 1 ? Math.round((uplift - 1) * 100) : 0,
       gross_price: tradeByJob.get(j.id) ?? 0,
+
       product_snapshot: {
         ...(j.product_snapshot || {}),
         product_family_id:
@@ -498,8 +568,45 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       })
       .eq("id", order.id);
 
+    // Post the charge to the buyer's account with this supplier.
+    if (credit && total > 0) {
+      try {
+        await admin.from("customer_account_ledger").insert({
+          tenant_id: link.supplier_tenant_id,
+          app_id: order.app_id,
+          branch_id: null,
+          company_id: link.buyer_company_id,
+          customer_profile_id: null,
+          entry_type: "charge",
+          amount: total,
+          currency,
+          order_id: mirror.id,
+          reference: mirror.order_number,
+          note: `Trade order ${mirror.order_number} (${order.order_number})`,
+          entry_date: new Date().toISOString().slice(0, 10),
+          due_date: new Date(Date.now() + credit.payment_terms_days * 86400000)
+            .toISOString().slice(0, 10),
+        });
+      } catch (e) {
+        console.error("[supplier-mirror] ledger charge failed (non-fatal)", e);
+      }
+    }
+
+    // Same paperwork as any other order in the supplier's tenant: a tax
+    // invoice on account, otherwise a proforma, plus the received email.
+    const inv = await callFunction("generate-invoice-pdf", {
+      order_id: mirror.id,
+      kind: credit ? "invoice" : "proforma",
+    });
+    await callFunction("send-order-email", {
+      order_id: mirror.id,
+      event_key: "order_received",
+      ...(inv?.invoice_id ? { invoice_id: inv.invoice_id } : {}),
+    });
+
     firstMirrorId = firstMirrorId ?? mirror.id;
     firstLinkId = firstLinkId ?? link.id;
+
   }
 
   if (firstMirrorId && !order.supplier_order_id) {
