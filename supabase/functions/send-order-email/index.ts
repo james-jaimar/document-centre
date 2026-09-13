@@ -4,6 +4,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { enqueueEmail, EmailNotConfiguredError } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
+import { INVOICE_RENDERER_VERSION } from "../_shared/invoice-renderer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
