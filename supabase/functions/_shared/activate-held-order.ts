@@ -15,6 +15,8 @@
 // Stripe webhook) or the customer explicitly falls back to EFT. It is
 // idempotent: repeated calls (webhook retries) are no-ops.
 
+import { mirrorSupplierOrders } from "./supplier-mirror.ts";
+
 type AnyClient = { from: (table: string) => any };
 
 async function callFunction(name: string, body: Record<string, unknown>) {
@@ -111,6 +113,14 @@ export async function activateHeldOrder(
 
   // Now that it's a real order, clear the cart it came from.
   await clearCartForOrder(sb, cartOrderId);
+
+  // Push any outsourced lines into the supplier tenant (idempotent).
+  try {
+    await mirrorSupplierOrders(sb, orderId);
+  } catch (e) {
+    console.warn("[activate-held-order] supplier mirror failed (non-fatal):", e);
+  }
+
 
   // Proforma + "order received" confirmation, exactly once.
   // For paid orders the caller also issues the tax invoice afterwards.

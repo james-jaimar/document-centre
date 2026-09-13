@@ -4,6 +4,98 @@
 
 type Admin = any;
 
+/** Product family id, from either snapshot shape (flat or nested). */
+function snapshotFamilyId(snapshot: any): string | null {
+  return snapshot?.product_family_id ?? snapshot?.product_family?.id ?? null;
+}
+
+async function noteSkip(admin: Admin, orderId: string, reason: string) {
+  console.warn(`[supplier-mirror] order ${orderId}: ${reason}`);
+  const { data: row } = await admin
+    .from("orders")
+    .select("metadata, supplier_order_id")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (!row || row.supplier_order_id) return;
+  await admin
+    .from("orders")
+    .update({
+      metadata: {
+        ...(row.metadata || {}),
+        supplier_mirror_skipped: { reason, at: new Date().toISOString() },
+      },
+    })
+    .eq("id", orderId);
+}
+
+const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+
+/**
+ * Supplier trade price (minor units, incl. their VAT) for one job, resolved
+ * from the supplier tenant's pack ladder. Returns null when nothing matches.
+ */
+async function supplierTradePriceMinor(
+  admin: Admin,
+  supplierTenantId: string,
+  supplierFamilyId: string,
+  job: any,
+): Promise<number | null> {
+  const { data: override } = await admin
+    .from("product_pack_pricing_overrides")
+    .select("quantity_blocks")
+    .eq("product_family_id", supplierFamilyId)
+    .eq("tenant_id", supplierTenantId)
+    .is("branch_id", null)
+    .maybeSingle();
+  let blocks: any[] = Array.isArray(override?.quantity_blocks) ? override!.quantity_blocks : [];
+  if (!blocks.length) {
+    const { data: family } = await admin
+      .from("product_families")
+      .select("quantity_blocks")
+      .eq("id", supplierFamilyId)
+      .maybeSingle();
+    blocks = Array.isArray(family?.quantity_blocks) ? family!.quantity_blocks : [];
+  }
+  if (!blocks.length) return null;
+
+  const spec = job.configuration?.raw_spec ?? {};
+  const qty = Number(job.quantity ?? spec.quantity ?? 0);
+  const option = norm(spec.pricing_option ?? spec.option);
+  const size = norm(spec.size);
+  const paper = norm(spec.paper);
+  const sides = norm(spec.sides ?? (spec.is_duplex ? "double" : "single"));
+
+  const candidates = blocks.filter((b: any) => Number(b.qty) === qty);
+  const match =
+    candidates.find(
+      (b: any) =>
+        (!option || norm(b.option) === option) &&
+        (!size || norm(b.size) === size) &&
+        (!paper || norm(b.paper) === paper) &&
+        (!sides || norm(b.sides ?? "single") === sides),
+    ) ??
+    candidates.find((b: any) => !option || norm(b.option) === option) ??
+    null;
+  if (!match) return null;
+
+  const base = Number(match.trade_price_minor ?? match.price_minor ?? 0) || 0;
+  if (!base) return null;
+
+  // The supplier's VAT is a real cost to the buyer, so add it when their
+  // prices are held exclusive of tax.
+  const { data: settings = [] } = await admin
+    .from("tenant_settings")
+    .select("setting_key, setting_value")
+    .eq("tenant_id", supplierTenantId)
+    .eq("category", "financial")
+    .in("setting_key", ["tax_rate", "tax_enabled", "tax_inclusive"]);
+  const get = (k: string) => settings.find((s: any) => s.setting_key === k)?.setting_value;
+  const rate = Number(get("tax_rate") ?? 0) || 0;
+  const enabled = get("tax_enabled") === undefined ? rate > 0 : !!get("tax_enabled") && rate > 0;
+  const inclusive = !!get("tax_inclusive");
+  return enabled && !inclusive ? Math.round(base * (1 + rate / 100)) : base;
+}
+
 export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promise<void> {
   const { data: order } = await admin
     .from("orders")
@@ -15,8 +107,9 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     .eq("id", orderId)
     .maybeSingle();
   if (!order) return;
-  // Never mirror a mirror.
+  // Never mirror a mirror, and never mirror twice.
   if (order.source_order_id) return;
+  if (order.supplier_order_id) return;
   if (!order.tenant_id) return;
 
   const { data: jobs = [] } = await admin
@@ -39,7 +132,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
   // Group outsourced jobs by supplier link.
   const groups = new Map<string, { assignment: any; jobs: any[] }>();
   for (const j of jobs) {
-    const familyId = j.product_snapshot?.product_family_id;
+    const familyId = snapshotFamilyId(j.product_snapshot);
     if (!familyId) continue;
     const a = byFamily.get(familyId);
     if (!a) continue;
@@ -47,7 +140,11 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     g.jobs.push(j);
     groups.set(a.supplier_link_id, g);
   }
-  if (!groups.size) return;
+  if (!groups.size) {
+    await noteSkip(admin, orderId, "no order lines matched an active trade-partner product");
+    return;
+  }
+
 
   const { data: addresses = [] } = await admin
     .from("order_addresses")
@@ -107,10 +204,29 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     });
     if (!supplierOrderNum) continue;
 
+    // Trade value per line: the job's own cost when set, otherwise the
+    // supplier's trade ladder, otherwise the buyer's sell price as a floor.
+    const tradeByJob = new Map<string, number>();
+    for (const j of group.jobs) {
+      let price = Number(j.cost_price || 0);
+      if (!price) {
+        const minor = await supplierTradePriceMinor(
+          admin,
+          link.supplier_tenant_id,
+          group.assignment.supplier_product_family_id ?? snapshotFamilyId(j.product_snapshot),
+          j,
+        );
+        if (minor) price = minor / 100;
+      }
+      if (!price) price = Number(j.net_price || 0);
+      tradeByJob.set(j.id, price);
+    }
+
     const subtotal = group.jobs.reduce(
-      (s: number, j: any) => s + Number(j.cost_price || j.net_price || 0),
+      (s: number, j: any) => s + (tradeByJob.get(j.id) ?? 0),
       0,
     );
+
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
@@ -162,16 +278,17 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       job_name: j.job_name,
       quantity: j.quantity,
       unit_label: j.unit_label,
-      net_price: Number(j.cost_price || j.net_price || 0),
-      cost_price: Number(j.cost_price || 0),
+      net_price: tradeByJob.get(j.id) ?? 0,
+      cost_price: tradeByJob.get(j.id) ?? 0,
       vat_rate: j.vat_rate ?? 15,
-      gross_price: Number(j.cost_price || j.net_price || 0),
+      gross_price: tradeByJob.get(j.id) ?? 0,
       product_snapshot: {
         ...(j.product_snapshot || {}),
         product_family_id:
-          group.assignment.supplier_product_family_id ?? j.product_snapshot?.product_family_id,
+          group.assignment.supplier_product_family_id ?? snapshotFamilyId(j.product_snapshot),
         source_job_number: j.job_number,
       },
+
       configuration: j.configuration || {},
       production_specs: j.production_specs || {},
       integration_payload: j.integration_payload || {},
