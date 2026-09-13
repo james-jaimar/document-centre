@@ -339,8 +339,11 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     }
 
     // Who the mirrored order sits against in the supplier tenant.
+    // The trade order belongs to the BUYER company — never to the buyer's own
+    // end customer, whose address must never receive supplier mail.
     let buyerProfileId: string | null = null;
     let buyerCompanyName: string | null = null;
+    let buyerContactEmail: string | null = null;
     if (link.buyer_company_id) {
       const { data: company } = await admin
         .from("customer_companies")
@@ -348,6 +351,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         .eq("id", link.buyer_company_id)
         .maybeSingle();
       buyerCompanyName = company?.name ?? null;
+      buyerContactEmail = company?.email ?? null;
       const { data: contact } = await admin
         .from("tenant_memberships")
         .select("profile_id, is_primary_contact")
@@ -357,6 +361,14 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         .limit(1)
         .maybeSingle();
       buyerProfileId = contact?.profile_id ?? null;
+      if (!buyerContactEmail && buyerProfileId) {
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("email")
+          .eq("id", buyerProfileId)
+          .maybeSingle();
+        buyerContactEmail = profile?.email ?? null;
+      }
     }
     const ownerProfileId = buyerProfileId ?? order.ordered_by_profile_id ?? order.user_id;
     if (!ownerProfileId) continue;
