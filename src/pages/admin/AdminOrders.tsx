@@ -332,6 +332,7 @@ export default function AdminOrders() {
                       <TableCell className="font-mono text-xs font-medium">
                         {order.order_number || "—"}
                         <NewMarker order={order} />
+                      <SamplePackMarker order={order} />
                       </TableCell>
                       <TableCell>{order.source_channel || "—"}</TableCell>
                       <TableCell>{order.company_name || order.customer_name || "—"}</TableCell>
@@ -366,6 +367,7 @@ export default function AdminOrders() {
                     <TableCell className="font-mono text-xs font-medium text-primary">
                       {job.job_number}
                       <NewMarker order={order} />
+                      <SamplePackMarker order={order} />
                     </TableCell>
                     <TableCell>{order.source_channel || "Storefront"}</TableCell>
                     <TableCell className="max-w-[140px] truncate">{order.company_name || order.customer_name || "—"}</TableCell>
