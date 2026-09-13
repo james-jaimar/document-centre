@@ -357,7 +357,12 @@ export default function Checkout() {
   }, [selectedMethodId, quoteKey, tenantId, collectionBranch?.id, currency]);
 
 
-  const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
+  // Sample packs are sold delivered, so there is never a separate charge.
+  const deliveryFee = samplePackCart
+    ? 0
+    : deliveryMethod === "delivery"
+    ? (shippingQuote?.price ?? 0)
+    : 0;
 
   // Promo code / discount handling
   const [promoInput, setPromoInput] = useState("");
@@ -472,7 +477,11 @@ export default function Checkout() {
       toast.error("Still calculating delivery — one moment.");
       return;
     }
-    if (deliveryMethod === "delivery" && (!shippingQuote || shippingQuote.price == null)) {
+    if (
+      !samplePackCart &&
+      deliveryMethod === "delivery" &&
+      (!shippingQuote || shippingQuote.price == null)
+    ) {
       toast.error("Please choose a delivery address and option so we can add the delivery fee.");
       return;
     }
