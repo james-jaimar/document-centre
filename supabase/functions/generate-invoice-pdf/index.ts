@@ -927,22 +927,26 @@ Deno.serve(async (req) => {
       });
       yR -= rowH + 4;
     };
-    const taxInclusive = !!financial.tax_inclusive;
+    const taxInclusive = taxEnabled && !!financial.tax_inclusive;
     // Show the rate that was actually charged. When the tenant has no tax
     // settings, fall back to the rate implied by the order amounts rather than
     // printing a hard-coded 15% next to a zero.
-    const configuredRate = financial.tax_rate == null ? null : Number(financial.tax_rate);
+    const configuredRate = taxEnabled ? resolvedTaxRate : 0;
     const netBase = subAmt - discAmt + delAmt;
     const impliedRate = netBase > 0 && vatAmt > 0
       ? (taxInclusive ? (vatAmt / Math.max(netBase - vatAmt, 0.01)) : (vatAmt / netBase)) * 100
       : 0;
-    const effectiveRate = configuredRate ?? impliedRate;
-    totalRow(taxInclusive ? "Subtotal (Inclusive)" : "Subtotal (Exclusive)", fmtMoney(subAmt, currency));
+    const effectiveRate = configuredRate || impliedRate;
+    totalRow(
+      taxEnabled ? (taxInclusive ? "Subtotal (Inclusive)" : "Subtotal (Exclusive)") : "Subtotal",
+      fmtMoney(subAmt, currency),
+    );
     if (discAmt > 0) totalRow("Discount", `-${fmtMoney(discAmt, currency)}`);
     if (delAmt > 0) totalRow("Delivery", fmtMoney(delAmt, currency));
     const vatLabel = (financial.tax_label as string) || "VAT";
-    // Omit the tax row entirely when nothing was charged and no rate is set.
-    if (effectiveRate > 0 || vatAmt > 0) {
+    // Omit the tax row entirely when tax is switched off, or when nothing was
+    // charged and no rate is set.
+    if (taxEnabled && (effectiveRate > 0 || vatAmt > 0)) {
       const vatRowLabel = taxInclusive
         ? `${vatLabel} included (${effectiveRate.toFixed(2)}%)`
         : `${vatLabel} (${effectiveRate.toFixed(2)}%)`;
