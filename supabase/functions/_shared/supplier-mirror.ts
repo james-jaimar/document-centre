@@ -107,7 +107,53 @@ async function supplierTaxUplift(admin: Admin, supplierTenantId: string): Promis
 }
 
 
+/** Invoke another edge function with the service role; never throws. */
+async function callFunction(
+  name: string,
+  body: Record<string, unknown>,
+): Promise<{ invoice_id?: string } | null> {
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${url}/functions/v1/${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      console.error(`[supplier-mirror] ${name} failed: ${res.status} ${await res.text().catch(() => "")}`);
+      return null;
+    }
+    return await res.json().catch(() => null);
+  } catch (e) {
+    console.error(`[supplier-mirror] ${name} threw`, e);
+    return null;
+  }
+}
+
+/** The buyer company's credit facility inside the supplier's tenant. */
+async function buyerCreditTerms(
+  admin: Admin,
+  supplierTenantId: string,
+  buyerCompanyId: string | null,
+): Promise<{ payment_terms_days: number; account_ref: string | null } | null> {
+  if (!buyerCompanyId) return null;
+  const { data: company } = await admin
+    .from("customer_companies")
+    .select("id, is_active, credit_limit, payment_terms_days, mis_account_number, tenant_id")
+    .eq("id", buyerCompanyId)
+    .eq("tenant_id", supplierTenantId)
+    .maybeSingle();
+  if (!company || company.is_active === false) return null;
+  if (!(Number(company.credit_limit ?? 0) > 0)) return null;
+  return {
+    payment_terms_days: Number(company.payment_terms_days ?? 30),
+    account_ref: company.mis_account_number ?? null,
+  };
+}
+
 /** Minimum billable weight configured on the supplier tenant. */
+
 async function supplierMinBillableKg(admin: Admin, tenantId: string): Promise<number> {
   try {
     const { data } = await admin.rpc("resolve_tenant_setting", {
