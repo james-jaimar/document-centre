@@ -899,6 +899,15 @@ async function updateOrderStatus(
   const { error: updErr } = await admin.from("orders").update(updates).eq("id", order_id);
   if (updErr) return err(`Failed to update order: ${updErr.message}`);
 
+  // Push outsourced work into the supplier tenant once the order is approved.
+  if (admin_status === "approved" || admin_status === "in_production") {
+    try {
+      await mirrorSupplierOrders(admin, order_id);
+    } catch (e) {
+      console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+    }
+  }
+
   // Cascade to jobs that haven't reached this stage yet (best-effort)
   if (mapping.cascade_job_status) {
     const cascadeTarget = mapping.cascade_job_status;
