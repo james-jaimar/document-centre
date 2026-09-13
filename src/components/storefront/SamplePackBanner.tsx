@@ -30,7 +30,7 @@ export default function SamplePackBanner({ compact = false }: { compact?: boolea
       <div className="flex items-center gap-3">
         <span className="text-lg font-semibold text-foreground">{format(config.price)}</span>
         <Button asChild size={compact ? "sm" : "default"}>
-          <Link to={`${tenantPath}/sample-pack`}>Start my sample pack</Link>
+          <Link to={tenantPath("sample-pack")}>Start my sample pack</Link>
         </Button>
       </div>
     </div>
