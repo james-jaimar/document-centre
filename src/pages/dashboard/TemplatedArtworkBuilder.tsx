@@ -190,6 +190,8 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   /** Boxes the customer switched to "a different picture on every page". */
   const [perPageIds, setPerPageIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
+  /** Sample pack items are always a single copy at the flat pack price. */
+  const samplePack = searchParams.get("sample") === "1";
   const hydrated = useRef(false);
 
   /** Watermark boxes may never print above 10% — enforced wherever a value lands. */
@@ -1017,17 +1019,24 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const packMode = packOptions.length > 0;
 
   useEffect(() => {
+    if (samplePack) {
+      if (quantity !== 1) setQuantity(1);
+      return;
+    }
     if (!packMode) return;
     if (!packOptions.some((o) => o.qty === quantity)) {
       setQuantity(snapQuantity(packOptions, quantity) ?? packOptions[0].qty);
     }
-  }, [packMode, packOptions, quantity]);
+  }, [packMode, packOptions, quantity, samplePack]);
 
-  const activePack = packMode
+  const activePack = packMode && !samplePack
     ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
     : null;
   const baseUnit = Number((family?.printing_rules as any)?.templated_unit_price ?? 0);
-  const baseNet = activePack
+  // The pack is charged as one flat fee on the order, so the items are zero.
+  const baseNet = samplePack
+    ? 0
+    : activePack
     ? convert(activePack.priceMinor / 100)
     : convert(baseUnit) * Math.max(quantity, 1);
   const priced = useMemo(
@@ -1117,6 +1126,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           pricing_tier: pricingTier,
           pricing_addons: priced.addonLines,
           templated_artwork: specForSave,
+          ...(samplePack ? { sample_pack: true } : {}),
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
       });
@@ -1475,7 +1485,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           )}
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
-            {packMode ? (
+            {samplePack ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                1 sample — included in your pack price
+              </div>
+            ) : packMode ? (
               <Select value={String(quantity)} onValueChange={(v) => setQuantity(Number(v))}>
                 <SelectTrigger>
                   <SelectValue />

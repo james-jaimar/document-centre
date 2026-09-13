@@ -53,6 +53,7 @@ import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
 import StorefrontIndex from "@/pages/storefront/StorefrontIndex";
 import StorefrontShop from "@/pages/storefront/StorefrontShop";
 import StorefrontProduct from "@/pages/storefront/StorefrontProduct";
+import SamplePack from "@/pages/storefront/SamplePack";
 import CustomerOrders from "@/pages/dashboard/CustomerOrders";
 import CustomerAccount from "@/pages/dashboard/CustomerAccount";
 import NewOrder from "@/pages/dashboard/NewOrder";
@@ -182,6 +183,7 @@ function customerRoutes() {
       <Route path="shop" element={<StorefrontShop />} />
       <Route path="shop/c/:categorySlug" element={<StorefrontShop />} />
       <Route path="shop/:familySlug" element={<StorefrontProduct />} />
+      <Route path="sample-pack" element={<SamplePack />} />
 
       {/* Public routes */}
       <Route path="orders/new" element={<NewOrder />} />

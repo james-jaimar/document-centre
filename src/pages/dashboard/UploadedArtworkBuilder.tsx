@@ -7,7 +7,7 @@
  * an explicit approval tick before Add to cart.
  */
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -122,6 +122,9 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   // ── State
   const [spec, setSpec] = useState<UploadedArtworkSpec | null>(null);
   const [quantity, setQuantity] = useState(1);
+  /** Sample pack items are always a single copy at the flat pack price. */
+  const [samplePackParams] = useSearchParams();
+  const samplePack = samplePackParams.get("sample") === "1";
   const [approved, setApproved] = useState(false);
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
@@ -368,17 +371,24 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
 
   // Snap the quantity onto a valid pack as soon as pack pricing is available.
   useEffect(() => {
+    if (samplePack) {
+      if (quantity !== 1) setQuantity(1);
+      return;
+    }
     if (!packMode) return;
     if (!packOptions.some((o) => o.qty === quantity)) {
       setQuantity(snapQuantity(packOptions, quantity) ?? packOptions[0].qty);
     }
-  }, [packMode, packOptions, quantity]);
+  }, [packMode, packOptions, quantity, samplePack]);
 
-  const activePack = packMode
+  const activePack = packMode && !samplePack
     ? packOptions.find((o) => o.qty === quantity) ?? packOptions[0]
     : null;
   const flatUnit = Number((family as any)?.printing_rules?.templated_unit_price ?? 0);
-  const baseNet = activePack
+  // The pack is charged as one flat fee on the order, so the items are zero.
+  const baseNet = samplePack
+    ? 0
+    : activePack
     ? convert(activePack.priceMinor / 100)
     : convert(flatUnit) * Math.max(quantity, 1);
   const priced = useMemo(
@@ -435,6 +445,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           pricing_tier: pricingTier,
           pricing_addons: priced.addonLines,
           uploaded_artwork: { ...spec, approved_at: new Date().toISOString() },
+          ...(samplePack ? { sample_pack: true } : {}),
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
       });
@@ -666,7 +677,11 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           )}
           <div className="space-y-1.5">
             <Label className="text-xs">Quantity</Label>
-            {packMode ? (
+            {samplePack ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                1 sample — included in your pack price
+              </div>
+            ) : packMode ? (
               <Select
                 value={String(quantity)}
                 onValueChange={(v) => setQuantity(Number(v))}
