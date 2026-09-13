@@ -99,24 +99,28 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Contact name</Label>
-            <Input value={form.contact_name ?? ""} onChange={(e) => handle("contact_name", e.target.value)} />
+            <Label>Contact name *</Label>
+            <Input className={cls("contact_name")} value={form.contact_name ?? ""} onChange={(e) => handle("contact_name", e.target.value)} />
+            <Msg k="contact_name" />
           </div>
           <div className="space-y-1">
             <Label>Company</Label>
-            <Input value={form.company_name ?? ""} onChange={(e) => handle("company_name", e.target.value)} />
+            <Input className={cls("company_name")} value={form.company_name ?? ""} onChange={(e) => handle("company_name", e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>Phone</Label>
-            <Input value={form.phone ?? ""} onChange={(e) => handle("phone", e.target.value)} />
+            <Label>Phone *</Label>
+            <Input className={cls("phone")} value={form.phone ?? ""} onChange={(e) => handle("phone", e.target.value)} />
+            <Msg k="phone" />
           </div>
           <div className="space-y-1">
-            <Label>Email</Label>
-            <Input type="email" value={form.email ?? ""} onChange={(e) => handle("email", e.target.value)} />
+            <Label>Email *</Label>
+            <Input type="email" className={cls("email")} value={form.email ?? ""} onChange={(e) => handle("email", e.target.value)} />
+            <Msg k="email" />
           </div>
           <div className="space-y-1 col-span-2">
-            <Label>Address line 1</Label>
-            <Input value={form.line1 ?? ""} onChange={(e) => handle("line1", e.target.value)} />
+            <Label>Address line 1 *</Label>
+            <Input className={cls("line1")} value={form.line1 ?? ""} onChange={(e) => handle("line1", e.target.value)} />
+            <Msg k="line1" />
           </div>
           <div className="space-y-1 col-span-2">
             <Label>Address line 2</Label>
