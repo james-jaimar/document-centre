@@ -1,54 +1,28 @@
-# Link outsourced products to their supplier's pricing
+# Fix: paid outsourced order never reached Impress Print
 
-Right now the supplier link, the wholesale catalogue and the buyer's own catalogue pricing are three separate islands. This joins them up so that "this product is printed by Impress Print" actually drives what the buyer sells, at what cost, and in what quantities.
+Order 27EDIT-13001 (The 2027 Edition, A2 Deskpad Calendars, paid, approved) did not appear in Impress Print. Two separate faults, both confirmed against the live records.
 
-## What changes for you
+## What went wrong
 
-### 1. The product itself knows it's outsourced
+**1. The product wasn't recognised as outsourced.**
+The trade partner link is active and the A2 Deskpad Calendars family is correctly marked as printed by Impress Print. But the copying step looks for the product's identifier in one place, and the order actually stores it in another (nested under the product details). So it found no outsourced items and stopped without doing anything — silently.
 
-- In the 2027 Edition's Products list and Catalogue Pricing, any product assigned to a supplier shows a **"Printed by Impress Print"** badge, with a link through to the Suppliers screen.
-- The badge also appears on the pack pricing panel for that product, so nobody edits prices without realising it's bought in.
+**2. Marking the order as paid never triggers the copy.**
+The copy only runs when someone moves an order to Approved or In production through the status control, or when an account order is created. Recording a payment updates the payment fields only — it never calls it. This order was approved at creation and then paid, so the copy was never attempted at all.
 
-### 2. The supplier's ladder drives your ladder
+**3. The trade cost on the job is zero.**
+The order line carries no cost figure, so the copied order would have been valued at the 2027 Edition's selling price rather than Impress Print's trade price.
 
-- On an outsourced product, a **Pull supplier pricing** action builds your pack ladder from the supplier's offered ladder: same sizes, papers, options and quantity breaks.
-- Each row carries the supplier's trade figure as your **locked cost** — read-only, never typed by hand.
-- You fill in the **sell price** per row. A quick **Apply markup %** button fills every empty sell price at cost + markup, which you can then fine-tune row by row.
-- The table gains **Cost / Sell / Margin / Margin %** columns so the position is obvious at a glance.
+## The fix
 
-### 3. Prices stay honest over time
-
-- If the supplier changes their trade price, the cost column updates live and the affected rows get a **"cost changed"** flag with the old and new figure. Your sell prices never move on their own.
-- Any row where sell is at or below cost is flagged in red.
-- If the supplier removes or stops offering a size/quantity, that row is marked **no longer supplied** rather than silently disappearing.
-
-### 4. Customers only see what the supplier can actually make
-
-- On the storefront, an outsourced product offers only the sizes, papers, options and quantities the supplier actually prices.
-- The supplier's **minimum quantity** is enforced, and the **lead time** is shown on the product page and at checkout.
-
-### 5. Branches
-
-- Branches of the buying tenant inherit the locked cost. They can set their own sell price, with the same margin columns and the same below-cost warning. They cannot edit cost.
-
-### 6. Orders
-
-- When the order mirrors into the supplier tenant (already built), the trade cost used at the time is snapshotted onto the buyer's job, so margin reporting later can't drift.
+- Read the product identifier from both possible locations, so existing and future orders are both recognised.
+- Also run the copy when an order becomes fully paid, and when a held order is released after payment — still only once per order, so payment plus approval can't create duplicates.
+- When the order line has no cost, price the copied order from the supplier's trade ladder for that quantity and specification, falling back to the selling price only if nothing matches.
+- Record a note on the order when the copy is skipped or fails, so a silent nothing-happens can't recur.
+- After the fix, run the copy once for order 27EDIT-13001 so it lands in Impress Print as a trade order against The 2027 Edition.
 
 ## Technical notes
 
-- Small migration on `product_supplier_assignments`: `markup_percent numeric`, `last_synced_at timestamptz`, `cost_fingerprint text` (hash of the supplier ladder at last pull) — plus `updated_at` trigger already present.
-- New `src/hooks/useOutsourcedPricing.ts`: given tenant + family, resolves the active assignment, reads live trade blocks via the existing `supplier_trade_blocks` RPC, and returns a `Map<packBlockKey, costMinor>` keyed with the existing `packBlockKey()` from `src/lib/storefront/catalogue.ts`.
-- `PackPricingMatrixEditor.tsx`: accepts an optional `lockedCosts` map + `supplierName`. When present, the cost input becomes read-only and sourced from the map, margin columns render, and the "Pull supplier pricing" / "Apply markup %" actions appear. Existing master/tenant/branch inheritance behaviour is untouched for in-house products.
-- Wired through `TenantPackPricingEditor.tsx` and `BranchPackPricingEditor.tsx` (branch: read-only cost, editable sell).
-- Storefront filtering: `resolvePackBlocks` output is intersected with the supplier ladder keys for outsourced families, in `useStorefrontCatalogue.ts` / `useFamilyPackBlocks.ts`, with min-quantity applied in the quantity dropdown.
-- Snapshot: `supplier-mirror.ts` writes `cost_price` from the resolved trade block rather than the buyer's stored cost column.
-
-## Decision taken (say if you'd rather it went the other way)
-
-**Pull supplier pricing replaces your existing ladder for that product** (after a confirm dialog listing how many rows will be added, kept or dropped), rather than merging into it. Merging tends to leave orphan rows the supplier can't actually print.
-
-## Out of scope
-
-- Inter-tenant invoicing/settlement between the two tenants.
-- Automatic re-pull on supplier price change — you'll be flagged, but the pull stays a deliberate action.
+- `supabase/functions/_shared/supplier-mirror.ts`: resolve family id as `product_snapshot.product_family_id ?? product_snapshot.product_family?.id`; when `cost_price` is 0, resolve the trade price via `supplier_trade_terms(link_id, supplier_family_id)` matched on the job's quantity/variant keys; log and persist a reason (`orders.supplier_status = 'skipped'` plus metadata) when no groups are found.
+- `supabase/functions/order-engine/index.ts`: call `mirrorSupplierOrders` in `recordPayment` after the `payment_status: "paid"` update, and in the held-order activation path. Idempotency stays keyed on `orders.source_order_id`.
+- Backfill: invoke `mirrorSupplierOrders` for `fc766fbc-14f1-49a5-9f5c-ae9037543a4d` after deploy and verify the new order exists in tenant `0befd2c2-5766-4174-b296-f9aa0221603a`.
