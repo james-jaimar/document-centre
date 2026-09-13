@@ -1023,6 +1023,7 @@ Deno.serve(async (req) => {
           app_id: order.app_id, tenant_id: order.tenant_id, order_id,
           invoice_number: invNum, kind, storage_bucket: "documents", storage_path: path,
           total_amount: order.total_amount, amount_paid: order.amount_paid, currency: order.currency,
+          renderer_version: RENDERER_VERSION,
         })
         .select("id").single();
       if (iErr) return json({ error: `insert: ${iErr.message}` }, 500);
