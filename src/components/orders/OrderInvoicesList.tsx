@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Download, Eye, FileText, Send, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, Eye, FileText, Send, Loader2, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { downloadInvoice, viewInvoice, sendInvoiceEmail, generateInvoice } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -145,6 +145,25 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
     }
   };
 
+  // Force a fresh render without waiting for the automatic staleness check —
+  // keeps the same number and replaces the stored file in place.
+  const handleRegenerate = async (inv: Invoice) => {
+    setBusyId(inv.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-invoice-pdf", {
+        body: { invoice_id: inv.id },
+      });
+      if (error) throw new Error(error.message);
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("PDF regenerated");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message || "Could not regenerate PDF");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   // Paid order that never got its tax invoice (e.g. legacy online payments).
   const needsTaxInvoice =
     staff && !loading && !hasTaxInvoice && payment?.payment_status === "paid" && invoices.length > 0;
@@ -200,6 +219,16 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
             </TooltipTrigger>
             <TooltipContent>{busyId === inv.id ? "Refreshing…" : "Download PDF"}</TooltipContent>
           </Tooltip>
+          {staff && (inv.kind === "invoice" || inv.kind === "proforma") && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRegenerate(inv)} disabled={busyId === inv.id}>
+                  {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Regenerate PDF</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
     );

@@ -1,0 +1,1 @@
+ALTER TABLE public.order_invoices ADD COLUMN IF NOT EXISTS renderer_version integer;

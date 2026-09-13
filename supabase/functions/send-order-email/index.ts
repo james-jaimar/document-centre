@@ -4,6 +4,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { enqueueEmail, EmailNotConfiguredError } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
+import { INVOICE_RENDERER_VERSION } from "../_shared/invoice-renderer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -373,7 +374,48 @@ Deno.serve(async (req) => {
           }
         }
       }
+
+      // The attached PDF may have been rendered by an older layout (before a
+      // wording/VAT change). Re-render in place so the customer never receives
+      // a stale document. Best-effort — a failure keeps the existing file.
+      if (
+        invoice &&
+        ["invoice", "proforma"].includes(String((invoice as any).kind)) &&
+        Number((invoice as any).renderer_version ?? 0) < INVOICE_RENDERER_VERSION
+      ) {
+        try {
+          const refreshRes = await fetch(
+            `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-invoice-pdf`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify({ invoice_id: (invoice as any).id }),
+            },
+          );
+          if (refreshRes.ok) {
+            const { data: fresh } = await admin
+              .from("order_invoices")
+              .select("*")
+              .eq("id", (invoice as any).id)
+              .single();
+            if (fresh) invoice = fresh;
+          } else {
+            console.error(
+              "[send-order-email] invoice refresh failed:",
+              refreshRes.status,
+              await refreshRes.text().catch(() => ""),
+            );
+          }
+        } catch (e) {
+          console.error("[send-order-email] invoice refresh threw:", e);
+        }
+      }
     }
+
+
 
 
     const [{ data: tenant }, { data: settings }, { data: addresses }, { data: branchRow }, { data: branchPrivate }] = await Promise.all([

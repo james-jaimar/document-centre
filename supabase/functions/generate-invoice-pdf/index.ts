@@ -12,6 +12,10 @@ import {
 } from "https://esm.sh/pdf-lib@1.17.1";
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
+// Layout version stamped onto every generated PDF — bump it there when the
+// invoice layout or wording changes so stored files re-render.
+import { INVOICE_RENDERER_VERSION as RENDERER_VERSION } from "../_shared/invoice-renderer.ts";
+
 
 /* ─── Embedded TrueType font (cached across warm invocations) ─────────────── */
 const FONT_REG_URL =
@@ -999,6 +1003,7 @@ Deno.serve(async (req) => {
         .update({
           storage_bucket: "documents",
           storage_path: path,
+          renderer_version: RENDERER_VERSION,
           total_amount: order.total_amount,
           amount_paid: order.amount_paid,
           currency: order.currency,
@@ -1022,6 +1027,7 @@ Deno.serve(async (req) => {
           app_id: order.app_id, tenant_id: order.tenant_id, order_id,
           invoice_number: invNum, kind, storage_bucket: "documents", storage_path: path,
           total_amount: order.total_amount, amount_paid: order.amount_paid, currency: order.currency,
+          renderer_version: RENDERER_VERSION,
         })
         .select("id").single();
       if (iErr) return json({ error: `insert: ${iErr.message}` }, 500);
