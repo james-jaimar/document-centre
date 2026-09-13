@@ -832,6 +832,7 @@ export function usePlaceOrder() {
                   amount: deliveryAmount,
                   method_code: input.deliveryMethodCode ?? null,
                   zone_code: input.deliveryZoneCode ?? null,
+                  billable_kg: input.deliveryBillableKg ?? null,
                   currency: orderCurrency,
                 },
               } : {}),
