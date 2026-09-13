@@ -565,6 +565,19 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
             metadata: { reason: deliveryUnpriced },
           })
         : Promise.resolve(null),
+      buyerContactEmail
+        ? Promise.resolve(null)
+        : admin.from("timeline_events").insert({
+            app_id: order.app_id,
+            tenant_id: link.supplier_tenant_id,
+            order_id: mirror.id,
+            event_type: "note",
+            visibility: "admin",
+            actor_type: "system",
+            description:
+              "No contact email on the trade partner's company record — order confirmation not sent. Add an email to the company account.",
+            metadata: { buyer_company_id: link.buyer_company_id },
+          }),
     ]);
 
     // Make the supplier's carriage visible on the buyer's order.
