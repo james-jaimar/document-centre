@@ -834,20 +834,30 @@ export default function Checkout() {
                 />
               )}
 
+              <p className="text-xs text-muted-foreground">
+                Fields marked * are required so we know exactly where this is going.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Contact Name</Label>
+                  <Label className="text-xs">Contact Name *</Label>
                   <Input
+                    ref={setFieldRef("delivery.contact_name") as any}
                     value={address.contact_name}
                     onChange={(e) => setAddress((p) => ({ ...p, contact_name: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, contact_name: true }))}
+                    className={errClass(addrErr("contact_name"))}
                     placeholder="John Smith"
                   />
+                  <FieldError message={addrErr("contact_name")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Company</Label>
                   <Input
+                    ref={setFieldRef("delivery.company_name") as any}
                     value={address.company_name}
                     onChange={(e) => setAddress((p) => ({ ...p, company_name: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, company_name: true }))}
+                    className={errClass(addrErr("company_name"))}
                     placeholder="Acme Corp"
                   />
                 </div>
@@ -855,10 +865,14 @@ export default function Checkout() {
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 1 *</Label>
                 <Input
+                  ref={setFieldRef("delivery.line1") as any}
                   value={address.line1}
                   onChange={(e) => setAddress((p) => ({ ...p, line1: e.target.value }))}
+                  onBlur={() => setAddressTouched((t) => ({ ...t, line1: true }))}
+                  className={errClass(addrErr("line1"))}
                   placeholder="123 Main Street"
                 />
+                <FieldError message={addrErr("line1")} />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Address Line 2</Label>
@@ -870,19 +884,31 @@ export default function Checkout() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">City</Label>
+                  <Label className="text-xs">City *</Label>
                   <Input
+                    ref={setFieldRef("delivery.city") as any}
                     value={address.city}
                     onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, city: true }))}
+                    className={errClass(addrErr("city"))}
                   />
+                  <FieldError message={addrErr("city")} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Province *</Label>
                   <Select
                     value={address.province}
-                    onValueChange={(v) => setAddress((p) => ({ ...p, province: v }))}
+                    onValueChange={(v) => {
+                      setAddress((p) => ({ ...p, province: v }));
+                      setAddressTouched((t) => ({ ...t, province: true }));
+                    }}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectTrigger
+                      ref={setFieldRef("delivery.province") as any}
+                      className={errClass(addrErr("province"))}
+                    >
+                      <SelectValue placeholder="Select…" />
+                    </SelectTrigger>
                     <SelectContent>
                       {[
                         "Eastern Cape","Free State","Gauteng","KwaZulu-Natal",
@@ -892,30 +918,47 @@ export default function Checkout() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError message={addrErr("province")} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Postal Code</Label>
+                  <Label className="text-xs">Postal Code *</Label>
                   <Input
+                    ref={setFieldRef("delivery.postal_code") as any}
+                    inputMode="numeric"
+                    maxLength={10}
                     value={address.postal_code}
                     onChange={(e) => setAddress((p) => ({ ...p, postal_code: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, postal_code: true }))}
+                    className={errClass(addrErr("postal_code"))}
                   />
+                  <FieldError message={addrErr("postal_code")} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Phone</Label>
+                  <Label className="text-xs">Phone *</Label>
                   <Input
+                    ref={setFieldRef("delivery.phone") as any}
+                    inputMode="tel"
                     value={address.phone}
                     onChange={(e) => setAddress((p) => ({ ...p, phone: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, phone: true }))}
+                    className={errClass(addrErr("phone"))}
+                    placeholder="082 123 4567"
                   />
+                  <FieldError message={addrErr("phone")} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Email</Label>
+                  <Label className="text-xs">Email *</Label>
                   <Input
+                    ref={setFieldRef("delivery.email") as any}
                     type="email"
                     value={address.email}
                     onChange={(e) => setAddress((p) => ({ ...p, email: e.target.value }))}
+                    onBlur={() => setAddressTouched((t) => ({ ...t, email: true }))}
+                    className={errClass(addrErr("email"))}
                   />
+                  <FieldError message={addrErr("email")} />
                 </div>
               </div>
               {user && (
