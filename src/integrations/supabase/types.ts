@@ -3939,6 +3939,7 @@ export type Database = {
           kind: string
           metadata: Json
           order_id: string
+          renderer_version: number | null
           storage_bucket: string
           storage_path: string
           tenant_id: string
@@ -3955,6 +3956,7 @@ export type Database = {
           kind?: string
           metadata?: Json
           order_id: string
+          renderer_version?: number | null
           storage_bucket?: string
           storage_path: string
           tenant_id: string
@@ -3971,6 +3973,7 @@ export type Database = {
           kind?: string
           metadata?: Json
           order_id?: string
+          renderer_version?: number | null
           storage_bucket?: string
           storage_path?: string
           tenant_id?: string
