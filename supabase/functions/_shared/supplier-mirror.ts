@@ -204,10 +204,29 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     });
     if (!supplierOrderNum) continue;
 
+    // Trade value per line: the job's own cost when set, otherwise the
+    // supplier's trade ladder, otherwise the buyer's sell price as a floor.
+    const tradeByJob = new Map<string, number>();
+    for (const j of group.jobs) {
+      let price = Number(j.cost_price || 0);
+      if (!price) {
+        const minor = await supplierTradePriceMinor(
+          admin,
+          link.supplier_tenant_id,
+          group.assignment.supplier_product_family_id ?? snapshotFamilyId(j.product_snapshot),
+          j,
+        );
+        if (minor) price = minor / 100;
+      }
+      if (!price) price = Number(j.net_price || 0);
+      tradeByJob.set(j.id, price);
+    }
+
     const subtotal = group.jobs.reduce(
-      (s: number, j: any) => s + Number(j.cost_price || j.net_price || 0),
+      (s: number, j: any) => s + (tradeByJob.get(j.id) ?? 0),
       0,
     );
+
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
