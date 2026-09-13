@@ -689,6 +689,7 @@ async function createOrderWithJobs(
       },
       submitted_at: holdForPayment ? null : new Date().toISOString(),
       is_demo: payload.is_demo === true,
+      is_sample_pack: isSamplePack,
     })
 
     .select("id, order_number, is_demo")
