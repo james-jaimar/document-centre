@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { processAutoRefund } from "../_shared/refunds.ts";
 import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
+import { mirrorSupplierOrders } from "../_shared/supplier-mirror.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -671,6 +672,11 @@ async function createOrderWithJobs(
         .not("job_status", "in", "(completed,cancelled)");
     } catch (e) {
       console.warn("[order-engine] account order job cascade failed (non-fatal):", e);
+    }
+    try {
+      await mirrorSupplierOrders(admin, newOrder.id);
+    } catch (e) {
+      console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
     }
   }
 
