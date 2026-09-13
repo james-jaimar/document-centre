@@ -741,6 +741,13 @@ function SidesColumn({
           {rows.map(({ block, index }, rowPos) => {
             const parent = parentBlocks.find((candidate) => packBlockKey(candidate) === packBlockKey(block));
             const inheritedTrade = parent?.trade_price_minor;
+            const lockedCost = lockedCosts?.get(packBlockKey(block));
+            const marginMinor =
+              lockedCost != null ? (Number(block.price_minor) || 0) - lockedCost : null;
+            const marginPct =
+              marginMinor != null && Number(block.price_minor) > 0
+                ? (marginMinor / Number(block.price_minor)) * 100
+                : null;
             return (
             <div key={index} className="grid grid-cols-[64px_1fr_1fr_1fr_72px_auto] gap-2 items-center">
               <Input
