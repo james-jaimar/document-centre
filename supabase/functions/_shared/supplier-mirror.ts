@@ -152,7 +152,35 @@ async function buyerCreditTerms(
   };
 }
 
+/**
+ * The supplier's own branch for the trade order. Their letterhead — address,
+ * VAT number, banking, tax overrides — hangs off the branch, so an order with
+ * no branch prints a bare invoice. One active branch is the common case.
+ */
+async function supplierBranchId(
+  admin: Admin,
+  tenantId: string,
+  preferredBranchId?: string | null,
+): Promise<string | null> {
+  try {
+    const { data } = await admin
+      .from("branches")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+    const rows = (data as any[]) ?? [];
+    if (!rows.length) return null;
+    if (preferredBranchId && rows.some((r) => r.id === preferredBranchId)) return preferredBranchId;
+    return rows[0].id as string;
+  } catch (_e) {
+    return null;
+  }
+}
+
 /** Minimum billable weight configured on the supplier tenant. */
+
+
 
 async function supplierMinBillableKg(admin: Admin, tenantId: string): Promise<number> {
   try {
