@@ -787,21 +787,37 @@ function SidesColumn({
                   });
                 }}
               />
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                className="h-8 text-xs"
-                placeholder="—"
-                value={block.cost_minor != null ? (block.cost_minor / 100).toString() : ""}
-                onPaste={handlePaste(rowPos, "cost")}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  onUpdateBlock(index, {
-                    cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
-                  });
-                }}
-              />
+              {lockedCost != null ? (
+                <div
+                  className="h-8 rounded-md border border-dashed bg-muted/50 px-2 flex flex-col justify-center leading-tight"
+                  title="Buy price from your supplier, including their VAT. Read-only."
+                >
+                  <span className="text-xs font-mono">{(lockedCost / 100).toFixed(2)}</span>
+                  {marginPct != null && (
+                    <span
+                      className={`text-[10px] ${marginPct <= 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
+                    >
+                      margin {marginPct.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="h-8 text-xs"
+                  placeholder="—"
+                  value={block.cost_minor != null ? (block.cost_minor / 100).toString() : ""}
+                  onPaste={handlePaste(rowPos, "cost")}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    onUpdateBlock(index, {
+                      cost_minor: raw === "" ? undefined : Math.round(parseFloat(raw) * 100),
+                    });
+                  }}
+                />
+              )}
               <Input
                 type="number"
                 min={0}
