@@ -219,6 +219,16 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
             </TooltipTrigger>
             <TooltipContent>{busyId === inv.id ? "Refreshing…" : "Download PDF"}</TooltipContent>
           </Tooltip>
+          {staff && (inv.kind === "invoice" || inv.kind === "proforma") && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRegenerate(inv)} disabled={busyId === inv.id}>
+                  {busyId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Regenerate PDF</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
     );
