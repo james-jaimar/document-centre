@@ -534,6 +534,7 @@ export default function Checkout() {
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
         deliveryBillableKg: shippingQuote?.billableKg ?? undefined,
+        samplePack: samplePackCart,
       });
 
       // Record immutable Terms / Privacy acceptance against the new order.
