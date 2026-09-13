@@ -46,6 +46,7 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
   const [qtyOpen, setQtyOpen] = useState(false);
   const [fulOpen, setFulOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const fulfilment = useFulfilmentMethods();
 
   const editable = isCustomerEditable(order, jobs);
 
