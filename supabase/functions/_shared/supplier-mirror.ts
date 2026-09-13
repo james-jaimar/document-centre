@@ -83,6 +83,16 @@ async function supplierTradePriceMinor(
 
   // The supplier's VAT is a real cost to the buyer, so add it when their
   // prices are held exclusive of tax.
+  const uplift = await supplierTaxUplift(admin, supplierTenantId);
+  return Math.round(base * uplift);
+}
+
+/**
+ * Multiplier that turns a supplier's stored price into the VAT-inclusive
+ * amount the buyer actually pays. Returns 1 when the supplier's prices
+ * already include tax, or when they aren't charging tax at all.
+ */
+async function supplierTaxUplift(admin: Admin, supplierTenantId: string): Promise<number> {
   const { data: settings = [] } = await admin
     .from("tenant_settings")
     .select("setting_key, setting_value")
@@ -93,8 +103,9 @@ async function supplierTradePriceMinor(
   const rate = Number(get("tax_rate") ?? 0) || 0;
   const enabled = get("tax_enabled") === undefined ? rate > 0 : !!get("tax_enabled") && rate > 0;
   const inclusive = !!get("tax_inclusive");
-  return enabled && !inclusive ? Math.round(base * (1 + rate / 100)) : base;
+  return enabled && !inclusive ? 1 + rate / 100 : 1;
 }
+
 
 /** Minimum billable weight configured on the supplier tenant. */
 async function supplierMinBillableKg(admin: Admin, tenantId: string): Promise<number> {
