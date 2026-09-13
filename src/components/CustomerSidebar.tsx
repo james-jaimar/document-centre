@@ -10,7 +10,9 @@ import {
   ShoppingCart,
   LogOut,
   LogIn,
+  PackageOpen,
 } from "lucide-react";
+import { useSamplePack } from "@/hooks/useSamplePack";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
