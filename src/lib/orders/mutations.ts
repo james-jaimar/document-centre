@@ -92,7 +92,7 @@ async function accessDocument(
 export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
   const { data: inv } = await supabase
     .from("order_invoices")
-    .select("id, kind, order_id, tenant_id, total_amount, amount_paid, issued_at")
+    .select("id, kind, order_id, tenant_id, total_amount, amount_paid, issued_at, renderer_version")
     .eq("id", invoiceId)
     .maybeSingle();
   if (!inv) return;
