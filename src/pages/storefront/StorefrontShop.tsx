@@ -12,6 +12,7 @@ import ShopFilters, {
   type ShopFilterState,
 } from "@/components/storefront/ShopFilters";
 import AssuranceBar from "@/components/storefront/AssuranceBar";
+import SamplePackBanner from "@/components/storefront/SamplePackBanner";
 import StorefrontFooterStrip from "@/components/storefront/StorefrontFooterStrip";
 
 import { Skeleton } from "@/components/ui/skeleton";
