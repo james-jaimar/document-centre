@@ -7,6 +7,8 @@
 // All work here is best-effort: a PDF or email failure must never stop the
 // webhook from acknowledging the provider.
 
+import { INVOICE_RENDERER_VERSION } from "./invoice-renderer.ts";
+
 type AnyClient = {
   from: (table: string) => any;
 };
