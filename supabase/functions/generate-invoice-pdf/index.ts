@@ -282,6 +282,21 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Trade / legacy orders can arrive without a branch. The seller's letterhead
+    // (address, VAT number, banking, tax overrides) lives on the branch, so fall
+    // back to the tenant's own branch rather than printing a bare invoice.
+    let effectiveBranchId: string | null = order.branch_id ?? null;
+    if (!effectiveBranchId) {
+      const { data: fallbackBranches } = await admin
+        .from("branches")
+        .select("id")
+        .eq("tenant_id", order.tenant_id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: true });
+      const rows = (fallbackBranches as any[]) ?? [];
+      if (rows.length) effectiveBranchId = rows[0].id as string;
+    }
+
     const [
       { data: jobs },
       { data: addresses },
@@ -293,22 +308,22 @@ Deno.serve(async (req) => {
       admin.from("order_jobs").select("*").eq("order_id", order_id).order("sequence_no"),
       admin.from("order_addresses").select("*").eq("order_id", order_id),
       admin.from("tenants").select("*").eq("id", order.tenant_id).single(),
-      order.branch_id
-        ? admin.from("branches").select("*").eq("id", order.branch_id).maybeSingle()
+      effectiveBranchId
+        ? admin.from("branches").select("*").eq("id", effectiveBranchId).maybeSingle()
         : Promise.resolve({ data: null } as any),
-      order.branch_id
-        ? admin.from("branch_private" as any).select("*").eq("branch_id", order.branch_id).maybeSingle()
+      effectiveBranchId
+        ? admin.from("branch_private" as any).select("*").eq("branch_id", effectiveBranchId).maybeSingle()
         : Promise.resolve({ data: null } as any),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
     ]);
 
     // Branch-level financial overrides (tax on/off, rate, label) mirror the
     // tenant keys — see src/lib/tax/resolveBranchTax.ts.
-    const { data: branchFinancialRows } = order.branch_id
+    const { data: branchFinancialRows } = effectiveBranchId
       ? await admin
           .from("branch_settings" as any)
           .select("setting_key, setting_value")
-          .eq("branch_id", order.branch_id)
+          .eq("branch_id", effectiveBranchId)
           .eq("category", "financial")
       : ({ data: [] } as any);
     const branch = branchRow ? { ...branchRow, ...(branchPrivate ?? {}) } : null;

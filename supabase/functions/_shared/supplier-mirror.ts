@@ -152,7 +152,35 @@ async function buyerCreditTerms(
   };
 }
 
+/**
+ * The supplier's own branch for the trade order. Their letterhead — address,
+ * VAT number, banking, tax overrides — hangs off the branch, so an order with
+ * no branch prints a bare invoice. One active branch is the common case.
+ */
+async function supplierBranchId(
+  admin: Admin,
+  tenantId: string,
+  preferredBranchId?: string | null,
+): Promise<string | null> {
+  try {
+    const { data } = await admin
+      .from("branches")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+    const rows = (data as any[]) ?? [];
+    if (!rows.length) return null;
+    if (preferredBranchId && rows.some((r) => r.id === preferredBranchId)) return preferredBranchId;
+    return rows[0].id as string;
+  } catch (_e) {
+    return null;
+  }
+}
+
 /** Minimum billable weight configured on the supplier tenant. */
+
+
 
 async function supplierMinBillableKg(admin: Admin, tenantId: string): Promise<number> {
   try {
@@ -449,12 +477,18 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     // Does the buyer hold an account with this supplier? If so the order is
     // approved on arrival and gets a tax invoice; otherwise a proforma.
     const credit = await buyerCreditTerms(admin, link.supplier_tenant_id, link.buyer_company_id);
+    const mirrorBranchId = await supplierBranchId(
+      admin,
+      link.supplier_tenant_id,
+      (group.assignment as any)?.supplier_branch_id ?? null,
+    );
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
       .insert({
         app_id: order.app_id,
         tenant_id: link.supplier_tenant_id,
+        branch_id: mirrorBranchId,
         order_number: supplierOrderNum,
         source_order_id: order.id,
         supplier_link_id: link.id,
@@ -507,6 +541,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       order_id: mirror.id,
       app_id: order.app_id,
       tenant_id: link.supplier_tenant_id,
+      branch_id: mirrorBranchId,
       job_number: `${mirror.order_number}-${idx + 1}`,
       sequence_no: idx + 1,
       product_name: j.product_name,
@@ -599,7 +634,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         await admin.from("customer_account_ledger").insert({
           tenant_id: link.supplier_tenant_id,
           app_id: order.app_id,
-          branch_id: null,
+          branch_id: mirrorBranchId,
           company_id: link.buyer_company_id,
           customer_profile_id: null,
           entry_type: "charge",
