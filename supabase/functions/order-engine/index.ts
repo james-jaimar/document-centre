@@ -334,6 +334,136 @@ function validateDeliveryAddress(addr: any): string | null {
   return null;
 }
 
+/* ── Sample packs ────────────────────────────────────────────
+ * A fixed-price "one of each" pack for trade buyers. The browser may ask for
+ * it, but everything that matters — eligibility and price — is decided here.
+ */
+
+interface SamplePackConfig {
+  enabled: boolean;
+  price: number;
+  familyIds: string[];
+  tradeOnly: boolean;
+  onePerCompany: boolean;
+}
+
+async function resolveSamplePackConfig(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<SamplePackConfig> {
+  const { data } = await admin
+    .from("tenant_settings")
+    .select("setting_key, setting_value")
+    .eq("tenant_id", tenantId)
+    .eq("category", "sample_pack");
+  const map: Record<string, unknown> = {};
+  for (const row of (data ?? []) as any[]) map[row.setting_key] = row.setting_value;
+  const bool = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : v === "true" ? true : v === "false" ? false : d);
+  const families = Array.isArray(map.family_ids)
+    ? (map.family_ids as unknown[]).filter((v): v is string => typeof v === "string")
+    : [];
+  return {
+    enabled: bool(map.enabled, false),
+    price: Number(map.price ?? 0) || 0,
+    familyIds: families,
+    tradeOnly: bool(map.trade_only, true),
+    onePerCompany: bool(map.one_per_company, true),
+  };
+}
+
+function jobFamilyId(job: any): string | null {
+  const snap = job?.product_snapshot ?? {};
+  return snap.product_family_id ?? snap.product_family?.id ?? null;
+}
+
+/** Returns an error message when this sample pack order may not be placed. */
+async function checkSamplePack(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  profileId: string,
+  jobs: any[],
+  cfg: SamplePackConfig,
+): Promise<string | null> {
+  if (!cfg.enabled || cfg.familyIds.length === 0 || cfg.price <= 0) {
+    return "Sample packs aren't available at the moment.";
+  }
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("is_trade_customer, company_id, company:company_id (id, is_active, is_trade_customer, sample_pack_allowance)")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId)
+    .eq("is_active", true);
+  const rows = (memberships ?? []) as any[];
+  const isTrade = rows.some(
+    (m) => m.is_trade_customer === true || (m.company?.is_active !== false && m.company?.is_trade_customer === true),
+  );
+  if (cfg.tradeOnly && !isTrade) return "Sample packs are only available to trade accounts.";
+
+  const families = jobs.map(jobFamilyId).filter(Boolean) as string[];
+  const exactlyOneEach =
+    families.length === cfg.familyIds.length &&
+    cfg.familyIds.every((id) => families.filter((f) => f === id).length === 1);
+  if (!exactlyOneEach) return "A sample pack must contain exactly one of each included product.";
+
+  if (cfg.onePerCompany) {
+    const allowance = Number(
+      rows.find((m) => m.company?.sample_pack_allowance != null)?.company?.sample_pack_allowance ?? 1,
+    );
+    const companyIds = rows.map((m) => m.company_id).filter(Boolean);
+    let taken = 0;
+    if (companyIds.length) {
+      const { data: mates } = await admin
+        .from("tenant_memberships")
+        .select("profile_id")
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .in("company_id", companyIds);
+      const profileIds = [...new Set([...(mates ?? []).map((m: any) => m.profile_id), profileId])];
+      const { count } = await admin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("is_sample_pack", true)
+        .neq("admin_status", "cancelled")
+        .in("ordered_by_profile_id", profileIds);
+      taken = count ?? 0;
+    } else {
+      const { count } = await admin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("is_sample_pack", true)
+        .neq("admin_status", "cancelled")
+        .eq("ordered_by_profile_id", profileId);
+      taken = count ?? 0;
+    }
+    if (taken >= (Number.isFinite(allowance) ? allowance : 1)) {
+      return "This account has already had its sample pack.";
+    }
+  }
+
+  return null;
+}
+
+/** Tenant VAT rate as a fraction (0.15), 0 when tax is off. */
+async function tenantTaxFraction(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<number> {
+  const { data } = await admin
+    .from("tenant_settings")
+    .select("setting_key, setting_value")
+    .eq("tenant_id", tenantId)
+    .eq("category", "financial");
+  const map: Record<string, unknown> = {};
+  for (const row of (data ?? []) as any[]) map[row.setting_key] = row.setting_value;
+  const rate = Number(map.tax_rate ?? 0) || 0;
+  const enabledRaw = map.tax_enabled;
+  const enabled = (enabledRaw === undefined || enabledRaw === null ? rate > 0 : !!enabledRaw) && rate > 0;
+  return enabled ? rate / 100 : 0;
+}
+
 // ── Action handlers ─────────────────────────────────────────
 
 
