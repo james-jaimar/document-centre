@@ -70,6 +70,7 @@ export default function Checkout() {
   // fallback rate so shipping is quoted in the currency being charged.
   const { convert: convertFromBase } = useCurrencyConverter(currency, baseCurrency);
   const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
+  const { config: samplePackConfig } = useSamplePackConfig();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
   // Which fulfilment options this tenant/branch actually offers.
