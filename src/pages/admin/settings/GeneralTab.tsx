@@ -42,11 +42,15 @@ export function GeneralTab() {
   const bulkUpsert = useBulkUpsertTenantSettings();
   const [tawkEnabled, setTawkEnabled] = useState(false);
   const [tawkPropertyId, setTawkPropertyId] = useState("");
+  const [tawkWidgetId, setTawkWidgetId] = useState("");
   const [gaPropertyId, setGaPropertyId] = useState("");
 
   useEffect(() => {
     setTawkEnabled(settingsMap.tawk_enabled === true);
-    setTawkPropertyId(String(settingsMap.tawk_property_id || ""));
+    // Legacy single-field values sometimes hold "property/widget" — split them.
+    const legacy = parseChatPaste(unwrapSetting(settingsMap.tawk_property_id));
+    setTawkPropertyId(legacy.propertyId ?? "");
+    setTawkWidgetId(unwrapSetting(settingsMap.tawk_widget_id) || legacy.widgetId || "");
     setGaPropertyId(String(settingsMap.ga_property_id || ""));
   }, [settingsMap]);
 
@@ -235,16 +239,17 @@ export function GeneralTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            Live Chat (Tawk.to)
+            Live Chat (Tawk.to) — head-office default
           </CardTitle>
           <CardDescription>
-            Enable Tawk.to live chat on your customer portal. You must use your own Tawk.to account — sign up free at{" "}
+            Live chat is set per branch (Branch Settings → Operations). This is the fallback shown
+            to customers on branches that haven't set up their own. Sign up free at{" "}
             <a href="https://www.tawk.to" target="_blank" rel="noopener noreferrer" className="underline text-primary">tawk.to</a>.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 max-w-lg">
           <div className="flex items-center justify-between">
-            <Label htmlFor="tawk-enabled">Enable live chat widget</Label>
+            <Label htmlFor="tawk-enabled">Enable default live chat widget</Label>
             <Switch
               id="tawk-enabled"
               checked={tawkEnabled}
@@ -252,19 +257,54 @@ export function GeneralTab() {
             />
           </div>
           {tawkEnabled && (
-            <div className="space-y-2">
-              <Label htmlFor="tawk-property">Tawk.to Property ID</Label>
-              <Input
-                id="tawk-property"
-                value={tawkPropertyId}
-                onChange={(e) => setTawkPropertyId(e.target.value)}
-                placeholder="e.g. 60a1b2c3d4e5f6001c7g8h9i/1abc2defg"
-              />
-              <p className="text-xs text-muted-foreground">
-                Find this in your Tawk.to Dashboard → Administration → Chat Widget → Direct Chat Link.
-                Copy the two path segments after <code>embed.tawk.to/</code>.
-              </p>
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="tawk-paste">Paste your Direct Chat Link</Label>
+                <Input
+                  id="tawk-paste"
+                  placeholder="https://embed.tawk.to/60a1b2c3d4e5f6001c7g8h9i/1abc2defg"
+                  onChange={(e) => {
+                    const parsed = parseChatPaste(e.target.value);
+                    if (parsed.propertyId) setTawkPropertyId(parsed.propertyId);
+                    if (parsed.widgetId) setTawkWidgetId(parsed.widgetId);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Tawk.to Dashboard → Administration → Chat Widget → Direct Chat Link.
+                  Pasting it here fills both fields below.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="tawk-property">Property ID</Label>
+                  <Input
+                    id="tawk-property"
+                    value={tawkPropertyId}
+                    onChange={(e) => setTawkPropertyId(e.target.value.trim())}
+                    placeholder="60a1b2c3d4e5f6001c7g8h9i"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tawk-widget">Widget ID</Label>
+                  <Input
+                    id="tawk-widget"
+                    value={tawkWidgetId}
+                    onChange={(e) => setTawkWidgetId(e.target.value.trim())}
+                    placeholder="1abc2defg"
+                  />
+                </div>
+              </div>
+              {chatEmbedSrc({ propertyId: tawkPropertyId, widgetId: tawkWidgetId }) ? (
+                <p className="text-xs text-muted-foreground break-all">
+                  Widget: <code>{chatEmbedSrc({ propertyId: tawkPropertyId, widgetId: tawkWidgetId })}</code>
+                </p>
+              ) : (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                  Both parts are needed before the chat bubble will appear — copy the whole Direct
+                  Chat Link and paste it above.
+                </p>
+              )}
+            </>
           )}
           <Button
             variant="outline"
@@ -274,6 +314,7 @@ export function GeneralTab() {
                 await bulkUpsert.mutateAsync([
                   { category: "integrations", setting_key: "tawk_enabled", setting_value: tawkEnabled, value_type: "boolean" },
                   { category: "integrations", setting_key: "tawk_property_id", setting_value: tawkPropertyId, value_type: "string" },
+                  { category: "integrations", setting_key: "tawk_widget_id", setting_value: tawkWidgetId, value_type: "string" },
                 ]);
                 toast.success("Chat settings saved");
               } catch (e: any) {
