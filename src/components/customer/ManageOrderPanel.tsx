@@ -94,10 +94,12 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
             <Package className="h-3.5 w-3.5 mr-1.5" />
             Change items / quantities
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setFulOpen(true)}>
-            {isCollection ? <Truck className="h-3.5 w-3.5 mr-1.5" /> : <Store className="h-3.5 w-3.5 mr-1.5" />}
-            Switch to {isCollection ? "delivery" : "collection"}
-          </Button>
+          {(isCollection ? fulfilment.allowDelivery : fulfilment.allowCollection) && (
+            <Button size="sm" variant="outline" onClick={() => setFulOpen(true)}>
+              {isCollection ? <Truck className="h-3.5 w-3.5 mr-1.5" /> : <Store className="h-3.5 w-3.5 mr-1.5" />}
+              Switch to {isCollection ? "delivery" : "collection"}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
