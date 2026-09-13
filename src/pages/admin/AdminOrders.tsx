@@ -52,6 +52,15 @@ export function NewMarker({ order }: { order: any }) {
   );
 }
 
+export function SamplePackMarker({ order }: { order: any }) {
+  if (!order?.is_sample_pack) return null;
+  return (
+    <span className="ml-1.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary align-middle">
+      Sample pack
+    </span>
+  );
+}
+
 const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
   "unpaid", "part_paid", "paid", "refunded",
 ];
