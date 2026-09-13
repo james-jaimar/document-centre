@@ -34,7 +34,7 @@ export async function issueTaxInvoiceAndNotify(sb: AnyClient, orderId: string): 
   try {
     const { data: existing } = await sb
       .from("order_invoices")
-      .select("id")
+      .select("id, renderer_version")
       .eq("order_id", orderId)
       .eq("kind", "invoice")
       .limit(1)
@@ -45,7 +45,11 @@ export async function issueTaxInvoiceAndNotify(sb: AnyClient, orderId: string): 
     if (!invoiceId) {
       const result = await callFunction("generate-invoice-pdf", { order_id: orderId, kind: "invoice" });
       invoiceId = (result as any)?.invoice_id;
+    } else if (Number((existing as any)?.renderer_version ?? 0) < INVOICE_RENDERER_VERSION) {
+      // Stored PDF predates the current layout — re-render in place first.
+      await callFunction("generate-invoice-pdf", { invoice_id: invoiceId });
     }
+
 
     await callFunction("send-order-email", {
       order_id: orderId,
