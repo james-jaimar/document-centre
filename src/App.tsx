@@ -78,6 +78,7 @@ import AdminProductCatalogue from "@/pages/admin/AdminProductCatalogue";
 import AdminPricing from "@/pages/admin/AdminPricing";
 import AdminRateCard from "@/pages/admin/AdminRateCard";
 import AdminCatalogPricing from "@/pages/admin/AdminCatalogPricing";
+import AdminSuppliers from "@/pages/admin/AdminSuppliers";
 
 import AdminDelivery from "@/pages/admin/AdminDelivery";
 import AdminBranchDelivery from "@/pages/admin/AdminBranchDelivery";
