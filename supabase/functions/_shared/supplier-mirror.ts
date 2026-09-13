@@ -339,8 +339,11 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     }
 
     // Who the mirrored order sits against in the supplier tenant.
+    // The trade order belongs to the BUYER company — never to the buyer's own
+    // end customer, whose address must never receive supplier mail.
     let buyerProfileId: string | null = null;
     let buyerCompanyName: string | null = null;
+    let buyerContactEmail: string | null = null;
     if (link.buyer_company_id) {
       const { data: company } = await admin
         .from("customer_companies")
@@ -348,6 +351,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         .eq("id", link.buyer_company_id)
         .maybeSingle();
       buyerCompanyName = company?.name ?? null;
+      buyerContactEmail = company?.email ?? null;
       const { data: contact } = await admin
         .from("tenant_memberships")
         .select("profile_id, is_primary_contact")
@@ -357,6 +361,14 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         .limit(1)
         .maybeSingle();
       buyerProfileId = contact?.profile_id ?? null;
+      if (!buyerContactEmail && buyerProfileId) {
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("email")
+          .eq("id", buyerProfileId)
+          .maybeSingle();
+        buyerContactEmail = profile?.email ?? null;
+      }
     }
     const ownerProfileId = buyerProfileId ?? order.ordered_by_profile_id ?? order.user_id;
     if (!ownerProfileId) continue;
@@ -449,7 +461,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         supplier_status: "received",
         ordered_by_profile_id: ownerProfileId,
         user_id: ownerProfileId,
-        customer_email: order.customer_email,
+        customer_email: buyerContactEmail,
         customer_name: buyerCompanyName ?? order.customer_name,
         company_name: buyerCompanyName ?? order.company_name,
         admin_status: credit ? "approved" : "new_order",
@@ -553,6 +565,19 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
             metadata: { reason: deliveryUnpriced },
           })
         : Promise.resolve(null),
+      buyerContactEmail
+        ? Promise.resolve(null)
+        : admin.from("timeline_events").insert({
+            app_id: order.app_id,
+            tenant_id: link.supplier_tenant_id,
+            order_id: mirror.id,
+            event_type: "note",
+            visibility: "admin",
+            actor_type: "system",
+            description:
+              "No contact email on the trade partner's company record — order confirmation not sent. Add an email to the company account.",
+            metadata: { buyer_company_id: link.buyer_company_id },
+          }),
     ]);
 
     // Make the supplier's carriage visible on the buyer's order.
