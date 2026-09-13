@@ -579,21 +579,21 @@ export default function Checkout() {
 
       // Save the billing address to the customer's address book so it is
       // pre-selected next time (only when they typed a new one).
-      if (billingRequired && user && !selectedBillingId && billing.line1.trim()) {
+      if (billingRequired && user && !selectedBillingId && cleanBilling.line1.trim()) {
         try {
           await createSavedAddress.mutateAsync({
             address_type: "billing",
             is_default: true,
-            contact_name: billing.contact_name || null,
-            company_name: billing.company_name || null,
-            phone: billing.phone || null,
-            email: billing.email || null,
-            line1: billing.line1 || null,
-            line2: billing.line2 || null,
-            city: billing.city || null,
-            province: billing.province || null,
-            postal_code: billing.postal_code || null,
-            country: billing.country || "South Africa",
+            contact_name: cleanBilling.contact_name || null,
+            company_name: cleanBilling.company_name || null,
+            phone: cleanBilling.phone || null,
+            email: cleanBilling.email || null,
+            line1: cleanBilling.line1 || null,
+            line2: cleanBilling.line2 || null,
+            city: cleanBilling.city || null,
+            province: cleanBilling.province || null,
+            postal_code: cleanBilling.postal_code || null,
+            country: cleanBilling.country || "South Africa",
           });
         } catch (e) {
           console.warn("Failed to save billing address to address book:", e);
