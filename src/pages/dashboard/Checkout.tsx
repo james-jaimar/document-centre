@@ -33,6 +33,7 @@ import AddressPicker from "@/components/customer/AddressPicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
 import { useRequireBillingAddress } from "@/hooks/useRequireBillingAddress";
+import { useFulfilmentMethods } from "@/hooks/useFulfilmentMethods";
 import { useBranchStorefrontGate } from "@/hooks/useBranchSubscriptions";
 import { AlertCircle } from "lucide-react";
 import { CheckoutLegalConsent, type CheckoutLegalAcceptance } from "@/components/checkout/CheckoutLegalConsent";
