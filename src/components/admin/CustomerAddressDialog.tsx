@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCustomerAddresses, type CustomerAddress, type CustomerAddressInput } from "@/hooks/useCustomerAddresses";
+import { validateAddress, normalizeAddress, type AddressErrors } from "@/lib/validation/addressSchema";
 
 interface Props {
   open: boolean;
