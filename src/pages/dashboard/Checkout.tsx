@@ -502,14 +502,17 @@ export default function Checkout() {
       const payingOnline = paymentMethod === "stripe" || paymentMethod === "payfast";
       if (payingOnline) setRedirecting(true);
 
+      const cleanAddress = normalizeAddress(address);
+      const cleanBilling = normalizeAddress(billing);
+
       const newOrderId = await placeOrder.mutateAsync({
         cartOrderId: cart.id,
         holdForPayment: payingOnline,
         paymentMethod,
         deliveryMethod,
         notes: notes.trim() || undefined,
-        deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
-        billingAddress: billingRequired ? billing : undefined,
+        deliveryAddress: deliveryMethod === "delivery" ? cleanAddress : undefined,
+        billingAddress: billingRequired ? cleanBilling : undefined,
         branchId: deliveryMethod === "collection" ? collectionBranch?.id : undefined,
         deliveryAmount: deliveryFee,
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
