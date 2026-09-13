@@ -57,6 +57,9 @@ export default function CustomerSidebar() {
     { to: homePath, icon: Home, label: "Home", exact: true },
     ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
     ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), icon: Plus, label: "Create", exact: false }]),
+    ...(samplePackEligible
+      ? [{ to: tenantPath("sample-pack"), icon: PackageOpen, label: "Sample Pack", exact: false }]
+      : []),
     { to: tenantPath("orders"), icon: ClipboardList, label: "Orders", exact: false },
     { to: tenantPath("quotes"), icon: FileText, label: "Quotes", exact: false },
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true },
