@@ -1,26 +1,30 @@
-# Restore the missing Payments settings tab
+# Honour the tenant's fulfilment settings at checkout
 
-## What's wrong
+## What's happening
 
-The Payments settings screen exists and is fully built (gateway switches for PayFast and Stripe, credential entry, banking details, payment instructions, branch readiness list), but it is not linked into the tenant Settings page. The tenant Settings tab strip lists General, Branding, Workflow, Financial, Quotes, Uploads, Photo Library, Notifications, Email Accounts, Documents, Delivery, Legal, Domains and Billing — no Payments. So there is no way to reach it from any tenant, which is why you can't find where to enter PayFast details.
+The 2027 Edition has Courier ticked only — Collection is off (confirmed in the tenant's saved delivery settings). But the checkout page ignores that setting entirely: it always shows both "Collection — Pick up from our branch" and "Delivery — Ship to your address", and it starts with Collection pre-selected. The branch-level "Collection Available" switch is saved too but likewise never read anywhere.
 
-Branch-level payment entry does exist today: it shows on a branch's own settings page and on the branch detail page inside the tenant admin area. Tenant-level entry has no route at all.
+So the setting exists and you set it correctly — nothing is reading it.
 
 ## The fix
 
-Add Payments back into the tenant Settings tab strip, between Financial and Quotes, showing the existing screen unchanged:
-
-- Gateway on/off switches for PayFast and Stripe (only providers the platform has permitted for that tenant)
-- Credential entry (PayFast merchant ID, merchant key, passphrase; test or live mode)
-- Branch payment readiness overview
-- EFT / bank transfer and pro forma toggles, banking details, payment instructions
-
-Restrict the tab to tenant owners and admins (and platform admins working inside a tenant), matching how Billing is handled.
+1. Checkout reads the tenant's enabled fulfilment methods (and the branch's Collection Available switch where a branch is active).
+   - Collection appears only when collection is enabled at tenant level and not switched off for the active branch.
+   - Delivery/shipping appears only when courier, local delivery or postal is enabled.
+2. The starting selection becomes the first method that is actually allowed, instead of always Collection. With only Courier enabled, the customer lands straight on delivery.
+3. When only one method is allowed, show it as a simple confirmed line rather than a radio choice with one option.
+4. If no method is enabled, show a clear message that this store isn't accepting orders online yet, instead of a broken empty choice.
+5. Apply the same rule to the customer "Switch to collection / delivery" action on an existing order, so a disabled method can't be picked there either.
+6. Enforce it server-side when an order is placed, so a disallowed fulfilment type is rejected rather than trusted from the browser.
 
 ## Technical detail
 
-`src/pages/admin/AdminSettings.tsx` never imports or renders `src/pages/admin/settings/PaymentsTab.tsx`. Add the import, a `{ value: "payments", label: "Payments", icon: Wallet }` entry in the tab array guarded by `isOwnerOrAdmin`, and the matching `<TabsContent value="payments"><PaymentsTab /></TabsContent>`. No other files change; no database or backend work is needed.
+- Setting lives at `tenant_settings` category `delivery`, key `methods_enabled` (currently `["courier"]`); resolve it via the `resolve_tenant_setting` RPC as Checkout already does for `allow_prepaid_invoice`. Branch override: `branch_settings` `collection_available`.
+- `src/pages/dashboard/Checkout.tsx` hardcodes the radio group (lines ~633-650) and initialises `deliveryMethod` to `"collection"` — replace with a derived allowed-methods list driving both.
+- `src/components/customer/ManageOrderPanel.tsx` offers the opposite method unconditionally; gate it on the same list.
+- `supabase/functions/order-engine/index.ts` validates the fulfilment type against the tenant setting on submit.
+- Admin-side manual fulfilment changes in `OrderPricingTab.tsx` stay unrestricted — staff can still override.
 
 ## Verify
 
-Open a tenant's Settings, confirm Payments appears, switch PayFast on, save credentials, and confirm the "Credentials saved" badge appears and the branch readiness card reflects it.
+On The 2027 Edition storefront, check out and confirm only delivery is offered with courier rates applied; tick Collection back on in Tenant Settings → Delivery and confirm both options reappear.
