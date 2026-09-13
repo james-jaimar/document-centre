@@ -2482,6 +2482,15 @@ async function customerChangeFulfillment(
   const { error: e, order } = await loadCustomerEditableOrder(admin, userId, order_id);
   if (e) return err(e, 403);
 
+  const fulMsg = await checkFulfilmentAllowed(
+    admin,
+    (order as any).tenant_id,
+    (order as any).branch_id,
+    fulfillment_type,
+  );
+  if (fulMsg) return err(fulMsg);
+
+
   const newDelivery = fulfillment_type === "collection" ? 0 : Number(delivery_amount ?? 0);
   if (fulfillment_type === "delivery" && newDelivery < 0) return err("Delivery amount required for delivery");
 
