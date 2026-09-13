@@ -504,6 +504,7 @@ function GroupCard({
   onFillTrade,
   onAutoWeigh,
   parentBlocks,
+  lockedCosts,
   onDeleteGroup,
 }: {
   group: Group;
@@ -521,6 +522,7 @@ function GroupCard({
   onFillTrade: (group: Group) => void;
   onAutoWeigh: (group: Group) => void;
   parentBlocks: QuantityBlock[];
+  lockedCosts?: Map<string, number>;
   onDeleteGroup: (group: Group) => void;
 
 }) {
