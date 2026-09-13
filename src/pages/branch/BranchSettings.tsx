@@ -26,6 +26,7 @@ import { BranchCategoryCountCard } from "@/components/branch/BranchCategoryCount
 
 
 import { BranchInvoiceNumberingCard } from "@/components/branch/BranchInvoiceNumberingCard";
+import { BranchLiveChatCard } from "@/components/branch/BranchLiveChatCard";
 import { useSearchParams } from "react-router-dom";
 import { isBranchManagerRole } from "@/lib/auth/branchPermissions";
 
@@ -349,6 +350,11 @@ const BranchSettings = () => {
       {/* Invoice numbering override */}
       {tenantId && branchId && (
         <BranchInvoiceNumberingCard tenantId={tenantId} branchId={branchId} />
+      )}
+
+      {/* Live chat widget for this branch */}
+      {tenantId && branchId && (
+        <BranchLiveChatCard tenantId={tenantId} branchId={branchId} />
       )}
         </TabsContent>
       </Tabs>
