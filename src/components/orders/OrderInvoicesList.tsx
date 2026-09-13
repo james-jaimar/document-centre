@@ -145,6 +145,25 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
     }
   };
 
+  // Force a fresh render without waiting for the automatic staleness check —
+  // keeps the same number and replaces the stored file in place.
+  const handleRegenerate = async (inv: Invoice) => {
+    setBusyId(inv.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-invoice-pdf", {
+        body: { invoice_id: inv.id },
+      });
+      if (error) throw new Error(error.message);
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("PDF regenerated");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message || "Could not regenerate PDF");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   // Paid order that never got its tax invoice (e.g. legacy online payments).
   const needsTaxInvoice =
     staff && !loading && !hasTaxInvoice && payment?.payment_status === "paid" && invoices.length > 0;
