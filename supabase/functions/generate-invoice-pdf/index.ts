@@ -842,7 +842,7 @@ Deno.serve(async (req) => {
     labelChip(page, "Terms and Conditions", M, yL); yL -= 14;
     const paymentDays = Number(financial.payment_terms_days ?? 30);
     const defaultTerms = kind === "proforma"
-      ? `1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma a 50% deposit will be required.`
+      ? `1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma full payment will be required.`
       : kind === "credit_note"
       ? `1. This credit note has been applied to your account.`
       : kind === "receipt"
