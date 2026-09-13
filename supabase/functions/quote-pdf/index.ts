@@ -259,6 +259,36 @@ Deno.serve(async (req) => {
     }
     const tBranding = { ...tBrandingJson, ...tBrandingTable };
 
+    // Tax on/off (tenant financial settings, branch overrides win) — when tax
+    // is off we drop the VAT column and the VAT totals row entirely.
+    const [{ data: tenantFinRows }, { data: branchFinRows }] = await Promise.all([
+      supa
+        .from("tenant_settings")
+        .select("setting_key, setting_value")
+        .eq("tenant_id", q.tenant_id)
+        .eq("category", "financial"),
+      q.branch_id
+        ? supa
+            .from("branch_settings" as any)
+            .select("setting_key, setting_value")
+            .eq("branch_id", q.branch_id)
+            .eq("category", "financial")
+        : Promise.resolve({ data: [] } as any),
+    ]);
+    const financial: Record<string, any> = {};
+    for (const r of (tenantFinRows as any[]) ?? []) financial[r.setting_key] = r.setting_value;
+    for (const r of (branchFinRows as any[]) ?? []) {
+      if (r?.setting_value !== undefined && r?.setting_value !== null) {
+        financial[r.setting_key] = r.setting_value;
+      }
+    }
+    const quoteTaxRate = Number(financial.tax_rate ?? 0) || 0;
+    const taxEnabled =
+      (financial.tax_enabled === undefined || financial.tax_enabled === null
+        ? quoteTaxRate > 0
+        : !!financial.tax_enabled) && quoteTaxRate > 0;
+    const taxLabel = String(financial.tax_label ?? "VAT");
+
     const brand = hexToRgb(tBranding.primary_color ?? tBranding.brand_color ?? tenant?.brand_color);
     const brandSoft = tint(brand, 0.85);
 
