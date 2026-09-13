@@ -667,6 +667,7 @@ function SidesColumn({
   onDeleteBlock,
   onAddRow,
   parentBlocks,
+  lockedCosts,
 }: {
   heading: string;
   rows: { block: QuantityBlock; index: number }[];
@@ -675,6 +676,7 @@ function SidesColumn({
   onDeleteBlock: (idx: number) => void;
   onAddRow: () => void;
   parentBlocks: QuantityBlock[];
+  lockedCosts?: Map<string, number>;
 }) {
   /** Spreadsheet-style paste: fills downwards (and sideways for tab-separated data). */
   const handlePaste = (rowPos: number, column: PasteColumn) => (e: React.ClipboardEvent<HTMLInputElement>) => {
