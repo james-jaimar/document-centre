@@ -45,6 +45,8 @@ export function CompanyDetailView({ companyId, backPath, customerPath, orderPath
   const { data: company, isLoading } = useCustomerCompany(companyId);
   const { data: members = [] } = useCompanyMembers(companyId);
   const [editOpen, setEditOpen] = useState(false);
+  const [allowanceSaving, setAllowanceSaving] = useState(false);
+  const qc = useQueryClient();
 
   if (isLoading || !company) {
     return (
