@@ -100,6 +100,7 @@ function BranchFamilyRow({
   const parentBlocks = mergePackBlockScope(masterBlocks, tenantOverride?.quantity_blocks);
 
   const initialBlocks = (branchOverride?.quantity_blocks ?? []) as QuantityBlock[];
+  const outsourced = useOutsourcedPricing(tenantId, familyId);
 
   const branchAddons = Array.isArray(branchOverride?.pricing_addons)
     ? normalizeAddons(branchOverride!.pricing_addons)
