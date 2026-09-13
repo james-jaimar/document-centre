@@ -429,6 +429,7 @@ export function usePlaceOrder() {
       deliveryAmount?: number;
       deliveryMethodCode?: string;
       deliveryZoneCode?: string;
+      deliveryBillableKg?: number;
       deliveryAddress?: {
         contact_name?: string;
         company_name?: string;
@@ -831,6 +832,7 @@ export function usePlaceOrder() {
                   amount: deliveryAmount,
                   method_code: input.deliveryMethodCode ?? null,
                   zone_code: input.deliveryZoneCode ?? null,
+                  billable_kg: input.deliveryBillableKg ?? null,
                   currency: orderCurrency,
                 },
               } : {}),
