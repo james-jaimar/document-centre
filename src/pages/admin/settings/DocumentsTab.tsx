@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Save, FileText, Upload, Image } from "lucide-react";
 
 const DEFAULT_PROFORMA_TERMS =
-  "1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma a 50% deposit will be required.";
+  "1. This Proforma is valid for 7 working days.\n2. On acceptance of this proforma full payment will be required.";
 const DEFAULT_INVOICE_TERMS =
   "1. Payment is due within 30 days of invoice date.\n2. Please use the invoice number as your payment reference.";
 
