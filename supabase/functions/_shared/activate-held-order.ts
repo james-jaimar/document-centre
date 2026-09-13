@@ -15,6 +15,8 @@
 // Stripe webhook) or the customer explicitly falls back to EFT. It is
 // idempotent: repeated calls (webhook retries) are no-ops.
 
+import { mirrorSupplierOrders } from "./supplier-mirror.ts";
+
 type AnyClient = { from: (table: string) => any };
 
 async function callFunction(name: string, body: Record<string, unknown>) {
