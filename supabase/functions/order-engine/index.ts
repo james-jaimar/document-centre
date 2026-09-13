@@ -538,6 +538,32 @@ async function createOrderWithJobs(
     console.warn("[order-engine] payment terms check failed (non-fatal):", e);
   }
 
+  // Sample pack: one flat price for one of each product, delivery included.
+  const isSamplePack = payload.sample_pack === true;
+  if (isSamplePack) {
+    const cfg = await resolveSamplePackConfig(admin, tenant_id);
+    const packMsg = await checkSamplePack(admin, tenant_id, customer.profile_id, jobs, cfg);
+    if (packMsg) return json({ error: packMsg, code: "sample_pack_not_allowed" }, 403);
+
+    const gross = Math.round(cfg.price * 100) / 100;
+    const fraction = await tenantTaxFraction(admin, tenant_id);
+    const net = Math.round((gross / (1 + fraction)) * 100) / 100;
+    Object.assign(pricing ?? (payload.pricing = {}), {
+      subtotal: net,
+      discount_amount: 0,
+      delivery_amount: 0,
+      vat_amount: Math.round((gross - net) * 100) / 100,
+      total_amount: gross,
+      amount_paid: 0,
+      amount_due: gross,
+    });
+    // Every item in the pack is included in that one price.
+    for (const job of jobs) {
+      job.net_price = 0;
+      job.gross_price = 0;
+    }
+  }
+
   // On-account orders: re-resolve the credit facility server-side so a tampered
   // client can't claim account terms it doesn't have.
   const paymentMethod: string | null = payload.payment_method ?? null;
