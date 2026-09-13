@@ -389,6 +389,18 @@ export default function Checkout() {
       toast.error(storefrontGate.reason || "Checkout is temporarily unavailable for this branch.");
       return;
     }
+    if (fulfilment.none) {
+      toast.error("This store isn't accepting online orders at the moment.");
+      return;
+    }
+    if (deliveryMethod === "collection" && !fulfilment.allowCollection) {
+      toast.error("Collection isn't available from this store.");
+      return;
+    }
+    if (deliveryMethod === "delivery" && !fulfilment.allowDelivery) {
+      toast.error("Delivery isn't available from this store.");
+      return;
+    }
     if (deliveryMethod === "collection" && !collectionBranch) {
       toast.error("No collection branch selected");
       return;
