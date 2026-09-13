@@ -40,6 +40,7 @@ const AdminSettings = () => {
             { value: "workflow", label: "Workflow", icon: Workflow },
             { value: "financial", label: "Financial", icon: Receipt },
             { value: "quotes", label: "Quotes", icon: ScrollText },
+            { value: "sample-pack", label: "Sample Pack", icon: PackageOpen },
             { value: "uploads", label: "Uploads & Proofs", icon: Upload },
             { value: "photo-library", label: "Photo Library", icon: Images },
             { value: "notifications", label: "Notifications", icon: Bell },
