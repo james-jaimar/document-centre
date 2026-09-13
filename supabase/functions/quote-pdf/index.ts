@@ -737,7 +737,9 @@ Deno.serve(async (req) => {
       drawText(page, qty.toFixed(2),                  C.qty.x,   fy, { size: 9, align: "right", width: C.qty.w - 4 });
       drawText(page, up.toFixed(2),                   C.unit.x,  fy, { size: 9, align: "right", width: C.unit.w - 4 });
       drawText(page, "",                              C.disc.x,  fy, { size: 9, align: "right", width: C.disc.w - 4 });
-      drawText(page, vr ? `${vr.toFixed(2)}%` : "",   C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      if (taxEnabled) {
+        drawText(page, vr ? `${vr.toFixed(2)}%` : "", C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      }
       drawText(page, lt.toFixed(2),                   C.total.x, fy, { size: 9, align: "right", width: C.total.w - 4 });
 
       // Specification breakdown — two columns of "Label: Value"
