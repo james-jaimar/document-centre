@@ -1016,7 +1016,18 @@ async function recordPaymentEvent(
         payment_status: newPaymentStatus,
       })
       .eq("id", order_id);
+
+    // Payment is an approval event for outsourced work — push it to the
+    // supplier tenant (idempotent on orders.source_order_id).
+    if (newPaymentStatus === "paid") {
+      try {
+        await mirrorSupplierOrders(admin, order_id);
+      } catch (e) {
+        console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+      }
+    }
   }
+
 
   // Status history
   await admin.from("status_history").insert({
