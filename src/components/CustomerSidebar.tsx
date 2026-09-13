@@ -40,6 +40,7 @@ export default function CustomerSidebar() {
   const isAuthenticated = !!user && !isAnon;
   const { activeBranch } = useBranch();
   const { homePath, shopPath, shopEnabled } = useStorefrontNav();
+  const { eligible: samplePackEligible } = useSamplePack();
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
