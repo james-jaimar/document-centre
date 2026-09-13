@@ -7,6 +7,8 @@ import {
   usePackPricingOverridesForFamily,
 } from "@/hooks/useProductPackPricingOverrides";
 import PackPricingMatrixEditor from "@/components/pricing/PackPricingMatrixEditor";
+import SupplierPricingPanel from "@/components/pricing/SupplierPricingPanel";
+import { useOutsourcedPricing } from "@/hooks/useOutsourcedPricing";
 import FamilyPricingOptionsEditor from "@/components/pricing/FamilyPricingOptionsEditor";
 import { normalizeAddons, normalizeOptions, type PricingAddon, type PricingOption } from "@/lib/pricing/packOptions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -92,6 +94,8 @@ function TenantFamilyRow({
   const remove = useDeletePackPricingOverride();
 
   const initialBlocks = (tenantOverride?.quantity_blocks ?? []) as QuantityBlock[];
+  const outsourced = useOutsourcedPricing(tenantId, familyId);
+  const effectiveBlocks = initialBlocks.length > 0 ? initialBlocks : masterBlocks;
   const overriddenAddons = Array.isArray(tenantOverride?.pricing_addons)
     ? normalizeAddons(tenantOverride!.pricing_addons)
     : null;
