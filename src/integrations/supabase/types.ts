@@ -4502,9 +4502,13 @@ export type Database = {
           production_branch_id: string | null
           ready_at: string | null
           source_channel: string | null
+          source_order_id: string | null
           storefront_name: string | null
           submitted_at: string | null
           subtotal: number
+          supplier_link_id: string | null
+          supplier_order_id: string | null
+          supplier_status: string | null
           tenant_id: string | null
           total_amount: number
           total_price: number
@@ -4560,9 +4564,13 @@ export type Database = {
           production_branch_id?: string | null
           ready_at?: string | null
           source_channel?: string | null
+          source_order_id?: string | null
           storefront_name?: string | null
           submitted_at?: string | null
           subtotal?: number
+          supplier_link_id?: string | null
+          supplier_order_id?: string | null
+          supplier_status?: string | null
           tenant_id?: string | null
           total_amount?: number
           total_price?: number
@@ -4618,9 +4626,13 @@ export type Database = {
           production_branch_id?: string | null
           ready_at?: string | null
           source_channel?: string | null
+          source_order_id?: string | null
           storefront_name?: string | null
           submitted_at?: string | null
           subtotal?: number
+          supplier_link_id?: string | null
+          supplier_order_id?: string | null
+          supplier_status?: string | null
           tenant_id?: string | null
           total_amount?: number
           total_price?: number
@@ -4679,6 +4691,27 @@ export type Database = {
             columns: ["production_branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_source_order_id_fkey"
+            columns: ["source_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_supplier_link_id_fkey"
+            columns: ["supplier_link_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_links"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_supplier_order_id_fkey"
+            columns: ["supplier_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
           {
@@ -6141,6 +6174,68 @@ export type Database = {
         }
         Relationships: []
       }
+      product_supplier_assignments: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          product_family_id: string
+          supplier_link_id: string
+          supplier_product_family_id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          product_family_id: string
+          supplier_link_id: string
+          supplier_product_family_id: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          product_family_id?: string
+          supplier_link_id?: string
+          supplier_product_family_id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_supplier_assignments_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_supplier_assignments_supplier_link_id_fkey"
+            columns: ["supplier_link_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_links"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_supplier_assignments_supplier_product_family_id_fkey"
+            columns: ["supplier_product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_supplier_assignments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_variant_links: {
         Row: {
           catalog_variant_id: string
@@ -7116,6 +7211,121 @@ export type Database = {
           {
             foreignKeyName: "subscription_acceptances_tenant_id_fkey"
             columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_links: {
+        Row: {
+          accepted_at: string | null
+          buyer_company_id: string | null
+          buyer_tenant_id: string | null
+          created_at: string
+          id: string
+          invite_code: string
+          invite_expires_at: string
+          notes: string | null
+          status: string
+          supplier_tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          buyer_company_id?: string | null
+          buyer_tenant_id?: string | null
+          created_at?: string
+          id?: string
+          invite_code: string
+          invite_expires_at?: string
+          notes?: string | null
+          status?: string
+          supplier_tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          buyer_company_id?: string | null
+          buyer_tenant_id?: string | null
+          created_at?: string
+          id?: string
+          invite_code?: string
+          invite_expires_at?: string
+          notes?: string | null
+          status?: string
+          supplier_tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_links_buyer_company_id_fkey"
+            columns: ["buyer_company_id"]
+            isOneToOne: false
+            referencedRelation: "customer_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_links_buyer_tenant_id_fkey"
+            columns: ["buyer_tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_links_supplier_tenant_id_fkey"
+            columns: ["supplier_tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_offerings: {
+        Row: {
+          created_at: string
+          id: string
+          is_offered: boolean
+          lead_time_days: number | null
+          min_quantity: number | null
+          notes: string | null
+          product_family_id: string
+          supplier_tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_offered?: boolean
+          lead_time_days?: number | null
+          min_quantity?: number | null
+          notes?: string | null
+          product_family_id: string
+          supplier_tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_offered?: boolean
+          lead_time_days?: number | null
+          min_quantity?: number | null
+          notes?: string | null
+          product_family_id?: string
+          supplier_tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_offerings_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_offerings_supplier_tenant_id_fkey"
+            columns: ["supplier_tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
@@ -8492,6 +8702,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      supplier_link_is_active: {
+        Args: { p_buyer_tenant: string; p_supplier_tenant: string }
+        Returns: boolean
+      }
       sync_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
         Returns: undefined
@@ -8542,6 +8756,10 @@ export type Database = {
       }
       user_can_view_branch_staff_profile: {
         Args: { _profile_id: string }
+        Returns: boolean
+      }
+      user_can_view_supplier_catalogue: {
+        Args: { p_supplier_tenant: string }
         Returns: boolean
       }
       user_can_write_branch_subscription: {
