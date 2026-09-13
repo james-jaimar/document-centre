@@ -999,6 +999,7 @@ Deno.serve(async (req) => {
         .update({
           storage_bucket: "documents",
           storage_path: path,
+          renderer_version: RENDERER_VERSION,
           total_amount: order.total_amount,
           amount_paid: order.amount_paid,
           currency: order.currency,
