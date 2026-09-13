@@ -7,7 +7,7 @@
  * an explicit approval tick before Add to cart.
  */
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -122,6 +122,9 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   // ── State
   const [spec, setSpec] = useState<UploadedArtworkSpec | null>(null);
   const [quantity, setQuantity] = useState(1);
+  /** Sample pack items are always a single copy at the flat pack price. */
+  const [samplePackParams] = useSearchParams();
+  const samplePack = samplePackParams.get("sample") === "1";
   const [approved, setApproved] = useState(false);
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
