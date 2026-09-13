@@ -477,12 +477,18 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
     // Does the buyer hold an account with this supplier? If so the order is
     // approved on arrival and gets a tax invoice; otherwise a proforma.
     const credit = await buyerCreditTerms(admin, link.supplier_tenant_id, link.buyer_company_id);
+    const mirrorBranchId = await supplierBranchId(
+      admin,
+      link.supplier_tenant_id,
+      (group.assignment as any)?.supplier_branch_id ?? null,
+    );
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
       .insert({
         app_id: order.app_id,
         tenant_id: link.supplier_tenant_id,
+        branch_id: mirrorBranchId,
         order_number: supplierOrderNum,
         source_order_id: order.id,
         supplier_link_id: link.id,
