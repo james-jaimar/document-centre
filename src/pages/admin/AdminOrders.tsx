@@ -127,6 +127,14 @@ export default function AdminOrders() {
     setPage(1);
   };
 
+  const toggleSamplePackOnly = () => {
+    const next = new URLSearchParams(searchParams);
+    if (samplePackOnly) next.delete("sample_pack");
+    else next.set("sample_pack", "1");
+    setSearchParams(next, { replace: true });
+    setPage(1);
+  };
+
   const toggleUnreadOnly = () => {
     const next = new URLSearchParams(searchParams);
     if (unreadOnly) next.delete("unread");
@@ -157,10 +165,11 @@ export default function AdminOrders() {
     setSearch("");
     setSelectedStatuses([]);
     setSelectedPaymentStatuses([]);
-    if (unreadOnly || unopenedOnly) {
+    if (unreadOnly || unopenedOnly || samplePackOnly) {
       const next = new URLSearchParams(searchParams);
       next.delete("unread");
       next.delete("unopened");
+      next.delete("sample_pack");
       setSearchParams(next, { replace: true });
     }
     setPage(1);
@@ -226,6 +235,18 @@ export default function AdminOrders() {
           >
             <PackagePlus className="h-3.5 w-3.5" />
             Not yet opened
+          </button>
+          <button
+            onClick={toggleSamplePackOnly}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+              (samplePackOnly
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:bg-muted")
+            }
+          >
+            <PackagePlus className="h-3.5 w-3.5" />
+            Sample packs
           </button>
           <button
             onClick={toggleUnreadOnly}
