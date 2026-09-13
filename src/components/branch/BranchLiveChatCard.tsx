@@ -145,9 +145,9 @@ export function BranchLiveChatCard({ tenantId, branchId, canManage = true }: Pro
 
             {!enabled && (
               <p className="text-xs text-muted-foreground">
-                {tenantSrc
-                  ? "Off — customers on this branch see the head-office chat widget instead."
-                  : "Off — no chat widget is shown to customers on this branch."}
+                {data && Object.keys(data.branch).length === 0 && tenantSrc
+                  ? "Not set up here — customers on this branch see the head-office chat widget."
+                  : "Off — no chat widget is shown to customers on this branch, even if head office has one."}
               </p>
             )}
 
