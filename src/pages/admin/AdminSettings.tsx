@@ -14,8 +14,9 @@ import { BillingTab } from "./settings/BillingTab";
 import { QuotesTab } from "./settings/QuotesTab";
 import { LegalTab } from "./settings/LegalTab";
 import { PhotoLibraryTab } from "./settings/PhotoLibraryTab";
+import { SamplePackTab } from "./settings/SamplePackTab";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard, Globe, ScrollText, Gavel, Images } from "lucide-react";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard, Globe, ScrollText, Gavel, Images, PackageOpen } from "lucide-react";
 
 const AdminSettings = () => {
   const [searchParams] = useSearchParams();
