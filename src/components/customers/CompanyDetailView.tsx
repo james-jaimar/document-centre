@@ -193,8 +193,7 @@ export function CompanyDetailView({ companyId, backPath, customerPath, orderPath
                 if (error) toast.error("Couldn't update", { description: error.message });
                 else {
                   toast.success("Another sample pack allowed");
-                  qc.invalidateQueries({ queryKey: ["customer_company", company.id] });
-                  qc.invalidateQueries({ queryKey: ["customer_companies"] });
+                  qc.invalidateQueries({ queryKey: ["customer-companies"] });
                 }
               }}
             >
