@@ -131,16 +131,19 @@ export function CustomerAddressDialog({ open, onOpenChange, customerProfileId, i
             <Input value={form.suburb ?? ""} onChange={(e) => handle("suburb", e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>City</Label>
-            <Input value={form.city ?? ""} onChange={(e) => handle("city", e.target.value)} />
+            <Label>City *</Label>
+            <Input className={cls("city")} value={form.city ?? ""} onChange={(e) => handle("city", e.target.value)} />
+            <Msg k="city" />
           </div>
           <div className="space-y-1">
-            <Label>Province</Label>
-            <Input value={form.province ?? ""} onChange={(e) => handle("province", e.target.value)} />
+            <Label>Province *</Label>
+            <Input className={cls("province")} value={form.province ?? ""} onChange={(e) => handle("province", e.target.value)} />
+            <Msg k="province" />
           </div>
           <div className="space-y-1">
-            <Label>Postal code</Label>
-            <Input value={form.postal_code ?? ""} onChange={(e) => handle("postal_code", e.target.value)} />
+            <Label>Postal code *</Label>
+            <Input className={cls("postal_code")} value={form.postal_code ?? ""} onChange={(e) => handle("postal_code", e.target.value)} />
+            <Msg k="postal_code" />
           </div>
           <div className="space-y-1 col-span-2">
             <Label>Country</Label>
