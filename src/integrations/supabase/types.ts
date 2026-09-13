@@ -8190,7 +8190,9 @@ export type Database = {
         Args: { p_order_number: string; p_sequence_no: number }
         Returns: string
       }
-      generate_order_number: { Args: { p_app_id: string }; Returns: string }
+      generate_order_number:
+        | { Args: { p_app_id: string }; Returns: string }
+        | { Args: { p_app_id: string; p_tenant_id: string }; Returns: string }
       generate_quote_number: { Args: { p_app_id: string }; Returns: string }
       get_branch_customers: {
         Args: { _branch_id: string }
