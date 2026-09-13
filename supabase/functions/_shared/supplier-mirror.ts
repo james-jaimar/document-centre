@@ -328,6 +328,41 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       0,
     );
 
+    // Carriage, priced on the supplier's own zones and bands.
+    const currency = order.currency || "ZAR";
+    let deliveryAmount = 0;
+    let shippingMeta: Record<string, unknown> | null = null;
+    let deliveryUnpriced: string | null = null;
+    if (order.fulfillment_type && order.fulfillment_type !== "collection") {
+      const deliveryAddress =
+        (addresses as any[]).find((a) => a.address_type === "delivery") ??
+        (addresses as any[])[0] ?? null;
+      const minKg = await supplierMinBillableKg(admin, link.supplier_tenant_id);
+      const { kg, source } = resolveBillableKg(order, group.jobs, minKg);
+      const quote = await quoteSupplierDelivery(
+        admin,
+        link.supplier_tenant_id,
+        deliveryAddress,
+        kg,
+        currency,
+      );
+      if ("reason" in quote) {
+        deliveryUnpriced = quote.reason;
+      } else {
+        deliveryAmount = quote.amount;
+        shippingMeta = {
+          amount: quote.amount,
+          currency,
+          zone_code: quote.zoneCode,
+          method_code: quote.methodCode,
+          billable_kg: kg,
+          weight_source: source,
+          priced_by: "supplier_rates",
+        };
+      }
+    }
+
+    const total = Math.round((subtotal + deliveryAmount) * 100) / 100;
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
