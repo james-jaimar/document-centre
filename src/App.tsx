@@ -78,6 +78,7 @@ import AdminProductCatalogue from "@/pages/admin/AdminProductCatalogue";
 import AdminPricing from "@/pages/admin/AdminPricing";
 import AdminRateCard from "@/pages/admin/AdminRateCard";
 import AdminCatalogPricing from "@/pages/admin/AdminCatalogPricing";
+import AdminSuppliers from "@/pages/admin/AdminSuppliers";
 
 import AdminDelivery from "@/pages/admin/AdminDelivery";
 import AdminBranchDelivery from "@/pages/admin/AdminBranchDelivery";
@@ -390,6 +391,11 @@ function AppRoutes() {
         <Route path="/admin/catalog-pricing" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminCatalogPricing />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/suppliers" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminSuppliers />
           </ProtectedRoute>
         } />
 

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { processAutoRefund } from "../_shared/refunds.ts";
 import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
+import { mirrorSupplierOrders } from "../_shared/supplier-mirror.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -672,6 +673,11 @@ async function createOrderWithJobs(
     } catch (e) {
       console.warn("[order-engine] account order job cascade failed (non-fatal):", e);
     }
+    try {
+      await mirrorSupplierOrders(admin, newOrder.id);
+    } catch (e) {
+      console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+    }
   }
 
   // Post the charge onto the customer's account ledger so the running balance
@@ -892,6 +898,15 @@ async function updateOrderStatus(
 
   const { error: updErr } = await admin.from("orders").update(updates).eq("id", order_id);
   if (updErr) return err(`Failed to update order: ${updErr.message}`);
+
+  // Push outsourced work into the supplier tenant once the order is approved.
+  if (admin_status === "approved" || admin_status === "in_production") {
+    try {
+      await mirrorSupplierOrders(admin, order_id);
+    } catch (e) {
+      console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+    }
+  }
 
   // Cascade to jobs that haven't reached this stage yet (best-effort)
   if (mapping.cascade_job_status) {
