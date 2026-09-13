@@ -96,6 +96,107 @@ async function supplierTradePriceMinor(
   return enabled && !inclusive ? Math.round(base * (1 + rate / 100)) : base;
 }
 
+/** Minimum billable weight configured on the supplier tenant. */
+async function supplierMinBillableKg(admin: Admin, tenantId: string): Promise<number> {
+  try {
+    const { data } = await admin.rpc("resolve_tenant_setting", {
+      p_tenant_id: tenantId,
+      p_category: "delivery",
+      p_key: "min_billable_kg",
+    });
+    const n = Number(typeof data === "string" ? data.replace(/"/g, "") : data);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch (_e) { /* fall through to default */ }
+  return 1;
+}
+
+function sheetGrams(widthMm: number, heightMm: number, gsm: number): number {
+  return (widthMm / 1000) * (heightMm / 1000) * gsm;
+}
+
+/**
+ * Billable weight for the trade order, in order of confidence:
+ * the buyer's own quoted weight → weights stamped on the lines →
+ * a calculation from the line specs → the supplier's minimum.
+ */
+function resolveBillableKg(
+  order: any,
+  jobs: any[],
+  minKg: number,
+): { kg: number; source: string } {
+  const quoted = Number(order?.metadata?.shipping?.billable_kg ?? 0);
+  if (Number.isFinite(quoted) && quoted > 0) {
+    return { kg: Math.max(quoted, minKg), source: "buyer_quote" };
+  }
+
+  const stamped = jobs.reduce((s: number, j: any) => s + (Number(j.weight_kg) || 0), 0);
+  if (stamped > 0) return { kg: Math.max(stamped, minKg), source: "job_weight" };
+
+  let grams = 0;
+  for (const j of jobs) {
+    const spec = j.configuration?.raw_spec ?? j.configuration ?? {};
+    const qty = Math.max(1, Number(j.quantity ?? spec.quantity ?? 1));
+    const w = Number(spec?.size?.width_mm ?? spec.width_mm ?? 210) || 210;
+    const h = Number(spec?.size?.height_mm ?? spec.height_mm ?? 297) || 297;
+    const gsm = Number(spec.paper_gsm ?? spec.gsm ?? 200) || 200;
+    const pages = Number(spec.page_count ?? spec.total_pages ?? 1) || 1;
+    const sheets = spec.is_duplex || spec.duplex ? Math.ceil(pages / 2) : pages;
+    grams += sheetGrams(w, h, gsm) * sheets * qty;
+  }
+  if (grams > 0) {
+    return { kg: Math.max(grams / 1000, minKg), source: "calculated" };
+  }
+  return { kg: minKg, source: "minimum" };
+}
+
+/**
+ * Carriage on the trade order, priced from the SUPPLIER's own zones and
+ * weight bands — never from what the buyer charged their customer.
+ */
+async function quoteSupplierDelivery(
+  admin: Admin,
+  supplierTenantId: string,
+  address: any,
+  billableKg: number,
+  currency: string,
+): Promise<{ amount: number; zoneCode: string | null; methodCode: string | null } | { reason: string }> {
+  if (!address) return { reason: "no_delivery_address_on_order" };
+
+  const { data: zoneId, error: zoneErr } = await admin.rpc("resolve_delivery_zone", {
+    p_tenant_id: supplierTenantId,
+    p_branch_id: null,
+    p_city: address.city ?? null,
+    p_postal_code: address.postal_code ?? null,
+    p_province: address.province ?? null,
+    p_country: address.country ?? "ZA",
+  });
+  if (zoneErr || !zoneId) return { reason: zoneErr?.message ?? "supplier_has_no_zone_for_address" };
+
+  const { data: rateRows, error: rateErr } = await admin.rpc("quote_delivery_rate", {
+    p_tenant_id: supplierTenantId,
+    p_branch_id: null,
+    p_zone_id: zoneId,
+    p_method_id: null,
+    p_billable_kg: billableKg,
+    p_currency: currency,
+  });
+  const rate = Array.isArray(rateRows) ? rateRows[0] : rateRows;
+  if (rateErr || !rate) return { reason: rateErr?.message ?? "supplier_has_no_rate_for_weight" };
+
+  const [{ data: zoneRow }, { data: methodRow }] = await Promise.all([
+    admin.from("delivery_zones").select("code, label").eq("id", zoneId).maybeSingle(),
+    rate.method_id
+      ? admin.from("delivery_methods").select("code, label").eq("id", rate.method_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  return {
+    amount: Number(rate.price) || 0,
+    zoneCode: zoneRow?.code ?? zoneRow?.label ?? null,
+    methodCode: methodRow?.code ?? methodRow?.label ?? null,
+  };
+}
+
 export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promise<void> {
   const { data: order } = await admin
     .from("orders")
