@@ -601,19 +601,19 @@ export default function Checkout() {
       }
 
       // Save delivery address to the customer's address book if requested.
-      if (saveAddress && deliveryMethod === "delivery" && user && address.line1.trim()) {
+      if (saveAddress && deliveryMethod === "delivery" && user && cleanAddress.line1.trim()) {
         try {
           await createSavedAddress.mutateAsync({
             address_type: "delivery",
-            contact_name: address.contact_name || null,
-            company_name: address.company_name || null,
-            phone: address.phone || null,
-            email: address.email || null,
-            line1: address.line1 || null,
-            line2: address.line2 || null,
-            city: address.city || null,
-            province: address.province || null,
-            postal_code: address.postal_code || null,
+            contact_name: cleanAddress.contact_name || null,
+            company_name: cleanAddress.company_name || null,
+            phone: cleanAddress.phone || null,
+            email: cleanAddress.email || null,
+            line1: cleanAddress.line1 || null,
+            line2: cleanAddress.line2 || null,
+            city: cleanAddress.city || null,
+            province: cleanAddress.province || null,
+            postal_code: cleanAddress.postal_code || null,
             country: "South Africa",
           });
         } catch (e) {
