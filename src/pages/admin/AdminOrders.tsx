@@ -98,7 +98,7 @@ export default function AdminOrders() {
   const totalForTenant = totalData?.total || 0;
 
   const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || unopenedOnly;
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0 || unreadOnly || unopenedOnly || samplePackOnly;
 
   const { data, isLoading } = useAdminOrders(filters);
   const rawOrders = data?.orders || [];
