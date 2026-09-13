@@ -59,6 +59,18 @@ export default function Checkout() {
   const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
+  // Which fulfilment options this tenant/branch actually offers.
+  const fulfilment = useFulfilmentMethods();
+  // Keep the selected method inside what's allowed (and default to the first
+  // allowed one rather than always starting on collection).
+  useEffect(() => {
+    if (fulfilment.isLoading) return;
+    setDeliveryMethod((cur) => {
+      if (cur === "collection" && !fulfilment.allowCollection && fulfilment.allowDelivery) return "delivery";
+      if (cur === "delivery" && !fulfilment.allowDelivery && fulfilment.allowCollection) return "collection";
+      return cur;
+    });
+  }, [fulfilment.isLoading, fulfilment.allowCollection, fulfilment.allowDelivery]);
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
