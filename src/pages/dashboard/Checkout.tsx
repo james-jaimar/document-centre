@@ -26,6 +26,7 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useCurrencyConverter } from "@/hooks/useCurrencyProfiles";
 import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
+import { useSamplePackConfig } from "@/hooks/useSamplePack";
 import PriceTotals from "@/components/order/PriceTotals";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
@@ -70,6 +71,7 @@ export default function Checkout() {
   // fallback rate so shipping is quoted in the currency being charged.
   const { convert: convertFromBase } = useCurrencyConverter(currency, baseCurrency);
   const { toGross, showVatBreakdown, inclSuffix } = usePriceDisplay();
+  const { config: samplePackConfig } = useSamplePackConfig();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
   // Which fulfilment options this tenant/branch actually offers.
@@ -251,10 +253,15 @@ export default function Checkout() {
 
 
   const items = (cart?.order_items as any[]) ?? [];
-  const subtotal = items.reduce(
-    (sum, item) => sum + Number(item.unit_price) * item.quantity,
-    0
-  );
+  // A sample pack basket is charged as one flat fee with delivery included,
+  // so the individual items carry no price of their own.
+  const samplePackCart =
+    samplePackConfig.enabled &&
+    items.length > 0 &&
+    items.every((item) => (item.spec as any)?.sample_pack === true);
+  const subtotal = samplePackCart
+    ? samplePackConfig.price
+    : items.reduce((sum, item) => sum + Number(item.unit_price) * item.quantity, 0);
 
   // Shipping quote (only relevant when delivery is selected)
   const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null);
@@ -350,7 +357,12 @@ export default function Checkout() {
   }, [selectedMethodId, quoteKey, tenantId, collectionBranch?.id, currency]);
 
 
-  const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
+  // Sample packs are sold delivered, so there is never a separate charge.
+  const deliveryFee = samplePackCart
+    ? 0
+    : deliveryMethod === "delivery"
+    ? (shippingQuote?.price ?? 0)
+    : 0;
 
   // Promo code / discount handling
   const [promoInput, setPromoInput] = useState("");
@@ -465,7 +477,11 @@ export default function Checkout() {
       toast.error("Still calculating delivery — one moment.");
       return;
     }
-    if (deliveryMethod === "delivery" && (!shippingQuote || shippingQuote.price == null)) {
+    if (
+      !samplePackCart &&
+      deliveryMethod === "delivery" &&
+      (!shippingQuote || shippingQuote.price == null)
+    ) {
       toast.error("Please choose a delivery address and option so we can add the delivery fee.");
       return;
     }
@@ -518,6 +534,7 @@ export default function Checkout() {
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
         deliveryBillableKg: shippingQuote?.billableKg ?? undefined,
+        samplePack: samplePackCart,
       });
 
       // Record immutable Terms / Privacy acceptance against the new order.
