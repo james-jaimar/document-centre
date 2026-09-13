@@ -634,7 +634,7 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         await admin.from("customer_account_ledger").insert({
           tenant_id: link.supplier_tenant_id,
           app_id: order.app_id,
-          branch_id: null,
+          branch_id: mirrorBranchId,
           company_id: link.buyer_company_id,
           customer_profile_id: null,
           entry_type: "charge",
