@@ -611,6 +611,7 @@ function GroupCard({
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "single")}
           parentBlocks={parentBlocks}
+          lockedCosts={lockedCosts}
         />
         <SidesColumn
           heading="Double-sided"
