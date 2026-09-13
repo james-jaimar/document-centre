@@ -430,6 +430,8 @@ export function usePlaceOrder() {
       deliveryMethodCode?: string;
       deliveryZoneCode?: string;
       deliveryBillableKg?: number;
+      /** Fixed-price sample pack: the server prices it, delivery included. */
+      samplePack?: boolean;
       deliveryAddress?: {
         contact_name?: string;
         company_name?: string;
