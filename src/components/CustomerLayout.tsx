@@ -245,11 +245,7 @@ function CustomerLayoutInner() {
       <div style={tenantStyle}>
         <BranchPicker />
         <CustomerMobileLayout />
-        <TenantChatWidget
-          isDemo={!!tenant?.is_demo}
-          tawkEnabled={integrations.tawk_enabled === true}
-          tawkPropertyId={String(integrations.tawk_property_id || "")}
-        />
+        <LiveChatWidget src={liveChat.src} />
       </div>
     );
   }
@@ -315,11 +311,7 @@ function CustomerLayoutInner() {
         </div>
       </div>
 
-      <TenantChatWidget
-        isDemo={!!tenant?.is_demo}
-        tawkEnabled={integrations.tawk_enabled === true}
-        tawkPropertyId={String(integrations.tawk_property_id || "")}
-      />
+      <LiveChatWidget src={liveChat.src} />
     </div>
   );
 }
