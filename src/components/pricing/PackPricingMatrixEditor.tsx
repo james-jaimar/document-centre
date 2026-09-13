@@ -431,6 +431,8 @@ export default function PackPricingMatrixEditor({
         </div>
       )}
 
+      {headerExtra}
+
       {/* Groups */}
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground italic py-6 text-center border border-dashed rounded-md">
@@ -458,6 +460,7 @@ export default function PackPricingMatrixEditor({
               onFillTrade={fillTradeFromConsumer}
               onAutoWeigh={autoWeighGroup}
               parentBlocks={parentBlocks}
+              lockedCosts={lockedCosts}
               onDeleteGroup={deleteGroup}
             />
           ))}
