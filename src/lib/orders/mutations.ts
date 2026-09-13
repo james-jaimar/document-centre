@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { CURRENT_INVOICE_RENDERER_VERSION } from "./invoiceRenderer";
 import type {
   CreateOrderPayload,
   UpdateJobStatusPayload,
