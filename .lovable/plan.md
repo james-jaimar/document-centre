@@ -40,6 +40,16 @@ Payment goes through the usual checkout — PayFast or invoice, depending on wha
 - Delivery is zero-rated on these orders regardless of weight or zone.
 - If an item is removed so the pack is incomplete, the order reverts to normal pricing and the sample pack flag is dropped — no way to get a single calendar at R495.
 
+## The supplier side (Impress Print)
+
+The pack is printed by Impress Print, so the order has to land there as something they can actually process and invoice. A quantity of one doesn't exist anywhere on their trade ladder, so the copy would price at nothing sensible. Fix it with a dedicated trade item rather than bending the ladders.
+
+- In the supplier's **Wholesale catalogue**, a new **Trade sample pack** entry: on/off, a trade price (what they charge you for one of each), and the list of their products it covers. They set it up once; it's never shown to their other customers.
+- When a sample pack order comes across, the copied order carries **the three artwork items at quantity one each**, priced at zero, plus **one "Trade sample pack" line** at the agreed trade price. Production sees exactly what to print; accounts sees one charge.
+- The copied order is badged "Sample pack" on their side too, so it can't be mistaken for a normal repeat job.
+- Delivery on the copied order is priced from their own rates as it already is — that carriage is a real cost to you, so your R495 is not cent-for-cent; your own admin order screen shows trade price + carriage against the R495 collected, so you can see exactly what each pack costs you and adjust the R495 if it's underwater.
+- If the supplier hasn't set a trade sample pack price, the order still goes across but is flagged "sample pack not priced" on both sides instead of silently landing at zero.
+
 ## Technical notes
 
 - New tenant setting category `sample_pack`: `enabled`, `price_minor`, `family_ids[]`, `trade_only`, `one_per_company`, `headline`, `blurb`.
