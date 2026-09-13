@@ -346,6 +346,23 @@ Deno.serve(async (req) => {
       if (s.category === "invoices") invoicesCat[s.setting_key] = s.setting_value;
     });
 
+    // Branch overrides win over tenant financial defaults.
+    for (const r of (branchFinancialRows as any[]) ?? []) {
+      if (r?.setting_value !== undefined && r?.setting_value !== null) {
+        financial[r.setting_key] = r.setting_value;
+      }
+    }
+
+    // VAT is only printed when the tenant/branch actually has tax switched on.
+    // Historic tenants with a rate but no explicit flag stay "on".
+    const resolvedTaxRate = Number(financial.tax_rate ?? 0) || 0;
+    const taxEnabled =
+      (financial.tax_enabled === undefined || financial.tax_enabled === null
+        ? resolvedTaxRate > 0
+        : !!financial.tax_enabled) && resolvedTaxRate > 0;
+
+
+
     // Branding merge: tenant.settings.branding + tenant_settings table
     const tSettingsJson = (tenant?.settings ?? {}) as any;
     const branding = { ...(tSettingsJson.branding ?? {}), ...brandingTbl };
