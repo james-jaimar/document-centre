@@ -812,6 +812,8 @@ export function usePlaceOrder() {
           action: "createOrderWithJobs",
           hold_for_payment: input.holdForPayment === true,
           payment_method: input.paymentMethod ?? null,
+          // The server re-checks eligibility and sets the flat pack price.
+          sample_pack: input.samplePack === true,
           app_slug: app.slug,
           tenant_id: orderTenantId,
           branch_id: orderBranchId,
