@@ -164,6 +164,39 @@ export function CompanyDetailView({ companyId, backPath, customerPath, orderPath
             </div>
           </Card>
 
+          <Card className="flex flex-wrap items-center justify-between gap-4 p-6">
+            <div>
+              <div className="text-xs text-muted-foreground">Sample packs</div>
+              <div className="text-lg font-semibold">
+                {Number((company as any).sample_pack_allowance ?? 1)} allowed
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Raise this if this business genuinely needs another sample pack.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              disabled={allowanceSaving}
+              onClick={async () => {
+                setAllowanceSaving(true);
+                const next = Number((company as any).sample_pack_allowance ?? 1) + 1;
+                const { error } = await supabase
+                  .from("customer_companies")
+                  .update({ sample_pack_allowance: next } as any)
+                  .eq("id", company.id);
+                setAllowanceSaving(false);
+                if (error) toast.error("Couldn't update", { description: error.message });
+                else {
+                  toast.success("Another sample pack allowed");
+                  qc.invalidateQueries({ queryKey: ["customer_company", company.id] });
+                  qc.invalidateQueries({ queryKey: ["customer_companies"] });
+                }
+              }}
+            >
+              Allow another sample pack
+            </Button>
+          </Card>
+
           <AccountLedgerPanel
             companyId={company.id}
             creditLimit={company.credit_limit}
