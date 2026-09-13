@@ -12,16 +12,9 @@ import {
 } from "https://esm.sh/pdf-lib@1.17.1";
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
-
-/* ─── Layout version ──────────────────────────────────────────────────────────
- * BUMP THIS whenever the invoice/proforma layout or wording changes. Stored
- * PDFs stamped with an older version are treated as stale and re-rendered the
- * next time they are viewed, downloaded or emailed.
- * Must stay in sync with CURRENT_INVOICE_RENDERER_VERSION in
- * src/lib/orders/invoiceRenderer.ts.
- * v2 — hide VAT column/row when tax is disabled; proforma terms reworded.
- */
-const RENDERER_VERSION = 2;
+// Layout version stamped onto every generated PDF — bump it there when the
+// invoice layout or wording changes so stored files re-render.
+import { INVOICE_RENDERER_VERSION as RENDERER_VERSION } from "../_shared/invoice-renderer.ts";
 
 
 /* ─── Embedded TrueType font (cached across warm invocations) ─────────────── */
