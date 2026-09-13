@@ -38,6 +38,13 @@ interface Props {
   /** Only meaningful for tenant/branch scopes — clears the override row. */
   onRevertToParent?: () => Promise<void> | void;
   reverting?: boolean;
+  /**
+   * packBlockKey → buy price (minor units) coming from a trade supplier.
+   * When present the Cost column is read-only and a margin is shown.
+   */
+  lockedCosts?: Map<string, number>;
+  /** Panel rendered above the ladders (supplier banner / pull action). */
+  headerExtra?: React.ReactNode;
 }
 
 const DEFAULT_QTY_TIERS = [100, 250, 500, 1000];
@@ -63,6 +70,8 @@ export default function PackPricingMatrixEditor({
   onSave,
   onRevertToParent,
   reverting = false,
+  lockedCosts,
+  headerExtra,
 }: Props) {
   const [blocks, setBlocks] = useState<QuantityBlock[]>(initialBlocks ?? []);
   const [dirty, setDirty] = useState(false);
