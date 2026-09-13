@@ -643,24 +643,38 @@ export default function Checkout() {
           {/* Delivery Method */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Delivery Method</h3>
-            <RadioGroup
-              value={deliveryMethod}
-              onValueChange={(v) => setDeliveryMethod(v as "collection" | "delivery")}
-              className="space-y-2"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="collection" id="collection" />
-                <Label htmlFor="collection" className="cursor-pointer">
-                  Collection — Pick up from our branch
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="delivery" id="delivery" />
-                <Label htmlFor="delivery" className="cursor-pointer">
-                  Delivery — Ship to your address
-                </Label>
-              </div>
-            </RadioGroup>
+            {fulfilment.none ? (
+              <p className="text-sm text-destructive">
+                This store isn't accepting online orders at the moment — no delivery or
+                collection option has been set up. Please contact us to place your order.
+              </p>
+            ) : fulfilment.allowCollection && fulfilment.allowDelivery ? (
+              <RadioGroup
+                value={deliveryMethod}
+                onValueChange={(v) => setDeliveryMethod(v as "collection" | "delivery")}
+                className="space-y-2"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="collection" id="collection" />
+                  <Label htmlFor="collection" className="cursor-pointer">
+                    Collection — Pick up from our branch
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="delivery" id="delivery" />
+                  <Label htmlFor="delivery" className="cursor-pointer">
+                    Delivery — Ship to your address
+                  </Label>
+                </div>
+              </RadioGroup>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {fulfilment.allowDelivery
+                  ? "Delivery — Ship to your address"
+                  : "Collection — Pick up from our branch"}
+              </p>
+            )}
+
 
             {/* Branch is locked to the active storefront branch */}
             {deliveryMethod === "collection" && collectionBranch && (
