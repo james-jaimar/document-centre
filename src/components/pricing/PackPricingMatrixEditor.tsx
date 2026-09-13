@@ -621,6 +621,7 @@ function GroupCard({
           onDeleteBlock={onDeleteBlock}
           onAddRow={() => onAddQty(group, "double")}
           parentBlocks={parentBlocks}
+          lockedCosts={lockedCosts}
         />
       </div>
 
