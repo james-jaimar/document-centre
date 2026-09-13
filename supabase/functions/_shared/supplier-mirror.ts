@@ -456,10 +456,11 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       job_name: j.job_name,
       quantity: j.quantity,
       unit_label: j.unit_label,
-      net_price: tradeByJob.get(j.id) ?? 0,
-      cost_price: tradeByJob.get(j.id) ?? 0,
-      vat_rate: j.vat_rate ?? 15,
+      net_price: round2((tradeByJob.get(j.id) ?? 0) / uplift),
+      cost_price: round2((tradeByJob.get(j.id) ?? 0) / uplift),
+      vat_rate: uplift > 1 ? Math.round((uplift - 1) * 100) : 0,
       gross_price: tradeByJob.get(j.id) ?? 0,
+
       product_snapshot: {
         ...(j.product_snapshot || {}),
         product_family_id:
