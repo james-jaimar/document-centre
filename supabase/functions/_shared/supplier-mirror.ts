@@ -378,7 +378,19 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
       }
     }
 
-    const total = Math.round((subtotal + deliveryAmount) * 100) / 100;
+    // The trade figures are VAT inclusive. Split them the way the supplier's
+    // own books expect (net + VAT) so the invoice adds up.
+    const uplift = await supplierTaxUplift(admin, link.supplier_tenant_id);
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const grossTotal = round2(subtotal + deliveryAmount);
+    const netSubtotal = round2(subtotal / uplift);
+    const netDelivery = round2(deliveryAmount / uplift);
+    const vatAmount = round2(grossTotal - netSubtotal - netDelivery);
+    const total = grossTotal;
+
+    // Does the buyer hold an account with this supplier? If so the order is
+    // approved on arrival and gets a tax invoice; otherwise a proforma.
+    const credit = await buyerCreditTerms(admin, link.supplier_tenant_id, link.buyer_company_id);
 
     const { data: mirror, error: mErr } = await admin
       .from("orders")
@@ -394,13 +406,14 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
         customer_email: order.customer_email,
         customer_name: buyerCompanyName ?? order.customer_name,
         company_name: buyerCompanyName ?? order.company_name,
-        admin_status: "new_order",
+        admin_status: credit ? "approved" : "new_order",
         customer_status: "in_production",
         payment_status: "unpaid",
         fulfilment_status: "pending",
         currency,
-        subtotal,
-        delivery_amount: deliveryAmount,
+        subtotal: netSubtotal,
+        delivery_amount: netDelivery,
+        vat_amount: vatAmount,
         total_amount: total,
         amount_due: total,
         date_required: order.date_required,
@@ -411,12 +424,22 @@ export async function mirrorSupplierOrders(admin: Admin, orderId: string): Promi
           trade_order: true,
           source_order_number: order.order_number,
           source_tenant_id: order.tenant_id,
-          ...(shippingMeta ? { shipping: shippingMeta } : {}),
+          ...(shippingMeta ? { shipping: { ...shippingMeta, amount: netDelivery, amount_incl_tax: deliveryAmount } } : {}),
           ...(deliveryUnpriced ? { supplier_delivery_unpriced: deliveryUnpriced } : {}),
+          ...(credit
+            ? {
+                payment_terms_days: credit.payment_terms_days,
+                mis_account_number: credit.account_ref,
+                due_date: new Date(
+                  Date.now() + credit.payment_terms_days * 86400000,
+                ).toISOString().slice(0, 10),
+              }
+            : {}),
         },
       })
       .select("id, order_number")
       .single();
+
     if (mErr || !mirror) {
       console.error("[supplier-mirror] mirror insert failed", mErr);
       continue;
