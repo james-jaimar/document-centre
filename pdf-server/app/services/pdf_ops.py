@@ -3702,6 +3702,8 @@ class PdfOps:
         dest_profile: str = "fogra39",
         intent: str = "relative_colorimetric",
         preserve_black: bool = True,
+        allow_already_cmyk_fast_path: bool = True,
+
     ) -> dict:
         """
         Convert a PDF to print-ready CMYK using a staged Ghostscript fallback
@@ -3730,7 +3732,8 @@ class PdfOps:
         pre_cmyk_boxes = _snapshot_page_boxes(src)
 
         # ── Already-CMYK fast path ───────────────────────────────────
-        if self._is_already_cmyk(src):
+        if allow_already_cmyk_fast_path and self._is_already_cmyk(src):
+
             try:
                 out_pdf.write_bytes(src.read_bytes())
                 timings["already_cmyk_copy"] = int((time.monotonic() - t0) * 1000)
