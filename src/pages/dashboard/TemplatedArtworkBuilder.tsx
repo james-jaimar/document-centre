@@ -827,8 +827,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             },
           });
 
-          const cancelled = cancelPlacing.current;
-          if (placed > 0) setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
+          const cancelled = cancelPlacing.current || signal.aborted;
+          if (placed > 0 && !cancelled)
+            setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
           await sourceUpload;
           const commonError = failureMessages[0];
           setPlacementResult({ total: count, placed, failed: [...failed], cancelled, error: commonError });
@@ -853,8 +854,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (isPdf) {
           try {
             sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${targetPage ?? "all"}-source.pdf`;
-            await uploadToS3(sourcePdfPath, rawFile);
+            await uploadToS3(sourcePdfPath, rawFile, signal);
           } catch (err) {
+            if (isAbortError(err) || signal.aborted) throw err;
             console.warn("[templated-artwork] original PDF upload failed", err);
             sourcePdfPath = null;
           }
@@ -863,15 +865,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         // PNG, not JPEG: keeps alpha so white-only vector artwork stays
         // transparent instead of arriving as a solid white block.
         const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
-        const uploaded = await uploadPhoto(file, itemId);
-        if (!uploaded) return;
+        if (signal.aborted) return;
+        const uploaded = await uploadPhoto(file, itemId, { signal });
+        if (!uploaded || signal.aborted) return;
         const next = buildValue(uploaded, isPdf ? 1 : undefined, sourcePdfPath);
         if (ph) applyValue(ph, next, targetPage ?? null);
         else setValues((prev) => ({ ...prev, [valueKey(placeholderId, targetPage ?? null)]: next }));
       } catch (err: any) {
-        console.error("[templated-artwork] upload failed", err);
-        toast.error(err?.message ?? "Upload failed");
+        if (isAbortError(err) || signal.aborted) {
+          toast.message("Upload cancelled");
+        } else {
+          console.error("[templated-artwork] upload failed", err);
+          toast.error(err?.message ?? "Upload failed");
+        }
       } finally {
+        if (!external) uploadAbort.current = null;
         setPlacing(null);
         setBusyId(null);
       }
