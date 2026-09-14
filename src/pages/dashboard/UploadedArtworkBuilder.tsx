@@ -450,8 +450,15 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         replacesCartItemId: replacesCartItemId || undefined,
       });
       invalidateUserOrderCaches(qc);
-      toast.success("Added to cart");
-      navigate(tenantPath("cart"));
+      if (packFlow.active && !packFlow.completesPack) {
+        toast.success(
+          `${family?.name ?? "Item"} added — ${packFlow.remainingAfterAdd} to go`,
+        );
+        navigate(tenantPath("sample-pack"));
+      } else {
+        toast.success(packFlow.active ? "Your sample pack is complete" : "Added to cart");
+        navigate(tenantPath("cart"));
+      }
     } catch (e: any) {
       console.error("[uploaded-artwork] add to cart failed", e);
       toast.error(e?.message ?? "Failed to add to cart");
