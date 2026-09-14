@@ -928,9 +928,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     async (photo: StockPhoto) => {
       if (!libraryTarget) return;
       const placeholderId = libraryTarget.id;
+      const controller = new AbortController();
+      uploadAbort.current = controller;
       setBusyId(libraryFor);
       try {
-        const file = await fetchStockPhotoFile(photo);
+        const file = await fetchStockPhotoFile(photo, controller.signal);
         await handlePickFile(
           placeholderId,
           file,
