@@ -226,13 +226,8 @@ function ComposeTab() {
     }
   };
 
-  const send = async (dryRun: boolean, testOnly = false) => {
-    if (!tenantId || !templateSlug || selected.size === 0) {
-      toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
-      return;
-    }
-    setSending(true); setResult(null); setProgress(null);
-    cancelRef.current = false;
+  /** Runs the first step only: creates the campaign and all personal links. Emails nobody. */
+  const prepareCampaign = async (dryRun: boolean, testOnly: boolean) => {
     const viaResend = !!resendAccount && useResend;
     const ids = testOnly ? [Array.from(selected)[0]] : Array.from(selected);
 
@@ -248,20 +243,34 @@ function ComposeTab() {
       },
     );
     if (!response.ok || !response.data) {
-      setSending(false);
       if (response.data) setResult(response.data);
       toast({
         title: dryRun ? "Dry run failed" : "Send failed",
         description: response.error ?? "No response from the email sender",
         variant: "destructive",
       });
-      return;
+      return null;
     }
     const data = response.data as any;
     setResult(data);
+    return { data, viaResend };
+  };
+
+  const send = async (dryRun: boolean, testOnly = false) => {
+    if (!tenantId || !templateSlug || selected.size === 0) {
+      toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
+      return;
+    }
+    setSending(true); setResult(null); setProgress(null);
+    cancelRef.current = false;
+
+    const outcome = await prepareCampaign(dryRun, testOnly);
+    if (!outcome) { setSending(false); return; }
+    const { data, viaResend } = outcome;
 
     // Resend campaigns continue in short batches so a long list can't time out.
     if (viaResend && !dryRun && data.campaign_id && !data.error) {
+      setPrepared(null);
       await runRemainingPhases(data.campaign_id, data.remaining ?? 0, data.totals?.skipped ?? 0);
       return;
     }
@@ -275,6 +284,30 @@ function ComposeTab() {
         : `Sending ${totals.sent ?? totals.pending ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`,
     });
   };
+
+  /** Prepare only — generates the campaign and every personal link, sends nothing. */
+  const prepare = async () => {
+    if (!tenantId || !templateSlug || selected.size === 0) {
+      toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
+      return;
+    }
+    setPreparing(true); setResult(null); setProgress(null);
+    const outcome = await prepareCampaign(false, false);
+    setPreparing(false);
+    if (!outcome) return;
+    const { data } = outcome;
+    if (data.error || !data.campaign_id) {
+      toast({ title: "Prepare failed", description: data.error ?? "No campaign was created", variant: "destructive" });
+      return;
+    }
+    const remaining = data.remaining ?? 0;
+    setPrepared({ campaignId: data.campaign_id, remaining, skipped: data.totals?.skipped ?? 0 });
+    toast({
+      title: "Ready to send",
+      description: `${remaining} recipients prepared. Nothing has been emailed yet.`,
+    });
+  };
+
 
   /** Uploads contacts batch by batch, then creates the broadcast. */
   const runRemainingPhases = async (campaignId: string, initialRemaining: number, skipped: number) => {
