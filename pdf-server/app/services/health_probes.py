@@ -102,6 +102,23 @@ def probe_binary(path_or_name: str) -> dict[str, Any]:
     return _timed(_check)
 
 
+def probe_icc_profiles() -> dict[str, Any]:
+    """Colour management is only real when the press profiles are on disk."""
+    def _check():
+        from app.services.icc_profiles import PROFILE_MAP, PROFILES_DIR
+
+        missing = [
+            slug for slug, filename in PROFILE_MAP.items()
+            if not (PROFILES_DIR / filename).is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                f"ICC profiles missing from {PROFILES_DIR}: {', '.join(sorted(missing))}"
+            )
+        return {"dir": str(PROFILES_DIR), "profiles": sorted(PROFILE_MAP)}
+    return _timed(_check)
+
+
 def all_probes(db: Session) -> dict[str, Any]:
     return {
         "postgres": probe_postgres(db),
@@ -109,6 +126,7 @@ def all_probes(db: Session) -> dict[str, Any]:
         "celery": probe_celery(),
         "s3": probe_s3(),
         "supabase": probe_supabase(),
+        "icc_profiles": probe_icc_profiles(),
         "binaries": {
             "ghostscript": probe_binary(settings.ghostscript_bin),
             "libreoffice": probe_binary(settings.libreoffice_bin),

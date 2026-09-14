@@ -130,7 +130,9 @@ WORKDIR /app
 COPY pdf-server/ /app/
 
 # ICC profiles + scratch dirs (Cloud Run filesystem is RO except /tmp).
-RUN bash /app/scripts/install-icc-profiles.sh || true \
+# No `|| true` here on purpose: an image without the press profiles silently
+# degrades every colour conversion, which is far worse than a failed build.
+RUN bash /app/scripts/install-icc-profiles.sh \
     && mkdir -p /app/storage /tmp/printforge /tmp/celery \
     && chmod +x /app/scripts/*.sh
 

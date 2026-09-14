@@ -89,63 +89,43 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
-_CMYK_TRANSFORM: Any | None = None
-_CMYK_TRANSFORM_TRIED = False
+_SRGB_PROFILE_BYTES: bytes | None = None
+_SRGB_PROFILE_TRIED = False
 
 
-def _cmyk_transform():
-    """sRGB → ISO Coated v2 (Fogra 39) transform, built once.
-
-    Pillow's plain ``convert("CMYK")`` is a naive formula with no profile —
-    photographs come out flat and dark. The press profiles already ship with
-    the server, so colour-manage through them and only fall back to the naive
-    path when a profile is missing (a job must never fail over colour).
-    """
-    global _CMYK_TRANSFORM, _CMYK_TRANSFORM_TRIED
-    if _CMYK_TRANSFORM_TRIED:
-        return _CMYK_TRANSFORM
-    _CMYK_TRANSFORM_TRIED = True
+def srgb_profile_bytes() -> bytes | None:
+    """Raw sRGB ICC profile, read once, for tagging embedded JPEGs."""
+    global _SRGB_PROFILE_BYTES, _SRGB_PROFILE_TRIED
+    if _SRGB_PROFILE_TRIED:
+        return _SRGB_PROFILE_BYTES
+    _SRGB_PROFILE_TRIED = True
     try:
-        from PIL import ImageCms
-
         from app.services.icc_profiles import resolve_profile
 
-        srgb = ImageCms.getOpenProfile(str(resolve_profile("srgb")))
-        press = ImageCms.getOpenProfile(str(resolve_profile("fogra39")))
-        _CMYK_TRANSFORM = ImageCms.buildTransformFromOpenProfiles(
-            srgb,
-            press,
-            "RGB",
-            "CMYK",
-            renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC,
-            flags=ImageCms.Flags.BLACKPOINTCOMPENSATION,
-        )
-    except Exception as exc:  # noqa: BLE001 - colour management is best effort
-        log.warning("templated_artwork: ICC CMYK transform unavailable: %s", exc)
-        _CMYK_TRANSFORM = None
-    return _CMYK_TRANSFORM
+        _SRGB_PROFILE_BYTES = Path(resolve_profile("srgb")).read_bytes()
+    except Exception as exc:  # noqa: BLE001 - tagging is best effort
+        log.warning("templated_artwork: sRGB profile unavailable: %s", exc)
+        _SRGB_PROFILE_BYTES = None
+    return _SRGB_PROFILE_BYTES
 
 
-def _to_cmyk(img: Image.Image) -> Image.Image:
-    """Flatten alpha onto white and convert to CMYK for press output."""
+def _to_srgb(img: Image.Image) -> Image.Image:
+    """Flatten alpha onto white and normalise to tagged sRGB.
+
+    Photos stay in RGB here on purpose. A single Ghostscript ICC pass at the
+    end of assembly converts the whole finished sheet to the press profile,
+    so the images, the template artwork and the flat colours all go through
+    one colour-managed conversion instead of a per-image one that leaves the
+    page untagged.
+    """
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
         bg = Image.new("RGB", img.size, (255, 255, 255))
         rgba = img.convert("RGBA")
         bg.paste(rgba, mask=rgba.split()[-1])
         img = bg
-    if img.mode == "CMYK":
-        return img
     if img.mode != "RGB":
         img = img.convert("RGB")
-    transform = _cmyk_transform()
-    if transform is not None:
-        try:
-            from PIL import ImageCms
-
-            return ImageCms.applyTransform(img, transform)
-        except Exception as exc:  # noqa: BLE001 - fall back to the naive path
-            log.warning("templated_artwork: ICC conversion failed: %s", exc)
-    return img.convert("CMYK")
+    return img
 
 
 
@@ -393,7 +373,7 @@ def _encoded_jpeg(
 ) -> tuple[bytes, bool]:
     """Encoded bytes for this image at the placed size, encoded once.
 
-    Opaque images become CMYK JPEG (press-correct). Only images with genuine
+    Opaque images become tagged sRGB JPEG. Only images with genuine
     see-through pixels stay RGBA PNG, so the transparency survives into the
     PDF — flattening those onto white would turn white-only artwork into a
     white box. Returns (bytes, has_alpha).
@@ -417,7 +397,15 @@ def _encoded_jpeg(
         src.convert("RGBA").save(buf, format="PNG", optimize=True)
     else:
         # 85 is press-indistinguishable from 92 and roughly halves the file.
-        _to_cmyk(src).save(buf, format="JPEG", quality=85, optimize=True)
+        # Stays sRGB (tagged where the profile is available) — the single
+        # Ghostscript ICC pass at the end converts the whole sheet to CMYK.
+        _to_srgb(src).save(
+            buf,
+            format="JPEG",
+            quality=85,
+            optimize=True,
+            icc_profile=srgb_profile_bytes(),
+        )
     data = buf.getvalue()
     cache[key] = data
     return data, alpha
@@ -825,6 +813,108 @@ def _stamp_vector_placements(
 
 
 # ---------------------------------------------------------------------------
+# Colour management
+# ---------------------------------------------------------------------------
+_OUTPUT_INTENT_NAMES: dict[str, tuple[str, str]] = {
+    "fogra39": ("Coated FOGRA39 (ISO 12647-2:2004)", "FOGRA39L"),
+    "fogra39_300": ("Coated FOGRA39 300% (ISO 12647-2:2004)", "FOGRA39L"),
+    "fogra51": ("PSO Coated v3 (FOGRA51)", "FOGRA51L"),
+}
+
+
+def _stamp_output_intent(pdf_path: Path, dest_profile: str) -> bool:
+    """Declare the press condition the file was converted for (PDF/X style).
+
+    Without this the CMYK numbers are untagged: every viewer and downstream
+    tool guesses, which is what makes a correctly converted file still look
+    flat on screen.
+    """
+    try:
+        import pikepdf
+
+        from app.services.icc_profiles import resolve_profile
+
+        profile_bytes = Path(resolve_profile(dest_profile)).read_bytes()
+        name, condition = _OUTPUT_INTENT_NAMES.get(
+            dest_profile, (dest_profile, dest_profile.upper()),
+        )
+        with pikepdf.open(str(pdf_path), allow_overwriting_input=True) as pdf:
+            stream = pdf.make_stream(profile_bytes)
+            stream["/N"] = 4
+            intent = pdf.make_indirect(pikepdf.Dictionary(
+                Type=pikepdf.Name("/OutputIntent"),
+                S=pikepdf.Name("/GTS_PDFX"),
+                OutputCondition=pikepdf.String(name),
+                OutputConditionIdentifier=pikepdf.String(condition),
+                Info=pikepdf.String(name),
+                RegistryName=pikepdf.String("http://www.color.org"),
+                DestOutputProfile=pdf.make_indirect(stream),
+            ))
+            pdf.Root["/OutputIntents"] = pdf.make_indirect(pikepdf.Array([intent]))
+            pdf.save(str(pdf_path))
+        return True
+    except Exception as exc:  # noqa: BLE001 - never fail a job over tagging
+        log.warning("templated_artwork: output intent not stamped: %s", exc)
+        return False
+
+
+def _colour_manage(
+    out_pdf: Path,
+    workspace: Workspace,
+    *,
+    dest_profile: str = "fogra39",
+    intent: str = "relative_colorimetric",
+) -> dict[str, Any]:
+    """One ICC conversion for the finished sheet, then tag the result.
+
+    Returns the report fragment plus ``_path`` — the file to upload. If the
+    conversion cannot be colour-managed the untouched composition is returned
+    with a warning so the job surfaces it instead of silently shipping flat
+    colour.
+    """
+    from app.services.pdf_ops import pdf_ops
+
+    result: dict[str, Any] = {
+        "_path": out_pdf,
+        "icc_profile": dest_profile,
+        "icc_intent": intent,
+        "icc_converted": False,
+        "output_intent_stamped": False,
+        "colour_warnings": [],
+    }
+    converted = workspace.path("templated-artwork-cmyk.pdf")
+    try:
+        stats = pdf_ops.to_print_ready_cmyk(
+            out_pdf,
+            converted,
+            dest_profile=dest_profile,
+            intent=intent,
+            preserve_black=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - ship the job, flag the colour
+        log.warning("templated_artwork: CMYK conversion failed: %s", exc)
+        result["colour_warnings"].append(
+            f"Colour was not converted to {dest_profile}: {exc}"
+        )
+        return result
+
+    result["_path"] = converted
+    result["icc_converted"] = bool(stats.get("icc_converted"))
+    result["icc_attempt"] = stats.get("attempt")
+    if not result["icc_converted"]:
+        result["colour_warnings"].append(
+            "Ghostscript fell back to an unmanaged conversion — check the ICC "
+            "profiles on the print server."
+        )
+    result["output_intent_stamped"] = _stamp_output_intent(converted, dest_profile)
+    if not result["output_intent_stamped"]:
+        result["colour_warnings"].append(
+            "Output intent could not be stamped — the file ships as untagged CMYK."
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -845,6 +935,9 @@ def assemble_templated_artwork(
     base_path = ta.get("base_pdf_path")
     if not base_path:
         raise ValueError("templated-artwork job has no base_pdf_path")
+
+    # Press condition for the final colour conversion + output intent.
+    icc_profile_slug = str(ta.get("icc_profile") or cfg.get("icc_profile") or "fogra39")
 
     defs = [d for d in (ta.get("placeholder_defs") or []) if isinstance(d, dict)]
     # Values without a page_index repeat on every page; values carrying one
@@ -1195,10 +1288,16 @@ def assemble_templated_artwork(
     # real PDF transparency group when the opacity is below 100%).
     vector_stamped = _stamp_vector_placements(out_pdf, placements)
 
+    # One colour-managed conversion for the finished sheet: photos, template
+    # artwork, flat fills and text all go through the same ICC pass, and the
+    # file is then tagged with the press condition it was built for.
+    colour = _colour_manage(out_pdf, workspace, dest_profile=icc_profile_slug)
+    final_pdf = colour.pop("_path")
+
     storage_path = unique_name(
         f"production/print-ready/{job_number}/templated-artwork", ".pdf",
     )
-    storage.upload(out_pdf, storage_path, "application/pdf")
+    storage.upload(final_pdf, storage_path, "application/pdf")
 
 
     report = {
@@ -1221,8 +1320,9 @@ def assemble_templated_artwork(
         "page_size_mm": base_geometry.get("media_mm"),
         "trim_size_mm": base_geometry.get("trim_mm") or base_geometry.get("spec_trim_mm"),
         "base_has_bleed": base_geometry.get("has_bleed"),
-        "fonts": _audit_fonts(out_pdf),
+        "fonts": _audit_fonts(final_pdf),
         "storage_path": storage_path,
+        **colour,
     }
     log.info("templated_artwork: assembled %s", report)
     return storage_path, report
