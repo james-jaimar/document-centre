@@ -228,6 +228,10 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   }, [spec, quantity, approved, orderItem?.id, orderItem?.spec]);
 
   // ── Upload + hard-block checks
+  /** Aborts the transfer currently in flight so the customer can start again. */
+  const uploadAbort = useRef<AbortController | null>(null);
+  const cancelUpload = useCallback(() => uploadAbort.current?.abort(), []);
+
   const handleFile = useCallback(
     async (file: File) => {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
