@@ -231,12 +231,10 @@ Deno.serve(async (req) => {
     }
 
     // ── Segment ────────────────────────────────────────────────────────────
-    // A fresh segment per campaign guarantees a broadcast cannot inherit
+    // One shared segment for every broadcast (Resend caps segments per
+    // account). Membership is trimmed below so a broadcast can never inherit
     // contacts selected for an earlier campaign.
-    const segmentId = await createSegment(
-      apiKey,
-      `${tenant.name} — ${template.name ?? templateSlug} — ${new Date().toISOString().slice(0, 19)}`,
-    );
+    const segmentId = await getOrCreateSegment(apiKey, SHARED_SEGMENT_NAME);
 
 
     // ── Campaign row ───────────────────────────────────────────────────────
