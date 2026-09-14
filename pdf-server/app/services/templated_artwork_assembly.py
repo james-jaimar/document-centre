@@ -373,7 +373,7 @@ def _encoded_jpeg(
 ) -> tuple[bytes, bool]:
     """Encoded bytes for this image at the placed size, encoded once.
 
-    Opaque images become CMYK JPEG (press-correct). Only images with genuine
+    Opaque images become tagged sRGB JPEG. Only images with genuine
     see-through pixels stay RGBA PNG, so the transparency survives into the
     PDF — flattening those onto white would turn white-only artwork into a
     white box. Returns (bytes, has_alpha).
@@ -1183,10 +1183,16 @@ def assemble_templated_artwork(
     # real PDF transparency group when the opacity is below 100%).
     vector_stamped = _stamp_vector_placements(out_pdf, placements)
 
+    # One colour-managed conversion for the finished sheet: photos, template
+    # artwork, flat fills and text all go through the same ICC pass, and the
+    # file is then tagged with the press condition it was built for.
+    colour = _colour_manage(out_pdf, workspace, dest_profile=icc_profile_slug)
+    final_pdf = colour.pop("_path")
+
     storage_path = unique_name(
         f"production/print-ready/{job_number}/templated-artwork", ".pdf",
     )
-    storage.upload(out_pdf, storage_path, "application/pdf")
+    storage.upload(final_pdf, storage_path, "application/pdf")
 
 
     report = {
