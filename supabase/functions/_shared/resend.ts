@@ -192,17 +192,45 @@ export async function getOrCreateSegment(apiKey: string, name: string): Promise<
   }
 }
 
-/** Contacts currently in a segment. */
+/**
+ * Every contact currently in a segment.
+ * Resend pages this endpoint, so we walk the cursor until it is exhausted —
+ * a single page would silently miss most of a 700-contact list.
+ */
 export async function listSegmentContacts(
   apiKey: string,
   segmentId: string,
 ): Promise<Array<{ id: string; email: string }>> {
-  const data = await call<{ data?: Array<{ id: string; email: string }> }>(
-    apiKey,
-    `/segments/${segmentId}/contacts`,
-  );
-  return data.data ?? [];
+  const out: Array<{ id: string; email: string }> = [];
+  const seen = new Set<string>();
+  const limit = 100;
+  let after: string | null = null;
+
+  for (let page = 0; page < 200; page++) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (after) qs.set("after", after);
+    const data = await call<{ data?: Array<{ id: string; email: string }> }>(
+      apiKey,
+      `/segments/${segmentId}/contacts?${qs.toString()}`,
+    );
+    const rows = data.data ?? [];
+    let added = 0;
+    for (const row of rows) {
+      const key = row.id ?? row.email;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+      added++;
+    }
+    // Stop on a short page, an empty page, or a page that repeats what we
+    // already hold (an API that ignores the cursor would otherwise loop).
+    if (rows.length < limit || added === 0) break;
+    after = rows[rows.length - 1]?.id ?? null;
+    if (!after) break;
+  }
+  return out;
 }
+
 
 /** Removes a contact from a segment. The contact itself stays on the account. */
 export async function removeContactFromSegment(
