@@ -1055,10 +1055,142 @@ const ORDER_STATUS_MAP: Record<string, {
   cancelled:          { customer_status: "cancelled",        fulfilment_status: "cancelled", cascade_job_status: "cancelled" },
 };
 
+/** Order stages, earliest first — used to compare progress. */
+const ORDER_STAGE_ORDER = [
+  "new_order",
+  "under_review",
+  "approved",
+  "in_production",
+  "sent_to_print",
+  "qa",
+  "ready_for_dispatch",
+  "dispatched",
+  "completed",
+];
+const orderStageRank = (s: string | null | undefined) => ORDER_STAGE_ORDER.indexOf(String(s ?? ""));
+
+/** Job stages, earliest first. */
+const JOB_STAGE_ORDER = [
+  "draft",
+  "submitted",
+  "under_review",
+  "approved_for_production",
+  "in_production",
+  "sent_to_print",
+  "qa",
+  "ready",
+  "dispatched",
+  "completed",
+];
+const jobStageRank = (s: string | null | undefined) => JOB_STAGE_ORDER.indexOf(String(s ?? ""));
+
+/**
+ * A supplier tenant moved a mirrored trade order forward. Report that back to
+ * the buyer's own order: supplier status, waybill details and — when the rest
+ * of the buyer's order is ready — the matching status transition so their
+ * customer is kept informed. The customer never sees the supplier.
+ */
+async function propagateSupplierStatus(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  supplierOrder: any,
+  adminStatus: string,
+  trackingNumber?: string | null,
+  trackingCarrier?: string | null,
+) {
+  const buyerOrderId = supplierOrder.source_order_id as string;
+  const { data: buyer } = await admin
+    .from("orders")
+    .select(
+      "id, app_id, tenant_id, order_number, admin_status, tracking_number, tracking_carrier, dispatched_at",
+    )
+    .eq("id", buyerOrderId)
+    .maybeSingle();
+  if (!buyer) return;
+
+  const nowIso = new Date().toISOString();
+  const buyerUpdates: Record<string, unknown> = {
+    supplier_status: adminStatus,
+    updated_at: nowIso,
+  };
+  // Never overwrite a waybill the buyer's own staff entered.
+  if (adminStatus === "dispatched") {
+    if (!buyer.tracking_number && trackingNumber) buyerUpdates.tracking_number = trackingNumber;
+    if (!buyer.tracking_carrier && trackingCarrier) buyerUpdates.tracking_carrier = trackingCarrier;
+    if (!buyer.dispatched_at) buyerUpdates.dispatched_at = nowIso;
+  }
+  await admin.from("orders").update(buyerUpdates).eq("id", buyerOrderId);
+
+  await admin.from("timeline_events").insert({
+    app_id: buyer.app_id,
+    tenant_id: buyer.tenant_id,
+    order_id: buyerOrderId,
+    event_type: "supplier_status_changed",
+    visibility: "admin",
+    actor_type: "system",
+    description:
+      adminStatus === "dispatched"
+        ? `Supplier dispatched trade order ${supplierOrder.order_number}` +
+          (trackingNumber ? ` — ${trackingCarrier ? `${trackingCarrier} ` : ""}${trackingNumber}` : "")
+        : `Supplier moved trade order ${supplierOrder.order_number} to ${adminStatus}`,
+    metadata: {
+      supplier_order_id: supplierOrder.id,
+      supplier_status: adminStatus,
+      tracking_number: trackingNumber ?? null,
+      tracking_carrier: trackingCarrier ?? null,
+    },
+  });
+
+  // Holds and cancellations are a flag for buyer staff, never automatic.
+  if (adminStatus === "on_hold" || adminStatus === "cancelled") return;
+
+  // Only advance the buyer's order when their in-house lines have caught up.
+  const targetJobStatus =
+    ORDER_STATUS_MAP[adminStatus]?.cascade_job_status ??
+    (adminStatus === "dispatched" ? "ready" : null);
+  if (targetJobStatus) {
+    const { data: buyerJobs = [] } = await admin
+      .from("order_jobs")
+      .select("id, job_status, product_snapshot")
+      .eq("order_id", buyerOrderId);
+    const { data: assignments = [] } = await admin
+      .from("product_supplier_assignments")
+      .select("product_family_id")
+      .eq("tenant_id", buyer.tenant_id)
+      .eq("is_active", true);
+    const outsourced = new Set((assignments as any[]).map((a) => a.product_family_id));
+    const need = jobStageRank(targetJobStatus);
+    const inHouseBehind = (buyerJobs as any[]).some((j) => {
+      const fam = j.product_snapshot?.product_family_id ?? j.product_snapshot?.product_family?.id;
+      if (fam && outsourced.has(fam)) return false;
+      if (["cancelled", "completed"].includes(String(j.job_status))) return false;
+      return jobStageRank(j.job_status) < need;
+    });
+    if (inHouseBehind) return;
+  }
+
+  // Forward only — never drag the buyer's order backwards.
+  if (orderStageRank(adminStatus) <= orderStageRank(buyer.admin_status)) return;
+
+  await updateOrderStatus(
+    admin,
+    userId,
+    {
+      order_id: buyerOrderId,
+      admin_status: adminStatus,
+      reason: `Supplier order ${supplierOrder.order_number}`,
+      tracking_number: buyer.tracking_number ?? trackingNumber ?? undefined,
+      tracking_carrier: buyer.tracking_carrier ?? trackingCarrier ?? undefined,
+    },
+    { skipAccess: true, propagated: true },
+  );
+}
+
 async function updateOrderStatus(
   admin: ReturnType<typeof createClient>,
   userId: string,
   payload: any,
+  opts: { skipAccess?: boolean; propagated?: boolean } = {},
 ) {
   const { order_id, admin_status, reason, tracking_number, tracking_carrier } = payload;
   if (!order_id || !admin_status) return err("Missing order_id or admin_status");
@@ -1073,13 +1205,18 @@ async function updateOrderStatus(
 
   const { data: order, error: oErr } = await admin
     .from("orders")
-    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, fulfillment_type")
+    .select(
+      "id, app_id, tenant_id, branch_id, order_number, admin_status, fulfillment_type, source_order_id",
+    )
     .eq("id", order_id)
     .single();
   if (oErr || !order) return err("Order not found", 404);
 
-  const denied = await assertOrderStaffAccess(admin, userId, order as any);
-  if (denied) return err(denied, 403);
+  if (!opts.skipAccess) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
+
 
   const fromStatus = (order as any).admin_status as string;
   const fulfillmentType = (order as any).fulfillment_type as string | null;
@@ -1159,6 +1296,25 @@ async function updateOrderStatus(
     description: `Order ${(order as any).order_number} status changed from ${fromStatus} to ${admin_status}`,
     metadata: { from_status: fromStatus, to_status: admin_status, reason, tracking_number, tracking_carrier },
   });
+
+  // This is a mirrored trade order: report progress and waybill back to the
+  // buyer's own order so their customer can be kept informed.
+  if ((order as any).source_order_id && !opts.propagated) {
+    try {
+      await propagateSupplierStatus(
+        admin,
+        userId,
+        order as any,
+        admin_status,
+        tracking_number,
+        tracking_carrier,
+      );
+    } catch (e) {
+      console.warn("[order-engine] supplier status propagation failed (non-fatal):", e);
+    }
+  }
+
+
 
   return json({
     success: true,

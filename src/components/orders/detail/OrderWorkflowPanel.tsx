@@ -40,7 +40,12 @@ interface Props {
     tracking_number?: string | null;
     tracking_carrier?: string | null;
     dispatched_at?: string | null;
+    supplier_status?: string | null;
+    source_order_id?: string | null;
+    supplier_order_id?: string | null;
+    metadata?: any;
     addresses?: any[];
+
   };
 }
 
@@ -118,6 +123,30 @@ export function OrderWorkflowPanel({ order }: Props) {
         </span>
         <StatusBadge {...ADMIN_STATUS_CONFIG[order.admin_status]} />
       </div>
+
+      {/* This order IS the supplier's copy of a trade partner's order */}
+      {order.source_order_id && (
+        <div className="rounded-md border border-dashed bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
+          <ArrowLeftRight className="h-3.5 w-3.5" />
+          <span>
+            Trade order
+            {order.metadata?.source_order_number ? ` for ${order.metadata.source_order_number}` : ""}
+            {" "}— progress and waybill are reported back to the trade partner automatically.
+          </span>
+        </div>
+      )}
+
+      {/* Buyer-side: how the supplier is getting on (staff only) */}
+      {!order.source_order_id && order.supplier_status && (
+        <div className="rounded-md border bg-muted/40 px-2 py-1.5 text-xs flex items-center gap-1.5">
+          <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Supplier progress:</span>
+          <span className="font-medium capitalize">
+            {String(order.supplier_status).replace(/_/g, " ")}
+          </span>
+        </div>
+      )}
+
 
       {/* Dispatched info */}
       {order.admin_status === "dispatched" && order.tracking_number && (
