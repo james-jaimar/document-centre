@@ -29,7 +29,40 @@ function backoffDelay(attempt: number): number {
   return base + jitter;
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new UploadCancelledError());
+      return;
+    }
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(t);
+      reject(new UploadCancelledError());
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
+/** Thrown when the customer stopped the transfer themselves. */
+export class UploadCancelledError extends Error {
+  readonly name = "UploadCancelledError";
+  constructor() {
+    super("Upload cancelled");
+  }
+}
+
+/** Did this failure come from the customer cancelling, not from a fault? */
+export function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof UploadCancelledError) return true;
+  const name = (err as { name?: string })?.name;
+  if (name === "AbortError" || name === "UploadCancelledError") return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /aborted|cancelled|canceled/i.test(msg) && /abort|cancel/i.test(name ?? msg);
+}
 
 function isTransientHttpStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
