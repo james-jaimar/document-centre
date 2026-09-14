@@ -61,6 +61,9 @@ Deno.serve(async (req) => {
     const brandMap: Record<string, any> = {};
     for (const r of (brandSettings ?? []) as any[]) brandMap[r.setting_key] = r.setting_value;
     const tenantLogoUrl = typeof brandMap.logo_url === "string" ? brandMap.logo_url : null;
+    const tenantLogoLightUrl = typeof brandMap.logo_light_url === "string" && brandMap.logo_light_url
+      ? brandMap.logo_light_url
+      : null;
     const primaryColor = typeof brandMap.primary_color === "string" ? brandMap.primary_color : null;
 
     // Heuristic: "already_completed" = a profile with this email has signed in at least once
@@ -74,6 +77,7 @@ Deno.serve(async (req) => {
     return json({
       tenant_name: tenant?.name ?? null,
       tenant_logo_url: tenantLogoUrl,
+      tenant_logo_light_url: tenantLogoLightUrl,
       primary_color: primaryColor,
       branch_name: branch?.name ?? null,
       branch_city: branch?.city ?? null,

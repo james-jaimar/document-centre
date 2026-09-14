@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface PageInfo {
   tenant_name: string | null;
   tenant_logo_url: string | null;
+  tenant_logo_light_url?: string | null;
   primary_color: string | null;
   branch_name: string | null;
   branch_city: string | null;
@@ -63,8 +64,12 @@ export default function Activate() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-12">
       <div className="max-w-md w-full bg-white border rounded-xl shadow-sm overflow-hidden">
         <div className="px-8 py-6 border-b" style={{ background: `linear-gradient(135deg, ${primary} 0%, #051640 100%)` }}>
-          {page?.tenant_logo_url ? (
-            <img src={page.tenant_logo_url} alt={page.tenant_name ?? ""} className="h-10 max-w-[200px] object-contain" />
+          {page?.tenant_logo_light_url || page?.tenant_logo_url ? (
+            <img
+              src={page.tenant_logo_light_url || page.tenant_logo_url!}
+              alt={page.tenant_name ?? ""}
+              className="h-10 max-w-[200px] object-contain"
+            />
           ) : (
             <div className="text-white text-lg font-semibold">{page?.tenant_name ?? "Document Centre"}</div>
           )}
