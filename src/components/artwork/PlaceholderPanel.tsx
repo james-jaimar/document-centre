@@ -28,6 +28,8 @@ interface Props {
   placeholder: ArtworkPlaceholder;
   value: TemplatedPlaceholderValue | undefined;
   busy?: boolean;
+  /** Stops the transfer that is currently running for this box. */
+  onCancelUpload?: () => void;
   active?: boolean;
   /** 1-based position, shown as a step chip so the eye has an entry point. */
   step?: number;
@@ -101,6 +103,7 @@ export default function PlaceholderPanel({
   placeholder,
   value,
   busy,
+  onCancelUpload,
   active,
   step,
   onFocus,
