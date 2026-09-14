@@ -89,63 +89,43 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
-_CMYK_TRANSFORM: Any | None = None
-_CMYK_TRANSFORM_TRIED = False
+_SRGB_PROFILE_BYTES: bytes | None = None
+_SRGB_PROFILE_TRIED = False
 
 
-def _cmyk_transform():
-    """sRGB → ISO Coated v2 (Fogra 39) transform, built once.
-
-    Pillow's plain ``convert("CMYK")`` is a naive formula with no profile —
-    photographs come out flat and dark. The press profiles already ship with
-    the server, so colour-manage through them and only fall back to the naive
-    path when a profile is missing (a job must never fail over colour).
-    """
-    global _CMYK_TRANSFORM, _CMYK_TRANSFORM_TRIED
-    if _CMYK_TRANSFORM_TRIED:
-        return _CMYK_TRANSFORM
-    _CMYK_TRANSFORM_TRIED = True
+def srgb_profile_bytes() -> bytes | None:
+    """Raw sRGB ICC profile, read once, for tagging embedded JPEGs."""
+    global _SRGB_PROFILE_BYTES, _SRGB_PROFILE_TRIED
+    if _SRGB_PROFILE_TRIED:
+        return _SRGB_PROFILE_BYTES
+    _SRGB_PROFILE_TRIED = True
     try:
-        from PIL import ImageCms
-
         from app.services.icc_profiles import resolve_profile
 
-        srgb = ImageCms.getOpenProfile(str(resolve_profile("srgb")))
-        press = ImageCms.getOpenProfile(str(resolve_profile("fogra39")))
-        _CMYK_TRANSFORM = ImageCms.buildTransformFromOpenProfiles(
-            srgb,
-            press,
-            "RGB",
-            "CMYK",
-            renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC,
-            flags=ImageCms.Flags.BLACKPOINTCOMPENSATION,
-        )
-    except Exception as exc:  # noqa: BLE001 - colour management is best effort
-        log.warning("templated_artwork: ICC CMYK transform unavailable: %s", exc)
-        _CMYK_TRANSFORM = None
-    return _CMYK_TRANSFORM
+        _SRGB_PROFILE_BYTES = Path(resolve_profile("srgb")).read_bytes()
+    except Exception as exc:  # noqa: BLE001 - tagging is best effort
+        log.warning("templated_artwork: sRGB profile unavailable: %s", exc)
+        _SRGB_PROFILE_BYTES = None
+    return _SRGB_PROFILE_BYTES
 
 
-def _to_cmyk(img: Image.Image) -> Image.Image:
-    """Flatten alpha onto white and convert to CMYK for press output."""
+def _to_srgb(img: Image.Image) -> Image.Image:
+    """Flatten alpha onto white and normalise to tagged sRGB.
+
+    Photos stay in RGB here on purpose. A single Ghostscript ICC pass at the
+    end of assembly converts the whole finished sheet to the press profile,
+    so the images, the template artwork and the flat colours all go through
+    one colour-managed conversion instead of a per-image one that leaves the
+    page untagged.
+    """
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
         bg = Image.new("RGB", img.size, (255, 255, 255))
         rgba = img.convert("RGBA")
         bg.paste(rgba, mask=rgba.split()[-1])
         img = bg
-    if img.mode == "CMYK":
-        return img
     if img.mode != "RGB":
         img = img.convert("RGB")
-    transform = _cmyk_transform()
-    if transform is not None:
-        try:
-            from PIL import ImageCms
-
-            return ImageCms.applyTransform(img, transform)
-        except Exception as exc:  # noqa: BLE001 - fall back to the naive path
-            log.warning("templated_artwork: ICC conversion failed: %s", exc)
-    return img.convert("CMYK")
+    return img
 
 
 
