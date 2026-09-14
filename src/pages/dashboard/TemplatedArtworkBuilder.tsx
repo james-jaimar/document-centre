@@ -1342,6 +1342,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                     placeholder={p}
                     value={values[key]}
                     busy={busyId === key}
+                    onCancelUpload={cancelUpload}
                     step={i + 1}
                     active={activeId === p.id}
                     onFocus={() => setActiveId(p.id)}
