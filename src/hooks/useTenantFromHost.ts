@@ -59,13 +59,10 @@ export function useTenantFromHost() {
         const slug = hostname.replace(`.${PLATFORM_DOMAIN}`, "");
         if (slug && !slug.includes(".")) {
           const { data } = await supabase
-            .from("tenants")
-            .select("id, slug, name, app_id")
-            .eq("slug", slug)
-            .eq("is_active", true)
+            .rpc("tenant_public_by_slug", { p_slug: slug })
             .maybeSingle();
           if (data) {
-            setTenant(data as HostTenant);
+            setTenant(data as unknown as HostTenant);
             setMatched(true);
           }
         }
@@ -75,13 +72,10 @@ export function useTenantFromHost() {
       // Custom domain (apex or www. form)
       const candidates = domainCandidates(rawHost, hostname);
       const { data } = await supabase
-        .from("tenants")
-        .select("id, slug, name, app_id")
-        .in("custom_domain", candidates)
-        .eq("is_active", true)
+        .rpc("tenant_public_by_domain", { p_domains: candidates })
         .maybeSingle();
       if (data) {
-        setTenant(data as HostTenant);
+        setTenant(data as unknown as HostTenant);
         setMatched(true);
       }
     };

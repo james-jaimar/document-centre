@@ -27,11 +27,9 @@ export function StorefrontRedirect({ path }: { path?: string }) {
     }
     (async () => {
       const { data } = await supabase
-        .from("tenants")
-        .select("slug")
-        .eq("id", tenantId)
+        .rpc("tenant_public_by_id", { p_id: tenantId })
         .maybeSingle();
-      setSlug(data?.slug ?? null);
+      setSlug((data as { slug?: string } | null)?.slug ?? null);
       setLoading(false);
     })();
   }, [tenantId, ctxLoading]);

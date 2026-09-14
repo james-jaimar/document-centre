@@ -32,12 +32,10 @@ export default function DemoGateGuard({ children }: { children: ReactNode }) {
     enabled: needsFallback && !!slug,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("tenants")
-        .select("id, name")
-        .eq("slug", slug!)
+        .rpc("tenant_public_by_slug", { p_slug: slug! })
         .maybeSingle();
       if (error) throw error;
-      return data;
+      return data as { id: string; name: string } | null;
     },
   });
 
