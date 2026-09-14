@@ -3623,50 +3623,76 @@ class PdfOps:
         DeviceCMYK / DeviceGray / DeviceN ink space and there are no RGB
         ICC-based colour spaces or RGB-tagged images.
 
-        Conservative — any uncertainty returns False so we still run the
-        full Ghostscript CMYK pass. Cheap (no rendering): just walks the
-        Resources/ColorSpace dictionary on each page.
+        Recurses into Form XObjects and Pattern resources — placed artwork
+        (a customer's uploaded PDF dropped into a template picture box) lives
+        in a nested form, and RGB hiding in there must still disqualify the
+        file. Conservative: any uncertainty returns False so we run the full
+        Ghostscript CMYK pass.
         """
+
+        def _rgb_marker(value) -> bool:
+            s = repr(value)
+            if "DeviceRGB" in s or "/CalRGB" in s:
+                return True
+            if "ICCBased" in s and "/N 3" in s:
+                return True
+            return False
+
+        seen: set[int] = set()
+
+        def _resources_ok(res, depth: int) -> bool:
+            """False when this resource dict (or anything it nests) uses RGB."""
+            if res is None or depth > 8:
+                return depth <= 8
+            if not hasattr(res, "get"):
+                return False
+            try:
+                cs = res.get("/ColorSpace")
+                if cs is not None:
+                    for _name, value in cs.items():
+                        if _rgb_marker(value):
+                            return False
+
+                for key in ("/XObject", "/Pattern"):
+                    container = res.get(key)
+                    if container is None:
+                        continue
+                    for _n, obj in container.items():
+                        try:
+                            objgen = getattr(obj, "objgen", None)
+                            if objgen:
+                                marker = hash(objgen)
+                                if marker in seen:
+                                    continue
+                                seen.add(marker)
+                        except Exception:
+                            return False
+                        subtype = str(obj.get("/Subtype") or "")
+                        if subtype == "/Image":
+                            cs2 = obj.get("/ColorSpace")
+                            if cs2 is not None and _rgb_marker(cs2):
+                                return False
+                            continue
+                        # Form XObjects and patterns carry their own resources.
+                        nested = obj.get("/Resources")
+                        if nested is not None and not _resources_ok(nested, depth + 1):
+                            return False
+            except Exception:
+                return False
+            return True
+
         try:
             with pikepdf.open(src) as pdf:
                 for page in pdf.pages:
                     res = page.get("/Resources")
                     if res is None:
                         continue
-                    # ColorSpace entries
-                    cs = res.get("/ColorSpace") if hasattr(res, "get") else None
-                    if cs is not None:
-                        try:
-                            for _name, value in cs.items():
-                                s = repr(value)
-                                # Any RGB-ish marker disqualifies the file.
-                                if "DeviceRGB" in s or "/CalRGB" in s:
-                                    return False
-                                if "ICCBased" in s and "/N 3" in s:
-                                    return False
-                        except Exception:
-                            return False
-                    # Image XObjects
-                    xo = res.get("/XObject") if hasattr(res, "get") else None
-                    if xo is not None:
-                        try:
-                            for _n, obj in xo.items():
-                                subtype = obj.get("/Subtype")
-                                if str(subtype) != "/Image":
-                                    continue
-                                cs2 = obj.get("/ColorSpace")
-                                if cs2 is None:
-                                    continue
-                                s = repr(cs2)
-                                if "DeviceRGB" in s or "/CalRGB" in s:
-                                    return False
-                                if "ICCBased" in s and "/N 3" in s:
-                                    return False
-                        except Exception:
-                            return False
+                    if not _resources_ok(res, 0):
+                        return False
             return True
         except Exception:
             return False
+
 
     def to_print_ready_cmyk(
         self,
@@ -3676,6 +3702,8 @@ class PdfOps:
         dest_profile: str = "fogra39",
         intent: str = "relative_colorimetric",
         preserve_black: bool = True,
+        allow_already_cmyk_fast_path: bool = True,
+
     ) -> dict:
         """
         Convert a PDF to print-ready CMYK using a staged Ghostscript fallback
@@ -3704,7 +3732,8 @@ class PdfOps:
         pre_cmyk_boxes = _snapshot_page_boxes(src)
 
         # ── Already-CMYK fast path ───────────────────────────────────
-        if self._is_already_cmyk(src):
+        if allow_already_cmyk_fast_path and self._is_already_cmyk(src):
+
             try:
                 out_pdf.write_bytes(src.read_bytes())
                 timings["already_cmyk_copy"] = int((time.monotonic() - t0) * 1000)

@@ -890,7 +890,11 @@ def _colour_manage(
             dest_profile=dest_profile,
             intent=intent,
             preserve_black=True,
+            # Templated sheets always mix template artwork with customer
+            # uploads — never skip the managed pass on a "looks CMYK" guess.
+            allow_already_cmyk_fast_path=False,
         )
+
     except Exception as exc:  # noqa: BLE001 - ship the job, flag the colour
         log.warning("templated_artwork: CMYK conversion failed: %s", exc)
         result["colour_warnings"].append(
