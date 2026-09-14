@@ -31,6 +31,7 @@ src/lib/artworkTemplates/renderTemplate.ts):
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import shutil
@@ -88,6 +89,43 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
+_CMYK_TRANSFORM: Any | None = None
+_CMYK_TRANSFORM_TRIED = False
+
+
+def _cmyk_transform():
+    """sRGB → ISO Coated v2 (Fogra 39) transform, built once.
+
+    Pillow's plain ``convert("CMYK")`` is a naive formula with no profile —
+    photographs come out flat and dark. The press profiles already ship with
+    the server, so colour-manage through them and only fall back to the naive
+    path when a profile is missing (a job must never fail over colour).
+    """
+    global _CMYK_TRANSFORM, _CMYK_TRANSFORM_TRIED
+    if _CMYK_TRANSFORM_TRIED:
+        return _CMYK_TRANSFORM
+    _CMYK_TRANSFORM_TRIED = True
+    try:
+        from PIL import ImageCms
+
+        from app.services.icc_profiles import resolve_profile
+
+        srgb = ImageCms.getOpenProfile(str(resolve_profile("srgb")))
+        press = ImageCms.getOpenProfile(str(resolve_profile("fogra39")))
+        _CMYK_TRANSFORM = ImageCms.buildTransformFromOpenProfiles(
+            srgb,
+            press,
+            "RGB",
+            "CMYK",
+            renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC,
+            flags=ImageCms.Flags.BLACKPOINTCOMPENSATION,
+        )
+    except Exception as exc:  # noqa: BLE001 - colour management is best effort
+        log.warning("templated_artwork: ICC CMYK transform unavailable: %s", exc)
+        _CMYK_TRANSFORM = None
+    return _CMYK_TRANSFORM
+
+
 def _to_cmyk(img: Image.Image) -> Image.Image:
     """Flatten alpha onto white and convert to CMYK for press output."""
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
@@ -95,9 +133,20 @@ def _to_cmyk(img: Image.Image) -> Image.Image:
         rgba = img.convert("RGBA")
         bg.paste(rgba, mask=rgba.split()[-1])
         img = bg
-    if img.mode != "CMYK":
-        img = img.convert("CMYK")
-    return img
+    if img.mode == "CMYK":
+        return img
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    transform = _cmyk_transform()
+    if transform is not None:
+        try:
+            from PIL import ImageCms
+
+            return ImageCms.applyTransform(img, transform)
+        except Exception as exc:  # noqa: BLE001 - fall back to the naive path
+            log.warning("templated_artwork: ICC conversion failed: %s", exc)
+    return img.convert("CMYK")
+
 
 
 def _cmyk(hex_value: str | None, default_k: float = 1.0):
@@ -319,6 +368,22 @@ def _has_transparency(img: Image.Image) -> bool:
         return True
 
 
+def _image_key(img: Image.Image) -> str:
+    """Stable identity for an already-loaded image, computed once per image."""
+    cached = getattr(img, "_dc_content_key", None)
+    if cached:
+        return str(cached)
+    try:
+        digest = hashlib.sha1(img.tobytes()).hexdigest()  # noqa: S324 - not security
+    except Exception:  # noqa: BLE001 - unreadable? fall back to object identity
+        digest = f"obj{id(img)}"
+    try:
+        img._dc_content_key = digest  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - some Image subclasses block attributes
+        pass
+    return digest
+
+
 def _encoded_jpeg(
     img: Image.Image,
     pid: str,
@@ -332,10 +397,13 @@ def _encoded_jpeg(
     see-through pixels stay RGBA PNG, so the transparency survives into the
     PDF — flattening those onto white would turn white-only artwork into a
     white box. Returns (bytes, has_alpha).
+
+    Keyed on the picture's own content, not the placeholder id, so the same
+    photo placed on several sheets is embedded once instead of per page.
     """
     target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
     target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
-    key = (pid, target_w, target_h)
+    key = (_image_key(img), target_w, target_h)
     hit = cache.get(key)
     alpha = _has_transparency(img)
     if hit is not None:
@@ -348,10 +416,12 @@ def _encoded_jpeg(
     if alpha:
         src.convert("RGBA").save(buf, format="PNG", optimize=True)
     else:
-        _to_cmyk(src).save(buf, format="JPEG", quality=92, optimize=True)
+        # 85 is press-indistinguishable from 92 and roughly halves the file.
+        _to_cmyk(src).save(buf, format="JPEG", quality=85, optimize=True)
     data = buf.getvalue()
     cache[key] = data
     return data, alpha
+
 
 
 # ---------------------------------------------------------------------------
@@ -878,7 +948,7 @@ def assemble_templated_artwork(
     base_geometry: dict[str, Any] = {}
     # Encode each placed raster once, and render each distinct page layer once.
     jpeg_cache: dict[tuple[str, int, int], bytes] = {}
-    jpeg_cache_by_page: dict[int, dict[tuple[str, int, int], bytes]] = {}
+    # (content-keyed, so it is shared across every sheet)
     layer_cache: dict[tuple[Any, ...], Path] = {}
 
 
@@ -961,6 +1031,10 @@ def assemble_templated_artwork(
         # raster layer's skip list is rebuilt for every sheet.
         page_vector_ids: set[str] = set()
         for d in defs:
+            # A box pinned to one page must not repeat on every sheet — the
+            # raster layer already honours this, and so must the vector path.
+            if not _def_on_page(d, page_index):
+                continue
             pid = str(d.get("id") or "")
             per_key = f"{pid}@{page_index}"
             vkey = per_key if per_key in vector_sources else (
@@ -1032,12 +1106,9 @@ def assemble_templated_artwork(
         # This page's content: its own pictures first, then the repeated ones.
         pg_values = {**values, **page_values.get(page_index, {})}
         pg_images = {**images, **page_images.get(page_index, {})}
-        # A shared JPEG cache would reuse one page's photo everywhere.
-        pg_jpeg_cache = (
-            jpeg_cache_by_page.setdefault(page_index, {})
-            if has_per_page_values
-            else jpeg_cache
-        )
+        # One cache for the whole job: it is keyed on the picture's content, so
+        # a photo used on several sheets is encoded and embedded exactly once.
+        pg_jpeg_cache = jpeg_cache
 
         # 1. Boxes that sit BEHIND the template artwork.
         if page_under:
