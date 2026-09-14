@@ -21,7 +21,7 @@ import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
-import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
+import { downloadFromS3, isAbortError, uploadToS3 } from "@/lib/s3Storage";
 import StockImagePicker from "@/components/artwork/StockImagePicker";
 import { usePhotoLibraryForProduct } from "@/hooks/usePhotoLibrarySettings";
 import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
@@ -607,6 +607,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     error?: string;
   } | null>(null);
   const cancelPlacing = useRef(false);
+  /** Aborts the transfer currently in flight (single file or stock photo). */
+  const uploadAbort = useRef<AbortController | null>(null);
+  const cancelUpload = useCallback(() => {
+    cancelPlacing.current = true;
+    uploadAbort.current?.abort();
+  }, []);
 
   /** In-app replacement for the old browser confirm box. */
   const [spreadAsk, setSpreadAsk] = useState<{
@@ -637,6 +643,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       source?: StockImageSource | null,
       page?: number | null,
     ) => {
+      // The stock-photo path opens its own controller before it gets here —
+      // reuse it so one Cancel stops the download and the upload together.
+      const external = !!uploadAbort.current && !uploadAbort.current.signal.aborted;
+      const controller = external ? uploadAbort.current! : new AbortController();
+      if (!external) uploadAbort.current = controller;
+      const signal = controller.signal;
       setBusyId(valueKey(placeholderId, page ?? null));
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
@@ -714,7 +726,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           // big file: upload it alongside the page work instead of making the
           // customer wait for it before anything visible happens.
           const sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-multi-source.pdf`;
-          const sourceUpload = uploadToS3(sourcePdfPath, rawFile).then(
+          const sourceUpload = uploadToS3(sourcePdfPath, rawFile, signal).then(
             () => sourcePdfPath,
             (err) => {
               console.warn("[templated-artwork] original PDF upload failed", err);
@@ -749,7 +761,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 const up = await Promise.race([
-                  uploadPhoto(file, itemId, { suppressToast: true }),
+                  uploadPhoto(file, itemId, { suppressToast: true, signal }),
                   new Promise<never>((_, rej) =>
                     setTimeout(() => rej(new Error("the upload timed out")), 120_000),
                   ),
@@ -757,6 +769,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 if (up) return up;
                 throw new Error("the upload did not complete");
               } catch (err) {
+                if (isAbortError(err) || signal.aborted) throw err;
                 if (attempt === 2) throw err;
                 console.warn("[templated-artwork] retrying page upload", err);
               }
@@ -769,7 +782,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             maxPages: count,
             onPage: async (rp) => {
               const i = rp.index;
-              if (cancelPlacing.current) return;
+              if (cancelPlacing.current || signal.aborted) return;
               setPlacing({
                 processed: i,
                 placed,
@@ -814,8 +827,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             },
           });
 
-          const cancelled = cancelPlacing.current;
-          if (placed > 0) setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
+          const cancelled = cancelPlacing.current || signal.aborted;
+          if (placed > 0 && !cancelled)
+            setPlacing((p) => (p ? { ...p, label: "Saving your artwork…" } : p));
           await sourceUpload;
           const commonError = failureMessages[0];
           setPlacementResult({ total: count, placed, failed: [...failed], cancelled, error: commonError });
@@ -840,8 +854,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         if (isPdf) {
           try {
             sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-${targetPage ?? "all"}-source.pdf`;
-            await uploadToS3(sourcePdfPath, rawFile);
+            await uploadToS3(sourcePdfPath, rawFile, signal);
           } catch (err) {
+            if (isAbortError(err) || signal.aborted) throw err;
             console.warn("[templated-artwork] original PDF upload failed", err);
             sourcePdfPath = null;
           }
@@ -850,15 +865,21 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         // PNG, not JPEG: keeps alpha so white-only vector artwork stays
         // transparent instead of arriving as a solid white block.
         const file = isPdf ? await rasterisePdfPageOneToPng(rawFile) : rawFile;
-        const uploaded = await uploadPhoto(file, itemId);
-        if (!uploaded) return;
+        if (signal.aborted) return;
+        const uploaded = await uploadPhoto(file, itemId, { signal });
+        if (!uploaded || signal.aborted) return;
         const next = buildValue(uploaded, isPdf ? 1 : undefined, sourcePdfPath);
         if (ph) applyValue(ph, next, targetPage ?? null);
         else setValues((prev) => ({ ...prev, [valueKey(placeholderId, targetPage ?? null)]: next }));
       } catch (err: any) {
-        console.error("[templated-artwork] upload failed", err);
-        toast.error(err?.message ?? "Upload failed");
+        if (isAbortError(err) || signal.aborted) {
+          toast.message("Upload cancelled");
+        } else {
+          console.error("[templated-artwork] upload failed", err);
+          toast.error(err?.message ?? "Upload failed");
+        }
       } finally {
+        if (!external) uploadAbort.current = null;
         setPlacing(null);
         setBusyId(null);
       }
@@ -907,9 +928,11 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     async (photo: StockPhoto) => {
       if (!libraryTarget) return;
       const placeholderId = libraryTarget.id;
+      const controller = new AbortController();
+      uploadAbort.current = controller;
       setBusyId(libraryFor);
       try {
-        const file = await fetchStockPhotoFile(photo);
+        const file = await fetchStockPhotoFile(photo, controller.signal);
         await handlePickFile(
           placeholderId,
           file,
@@ -939,9 +962,16 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         }
         setLibraryFor(null);
       } catch (err: any) {
-        console.error("[templated-artwork] stock photo failed", err);
-        toast.error(err?.message ?? "Could not add that photo");
+        if (isAbortError(err) || controller.signal.aborted) {
+          // Keep the picker open so another photo can be chosen straight away.
+          toast.message("Upload cancelled");
+        } else {
+          console.error("[templated-artwork] stock photo failed", err);
+          toast.error(err?.message ?? "Could not add that photo");
+        }
       } finally {
+        uploadAbort.current = null;
+        cancelPlacing.current = false;
         setBusyId(null);
       }
     },
@@ -1312,6 +1342,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                     placeholder={p}
                     value={values[key]}
                     busy={busyId === key}
+                    onCancelUpload={cancelUpload}
                     step={i + 1}
                     active={activeId === p.id}
                     onFocus={() => setActiveId(p.id)}
@@ -1654,6 +1685,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         usedIds={usedStockIds}
         busy={!!busyId}
         onPick={handlePickStock}
+        onCancelPick={cancelUpload}
       />
 
       <AlertDialog open={!!spreadAsk} onOpenChange={(o) => !o && answerSpread(null)}>

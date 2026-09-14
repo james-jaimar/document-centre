@@ -28,6 +28,8 @@ interface Props {
   placeholder: ArtworkPlaceholder;
   value: TemplatedPlaceholderValue | undefined;
   busy?: boolean;
+  /** Stops the transfer that is currently running for this box. */
+  onCancelUpload?: () => void;
   active?: boolean;
   /** 1-based position, shown as a step chip so the eye has an entry point. */
   step?: number;
@@ -101,6 +103,7 @@ export default function PlaceholderPanel({
   placeholder,
   value,
   busy,
+  onCancelUpload,
   active,
   step,
   onFocus,
@@ -310,10 +313,23 @@ export default function PlaceholderPanel({
             {busy ? "Uploading…" : "Click to upload your file"}
           </span>
           <span className="text-xs text-muted-foreground">
-            or drag &amp; drop · JPG, PNG, WEBP or PDF
+            {busy ? "This can take a while on a slow connection" : "or drag & drop · JPG, PNG, WEBP or PDF"}
           </span>
         </button>
       ) : null}
+
+      {!v && busy && onCancelUpload && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancelUpload();
+          }}
+          className="w-full text-center text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Cancel upload
+        </button>
+      )}
 
       {!v && onBrowseLibrary && (
         <Button

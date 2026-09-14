@@ -2,14 +2,14 @@ import { useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { uploadToS3 } from "@/lib/s3Storage";
+import { isAbortError, uploadToS3, UploadCancelledError } from "@/lib/s3Storage";
 import { buildPhotoDerivatives } from "@/lib/photoPrints/deriveImages";
 import { registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { toast } from "sonner";
 
 interface PhotoUploadProgress {
   fileName: string;
-  status: "uploading" | "analyzing" | "done" | "error";
+  status: "uploading" | "analyzing" | "done" | "error" | "cancelled";
   progress: number;
   statusText?: string;
   error?: string;
@@ -92,10 +92,11 @@ export function usePhotoUpload(orderItemId: string | undefined) {
     async (
       rawFile: File,
       overrideOrderItemId?: string,
-      options?: { suppressToast?: boolean },
+      options?: { suppressToast?: boolean; signal?: AbortSignal },
     ): Promise<UploadedPhoto | null> => {
       const effectiveId = overrideOrderItemId || orderItemId;
       if (!effectiveId || !user || !tenantId) return null;
+      const signal = options?.signal;
 
       const originalName = rawFile.name;
 
@@ -146,14 +147,16 @@ export function usePhotoUpload(orderItemId: string | undefined) {
 
         // Upload original + (optional) thumb + preview in parallel.
         await Promise.all([
-          uploadToS3(storagePath, file),
+          uploadToS3(storagePath, file, signal),
           derivatives && thumbPath
-            ? uploadToS3(thumbPath, derivatives.thumbBlob)
+            ? uploadToS3(thumbPath, derivatives.thumbBlob, signal)
             : Promise.resolve(),
           derivatives && previewPath
-            ? uploadToS3(previewPath, derivatives.previewBlob)
+            ? uploadToS3(previewPath, derivatives.previewBlob, signal)
             : Promise.resolve(),
         ]);
+        // Never record a document for a transfer the customer stopped.
+        if (signal?.aborted) throw new UploadCancelledError();
         updateUpload(originalName, { progress: 80, statusText: "Saving…" });
 
         // Approximate dimensions in mm at 72 DPI (only used as a metadata stub)
@@ -202,6 +205,14 @@ export function usePhotoUpload(orderItemId: string | undefined) {
           previewHeightPx: derivatives?.previewHeight,
         };
       } catch (err: any) {
+        if (isAbortError(err) || signal?.aborted) {
+          updateUpload(originalName, {
+            status: "cancelled",
+            progress: 0,
+            statusText: "Cancelled",
+          });
+          throw err instanceof Error ? err : new UploadCancelledError();
+        }
         console.error("[photo-upload] failed:", err);
         updateUpload(originalName, {
           status: "error",

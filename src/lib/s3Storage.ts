@@ -29,7 +29,40 @@ function backoffDelay(attempt: number): number {
   return base + jitter;
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new UploadCancelledError());
+      return;
+    }
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(t);
+      reject(new UploadCancelledError());
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
+/** Thrown when the customer stopped the transfer themselves. */
+export class UploadCancelledError extends Error {
+  readonly name = "UploadCancelledError";
+  constructor() {
+    super("Upload cancelled");
+  }
+}
+
+/** Did this failure come from the customer cancelling, not from a fault? */
+export function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof UploadCancelledError) return true;
+  const name = (err as { name?: string })?.name;
+  if (name === "AbortError" || name === "UploadCancelledError") return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /aborted|cancelled|canceled/i.test(msg) && /abort|cancel/i.test(name ?? msg);
+}
 
 function isTransientHttpStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
@@ -82,6 +115,7 @@ async function withAuthRecovery<T>(fn: () => Promise<T>, label: string): Promise
   try {
     return await fn();
   } catch (err) {
+    if (isAbortError(err)) throw err;
     if (!isAuthError(err)) throw err;
     console.warn(
       `[s3-storage] ${label} hit an auth failure, refreshing session and retrying once:`,
@@ -106,17 +140,22 @@ interface RetryOpts {
   maxRetries?: number;
   /** Used in console warnings for traceability. */
   label?: string;
+  /** Lets the customer stop the transfer. */
+  signal?: AbortSignal;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise<T> {
   const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
   const label = opts.label ?? "s3-op";
+  const signal = opts.signal;
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (signal?.aborted) throw new UploadCancelledError();
     try {
       return await fn();
     } catch (err) {
       lastError = err;
+      if (isAbortError(err) || signal?.aborted) throw new UploadCancelledError();
       const transient = isTransientError(err);
       if (!transient || attempt >= maxRetries) {
         throw err;
@@ -126,11 +165,12 @@ async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise
         `[s3-storage] transient ${label} failure, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`,
         err instanceof Error ? err.message : err,
       );
-      await sleep(delay);
+      await sleep(delay, signal);
     }
   }
   throw lastError ?? new Error(`${label} failed`);
 }
+
 
 /** Thrown when even a session refresh couldn't restore a usable token. */
 export class StorageSessionError extends Error {
@@ -139,6 +179,7 @@ export class StorageSessionError extends Error {
 
 /** Convert internal error wording into customer-friendly text, with a ref tag. */
 function userFacingError(action: string, err: unknown, ref: string): Error {
+  if (isAbortError(err)) return new UploadCancelledError();
   const inner = err instanceof Error ? err.message : String(err);
   const isTransient = isTransientError(err);
   if (isTransient) {
@@ -160,12 +201,14 @@ function userFacingError(action: string, err: unknown, ref: string): Error {
 
 // ── Edge-function plumbing ──────────────────────────────────────────
 
-async function callS3Function(body: Record<string, unknown>) {
+async function callS3Function(body: Record<string, unknown>, signal?: AbortSignal) {
   return withAuthRecovery(
     () =>
       withRetry(
         async () => {
+          if (signal?.aborted) throw new UploadCancelledError();
           const { data, error } = await supabase.functions.invoke("s3-storage", { body });
+          if (signal?.aborted) throw new UploadCancelledError();
           if (error) {
             // supabase.functions.invoke wraps non-2xx responses + network errors.
             // Surface the HTTP status when we have it so the auth-recovery and
@@ -184,7 +227,7 @@ async function callS3Function(body: Record<string, unknown>) {
           }
           return data;
         },
-        { label: `invoke(${body.action ?? "?"})` },
+        { label: `invoke(${body.action ?? "?"})`, signal },
       ),
     `invoke(${body.action ?? "?"})`,
   );
@@ -195,13 +238,19 @@ async function callS3Function(body: Record<string, unknown>) {
 /**
  * Get a presigned PUT URL for uploading a file to S3.
  */
-export async function getUploadUrl(objectPath: string): Promise<{ url: string; method: string }> {
+export async function getUploadUrl(
+  objectPath: string,
+  signal?: AbortSignal,
+): Promise<{ url: string; method: string }> {
   const ref = newRefId();
   try {
-    const data = await callS3Function({
-      action: "sign-upload",
-      object_path: objectPath,
-    });
+    const data = await callS3Function(
+      {
+        action: "sign-upload",
+        object_path: objectPath,
+      },
+      signal,
+    );
     return { url: data.url, method: data.method };
   } catch (err) {
     throw userFacingError("preparing the upload", err, ref);
@@ -218,8 +267,15 @@ export async function getUploadUrl(objectPath: string): Promise<{ url: string; m
  *   3. If the PUT round still fails AND the failure is transient, re-sign
  *      a fresh URL and try one more PUT round. Guards against malformed-URL
  *      edge cases where every retry against the same URL is doomed.
+ *
+ * Pass `signal` to let the customer stop a slow transfer — the rejection is a
+ * `UploadCancelledError`, never a fault to report.
  */
-export async function uploadToS3(objectPath: string, file: File | Blob): Promise<void> {
+export async function uploadToS3(
+  objectPath: string,
+  file: File | Blob,
+  signal?: AbortSignal,
+): Promise<void> {
   const ref = newRefId();
 
   const doPut = async (signedUrl: string) =>
@@ -227,8 +283,9 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
       async () => {
         let res: Response;
         try {
-          res = await fetch(signedUrl, { method: "PUT", body: file });
+          res = await fetch(signedUrl, { method: "PUT", body: file, signal });
         } catch (networkErr: any) {
+          if (isAbortError(networkErr) || signal?.aborted) throw new UploadCancelledError();
           throw new Error(`network error: ${networkErr?.message ?? networkErr}`);
         }
         if (!res.ok) {
@@ -236,12 +293,12 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
           throw new Error(`upload failed [${res.status}]: ${text}`);
         }
       },
-      { label: "PUT upload" },
+      { label: "PUT upload", signal },
     );
 
   let signed: { url: string; method: string };
   try {
-    signed = await getUploadUrl(objectPath);
+    signed = await getUploadUrl(objectPath, signal);
   } catch (err) {
     // Already user-facing.
     throw err;
@@ -251,6 +308,7 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
     await doPut(signed.url);
     return;
   } catch (firstErr) {
+    if (isAbortError(firstErr)) throw new UploadCancelledError();
     if (!isTransientError(firstErr)) {
       throw userFacingError("uploading the file", firstErr, ref);
     }
@@ -260,7 +318,7 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
       firstErr instanceof Error ? firstErr.message : firstErr,
     );
     try {
-      const fresh = await getUploadUrl(objectPath);
+      const fresh = await getUploadUrl(objectPath, signal);
       await doPut(fresh.url);
       return;
     } catch (secondErr) {

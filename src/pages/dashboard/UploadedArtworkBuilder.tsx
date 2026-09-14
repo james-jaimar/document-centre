@@ -30,7 +30,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
-import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
+import { downloadFromS3, isAbortError, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
 import { Button } from "@/components/ui/button";
@@ -228,6 +228,10 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   }, [spec, quantity, approved, orderItem?.id, orderItem?.spec]);
 
   // ── Upload + hard-block checks
+  /** Aborts the transfer currently in flight so the customer can start again. */
+  const uploadAbort = useRef<AbortController | null>(null);
+  const cancelUpload = useCallback(() => uploadAbort.current?.abort(), []);
+
   const handleFile = useCallback(
     async (file: File) => {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
@@ -235,6 +239,8 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         setRejection("Please upload a print-ready PDF. Images and Office files aren't accepted here.");
         return;
       }
+      const controller = new AbortController();
+      uploadAbort.current = controller;
       setBusy(true);
       setRejection(null);
       try {
@@ -274,10 +280,11 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           }
         }
 
+        if (controller.signal.aborted) return;
         const itemId = await ensureOrder();
         const safeName = file.name.replace(/[^\w.\-]+/g, "_");
         const path = `artwork-uploads/${itemId}/print-ready-${Date.now()}-${safeName}`;
-        await uploadToS3(path, file);
+        await uploadToS3(path, file, controller.signal);
 
         // Register it as a normal document so the existing print-ready /
         // imposition pipeline treats it like any other supplied artwork.
@@ -311,9 +318,14 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           approved_at: null,
         });
       } catch (err: any) {
-        console.error("[uploaded-artwork] upload failed", err);
-        setRejection(err?.message ?? "We couldn't process that file.");
+        if (isAbortError(err) || controller.signal.aborted) {
+          toast.message("Upload cancelled");
+        } else {
+          console.error("[uploaded-artwork] upload failed", err);
+          setRejection(err?.message ?? "We couldn't process that file.");
+        }
       } finally {
+        uploadAbort.current = null;
         setBusy(false);
       }
     },
@@ -568,7 +580,19 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
               <span className="text-sm font-medium">
                 {busy ? "Checking your file…" : "Drop your print-ready PDF"}
               </span>
-              <span className="text-xs text-muted-foreground">or click to browse</span>
+              <span className="text-xs text-muted-foreground">
+                {busy ? "This can take a while on a slow connection" : "or click to browse"}
+              </span>
+            </button>
+          )}
+
+          {busy && (
+            <button
+              type="button"
+              onClick={cancelUpload}
+              className="w-full text-center text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Cancel upload
             </button>
           )}
 

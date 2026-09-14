@@ -32,6 +32,8 @@ interface Props {
   usedIds?: string[];
   busy?: boolean;
   onPick: (photo: StockPhoto) => void;
+  /** Stops the photo that is currently being fetched and uploaded. */
+  onCancelPick?: () => void;
 }
 
 export default function StockImagePicker({
@@ -42,6 +44,7 @@ export default function StockImagePicker({
   usedIds = [],
   busy,
   onPick,
+  onCancelPick,
 }: Props) {
   const { settings } = usePhotoLibrarySettings();
   const [query, setQuery] = useState(settings.defaultQuery);
@@ -158,6 +161,17 @@ export default function StockImagePicker({
         <div ref={scrollRef} className="max-h-[52vh] overflow-y-auto pr-1">
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+          )}
+
+          {busy && onCancelPick && (
+            <div className="mb-2 flex items-center justify-between gap-3 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Adding your photo…
+              </span>
+              <Button size="sm" variant="outline" onClick={onCancelPick}>
+                Cancel
+              </Button>
+            </div>
           )}
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
