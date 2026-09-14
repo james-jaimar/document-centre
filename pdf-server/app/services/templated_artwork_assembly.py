@@ -1102,12 +1102,9 @@ def assemble_templated_artwork(
         # This page's content: its own pictures first, then the repeated ones.
         pg_values = {**values, **page_values.get(page_index, {})}
         pg_images = {**images, **page_images.get(page_index, {})}
-        # A shared JPEG cache would reuse one page's photo everywhere.
-        pg_jpeg_cache = (
-            jpeg_cache_by_page.setdefault(page_index, {})
-            if has_per_page_values
-            else jpeg_cache
-        )
+        # One cache for the whole job: it is keyed on the picture's content, so
+        # a photo used on several sheets is encoded and embedded exactly once.
+        pg_jpeg_cache = jpeg_cache
 
         # 1. Boxes that sit BEHIND the template artwork.
         if page_under:
