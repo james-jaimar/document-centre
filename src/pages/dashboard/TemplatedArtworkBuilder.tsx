@@ -1216,6 +1216,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   return (
     <div ref={ref} className="flex h-full min-h-0 w-full flex-1 flex-col bg-muted/20">
+      {packFlow.active && (
+        <SamplePackProgressStrip done={packFlow.done} total={packFlow.total} />
+      )}
       {/* Editor bar */}
       <div className="flex flex-wrap items-center gap-3 border-b bg-background px-4 py-2.5">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
