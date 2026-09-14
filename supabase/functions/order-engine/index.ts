@@ -1297,6 +1297,25 @@ async function updateOrderStatus(
     metadata: { from_status: fromStatus, to_status: admin_status, reason, tracking_number, tracking_carrier },
   });
 
+  // This is a mirrored trade order: report progress and waybill back to the
+  // buyer's own order so their customer can be kept informed.
+  if ((order as any).source_order_id && !opts.propagated) {
+    try {
+      await propagateSupplierStatus(
+        admin,
+        userId,
+        order as any,
+        admin_status,
+        tracking_number,
+        tracking_carrier,
+      );
+    } catch (e) {
+      console.warn("[order-engine] supplier status propagation failed (non-fatal):", e);
+    }
+  }
+
+
+
   return json({
     success: true,
     from_status: fromStatus,
