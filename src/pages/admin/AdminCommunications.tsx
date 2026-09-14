@@ -122,7 +122,12 @@ function ComposeTab() {
   const [progress, setProgress] = useState<
     { campaignId: string; done: number; total: number; stage: string } | null
   >(null);
+  const [preparing, setPreparing] = useState(false);
+  const [prepared, setPrepared] = useState<
+    { campaignId: string; remaining: number; skipped: number } | null
+  >(null);
   const cancelRef = useRef(false);
+
 
   useEffect(() => {
     if (!tenantId) return;
@@ -167,6 +172,31 @@ function ComposeTab() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
+
+  // A campaign prepared earlier (even in another session) stays ready to send.
+  useEffect(() => {
+    if (!tenantId) return;
+    (async () => {
+      const { data: campaign } = await supabase
+        .from("platform_email_campaigns" as any)
+        .select("id, status")
+        .eq("tenant_id", tenantId)
+        .eq("status", "running")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const row = (campaign as unknown) as { id: string } | null;
+      if (!row) return;
+      const { count } = await supabase
+        .from("platform_email_campaign_recipients" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", row.id)
+        .eq("status", "pending");
+      if (count && count > 0) setPrepared({ campaignId: row.id, remaining: count, skipped: 0 });
+    })();
+  }, [tenantId]);
+
+
 
   const customerRecipients: Recipient[] = useMemo(() => (customers ?? []).map((c) => ({
     id: c.profile_id,
@@ -226,13 +256,8 @@ function ComposeTab() {
     }
   };
 
-  const send = async (dryRun: boolean, testOnly = false) => {
-    if (!tenantId || !templateSlug || selected.size === 0) {
-      toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
-      return;
-    }
-    setSending(true); setResult(null); setProgress(null);
-    cancelRef.current = false;
+  /** Runs the first step only: creates the campaign and all personal links. Emails nobody. */
+  const prepareCampaign = async (dryRun: boolean, testOnly: boolean) => {
     const viaResend = !!resendAccount && useResend;
     const ids = testOnly ? [Array.from(selected)[0]] : Array.from(selected);
 
@@ -248,20 +273,34 @@ function ComposeTab() {
       },
     );
     if (!response.ok || !response.data) {
-      setSending(false);
       if (response.data) setResult(response.data);
       toast({
         title: dryRun ? "Dry run failed" : "Send failed",
         description: response.error ?? "No response from the email sender",
         variant: "destructive",
       });
-      return;
+      return null;
     }
     const data = response.data as any;
     setResult(data);
+    return { data, viaResend };
+  };
+
+  const send = async (dryRun: boolean, testOnly = false) => {
+    if (!tenantId || !templateSlug || selected.size === 0) {
+      toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
+      return;
+    }
+    setSending(true); setResult(null); setProgress(null);
+    cancelRef.current = false;
+
+    const outcome = await prepareCampaign(dryRun, testOnly);
+    if (!outcome) { setSending(false); return; }
+    const { data, viaResend } = outcome;
 
     // Resend campaigns continue in short batches so a long list can't time out.
     if (viaResend && !dryRun && data.campaign_id && !data.error) {
+      setPrepared(null);
       await runRemainingPhases(data.campaign_id, data.remaining ?? 0, data.totals?.skipped ?? 0);
       return;
     }
@@ -275,6 +314,30 @@ function ComposeTab() {
         : `Sending ${totals.sent ?? totals.pending ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`,
     });
   };
+
+  /** Prepare only — generates the campaign and every personal link, sends nothing. */
+  const prepare = async () => {
+    if (!tenantId || !templateSlug || selected.size === 0) {
+      toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
+      return;
+    }
+    setPreparing(true); setResult(null); setProgress(null);
+    const outcome = await prepareCampaign(false, false);
+    setPreparing(false);
+    if (!outcome) return;
+    const { data } = outcome;
+    if (data.error || !data.campaign_id) {
+      toast({ title: "Prepare failed", description: data.error ?? "No campaign was created", variant: "destructive" });
+      return;
+    }
+    const remaining = data.remaining ?? 0;
+    setPrepared({ campaignId: data.campaign_id, remaining, skipped: data.totals?.skipped ?? 0 });
+    toast({
+      title: "Ready to send",
+      description: `${remaining} recipients prepared. Nothing has been emailed yet.`,
+    });
+  };
+
 
   /** Uploads contacts batch by batch, then creates the broadcast. */
   const runRemainingPhases = async (campaignId: string, initialRemaining: number, skipped: number) => {
@@ -436,18 +499,50 @@ function ComposeTab() {
             </label>
           )}
 
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size || templateIssues.length > 0}>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => send(true)} disabled={sending || preparing || !selected.size || templateIssues.length > 0}>
               {sending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Dry run
             </Button>
-            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || selected.size !== 1 || templateIssues.length > 0}>
+            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || preparing || selected.size !== 1 || templateIssues.length > 0}>
               <Send className="h-4 w-4 mr-2" /> Send test
             </Button>
-            <Button onClick={() => send(false)} disabled={sending || !selected.size || templateIssues.length > 0}>
+            {!!resendAccount && useResend && (
+              <Button variant="outline" onClick={prepare} disabled={sending || preparing || !selected.size || templateIssues.length > 0}>
+                {preparing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Prepare
+              </Button>
+            )}
+            <Button onClick={() => send(false)} disabled={sending || preparing || !selected.size || templateIssues.length > 0}>
               {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
               Send to {selected.size}
             </Button>
           </div>
+
+          {prepared && !progress && (
+            <div className="rounded border border-primary/30 bg-primary/5 p-3 text-xs space-y-2">
+              <div className="font-medium">
+                {prepared.remaining} recipients prepared — ready to send
+              </div>
+              <p className="text-muted-foreground">
+                Their personal links are generated and saved. Nothing has been emailed yet.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={sending}
+                  onClick={() => {
+                    const p = prepared;
+                    setPrepared(null);
+                    cancelRef.current = false;
+                    runRemainingPhases(p.campaignId, p.remaining, p.skipped);
+                  }}
+                >
+                  Send prepared campaign
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setPrepared(null)}>Dismiss</Button>
+              </div>
+            </div>
+          )}
+
 
           {progress && (
             <div className="rounded border bg-muted/40 p-3 text-xs space-y-2">
