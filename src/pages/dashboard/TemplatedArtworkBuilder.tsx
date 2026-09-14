@@ -53,6 +53,8 @@ import {
 } from "@/lib/pricing/packOptions";
 
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { useSamplePackFlow } from "@/hooks/useSamplePackFlow";
+import SamplePackProgressStrip from "@/components/storefront/SamplePackProgressStrip";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
   ArtworkPlaceholder,
