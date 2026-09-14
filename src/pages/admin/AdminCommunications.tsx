@@ -173,6 +173,31 @@ function ComposeTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
+  // A campaign prepared earlier (even in another session) stays ready to send.
+  useEffect(() => {
+    if (!tenantId) return;
+    (async () => {
+      const { data: campaign } = await supabase
+        .from("platform_email_campaigns" as any)
+        .select("id, status")
+        .eq("tenant_id", tenantId)
+        .eq("status", "running")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const row = campaign as { id: string } | null;
+      if (!row) return;
+      const { count } = await supabase
+        .from("platform_email_campaign_recipients" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", row.id)
+        .eq("status", "pending");
+      if (count && count > 0) setPrepared({ campaignId: row.id, remaining: count, skipped: 0 });
+    })();
+  }, [tenantId]);
+
+
+
   const customerRecipients: Recipient[] = useMemo(() => (customers ?? []).map((c) => ({
     id: c.profile_id,
     name: c.display_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "Customer",
