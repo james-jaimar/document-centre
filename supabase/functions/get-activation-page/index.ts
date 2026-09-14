@@ -77,6 +77,7 @@ Deno.serve(async (req) => {
     return json({
       tenant_name: tenant?.name ?? null,
       tenant_logo_url: tenantLogoUrl,
+      tenant_logo_light_url: tenantLogoLightUrl,
       primary_color: primaryColor,
       branch_name: branch?.name ?? null,
       branch_city: branch?.city ?? null,
