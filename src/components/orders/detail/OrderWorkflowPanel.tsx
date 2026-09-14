@@ -40,7 +40,12 @@ interface Props {
     tracking_number?: string | null;
     tracking_carrier?: string | null;
     dispatched_at?: string | null;
+    supplier_status?: string | null;
+    source_order_id?: string | null;
+    supplier_order_id?: string | null;
+    metadata?: any;
     addresses?: any[];
+
   };
 }
 
