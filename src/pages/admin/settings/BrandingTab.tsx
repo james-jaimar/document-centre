@@ -401,6 +401,25 @@ export function BrandingTab() {
               logo is SVG, emails fall back to your portal name as text.
             </p>
           </div>
+          <div className="space-y-1">
+            <ImageUploadField
+              label="Logo for dark backgrounds"
+              value={logoLightUrl}
+              onChange={setLogoLightUrl}
+              tenantId={tenantId}
+              fileKey="logo-light"
+              previewClass="h-12 w-auto object-contain"
+            />
+            {logoLightUrl && (
+              <div className="mt-2 rounded border p-3" style={{ background: primaryColor || "#0a2358" }}>
+                <img src={logoLightUrl} alt="Logo on dark preview" className="h-10 w-auto object-contain" />
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              White or reversed version of your logo, used where it sits on a dark
+              band (for example the activation page). Falls back to your main logo.
+            </p>
+          </div>
           <ImageUploadField
             label="Hero Image"
             value={heroImageUrl}
