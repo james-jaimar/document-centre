@@ -643,6 +643,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
       source?: StockImageSource | null,
       page?: number | null,
     ) => {
+      // The stock-photo path opens its own controller before it gets here —
+      // reuse it so one Cancel stops the download and the upload together.
+      const external = !!uploadAbort.current && !uploadAbort.current.signal.aborted;
+      const controller = external ? uploadAbort.current! : new AbortController();
+      if (!external) uploadAbort.current = controller;
+      const signal = controller.signal;
       setBusyId(valueKey(placeholderId, page ?? null));
       try {
         const isPdf = rawFile.type === "application/pdf" || /\.pdf$/i.test(rawFile.name);
