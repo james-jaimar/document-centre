@@ -607,6 +607,12 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     error?: string;
   } | null>(null);
   const cancelPlacing = useRef(false);
+  /** Aborts the transfer currently in flight (single file or stock photo). */
+  const uploadAbort = useRef<AbortController | null>(null);
+  const cancelUpload = useCallback(() => {
+    cancelPlacing.current = true;
+    uploadAbort.current?.abort();
+  }, []);
 
   /** In-app replacement for the old browser confirm box. */
   const [spreadAsk, setSpreadAsk] = useState<{
