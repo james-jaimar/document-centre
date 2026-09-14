@@ -2,14 +2,14 @@ import { useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { uploadToS3 } from "@/lib/s3Storage";
+import { isAbortError, uploadToS3, UploadCancelledError } from "@/lib/s3Storage";
 import { buildPhotoDerivatives } from "@/lib/photoPrints/deriveImages";
 import { registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { toast } from "sonner";
 
 interface PhotoUploadProgress {
   fileName: string;
-  status: "uploading" | "analyzing" | "done" | "error";
+  status: "uploading" | "analyzing" | "done" | "error" | "cancelled";
   progress: number;
   statusText?: string;
   error?: string;
