@@ -335,6 +335,28 @@ Deno.serve(async (req) => {
       }, 200);
     }
 
+    // ── Trim the shared segment ────────────────────────────────────────────
+    // Leftovers from a previous campaign would otherwise receive this one too.
+    try {
+      const intended = new Set(
+        sendable.map((t) => (t.email ?? "").trim().toLowerCase()).filter(Boolean),
+      );
+      const current = await listSegmentContacts(apiKey, segmentId);
+      for (const contact of current) {
+        const email = (contact.email ?? "").trim().toLowerCase();
+        if (email && intended.has(email)) continue;
+        await removeContactFromSegment(apiKey, contact.id ?? email, segmentId);
+        await sleep(CONTACT_DELAY_MS);
+      }
+    } catch (e) {
+      const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
+      const message =
+        `The contact list could not be limited to the chosen recipients, so the broadcast was not sent. Resend said: ${msg}`;
+      await admin.from("platform_email_campaigns")
+        .update({ status: "failed", failed_count: failed, error_message: message }).eq("id", campaignId);
+      return json({ provider: "resend", campaign_id: campaignId, error: message, results }, 200);
+    }
+
 
     // ── Broadcast ──────────────────────────────────────────────────────────
     let broadcastId: string;
