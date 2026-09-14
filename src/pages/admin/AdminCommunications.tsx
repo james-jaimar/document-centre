@@ -227,20 +227,24 @@ function ComposeTab() {
       toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
       return;
     }
-    setSending(true); setResult(null);
+    setSending(true); setResult(null); setProgress(null);
+    cancelRef.current = false;
     const viaResend = !!resendAccount && useResend;
+    const ids = testOnly ? [Array.from(selected)[0]] : Array.from(selected);
+
     const response = await invokeEdgeFunctionVerbose(
       viaResend ? "resend-broadcast-send" : "send-branch-marketing-campaign",
       {
-      tenant_id: tenantId,
-      template_slug: templateSlug,
-      audience,
-       recipient_ids: testOnly ? [Array.from(selected)[0]] : Array.from(selected),
-      dry_run: dryRun,
-    },
+        tenant_id: tenantId,
+        template_slug: templateSlug,
+        audience,
+        recipient_ids: ids,
+        dry_run: dryRun,
+        ...(viaResend && !dryRun ? { phase: "prepare" } : {}),
+      },
     );
-    setSending(false);
     if (!response.ok || !response.data) {
+      setSending(false);
       if (response.data) setResult(response.data);
       toast({
         title: dryRun ? "Dry run failed" : "Send failed",
@@ -250,8 +254,16 @@ function ComposeTab() {
       return;
     }
     const data = response.data as any;
-    const totals = data.totals ?? {};
     setResult(data);
+
+    // Resend campaigns continue in short batches so a long list can't time out.
+    if (viaResend && !dryRun && data.campaign_id && !data.error) {
+      await runRemainingPhases(data.campaign_id, data.remaining ?? 0, data.totals?.skipped ?? 0);
+      return;
+    }
+
+    setSending(false);
+    const totals = data.totals ?? {};
     toast({
       title: dryRun ? "Dry run complete" : testOnly ? "Test email sent" : data.queued ? "Campaign queued" : "Campaign sent",
       description: dryRun
@@ -259,6 +271,81 @@ function ComposeTab() {
         : `Sending ${totals.sent ?? totals.pending ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`,
     });
   };
+
+  /** Uploads contacts batch by batch, then creates the broadcast. */
+  const runRemainingPhases = async (campaignId: string, initialRemaining: number, skipped: number) => {
+    const total = initialRemaining;
+    setSending(true);
+    setProgress({ campaignId, done: 0, total, stage: "Adding recipients" });
+
+    let remaining = initialRemaining;
+    let guard = 0;
+    while (remaining > 0 && guard++ < 500) {
+      if (cancelRef.current) {
+        setSending(false);
+        setProgress({ campaignId, done: total - remaining, total, stage: "Paused — use Resume to continue" });
+        toast({ title: "Paused", description: "Nothing has been emailed yet. Resume when you're ready." });
+        return;
+      }
+      const res = await invokeEdgeFunctionVerbose("resend-broadcast-send", {
+        campaign_id: campaignId,
+        phase: "sync",
+        batch_size: 75,
+      });
+      const d = res.data as any;
+      if (!res.ok || !d || d.error) {
+        setSending(false);
+        setProgress({ campaignId, done: total - remaining, total, stage: "Stopped — use Resume to continue" });
+        toast({
+          title: "Adding recipients stopped",
+          description: d?.error ?? res.error ?? "No response from the email sender",
+          variant: "destructive",
+        });
+        return;
+      }
+      remaining = d.remaining ?? 0;
+      setProgress({ campaignId, done: total - remaining, total, stage: "Adding recipients" });
+      setResult((prev: any) => ({ ...(prev ?? {}), totals: d.totals }));
+    }
+
+    setProgress({ campaignId, done: total, total, stage: "Sending the broadcast" });
+    const fin = await invokeEdgeFunctionVerbose("resend-broadcast-send", {
+      campaign_id: campaignId,
+      phase: "finalise",
+    });
+    const f = fin.data as any;
+    setSending(false);
+    if (!fin.ok || !f || f.error) {
+      setProgress({ campaignId, done: total, total, stage: "Stopped — use Resume to continue" });
+      toast({
+        title: "Send failed",
+        description: f?.error ?? fin.error ?? "No response from the email sender",
+        variant: "destructive",
+      });
+      return;
+    }
+    setProgress(null);
+    setResult((prev: any) => ({ ...(prev ?? {}), ...f }));
+    const t = f.totals ?? {};
+    toast({
+      title: "Campaign sent",
+      description: `Sent ${t.sent ?? 0} · Failed ${t.failed ?? 0} · Skipped ${t.skipped ?? skipped}`,
+    });
+  };
+
+  const resume = async () => {
+    if (!progress) return;
+    cancelRef.current = false;
+    const { data } = await supabase
+      .from("platform_email_campaign_recipients" as any)
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", progress.campaignId)
+      .eq("status", "pending");
+    void data;
+    await runRemainingPhases(progress.campaignId, progress.total - progress.done, 0);
+  };
+
+
 
   const noSender = (result?.results ?? []).some(
     (r: any) => typeof r.error === "string" && r.error.includes("No outgoing email account"),
