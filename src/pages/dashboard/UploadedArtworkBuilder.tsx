@@ -125,6 +125,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   /** Sample pack items are always a single copy at the flat pack price. */
   const [samplePackParams] = useSearchParams();
   const samplePack = samplePackParams.get("sample") === "1";
+  const packFlow = useSamplePackFlow(samplePack, familyId);
   const [approved, setApproved] = useState(false);
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
