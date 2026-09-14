@@ -21,14 +21,23 @@ import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
   contactTag,
   createBroadcast,
-  createSegment,
   ensureContactProperties,
+  getOrCreateSegment,
+  listSegmentContacts,
   readResendKey,
+  removeContactFromSegment,
   ResendApiError,
   upsertContact,
   verifyAccount,
   withResendUnsubscribeFooter,
 } from "../_shared/resend.ts";
+
+/**
+ * Resend plans cap how many segments an account may hold, so every broadcast
+ * reuses this one shared list. Membership is reset to exactly the recipients
+ * chosen for the campaign before the broadcast is created.
+ */
+const SHARED_SEGMENT_NAME = "General";
 
 
 const corsHeaders = {
