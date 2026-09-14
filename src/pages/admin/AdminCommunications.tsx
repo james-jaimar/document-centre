@@ -448,6 +448,37 @@ function ComposeTab() {
               Send to {selected.size}
             </Button>
           </div>
+
+          {progress && (
+            <div className="rounded border bg-muted/40 p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{progress.stage}</span>
+                <span>{progress.done} of {progress.total}</span>
+              </div>
+              <div className="h-2 rounded bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <div className="flex gap-2">
+                {sending ? (
+                  <Button size="sm" variant="outline" onClick={() => { cancelRef.current = true; }}>
+                    Pause
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={resume}>Resume</Button>
+                )}
+                {!sending && (
+                  <Button size="sm" variant="ghost" onClick={() => setProgress(null)}>Dismiss</Button>
+                )}
+              </div>
+              <p className="text-muted-foreground">
+                Nobody is emailed until every recipient has been added — pausing here is safe.
+              </p>
+            </div>
+          )}
+
           {templateIssues.length > 0 && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
             This template is not ready to send: {templateIssues.join(" · ")}
           </div>}
