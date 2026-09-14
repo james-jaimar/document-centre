@@ -235,6 +235,8 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         setRejection("Please upload a print-ready PDF. Images and Office files aren't accepted here.");
         return;
       }
+      const controller = new AbortController();
+      uploadAbort.current = controller;
       setBusy(true);
       setRejection(null);
       try {
