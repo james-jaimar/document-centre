@@ -499,18 +499,50 @@ function ComposeTab() {
             </label>
           )}
 
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => send(true)} disabled={sending || !selected.size || templateIssues.length > 0}>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => send(true)} disabled={sending || preparing || !selected.size || templateIssues.length > 0}>
               {sending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Dry run
             </Button>
-            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || selected.size !== 1 || templateIssues.length > 0}>
+            <Button variant="outline" onClick={() => send(false, true)} disabled={sending || preparing || selected.size !== 1 || templateIssues.length > 0}>
               <Send className="h-4 w-4 mr-2" /> Send test
             </Button>
-            <Button onClick={() => send(false)} disabled={sending || !selected.size || templateIssues.length > 0}>
+            {!!resendAccount && useResend && (
+              <Button variant="outline" onClick={prepare} disabled={sending || preparing || !selected.size || templateIssues.length > 0}>
+                {preparing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Prepare
+              </Button>
+            )}
+            <Button onClick={() => send(false)} disabled={sending || preparing || !selected.size || templateIssues.length > 0}>
               {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
               Send to {selected.size}
             </Button>
           </div>
+
+          {prepared && !progress && (
+            <div className="rounded border border-primary/30 bg-primary/5 p-3 text-xs space-y-2">
+              <div className="font-medium">
+                {prepared.remaining} recipients prepared — ready to send
+              </div>
+              <p className="text-muted-foreground">
+                Their personal links are generated and saved. Nothing has been emailed yet.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={sending}
+                  onClick={() => {
+                    const p = prepared;
+                    setPrepared(null);
+                    cancelRef.current = false;
+                    runRemainingPhases(p.campaignId, p.remaining, p.skipped);
+                  }}
+                >
+                  Send prepared campaign
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setPrepared(null)}>Dismiss</Button>
+              </div>
+            </div>
+          )}
+
 
           {progress && (
             <div className="rounded border bg-muted/40 p-3 text-xs space-y-2">
