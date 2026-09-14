@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useTenantCustomers } from "@/hooks/useTenantCustomers";
@@ -119,6 +119,10 @@ function ComposeTab() {
   const [resendAccount, setResendAccount] = useState<{ from_email: string } | null>(null);
   const [useResend, setUseResend] = useState(true);
   const [result, setResult] = useState<any>(null);
+  const [progress, setProgress] = useState<
+    { campaignId: string; done: number; total: number; stage: string } | null
+  >(null);
+  const cancelRef = useRef(false);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -336,12 +340,6 @@ function ComposeTab() {
   const resume = async () => {
     if (!progress) return;
     cancelRef.current = false;
-    const { data } = await supabase
-      .from("platform_email_campaign_recipients" as any)
-      .select("id", { count: "exact", head: true })
-      .eq("campaign_id", progress.campaignId)
-      .eq("status", "pending");
-    void data;
     await runRemainingPhases(progress.campaignId, progress.total - progress.done, 0);
   };
 
