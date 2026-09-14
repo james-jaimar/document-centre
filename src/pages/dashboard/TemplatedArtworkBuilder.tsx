@@ -962,9 +962,16 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         }
         setLibraryFor(null);
       } catch (err: any) {
-        console.error("[templated-artwork] stock photo failed", err);
-        toast.error(err?.message ?? "Could not add that photo");
+        if (isAbortError(err) || controller.signal.aborted) {
+          // Keep the picker open so another photo can be chosen straight away.
+          toast.message("Upload cancelled");
+        } else {
+          console.error("[templated-artwork] stock photo failed", err);
+          toast.error(err?.message ?? "Could not add that photo");
+        }
       } finally {
+        uploadAbort.current = null;
+        cancelPlacing.current = false;
         setBusyId(null);
       }
     },
