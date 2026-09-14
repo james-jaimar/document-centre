@@ -30,7 +30,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
-import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
+import { downloadFromS3, isAbortError, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
 import { Button } from "@/components/ui/button";
