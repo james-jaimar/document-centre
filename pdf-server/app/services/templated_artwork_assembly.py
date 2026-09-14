@@ -88,6 +88,43 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
+_CMYK_TRANSFORM: Any | None = None
+_CMYK_TRANSFORM_TRIED = False
+
+
+def _cmyk_transform():
+    """sRGB → ISO Coated v2 (Fogra 39) transform, built once.
+
+    Pillow's plain ``convert("CMYK")`` is a naive formula with no profile —
+    photographs come out flat and dark. The press profiles already ship with
+    the server, so colour-manage through them and only fall back to the naive
+    path when a profile is missing (a job must never fail over colour).
+    """
+    global _CMYK_TRANSFORM, _CMYK_TRANSFORM_TRIED
+    if _CMYK_TRANSFORM_TRIED:
+        return _CMYK_TRANSFORM
+    _CMYK_TRANSFORM_TRIED = True
+    try:
+        from PIL import ImageCms
+
+        from app.services.icc_profiles import resolve_profile
+
+        srgb = ImageCms.getOpenProfile(str(resolve_profile("srgb")))
+        press = ImageCms.getOpenProfile(str(resolve_profile("fogra39")))
+        _CMYK_TRANSFORM = ImageCms.buildTransformFromOpenProfiles(
+            srgb,
+            press,
+            "RGB",
+            "CMYK",
+            renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC,
+            flags=ImageCms.Flags.BLACKPOINTCOMPENSATION,
+        )
+    except Exception as exc:  # noqa: BLE001 - colour management is best effort
+        log.warning("templated_artwork: ICC CMYK transform unavailable: %s", exc)
+        _CMYK_TRANSFORM = None
+    return _CMYK_TRANSFORM
+
+
 def _to_cmyk(img: Image.Image) -> Image.Image:
     """Flatten alpha onto white and convert to CMYK for press output."""
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
@@ -95,9 +132,20 @@ def _to_cmyk(img: Image.Image) -> Image.Image:
         rgba = img.convert("RGBA")
         bg.paste(rgba, mask=rgba.split()[-1])
         img = bg
-    if img.mode != "CMYK":
-        img = img.convert("CMYK")
-    return img
+    if img.mode == "CMYK":
+        return img
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    transform = _cmyk_transform()
+    if transform is not None:
+        try:
+            from PIL import ImageCms
+
+            return ImageCms.applyTransform(img, transform)
+        except Exception as exc:  # noqa: BLE001 - fall back to the naive path
+            log.warning("templated_artwork: ICC conversion failed: %s", exc)
+    return img.convert("CMYK")
+
 
 
 def _cmyk(hex_value: str | None, default_k: float = 1.0):
