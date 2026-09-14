@@ -147,14 +147,16 @@ export function usePhotoUpload(orderItemId: string | undefined) {
 
         // Upload original + (optional) thumb + preview in parallel.
         await Promise.all([
-          uploadToS3(storagePath, file),
+          uploadToS3(storagePath, file, signal),
           derivatives && thumbPath
-            ? uploadToS3(thumbPath, derivatives.thumbBlob)
+            ? uploadToS3(thumbPath, derivatives.thumbBlob, signal)
             : Promise.resolve(),
           derivatives && previewPath
-            ? uploadToS3(previewPath, derivatives.previewBlob)
+            ? uploadToS3(previewPath, derivatives.previewBlob, signal)
             : Promise.resolve(),
         ]);
+        // Never record a document for a transfer the customer stopped.
+        if (signal?.aborted) throw new UploadCancelledError();
         updateUpload(originalName, { progress: 80, statusText: "Saving…" });
 
         // Approximate dimensions in mm at 72 DPI (only used as a metadata stub)
