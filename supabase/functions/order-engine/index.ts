@@ -818,6 +818,26 @@ async function createOrderWithJobs(
   }
   const newJobs = jobsResult.data;
 
+  // Sample pack: the flat pack price lives as an adjustment line, because the
+  // order total is recomputed from jobs + adjustments (and every pack job is 0).
+  if (isSamplePack) {
+    const packNet = Number(pricing?.subtotal ?? 0);
+    const { error: adjErr } = await admin.from("order_adjustments").insert({
+      order_id: newOrder.id,
+      description: "Sample pack — one of each, delivery included",
+      amount: packNet,
+      created_by: userId ?? null,
+      metadata: { sample_pack: true },
+    });
+    if (adjErr) {
+      console.error("[order-engine] sample_pack_adjustment_insert failed", adjErr);
+      return err(`sample_pack_adjustment_insert failed: ${adjErr.message}`);
+    }
+    const { error: syncErr } = await admin.rpc("sync_order_amounts", { p_order_id: newOrder.id });
+    if (syncErr) console.warn("[order-engine] sample_pack sync_order_amounts failed:", syncErr);
+  }
+
+
   // Insert proofs only if any jobs request them (rare in checkout flow)
   const proofJobs = jobs
     .map((j: any, idx: number) => ({ j, newJob: newJobs?.[idx] }))
