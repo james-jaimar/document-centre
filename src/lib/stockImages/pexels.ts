@@ -62,7 +62,10 @@ export async function searchStockPhotos(opts: {
  * binary — the JS client decodes non-JSON replies as text, which corrupts
  * JPEG bytes.
  */
-export async function fetchStockPhotoFile(photo: StockPhoto): Promise<File> {
+export async function fetchStockPhotoFile(
+  photo: StockPhoto,
+  signal?: AbortSignal,
+): Promise<File> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error("Your session has expired — please sign in again.");
@@ -75,6 +78,7 @@ export async function fetchStockPhotoFile(photo: StockPhoto): Promise<File> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ action: "fetch", url: photo.original }),
+    signal,
   });
   if (!res.ok) throw new Error("Could not download that photo. Please try another.");
 
