@@ -122,7 +122,12 @@ function ComposeTab() {
   const [progress, setProgress] = useState<
     { campaignId: string; done: number; total: number; stage: string } | null
   >(null);
+  const [preparing, setPreparing] = useState(false);
+  const [prepared, setPrepared] = useState<
+    { campaignId: string; remaining: number; skipped: number } | null
+  >(null);
   const cancelRef = useRef(false);
+
 
   useEffect(() => {
     if (!tenantId) return;
