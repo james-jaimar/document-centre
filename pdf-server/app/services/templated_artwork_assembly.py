@@ -1031,6 +1031,10 @@ def assemble_templated_artwork(
         # raster layer's skip list is rebuilt for every sheet.
         page_vector_ids: set[str] = set()
         for d in defs:
+            # A box pinned to one page must not repeat on every sheet — the
+            # raster layer already honours this, and so must the vector path.
+            if not _def_on_page(d, page_index):
+                continue
             pid = str(d.get("id") or "")
             per_key = f"{pid}@{page_index}"
             vkey = per_key if per_key in vector_sources else (
