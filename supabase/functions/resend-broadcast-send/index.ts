@@ -263,139 +263,61 @@ Deno.serve(async (req) => {
     if (campErr) return json({ error: `campaign_insert: ${campErr.message}` }, 500);
     const campaignId = (campaign as { id: string }).id;
 
-    // ── Contacts ───────────────────────────────────────────────────────────
-    let synced = 0;
-    let failed = 0;
-    for (const target of sendable) {
-      const email = (target.email ?? "").trim();
-      let actionLink = origin;
-      try {
-        const slug = await upsertActivationPage(
-          admin, { id: tenant.id, app_id: tenant.app_id }, target, email, target.contactName,
-        );
-        actionLink = `${origin}/activate/${slug}`;
-      } catch (_e) {
-        // A personal link is a nice-to-have; the broadcast still goes out.
-      }
-
-      const { first, last } = splitName(target.contactName || target.name);
-      let contactId: string | null = null;
-      let error: string | null = null;
-      try {
-        contactId = await upsertContact(apiKey, segmentId, {
-          email,
-          first_name: first,
-          last_name: last,
-          properties: { org_name: target.name, action_link: actionLink },
-        });
-        synced++;
-      } catch (e) {
-        failed++;
-        error = e instanceof ResendApiError ? e.message : (e as Error).message;
-      }
-
-      await admin.from("platform_email_campaign_recipients").insert({
-        campaign_id: campaignId,
-        branch_id: target.kind === "branch" ? target.id : null,
-        company_id: target.kind === "company" ? target.id : null,
-        profile_id: target.kind === "customer" ? target.id : null,
-        recipient_kind: target.kind,
-        contact_name: target.contactName,
-        email,
-        action_link: actionLink,
-        resend_contact_id: contactId,
-        status: error ? "failed" : "sent",
-        error,
-        sent_at: error ? null : new Date().toISOString(),
-      });
-
-      results.push({
-        name: target.name,
-        email,
-        status: error ? "failed" : "sent",
-        ...(error ? { error } : {}),
-      });
-
-      await sleep(CONTACT_DELAY_MS);
-    }
-
-    if (!synced) {
-      const firstError = results.find((r) => r.status === "failed")?.error ?? null;
-      const message = `No contacts could be added to Resend — the broadcast was not created.${
-        firstError ? ` Resend said: ${firstError}` : ""
-      }`;
-      await admin.from("platform_email_campaigns")
-        .update({ status: "failed", failed_count: failed, error_message: message }).eq("id", campaignId);
-      return json({
-        provider: "resend",
-        campaign_id: campaignId,
-        error: message,
-        totals: { sent: 0, failed, skipped: results.filter((r) => r.status === "skipped").length },
-        results,
-      }, 200);
-    }
-
-    // ── Trim the shared segment ────────────────────────────────────────────
-    // Leftovers from a previous campaign would otherwise receive this one too.
+    // ── Recipient rows (pending) + personal links ──────────────────────────
+    // Contacts themselves are pushed to Resend in the `sync` phase so a large
+    // list never runs past the request time limit.
+    let slugs = new Map<string, string>();
     try {
-      const intended = new Set(
-        sendable.map((t) => (t.email ?? "").trim().toLowerCase()).filter(Boolean),
+      slugs = await upsertActivationPages(
+        admin,
+        { id: tenant.id, app_id: tenant.app_id },
+        sendable.map((t) => ({
+          id: t.id,
+          kind: t.kind,
+          email: (t.email ?? "").trim(),
+          contactName: t.contactName || t.name,
+        })),
       );
-      const current = await listSegmentContacts(apiKey, segmentId);
-      for (const contact of current) {
-        const email = (contact.email ?? "").trim().toLowerCase();
-        if (email && intended.has(email)) continue;
-        await removeContactFromSegment(apiKey, contact.id ?? email, segmentId);
-        await sleep(CONTACT_DELAY_MS);
+    } catch (e) {
+      // A personal link is a nice-to-have; the broadcast still goes out.
+      console.error("activation pages:", (e as Error).message);
+    }
+
+    const rows = sendable.map((t) => {
+      const slug = slugs.get(t.id);
+      return {
+        campaign_id: campaignId,
+        branch_id: t.kind === "branch" ? t.id : null,
+        company_id: t.kind === "company" ? t.id : null,
+        profile_id: t.kind === "customer" ? t.id : null,
+        recipient_kind: t.kind,
+        contact_name: t.contactName || t.name,
+        org_name: t.name,
+        email: (t.email ?? "").trim(),
+        action_link: slug ? `${origin}/activate/${slug}` : origin,
+        status: "pending",
+      };
+    });
+    for (const part of chunkArray(rows, 200)) {
+      const { error } = await admin.from("platform_email_campaign_recipients").insert(part);
+      if (error) {
+        await admin.from("platform_email_campaigns")
+          .update({ status: "failed", error_message: `recipient_insert: ${error.message}` })
+          .eq("id", campaignId);
+        return json({ error: `recipient_insert: ${error.message}` }, 500);
       }
-    } catch (e) {
-      const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
-      const message =
-        `The contact list could not be limited to the chosen recipients, so the broadcast was not sent. Resend said: ${msg}`;
-      await admin.from("platform_email_campaigns")
-        .update({ status: "failed", failed_count: failed, error_message: message }).eq("id", campaignId);
-      return json({ provider: "resend", campaign_id: campaignId, error: message, results }, 200);
     }
-
-
-    // ── Broadcast ──────────────────────────────────────────────────────────
-    let broadcastId: string;
-    try {
-      broadcastId = await createBroadcast(apiKey, {
-        segment_id: segmentId,
-        from,
-        subject,
-        html,
-        text,
-        reply_to: account.reply_to ?? undefined,
-        name: `${template.name ?? templateSlug} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
-        send: true,
-        ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
-      });
-    } catch (e) {
-      const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
-      await admin.from("platform_email_campaigns")
-        .update({ status: "failed", failed_count: sendable.length, error_message: msg }).eq("id", campaignId);
-
-      return json({ provider: "resend", campaign_id: campaignId, error: msg, results }, 200);
-    }
-
-    await admin.from("platform_email_campaigns").update({
-      status: scheduledAt ? "scheduled" : "sent",
-      resend_broadcast_id: broadcastId,
-      sent_count: synced,
-      failed_count: failed,
-    }).eq("id", campaignId);
 
     return json({
       provider: "resend",
+      phase: "prepare",
       campaign_id: campaignId,
-      broadcast_id: broadcastId,
-      scheduled_at: scheduledAt,
-      over_free_limit: synced > FREE_CONTACT_LIMIT,
+      remaining: rows.length,
+      over_free_limit: rows.length > FREE_CONTACT_LIMIT,
       totals: {
-        sent: synced,
-        failed,
+        pending: rows.length,
+        sent: 0,
+        failed: 0,
         skipped: results.filter((r) => r.status === "skipped").length,
       },
       results,
@@ -405,3 +327,208 @@ Deno.serve(async (req) => {
     return json({ error: (e as Error).message }, 500);
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Later phases: push contacts in small batches, then create the broadcast.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// deno-lint-ignore no-explicit-any
+type Admin = any;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function loadCampaignContext(admin: Admin, callerId: string, campaignId: string) {
+  const { data: campaign } = await admin
+    .from("platform_email_campaigns").select("*").eq("id", campaignId).maybeSingle();
+  if (!campaign) return { error: json({ error: "Campaign not found" }, 404) };
+
+  const { allowed } = await callerCanSendForTenant(admin, callerId, campaign.tenant_id);
+  if (!allowed) return { error: json({ error: "Forbidden" }, 403) };
+
+  const { data: account } = await admin
+    .from("email_accounts").select("*")
+    .eq("tenant_id", campaign.tenant_id).is("branch_id", null)
+    .eq("transport", "resend").eq("is_active", true)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1).maybeSingle();
+  if (!account) return { error: json({ error: "This tenant has no active Resend mailbox." }, 200) };
+
+  const apiKey = await readResendKey(admin, account.resend_api_key_secret_id);
+  if (!apiKey) return { error: json({ error: "Resend API key missing from the vault." }, 500) };
+
+  return { campaign, account, apiKey };
+}
+
+async function countRecipients(admin: Admin, campaignId: string, status: string): Promise<number> {
+  const { count } = await admin
+    .from("platform_email_campaign_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campaignId).eq("status", status);
+  return count ?? 0;
+}
+
+/** Pushes the next batch of pending recipients into the shared segment. */
+async function runSync(admin: Admin, callerId: string, body: any): Promise<Response> {
+  const ctx = await loadCampaignContext(admin, callerId, String(body.campaign_id ?? ""));
+  if ("error" in ctx) return ctx.error!;
+  const { campaign, apiKey } = ctx as any;
+
+  const segmentId = campaign.resend_segment_id;
+  if (!segmentId) return json({ error: "This campaign has no Resend contact list." }, 400);
+
+  const batchSize = Math.min(Math.max(Number(body.batch_size ?? 75), 1), 150);
+  const { data: batch, error: batchErr } = await admin
+    .from("platform_email_campaign_recipients")
+    .select("id, email, contact_name, org_name, action_link")
+    .eq("campaign_id", campaign.id).eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(batchSize);
+  if (batchErr) return json({ error: `recipient_read: ${batchErr.message}` }, 500);
+
+  const results: Array<{ name: string; email: string; status: string; error?: string }> = [];
+  for (const row of ((batch ?? []) as any[])) {
+    const { first, last } = splitName(row.contact_name || row.org_name || row.email);
+    let contactId: string | null = null;
+    let error: string | null = null;
+    try {
+      contactId = await upsertContact(apiKey, segmentId, {
+        email: row.email,
+        first_name: first,
+        last_name: last,
+        properties: { org_name: row.org_name ?? row.contact_name ?? "", action_link: row.action_link ?? "" },
+      });
+    } catch (e) {
+      error = e instanceof ResendApiError ? e.message : (e as Error).message;
+    }
+
+    await admin.from("platform_email_campaign_recipients").update({
+      resend_contact_id: contactId,
+      status: error ? "failed" : "sent",
+      error,
+      sent_at: error ? null : new Date().toISOString(),
+    }).eq("id", row.id);
+
+    results.push({
+      name: row.org_name || row.contact_name || row.email,
+      email: row.email,
+      status: error ? "failed" : "sent",
+      ...(error ? { error } : {}),
+    });
+    await sleep(CONTACT_DELAY_MS);
+  }
+
+  const remaining = await countRecipients(admin, campaign.id, "pending");
+  const sent = await countRecipients(admin, campaign.id, "sent");
+  const failed = await countRecipients(admin, campaign.id, "failed");
+  await admin.from("platform_email_campaigns")
+    .update({ sent_count: sent, failed_count: failed }).eq("id", campaign.id);
+
+  return json({
+    provider: "resend",
+    phase: "sync",
+    campaign_id: campaign.id,
+    remaining,
+    totals: { sent, failed, skipped: campaign.skipped_count ?? 0 },
+    results,
+  });
+}
+
+/** Trims the shared list to this campaign's recipients, then sends. */
+async function runFinalise(admin: Admin, callerId: string, body: any): Promise<Response> {
+  const ctx = await loadCampaignContext(admin, callerId, String(body.campaign_id ?? ""));
+  if ("error" in ctx) return ctx.error!;
+  const { campaign, account, apiKey } = ctx as any;
+
+  const segmentId = campaign.resend_segment_id;
+  if (!segmentId) return json({ error: "This campaign has no Resend contact list." }, 400);
+
+  const pending = await countRecipients(admin, campaign.id, "pending");
+  if (pending > 0) {
+    return json({ error: `${pending} recipients are still being added — finish that first.`, remaining: pending }, 400);
+  }
+
+  const sent = await countRecipients(admin, campaign.id, "sent");
+  const failed = await countRecipients(admin, campaign.id, "failed");
+  if (!sent) {
+    const message = "No contacts could be added to Resend — the broadcast was not created.";
+    await admin.from("platform_email_campaigns")
+      .update({ status: "failed", failed_count: failed, error_message: message }).eq("id", campaign.id);
+    return json({ provider: "resend", campaign_id: campaign.id, error: message, totals: { sent: 0, failed } }, 200);
+  }
+
+  // Everyone who should receive this broadcast.
+  const intended = new Set<string>();
+  for (let from = 0; ; from += 1000) {
+    const { data } = await admin
+      .from("platform_email_campaign_recipients")
+      .select("email").eq("campaign_id", campaign.id).eq("status", "sent")
+      .range(from, from + 999);
+    const rows = (data ?? []) as any[];
+    for (const r of rows) if (r.email) intended.add(String(r.email).trim().toLowerCase());
+    if (rows.length < 1000) break;
+  }
+
+  try {
+    const current = await listSegmentContacts(apiKey, segmentId);
+    for (const contact of current) {
+      const email = (contact.email ?? "").trim().toLowerCase();
+      if (email && intended.has(email)) continue;
+      await removeContactFromSegment(apiKey, contact.id ?? email, segmentId);
+      await sleep(CONTACT_DELAY_MS);
+    }
+  } catch (e) {
+    const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
+    const message =
+      `The contact list could not be limited to the chosen recipients, so the broadcast was not sent. Resend said: ${msg}`;
+    await admin.from("platform_email_campaigns")
+      .update({ status: "failed", error_message: message }).eq("id", campaign.id);
+    return json({ provider: "resend", campaign_id: campaign.id, error: message }, 200);
+  }
+
+  const scheduledAt = body.scheduled_at ? String(body.scheduled_at) : null;
+  const senderLabel = account.from_name || campaign.subject_snapshot;
+  let broadcastId: string;
+  try {
+    broadcastId = await createBroadcast(apiKey, {
+      segment_id: segmentId,
+      from: `${account.from_name || senderLabel} <${account.from_email}>`,
+      subject: campaign.subject_snapshot,
+      html: campaign.body_html_snapshot,
+      text: campaign.body_text_snapshot,
+      reply_to: account.reply_to ?? undefined,
+      name: `${campaign.template_slug} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
+      send: true,
+      ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
+    });
+  } catch (e) {
+    const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
+    await admin.from("platform_email_campaigns")
+      .update({ status: "failed", error_message: msg }).eq("id", campaign.id);
+    return json({ provider: "resend", campaign_id: campaign.id, error: msg }, 200);
+  }
+
+  await admin.from("platform_email_campaigns").update({
+    status: scheduledAt ? "scheduled" : "sent",
+    resend_broadcast_id: broadcastId,
+    sent_count: sent,
+    failed_count: failed,
+    error_message: null,
+  }).eq("id", campaign.id);
+
+  return json({
+    provider: "resend",
+    phase: "finalise",
+    campaign_id: campaign.id,
+    broadcast_id: broadcastId,
+    scheduled_at: scheduledAt,
+    remaining: 0,
+    over_free_limit: sent > FREE_CONTACT_LIMIT,
+    totals: { sent, failed, skipped: campaign.skipped_count ?? 0 },
+  });
+}
+
