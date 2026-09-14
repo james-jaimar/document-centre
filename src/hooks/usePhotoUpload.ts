@@ -92,10 +92,11 @@ export function usePhotoUpload(orderItemId: string | undefined) {
     async (
       rawFile: File,
       overrideOrderItemId?: string,
-      options?: { suppressToast?: boolean },
+      options?: { suppressToast?: boolean; signal?: AbortSignal },
     ): Promise<UploadedPhoto | null> => {
       const effectiveId = overrideOrderItemId || orderItemId;
       if (!effectiveId || !user || !tenantId) return null;
+      const signal = options?.signal;
 
       const originalName = rawFile.name;
 
