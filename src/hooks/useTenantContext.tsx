@@ -87,16 +87,13 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase
-        .from("tenants")
-        .select("id, app_id, name, slug")
-        .eq("slug", urlSlug)
-        .eq("is_active", true)
+        .rpc("tenant_public_by_slug", { p_slug: urlSlug })
         .maybeSingle();
       if (cancelled) return;
       if (error || !data) {
         setSlugTenant(null);
       } else {
-        setSlugTenant(data as { id: string; app_id: string; name: string; slug: string });
+        setSlugTenant(data as unknown as { id: string; app_id: string; name: string; slug: string });
       }
       setSlugLoading(false);
     })();

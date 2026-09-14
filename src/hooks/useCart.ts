@@ -760,11 +760,9 @@ export function usePlaceOrder() {
       let isDemo = false;
       if (orderTenantId) {
         const { data: tRow } = await supabase
-          .from("tenants")
-          .select("is_demo")
-          .eq("id", orderTenantId)
+          .rpc("tenant_public_by_id", { p_id: orderTenantId })
           .maybeSingle();
-        isDemo = !!tRow?.is_demo;
+        isDemo = !!(tRow as { is_demo?: boolean } | null)?.is_demo;
       }
 
       // Resolve the branch this order belongs to (locked from storefront branch).

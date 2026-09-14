@@ -64,9 +64,7 @@ const Auth = () => {
         if (highestRole === "platform_admin") {
           if (isTenantPortal) {
             const { data: t } = await supabase
-              .from("tenants")
-              .select("id")
-              .eq("slug", tenantSlug!)
+              .rpc("tenant_public_by_slug", { p_slug: tenantSlug! })
               .maybeSingle();
             if (t?.id) {
               navigate(buildAdminPath("/admin", t.id), { replace: true });

@@ -76,9 +76,7 @@ const AuthCallback = () => {
       if (tenantSlug) {
         if (highest === "platform_admin") {
           const { data: t } = await supabase
-            .from("tenants")
-            .select("id")
-            .eq("slug", tenantSlug)
+            .rpc("tenant_public_by_slug", { p_slug: tenantSlug })
             .maybeSingle();
           toast.success("Signed in");
           if (t?.id) {
