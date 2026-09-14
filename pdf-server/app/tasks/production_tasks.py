@@ -246,7 +246,9 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             colour_warnings = report.get("colour_warnings") or []
             if colour_warnings:
                 result["warnings"] = list(colour_warnings)
-                log.warning(
+                import logging as _logging
+
+                _logging.getLogger(__name__).warning(
                     "templated_artwork colour warnings for job %s: %s",
                     job_id, colour_warnings,
                 )
