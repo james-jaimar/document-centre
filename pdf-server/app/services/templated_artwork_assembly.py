@@ -948,7 +948,7 @@ def assemble_templated_artwork(
     base_geometry: dict[str, Any] = {}
     # Encode each placed raster once, and render each distinct page layer once.
     jpeg_cache: dict[tuple[str, int, int], bytes] = {}
-    jpeg_cache_by_page: dict[int, dict[tuple[str, int, int], bytes]] = {}
+    # (content-keyed, so it is shared across every sheet)
     layer_cache: dict[tuple[Any, ...], Path] = {}
 
 
