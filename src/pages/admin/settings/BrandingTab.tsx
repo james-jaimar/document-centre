@@ -92,6 +92,7 @@ export function BrandingTab() {
   const [portalName, setPortalName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [emailLogoUrl, setEmailLogoUrl] = useState("");
+  const [logoLightUrl, setLogoLightUrl] = useState("");
   const [heroImageUrl, setHeroImageUrl] = useState("");
   const [authBackgroundUrl, setAuthBackgroundUrl] = useState("");
   const [authBackgroundColor, setAuthBackgroundColor] = useState("");
@@ -137,6 +138,7 @@ export function BrandingTab() {
       setPortalName((settingsMap.portal_name as string) ?? "");
       setLogoUrl((settingsMap.logo_url as string) ?? "");
       setEmailLogoUrl((settingsMap.email_logo_url as string) ?? "");
+      setLogoLightUrl((settingsMap.logo_light_url as string) ?? "");
       setHeroImageUrl((settingsMap.hero_image_url as string) ?? "");
       setAuthBackgroundUrl((settingsMap.auth_background_url as string) ?? "");
       setAuthBackgroundColor((settingsMap.auth_background_color as string) ?? "");
@@ -236,6 +238,7 @@ export function BrandingTab() {
         { category: "branding", setting_key: "portal_name", setting_value: portalName, value_type: "string" },
         { category: "branding", setting_key: "logo_url", setting_value: logoUrl, value_type: "string" },
         { category: "branding", setting_key: "email_logo_url", setting_value: emailLogoUrl, value_type: "string" },
+        { category: "branding", setting_key: "logo_light_url", setting_value: logoLightUrl, value_type: "string" },
         { category: "branding", setting_key: "hero_image_url", setting_value: heroImageUrl, value_type: "string" },
         { category: "branding", setting_key: "auth_background_url", setting_value: authBackgroundUrl, value_type: "string" },
         { category: "branding", setting_key: "auth_background_color", setting_value: authBackgroundColor, value_type: "string" },
