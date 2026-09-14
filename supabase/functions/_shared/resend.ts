@@ -159,6 +159,68 @@ export async function createSegment(apiKey: string, name: string): Promise<strin
   return data.id;
 }
 
+/** All segments on the account. */
+export async function listSegments(
+  apiKey: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const data = await call<{ data?: Array<{ id: string; name: string }> }>(apiKey, "/segments");
+  return data.data ?? [];
+}
+
+/**
+ * Resend accounts cap the number of segments, so every broadcast reuses one
+ * shared list instead of creating a new one per campaign.
+ */
+export async function getOrCreateSegment(apiKey: string, name: string): Promise<string> {
+  try {
+    const match = (await listSegments(apiKey)).find(
+      (s) => (s.name ?? "").trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (match) return match.id;
+  } catch (e) {
+    if (!(e instanceof ResendApiError)) throw e;
+  }
+  try {
+    return await createSegment(apiKey, name);
+  } catch (e) {
+    // Lost a race, or the account is at its segment cap — re-read and reuse.
+    const match = (await listSegments(apiKey)).find(
+      (s) => (s.name ?? "").trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (match) return match.id;
+    throw e;
+  }
+}
+
+/** Contacts currently in a segment. */
+export async function listSegmentContacts(
+  apiKey: string,
+  segmentId: string,
+): Promise<Array<{ id: string; email: string }>> {
+  const data = await call<{ data?: Array<{ id: string; email: string }> }>(
+    apiKey,
+    `/segments/${segmentId}/contacts`,
+  );
+  return data.data ?? [];
+}
+
+/** Removes a contact from a segment. The contact itself stays on the account. */
+export async function removeContactFromSegment(
+  apiKey: string,
+  contactRef: string,
+  segmentId: string,
+): Promise<void> {
+  try {
+    await call(apiKey, `/contacts/${encodeURIComponent(contactRef)}/segments/${segmentId}`, {
+      method: "DELETE",
+    });
+  } catch (e) {
+    const err = e as ResendApiError;
+    if (err.status === 404) return;
+    throw e;
+  }
+}
+
 export async function segmentExists(apiKey: string, segmentId: string): Promise<boolean> {
   try {
     await call(apiKey, `/segments/${segmentId}`);

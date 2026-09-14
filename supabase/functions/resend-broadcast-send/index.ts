@@ -21,14 +21,23 @@ import { resolveAppOriginDetailed } from "../_shared/buildAuthLink.ts";
 import {
   contactTag,
   createBroadcast,
-  createSegment,
   ensureContactProperties,
+  getOrCreateSegment,
+  listSegmentContacts,
   readResendKey,
+  removeContactFromSegment,
   ResendApiError,
   upsertContact,
   verifyAccount,
   withResendUnsubscribeFooter,
 } from "../_shared/resend.ts";
+
+/**
+ * Resend plans cap how many segments an account may hold, so every broadcast
+ * reuses this one shared list. Membership is reset to exactly the recipients
+ * chosen for the campaign before the broadcast is created.
+ */
+const SHARED_SEGMENT_NAME = "General";
 
 
 const corsHeaders = {
@@ -222,12 +231,10 @@ Deno.serve(async (req) => {
     }
 
     // ── Segment ────────────────────────────────────────────────────────────
-    // A fresh segment per campaign guarantees a broadcast cannot inherit
+    // One shared segment for every broadcast (Resend caps segments per
+    // account). Membership is trimmed below so a broadcast can never inherit
     // contacts selected for an earlier campaign.
-    const segmentId = await createSegment(
-      apiKey,
-      `${tenant.name} — ${template.name ?? templateSlug} — ${new Date().toISOString().slice(0, 19)}`,
-    );
+    const segmentId = await getOrCreateSegment(apiKey, SHARED_SEGMENT_NAME);
 
 
     // ── Campaign row ───────────────────────────────────────────────────────
@@ -326,6 +333,28 @@ Deno.serve(async (req) => {
         totals: { sent: 0, failed, skipped: results.filter((r) => r.status === "skipped").length },
         results,
       }, 200);
+    }
+
+    // ── Trim the shared segment ────────────────────────────────────────────
+    // Leftovers from a previous campaign would otherwise receive this one too.
+    try {
+      const intended = new Set(
+        sendable.map((t) => (t.email ?? "").trim().toLowerCase()).filter(Boolean),
+      );
+      const current = await listSegmentContacts(apiKey, segmentId);
+      for (const contact of current) {
+        const email = (contact.email ?? "").trim().toLowerCase();
+        if (email && intended.has(email)) continue;
+        await removeContactFromSegment(apiKey, contact.id ?? email, segmentId);
+        await sleep(CONTACT_DELAY_MS);
+      }
+    } catch (e) {
+      const msg = e instanceof ResendApiError ? e.message : (e as Error).message;
+      const message =
+        `The contact list could not be limited to the chosen recipients, so the broadcast was not sent. Resend said: ${msg}`;
+      await admin.from("platform_email_campaigns")
+        .update({ status: "failed", failed_count: failed, error_message: message }).eq("id", campaignId);
+      return json({ provider: "resend", campaign_id: campaignId, error: message, results }, 200);
     }
 
 
