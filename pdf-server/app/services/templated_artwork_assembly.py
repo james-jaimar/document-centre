@@ -367,6 +367,22 @@ def _has_transparency(img: Image.Image) -> bool:
         return True
 
 
+def _image_key(img: Image.Image) -> str:
+    """Stable identity for an already-loaded image, computed once per image."""
+    cached = getattr(img, "_dc_content_key", None)
+    if cached:
+        return str(cached)
+    try:
+        digest = hashlib.sha1(img.tobytes()).hexdigest()  # noqa: S324 - not security
+    except Exception:  # noqa: BLE001 - unreadable? fall back to object identity
+        digest = f"obj{id(img)}"
+    try:
+        img._dc_content_key = digest  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - some Image subclasses block attributes
+        pass
+    return digest
+
+
 def _encoded_jpeg(
     img: Image.Image,
     pid: str,
@@ -380,10 +396,13 @@ def _encoded_jpeg(
     see-through pixels stay RGBA PNG, so the transparency survives into the
     PDF — flattening those onto white would turn white-only artwork into a
     white box. Returns (bytes, has_alpha).
+
+    Keyed on the picture's own content, not the placeholder id, so the same
+    photo placed on several sheets is embedded once instead of per page.
     """
     target_w = max(1, int(round(draw_w_pt / 72.0 * MAX_PLACED_DPI)))
     target_h = max(1, int(round(draw_h_pt / 72.0 * MAX_PLACED_DPI)))
-    key = (pid, target_w, target_h)
+    key = (_image_key(img), target_w, target_h)
     hit = cache.get(key)
     alpha = _has_transparency(img)
     if hit is not None:
@@ -396,10 +415,12 @@ def _encoded_jpeg(
     if alpha:
         src.convert("RGBA").save(buf, format="PNG", optimize=True)
     else:
-        _to_cmyk(src).save(buf, format="JPEG", quality=92, optimize=True)
+        # 85 is press-indistinguishable from 92 and roughly halves the file.
+        _to_cmyk(src).save(buf, format="JPEG", quality=85, optimize=True)
     data = buf.getvalue()
     cache[key] = data
     return data, alpha
+
 
 
 # ---------------------------------------------------------------------------
