@@ -205,6 +205,14 @@ export function usePhotoUpload(orderItemId: string | undefined) {
           previewHeightPx: derivatives?.previewHeight,
         };
       } catch (err: any) {
+        if (isAbortError(err) || signal?.aborted) {
+          updateUpload(originalName, {
+            status: "cancelled",
+            progress: 0,
+            statusText: "Cancelled",
+          });
+          throw err instanceof Error ? err : new UploadCancelledError();
+        }
         console.error("[photo-upload] failed:", err);
         updateUpload(originalName, {
           status: "error",
