@@ -270,3 +270,74 @@ export async function upsertActivationPage(
   if (error) throw new Error(`activation_page_insert: ${error.message}`);
   return slug;
 }
+
+/**
+ * Bulk version of `upsertActivationPage` for large campaigns: one lookup, one
+ * insert for everything missing, and updates only for rows whose contact
+ * details actually changed. Returns slug-by-target-id.
+ */
+export async function upsertActivationPages(
+  admin: Admin,
+  tenant: { id: string; app_id: string | null },
+  targets: Array<{ id: string; kind: Audience; email: string; contactName: string }>,
+): Promise<Map<string, string>> {
+  const slugs = new Map<string, string>();
+  if (!targets.length) return slugs;
+
+  const kinds = [...new Set(targets.map((t) => t.kind))];
+  for (const kind of kinds) {
+    const column = AUDIENCE_COLUMN[kind];
+    const group = targets.filter((t) => t.kind === kind);
+    const existing = new Map<string, { id: string; slug: string; contact_email: string | null; contact_name: string | null; is_active: boolean }>();
+
+    for (const part of chunk(group.map((t) => t.id), 100)) {
+      const { data, error } = await admin
+        .from("platform_branch_activation_pages")
+        .select(`id, slug, contact_email, contact_name, is_active, ${column}`)
+        .eq("tenant_id", tenant.id)
+        .in(column, part);
+      if (error) throw new Error(`activation_page_lookup: ${error.message}`);
+      for (const row of ((data ?? []) as any[])) existing.set(String(row[column]), row as any);
+    }
+
+    const inserts: Record<string, unknown>[] = [];
+    const updates: Array<{ id: string; payload: Record<string, unknown> }> = [];
+
+    for (const t of group) {
+      const row = existing.get(t.id);
+      if (row) {
+        slugs.set(t.id, row.slug);
+        if (row.contact_email !== t.email || row.contact_name !== t.contactName || !row.is_active) {
+          updates.push({
+            id: row.id,
+            payload: { contact_email: t.email, contact_name: t.contactName, is_active: true },
+          });
+        }
+        continue;
+      }
+      const slug = mintToken(12);
+      slugs.set(t.id, slug);
+      inserts.push({
+        tenant_id: tenant.id,
+        app_id: tenant.app_id,
+        contact_email: t.email,
+        contact_name: t.contactName,
+        is_active: true,
+        slug,
+        [column]: t.id,
+      });
+    }
+
+    for (const part of chunk(inserts, 200)) {
+      const { error } = await admin.from("platform_branch_activation_pages").insert(part);
+      if (error) throw new Error(`activation_page_insert: ${error.message}`);
+    }
+    for (const u of updates) {
+      const { error } = await admin
+        .from("platform_branch_activation_pages").update(u.payload).eq("id", u.id);
+      if (error) throw new Error(`activation_page_update: ${error.message}`);
+    }
+  }
+
+  return slugs;
+}
