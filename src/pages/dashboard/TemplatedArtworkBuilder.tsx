@@ -1685,6 +1685,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         usedIds={usedStockIds}
         busy={!!busyId}
         onPick={handlePickStock}
+        onCancelPick={cancelUpload}
       />
 
       <AlertDialog open={!!spreadAsk} onOpenChange={(o) => !o && answerSpread(null)}>
