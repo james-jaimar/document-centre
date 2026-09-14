@@ -761,7 +761,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 const up = await Promise.race([
-                  uploadPhoto(file, itemId, { suppressToast: true }),
+                  uploadPhoto(file, itemId, { suppressToast: true, signal }),
                   new Promise<never>((_, rej) =>
                     setTimeout(() => rej(new Error("the upload timed out")), 120_000),
                   ),
@@ -769,6 +769,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 if (up) return up;
                 throw new Error("the upload did not complete");
               } catch (err) {
+                if (isAbortError(err) || signal.aborted) throw err;
                 if (attempt === 2) throw err;
                 console.warn("[templated-artwork] retrying page upload", err);
               }
@@ -781,7 +782,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
             maxPages: count,
             onPage: async (rp) => {
               const i = rp.index;
-              if (cancelPlacing.current) return;
+              if (cancelPlacing.current || signal.aborted) return;
               setPlacing({
                 processed: i,
                 placed,
