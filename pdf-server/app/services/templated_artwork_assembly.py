@@ -397,7 +397,15 @@ def _encoded_jpeg(
         src.convert("RGBA").save(buf, format="PNG", optimize=True)
     else:
         # 85 is press-indistinguishable from 92 and roughly halves the file.
-        _to_cmyk(src).save(buf, format="JPEG", quality=85, optimize=True)
+        # Stays sRGB (tagged where the profile is available) — the single
+        # Ghostscript ICC pass at the end converts the whole sheet to CMYK.
+        _to_srgb(src).save(
+            buf,
+            format="JPEG",
+            quality=85,
+            optimize=True,
+            icc_profile=srgb_profile_bytes(),
+        )
     data = buf.getvalue()
     cache[key] = data
     return data, alpha
