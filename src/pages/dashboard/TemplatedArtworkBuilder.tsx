@@ -21,7 +21,7 @@ import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
-import { downloadFromS3, uploadToS3 } from "@/lib/s3Storage";
+import { downloadFromS3, isAbortError, uploadToS3 } from "@/lib/s3Storage";
 import StockImagePicker from "@/components/artwork/StockImagePicker";
 import { usePhotoLibraryForProduct } from "@/hooks/usePhotoLibrarySettings";
 import { fetchStockPhotoFile, type StockPhoto } from "@/lib/stockImages/pexels";
