@@ -280,10 +280,11 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           }
         }
 
+        if (controller.signal.aborted) return;
         const itemId = await ensureOrder();
         const safeName = file.name.replace(/[^\w.\-]+/g, "_");
         const path = `artwork-uploads/${itemId}/print-ready-${Date.now()}-${safeName}`;
-        await uploadToS3(path, file);
+        await uploadToS3(path, file, controller.signal);
 
         // Register it as a normal document so the existing print-ready /
         // imposition pipeline treats it like any other supplied artwork.
@@ -317,9 +318,14 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           approved_at: null,
         });
       } catch (err: any) {
-        console.error("[uploaded-artwork] upload failed", err);
-        setRejection(err?.message ?? "We couldn't process that file.");
+        if (isAbortError(err) || controller.signal.aborted) {
+          toast.message("Upload cancelled");
+        } else {
+          console.error("[uploaded-artwork] upload failed", err);
+          setRejection(err?.message ?? "We couldn't process that file.");
+        }
       } finally {
+        uploadAbort.current = null;
         setBusy(false);
       }
     },
