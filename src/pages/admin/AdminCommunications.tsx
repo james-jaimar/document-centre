@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useTenantCustomers } from "@/hooks/useTenantCustomers";
@@ -119,6 +119,10 @@ function ComposeTab() {
   const [resendAccount, setResendAccount] = useState<{ from_email: string } | null>(null);
   const [useResend, setUseResend] = useState(true);
   const [result, setResult] = useState<any>(null);
+  const [progress, setProgress] = useState<
+    { campaignId: string; done: number; total: number; stage: string } | null
+  >(null);
+  const cancelRef = useRef(false);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -227,20 +231,24 @@ function ComposeTab() {
       toast({ title: "Pick a template and at least one recipient", variant: "destructive" });
       return;
     }
-    setSending(true); setResult(null);
+    setSending(true); setResult(null); setProgress(null);
+    cancelRef.current = false;
     const viaResend = !!resendAccount && useResend;
+    const ids = testOnly ? [Array.from(selected)[0]] : Array.from(selected);
+
     const response = await invokeEdgeFunctionVerbose(
       viaResend ? "resend-broadcast-send" : "send-branch-marketing-campaign",
       {
-      tenant_id: tenantId,
-      template_slug: templateSlug,
-      audience,
-       recipient_ids: testOnly ? [Array.from(selected)[0]] : Array.from(selected),
-      dry_run: dryRun,
-    },
+        tenant_id: tenantId,
+        template_slug: templateSlug,
+        audience,
+        recipient_ids: ids,
+        dry_run: dryRun,
+        ...(viaResend && !dryRun ? { phase: "prepare" } : {}),
+      },
     );
-    setSending(false);
     if (!response.ok || !response.data) {
+      setSending(false);
       if (response.data) setResult(response.data);
       toast({
         title: dryRun ? "Dry run failed" : "Send failed",
@@ -250,8 +258,16 @@ function ComposeTab() {
       return;
     }
     const data = response.data as any;
-    const totals = data.totals ?? {};
     setResult(data);
+
+    // Resend campaigns continue in short batches so a long list can't time out.
+    if (viaResend && !dryRun && data.campaign_id && !data.error) {
+      await runRemainingPhases(data.campaign_id, data.remaining ?? 0, data.totals?.skipped ?? 0);
+      return;
+    }
+
+    setSending(false);
+    const totals = data.totals ?? {};
     toast({
       title: dryRun ? "Dry run complete" : testOnly ? "Test email sent" : data.queued ? "Campaign queued" : "Campaign sent",
       description: dryRun
@@ -259,6 +275,75 @@ function ComposeTab() {
         : `Sending ${totals.sent ?? totals.pending ?? 0} · Failed ${totals.failed ?? 0} · Skipped ${totals.skipped ?? 0}`,
     });
   };
+
+  /** Uploads contacts batch by batch, then creates the broadcast. */
+  const runRemainingPhases = async (campaignId: string, initialRemaining: number, skipped: number) => {
+    const total = initialRemaining;
+    setSending(true);
+    setProgress({ campaignId, done: 0, total, stage: "Adding recipients" });
+
+    let remaining = initialRemaining;
+    let guard = 0;
+    while (remaining > 0 && guard++ < 500) {
+      if (cancelRef.current) {
+        setSending(false);
+        setProgress({ campaignId, done: total - remaining, total, stage: "Paused — use Resume to continue" });
+        toast({ title: "Paused", description: "Nothing has been emailed yet. Resume when you're ready." });
+        return;
+      }
+      const res = await invokeEdgeFunctionVerbose("resend-broadcast-send", {
+        campaign_id: campaignId,
+        phase: "sync",
+        batch_size: 75,
+      });
+      const d = res.data as any;
+      if (!res.ok || !d || d.error) {
+        setSending(false);
+        setProgress({ campaignId, done: total - remaining, total, stage: "Stopped — use Resume to continue" });
+        toast({
+          title: "Adding recipients stopped",
+          description: d?.error ?? res.error ?? "No response from the email sender",
+          variant: "destructive",
+        });
+        return;
+      }
+      remaining = d.remaining ?? 0;
+      setProgress({ campaignId, done: total - remaining, total, stage: "Adding recipients" });
+      setResult((prev: any) => ({ ...(prev ?? {}), totals: d.totals }));
+    }
+
+    setProgress({ campaignId, done: total, total, stage: "Sending the broadcast" });
+    const fin = await invokeEdgeFunctionVerbose("resend-broadcast-send", {
+      campaign_id: campaignId,
+      phase: "finalise",
+    });
+    const f = fin.data as any;
+    setSending(false);
+    if (!fin.ok || !f || f.error) {
+      setProgress({ campaignId, done: total, total, stage: "Stopped — use Resume to continue" });
+      toast({
+        title: "Send failed",
+        description: f?.error ?? fin.error ?? "No response from the email sender",
+        variant: "destructive",
+      });
+      return;
+    }
+    setProgress(null);
+    setResult((prev: any) => ({ ...(prev ?? {}), ...f }));
+    const t = f.totals ?? {};
+    toast({
+      title: "Campaign sent",
+      description: `Sent ${t.sent ?? 0} · Failed ${t.failed ?? 0} · Skipped ${t.skipped ?? skipped}`,
+    });
+  };
+
+  const resume = async () => {
+    if (!progress) return;
+    cancelRef.current = false;
+    await runRemainingPhases(progress.campaignId, progress.total - progress.done, 0);
+  };
+
+
 
   const noSender = (result?.results ?? []).some(
     (r: any) => typeof r.error === "string" && r.error.includes("No outgoing email account"),
@@ -363,6 +448,37 @@ function ComposeTab() {
               Send to {selected.size}
             </Button>
           </div>
+
+          {progress && (
+            <div className="rounded border bg-muted/40 p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{progress.stage}</span>
+                <span>{progress.done} of {progress.total}</span>
+              </div>
+              <div className="h-2 rounded bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <div className="flex gap-2">
+                {sending ? (
+                  <Button size="sm" variant="outline" onClick={() => { cancelRef.current = true; }}>
+                    Pause
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={resume}>Resume</Button>
+                )}
+                {!sending && (
+                  <Button size="sm" variant="ghost" onClick={() => setProgress(null)}>Dismiss</Button>
+                )}
+              </div>
+              <p className="text-muted-foreground">
+                Nobody is emailed until every recipient has been added — pausing here is safe.
+              </p>
+            </div>
+          )}
+
           {templateIssues.length > 0 && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
             This template is not ready to send: {templateIssues.join(" · ")}
           </div>}

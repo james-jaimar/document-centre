@@ -5052,6 +5052,7 @@ export type Database = {
           last_clicked_url: string | null
           last_follow_up_at: string | null
           open_count: number
+          org_name: string | null
           profile_id: string | null
           recipient_kind: string
           resend_contact_id: string | null
@@ -5077,6 +5078,7 @@ export type Database = {
           last_clicked_url?: string | null
           last_follow_up_at?: string | null
           open_count?: number
+          org_name?: string | null
           profile_id?: string | null
           recipient_kind?: string
           resend_contact_id?: string | null
@@ -5102,6 +5104,7 @@ export type Database = {
           last_clicked_url?: string | null
           last_follow_up_at?: string | null
           open_count?: number
+          org_name?: string | null
           profile_id?: string | null
           recipient_kind?: string
           resend_contact_id?: string | null
