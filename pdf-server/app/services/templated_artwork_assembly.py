@@ -813,6 +813,108 @@ def _stamp_vector_placements(
 
 
 # ---------------------------------------------------------------------------
+# Colour management
+# ---------------------------------------------------------------------------
+_OUTPUT_INTENT_NAMES: dict[str, tuple[str, str]] = {
+    "fogra39": ("Coated FOGRA39 (ISO 12647-2:2004)", "FOGRA39L"),
+    "fogra39_300": ("Coated FOGRA39 300% (ISO 12647-2:2004)", "FOGRA39L"),
+    "fogra51": ("PSO Coated v3 (FOGRA51)", "FOGRA51L"),
+}
+
+
+def _stamp_output_intent(pdf_path: Path, dest_profile: str) -> bool:
+    """Declare the press condition the file was converted for (PDF/X style).
+
+    Without this the CMYK numbers are untagged: every viewer and downstream
+    tool guesses, which is what makes a correctly converted file still look
+    flat on screen.
+    """
+    try:
+        import pikepdf
+
+        from app.services.icc_profiles import resolve_profile
+
+        profile_bytes = Path(resolve_profile(dest_profile)).read_bytes()
+        name, condition = _OUTPUT_INTENT_NAMES.get(
+            dest_profile, (dest_profile, dest_profile.upper()),
+        )
+        with pikepdf.open(str(pdf_path), allow_overwriting_input=True) as pdf:
+            stream = pdf.make_stream(profile_bytes)
+            stream["/N"] = 4
+            intent = pdf.make_indirect(pikepdf.Dictionary(
+                Type=pikepdf.Name("/OutputIntent"),
+                S=pikepdf.Name("/GTS_PDFX"),
+                OutputCondition=pikepdf.String(name),
+                OutputConditionIdentifier=pikepdf.String(condition),
+                Info=pikepdf.String(name),
+                RegistryName=pikepdf.String("http://www.color.org"),
+                DestOutputProfile=pdf.make_indirect(stream),
+            ))
+            pdf.Root["/OutputIntents"] = pdf.make_indirect(pikepdf.Array([intent]))
+            pdf.save(str(pdf_path))
+        return True
+    except Exception as exc:  # noqa: BLE001 - never fail a job over tagging
+        log.warning("templated_artwork: output intent not stamped: %s", exc)
+        return False
+
+
+def _colour_manage(
+    out_pdf: Path,
+    workspace: Workspace,
+    *,
+    dest_profile: str = "fogra39",
+    intent: str = "relative_colorimetric",
+) -> dict[str, Any]:
+    """One ICC conversion for the finished sheet, then tag the result.
+
+    Returns the report fragment plus ``_path`` — the file to upload. If the
+    conversion cannot be colour-managed the untouched composition is returned
+    with a warning so the job surfaces it instead of silently shipping flat
+    colour.
+    """
+    from app.services.pdf_ops import pdf_ops
+
+    result: dict[str, Any] = {
+        "_path": out_pdf,
+        "icc_profile": dest_profile,
+        "icc_intent": intent,
+        "icc_converted": False,
+        "output_intent_stamped": False,
+        "colour_warnings": [],
+    }
+    converted = workspace.path("templated-artwork-cmyk.pdf")
+    try:
+        stats = pdf_ops.to_print_ready_cmyk(
+            out_pdf,
+            converted,
+            dest_profile=dest_profile,
+            intent=intent,
+            preserve_black=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - ship the job, flag the colour
+        log.warning("templated_artwork: CMYK conversion failed: %s", exc)
+        result["colour_warnings"].append(
+            f"Colour was not converted to {dest_profile}: {exc}"
+        )
+        return result
+
+    result["_path"] = converted
+    result["icc_converted"] = bool(stats.get("icc_converted"))
+    result["icc_attempt"] = stats.get("attempt")
+    if not result["icc_converted"]:
+        result["colour_warnings"].append(
+            "Ghostscript fell back to an unmanaged conversion — check the ICC "
+            "profiles on the print server."
+        )
+    result["output_intent_stamped"] = _stamp_output_intent(converted, dest_profile)
+    if not result["output_intent_stamped"]:
+        result["colour_warnings"].append(
+            "Output intent could not be stamped — the file ships as untagged CMYK."
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -833,6 +935,9 @@ def assemble_templated_artwork(
     base_path = ta.get("base_pdf_path")
     if not base_path:
         raise ValueError("templated-artwork job has no base_pdf_path")
+
+    # Press condition for the final colour conversion + output intent.
+    icc_profile_slug = str(ta.get("icc_profile") or cfg.get("icc_profile") or "fogra39")
 
     defs = [d for d in (ta.get("placeholder_defs") or []) if isinstance(d, dict)]
     # Values without a page_index repeat on every page; values carrying one
