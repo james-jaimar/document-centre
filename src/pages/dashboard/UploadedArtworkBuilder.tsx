@@ -53,6 +53,8 @@ import {
 } from "@/lib/pricing/packOptions";
 
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { useSamplePackFlow } from "@/hooks/useSamplePackFlow";
+import SamplePackProgressStrip from "@/components/storefront/SamplePackProgressStrip";
 
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
@@ -125,6 +127,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   /** Sample pack items are always a single copy at the flat pack price. */
   const [samplePackParams] = useSearchParams();
   const samplePack = samplePackParams.get("sample") === "1";
+  const packFlow = useSamplePackFlow(samplePack, familyId);
   const [approved, setApproved] = useState(false);
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
@@ -450,8 +453,15 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         replacesCartItemId: replacesCartItemId || undefined,
       });
       invalidateUserOrderCaches(qc);
-      toast.success("Added to cart");
-      navigate(tenantPath("cart"));
+      if (packFlow.active && !packFlow.completesPack) {
+        toast.success(
+          `${family?.name ?? "Item"} added — ${packFlow.remainingAfterAdd} to go`,
+        );
+        navigate(tenantPath("sample-pack"));
+      } else {
+        toast.success(packFlow.active ? "Your sample pack is complete" : "Added to cart");
+        navigate(tenantPath("cart"));
+      }
     } catch (e: any) {
       console.error("[uploaded-artwork] add to cart failed", e);
       toast.error(e?.message ?? "Failed to add to cart");
@@ -464,6 +474,9 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
 
   return (
     <div ref={ref} className="flex min-h-0 w-full flex-1 flex-col bg-muted/20">
+      {packFlow.active && (
+        <SamplePackProgressStrip done={packFlow.done} total={packFlow.total} />
+      )}
       {/* Top bar */}
       <div className="flex flex-wrap items-center gap-3 border-b bg-background px-4 py-2.5">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>

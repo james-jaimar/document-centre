@@ -53,6 +53,8 @@ import {
 } from "@/lib/pricing/packOptions";
 
 import { useCustomerPricingTier } from "@/hooks/useCustomerPricingTier";
+import { useSamplePackFlow } from "@/hooks/useSamplePackFlow";
+import SamplePackProgressStrip from "@/components/storefront/SamplePackProgressStrip";
 import { formatPrice } from "@/lib/formatCurrency";
 import type {
   ArtworkPlaceholder,
@@ -192,6 +194,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [quantity, setQuantity] = useState(1);
   /** Sample pack items are always a single copy at the flat pack price. */
   const samplePack = searchParams.get("sample") === "1";
+  const packFlow = useSamplePackFlow(samplePack, familyId);
   const hydrated = useRef(false);
 
   /** Watermark boxes may never print above 10% — enforced wherever a value lands. */
@@ -1131,8 +1134,15 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         replacesCartItemId: replacesCartItemId || undefined,
       });
       invalidateUserOrderCaches(qc);
-      toast.success("Added to cart");
-      navigate(tenantPath("cart"));
+      if (packFlow.active && !packFlow.completesPack) {
+        toast.success(
+          `${family?.name ?? "Item"} added — ${packFlow.remainingAfterAdd} to go`,
+        );
+        navigate(tenantPath("sample-pack"));
+      } else {
+        toast.success(packFlow.active ? "Your sample pack is complete" : "Added to cart");
+        navigate(tenantPath("cart"));
+      }
     } catch (e: any) {
       console.error("[templated-artwork] add to cart failed", e);
       toast.error(e?.message ?? "Failed to add to cart");
@@ -1206,6 +1216,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
 
   return (
     <div ref={ref} className="flex h-full min-h-0 w-full flex-1 flex-col bg-muted/20">
+      {packFlow.active && (
+        <SamplePackProgressStrip done={packFlow.done} total={packFlow.total} />
+      )}
       {/* Editor bar */}
       <div className="flex flex-wrap items-center gap-3 border-b bg-background px-4 py-2.5">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>

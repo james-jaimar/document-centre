@@ -76,14 +76,26 @@ export default function SamplePack() {
         </div>
       )}
 
-      <div className="flex items-center justify-between rounded-lg border border-border p-4">
-        <p className="text-sm font-medium text-foreground">
-          {doneCount} of {included.length} personalised
-        </p>
-        <Button disabled={!complete} onClick={() => navigate(tenantPath("cart"))}>
-          {complete ? "Go to basket" : "Finish every item to continue"}
-        </Button>
-      </div>
+      {complete ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-primary bg-accent/30 p-5">
+          <div>
+            <p className="text-lg font-semibold text-foreground">Your pack is complete</p>
+            <p className="text-sm text-muted-foreground">
+              All {included.length} items are personalised — {format(config.price)} delivered.
+            </p>
+          </div>
+          <Button size="lg" onClick={() => navigate(tenantPath("cart"))}>
+            Go to basket
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between rounded-lg border border-border p-4">
+          <p className="text-sm font-medium text-foreground">
+            {doneCount} of {included.length} personalised
+          </p>
+          <Button disabled>Finish every item to continue</Button>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {included.map((entry) => {
