@@ -1320,8 +1320,9 @@ def assemble_templated_artwork(
         "page_size_mm": base_geometry.get("media_mm"),
         "trim_size_mm": base_geometry.get("trim_mm") or base_geometry.get("spec_trim_mm"),
         "base_has_bleed": base_geometry.get("has_bleed"),
-        "fonts": _audit_fonts(out_pdf),
+        "fonts": _audit_fonts(final_pdf),
         "storage_path": storage_path,
+        **colour,
     }
     log.info("templated_artwork: assembled %s", report)
     return storage_path, report
