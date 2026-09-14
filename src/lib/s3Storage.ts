@@ -140,17 +140,22 @@ interface RetryOpts {
   maxRetries?: number;
   /** Used in console warnings for traceability. */
   label?: string;
+  /** Lets the customer stop the transfer. */
+  signal?: AbortSignal;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise<T> {
   const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
   const label = opts.label ?? "s3-op";
+  const signal = opts.signal;
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (signal?.aborted) throw new UploadCancelledError();
     try {
       return await fn();
     } catch (err) {
       lastError = err;
+      if (isAbortError(err) || signal?.aborted) throw new UploadCancelledError();
       const transient = isTransientError(err);
       if (!transient || attempt >= maxRetries) {
         throw err;
@@ -160,11 +165,12 @@ async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise
         `[s3-storage] transient ${label} failure, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`,
         err instanceof Error ? err.message : err,
       );
-      await sleep(delay);
+      await sleep(delay, signal);
     }
   }
   throw lastError ?? new Error(`${label} failed`);
 }
+
 
 /** Thrown when even a session refresh couldn't restore a usable token. */
 export class StorageSessionError extends Error {
