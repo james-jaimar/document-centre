@@ -574,7 +574,19 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
               <span className="text-sm font-medium">
                 {busy ? "Checking your file…" : "Drop your print-ready PDF"}
               </span>
-              <span className="text-xs text-muted-foreground">or click to browse</span>
+              <span className="text-xs text-muted-foreground">
+                {busy ? "This can take a while on a slow connection" : "or click to browse"}
+              </span>
+            </button>
+          )}
+
+          {busy && (
+            <button
+              type="button"
+              onClick={cancelUpload}
+              className="w-full text-center text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Cancel upload
             </button>
           )}
 
