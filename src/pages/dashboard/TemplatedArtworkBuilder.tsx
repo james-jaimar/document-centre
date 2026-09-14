@@ -726,7 +726,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           // big file: upload it alongside the page work instead of making the
           // customer wait for it before anything visible happens.
           const sourcePdfPath = `artwork-uploads/${itemId}/${placeholderId}-multi-source.pdf`;
-          const sourceUpload = uploadToS3(sourcePdfPath, rawFile).then(
+          const sourceUpload = uploadToS3(sourcePdfPath, rawFile, signal).then(
             () => sourcePdfPath,
             (err) => {
               console.warn("[templated-artwork] original PDF upload failed", err);
