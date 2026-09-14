@@ -12,7 +12,7 @@ import {
   resolveTargets,
   fetchSuppressedEmails,
   normalizeIds,
-  upsertActivationPage,
+  upsertActivationPages,
 } from "../_shared/campaignAudience.ts";
 import { renderTemplate } from "../_shared/sendBranchActivation.ts";
 import { findRelativeImages, normalizeBroadcastTokens, renderAuthoredEmail } from "../_shared/advancedEmail.ts";
@@ -77,6 +77,12 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, serviceKey);
     const body = await req.json();
+
+    // Large campaigns are sent in three short calls so nothing runs past the
+    // request time limit: prepare → sync (repeat) → finalise.
+    const phase = String(body.phase ?? "prepare");
+    if (phase === "sync") return await runSync(admin, caller.id, body);
+    if (phase === "finalise") return await runFinalise(admin, caller.id, body);
 
     const tenantId = String(body.tenant_id ?? "");
     const audience = (body.audience ?? "branch") as Audience;
