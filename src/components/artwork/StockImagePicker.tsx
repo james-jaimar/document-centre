@@ -32,6 +32,8 @@ interface Props {
   usedIds?: string[];
   busy?: boolean;
   onPick: (photo: StockPhoto) => void;
+  /** Stops the photo that is currently being fetched and uploaded. */
+  onCancelPick?: () => void;
 }
 
 export default function StockImagePicker({
@@ -42,6 +44,7 @@ export default function StockImagePicker({
   usedIds = [],
   busy,
   onPick,
+  onCancelPick,
 }: Props) {
   const { settings } = usePhotoLibrarySettings();
   const [query, setQuery] = useState(settings.defaultQuery);
