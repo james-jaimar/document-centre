@@ -185,7 +185,7 @@ function ComposeTab() {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const row = campaign as { id: string } | null;
+      const row = (campaign as unknown) as { id: string } | null;
       if (!row) return;
       const { count } = await supabase
         .from("platform_email_campaign_recipients" as any)
