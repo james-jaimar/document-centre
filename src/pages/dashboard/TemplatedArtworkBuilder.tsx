@@ -194,6 +194,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const [quantity, setQuantity] = useState(1);
   /** Sample pack items are always a single copy at the flat pack price. */
   const samplePack = searchParams.get("sample") === "1";
+  const packFlow = useSamplePackFlow(samplePack, familyId);
   const hydrated = useRef(false);
 
   /** Watermark boxes may never print above 10% — enforced wherever a value lands. */
