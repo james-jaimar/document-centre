@@ -129,11 +129,27 @@ WORKDIR /app
 # App source
 COPY pdf-server/ /app/
 
-# ICC profiles + scratch dirs (Cloud Run filesystem is RO except /tmp).
-# No `|| true` here on purpose: an image without the press profiles silently
-# degrades every colour conversion, which is far worse than a failed build.
-RUN bash /app/scripts/install-icc-profiles.sh \
-    && mkdir -p /app/storage /tmp/printforge /tmp/celery \
+# ICC profiles are vendored in the repo (pdf-server/icc/) and copied in — no
+# build-time downloads. An image without the press profiles silently degrades
+# every colour conversion, so the verification step below fails the build.
+COPY pdf-server/icc/eci_offset_2009/ECI_Offset_2009/ISOcoated_v2_eci.icc \
+     pdf-server/icc/eci_offset_2009/ECI_Offset_2009/ISOcoated_v2_300_eci.icc \
+     pdf-server/icc/pso-coated_v3/PSOcoated_v3.icc \
+     pdf-server/icc/sRGB_v4_ICC_preference.icc \
+     /opt/document-centre-api/icc/
+
+# Verify each profile referenced by app/services/icc_profiles.py PROFILE_MAP:
+# a real ICC file carries the ASCII tag 'acsp' at byte offset 36.
+RUN set -eux; \
+    for f in ISOcoated_v2_eci.icc ISOcoated_v2_300_eci.icc PSOcoated_v3.icc sRGB_v4_ICC_preference.icc; do \
+      p="/opt/document-centre-api/icc/$f"; \
+      test -s "$p" || { echo "MISSING ICC profile: $p"; exit 1; }; \
+      magic="$(dd if="$p" bs=1 skip=36 count=4 2>/dev/null)"; \
+      [ "$magic" = "acsp" ] || { echo "INVALID ICC profile: $p"; exit 1; }; \
+      echo "[ ok ] $f ($(stat -c%s "$p") bytes)"; \
+    done
+
+RUN mkdir -p /app/storage /tmp/printforge /tmp/celery \
     && chmod +x /app/scripts/*.sh
 
 # Default env (overridden per Cloud Run service).

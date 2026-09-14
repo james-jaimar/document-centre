@@ -2,6 +2,11 @@
 # =============================================================================
 # Install ICC profiles for print-ready CMYK conversion (idempotent).
 #
+# NOTE: the container image does NOT run this script. The Dockerfile copies the
+# profiles vendored in pdf-server/icc/ straight into /opt/document-centre-api/icc
+# and verifies them, so the build never depends on eci.org being reachable.
+# This script remains for bare-metal / VPS / local dev installs.
+#
 # Usage:
 #     sudo bash scripts/install-icc-profiles.sh
 #
