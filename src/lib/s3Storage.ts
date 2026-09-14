@@ -115,6 +115,7 @@ async function withAuthRecovery<T>(fn: () => Promise<T>, label: string): Promise
   try {
     return await fn();
   } catch (err) {
+    if (isAbortError(err)) throw err;
     if (!isAuthError(err)) throw err;
     console.warn(
       `[s3-storage] ${label} hit an auth failure, refreshing session and retrying once:`,
