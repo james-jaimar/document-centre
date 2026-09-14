@@ -1,70 +1,63 @@
-# 2027 Edition Trade Launch Readiness Plan
+# Make the 700-recipient campaign send safely in one go
 
-## Goal
-Send the first trade campaign from The 2027 Edition tenant to ~700 shops and be confident the storefront can accept orders end-to-end.
+## What I checked
 
-## Verdict right now
-**Not ready.** Two hard blockers would stop the launch cold, and four more items need to be closed before I’d feel comfortable pressing send.
+I walked the send path end to end: the Send button in Communications, the campaign sender, and the Resend helpers.
 
-## Hard blockers (must fix before launch)
+Today, pressing Send does everything inside a single request that must stay open until the last recipient is done:
 
-1. **Critical security finding blocks publishing**
-   - Finding `tenants_public_business_pii_exposure` exposes `billing_email`, `support_email`, `support_phone`, `vat_number`, `registration_number` and `legal_name` of active tenants to anonymous users.
-   - This is an `error`-level finding and will block publishing until it is fixed or intentionally ignored.
-   - Fix: replace the broad public `tenants` SELECT policy with a limited storefront view or column-restricted policy.
+```text
+Send  →  one request  →  for each of the 700 recipients, one at a time:
+                            create/refresh their personal activation link
+                            push them to Resend as a contact
+                            write the history row
+                            wait 130ms (rate limit)
+                         then tidy the contact list
+                         then create the broadcast
+```
 
-2. **Resend broadcast emails are failing with 422**
-   - The broadcast sender needs Resend custom contact properties `org_name` and `action_link` pre-created before send time.
-   - Also needs a verified sender domain and a Full access Resend API key for the 2027 Edition tenant.
-   - Fix: configure the tenant’s Resend account, create the two custom properties, verify the sender domain, then send a test campaign to a small internal list.
+At roughly 0.6–1 second per recipient that is **7 to 12 minutes of one continuous request**. It will be cut off long before it finishes — the browser gives up, and the server has a hard time limit too. When it is cut off, part of the list is in Resend, the history row is stuck on "running", and **no broadcast is ever created**, so nobody gets the email. Pressing Send again starts from scratch.
 
-3. **Supplier order mirroring is incomplete**
-   - Paid 2027 Edition orders are not reliably dropping into Impress Print as supplier orders.
-   - The supplier-mirror code reads `product_snapshot.product_family_id` but jobs store it under `product_snapshot.product_family.id`.
-   - `recordPayment` does not trigger a mirror, and delivery charges/cost prices are zero on mirrored orders.
-   - Fix: align the product family lookup, mirror on payment completion, carry delivery charge and supplier cost price.
+Two more problems that only appear at this size:
 
-4. **Activation page still needs the white logo uploaded**
-   - The code now supports a "Logo for dark backgrounds" field, but the white PNG still needs to be uploaded in The 2027 Edition → Settings → Branding.
-   - This is a tenant-admin action; the assistant cannot complete it without a signed-in session.
+- **The tidy-up step only reads the first page of the contact list.** With 700 contacts it will see a fraction of them, so leftovers from earlier sends can stay in the list and receive the campaign.
+- **No progress and no resume.** You can't tell how far it got, and nothing picks up where it stopped.
 
-## Medium blockers (fix before launch or accept known risk)
+Nothing is wrong with the email itself, the activation links, or Resend — the mechanics have simply never been run at this volume.
 
-5. **Sample pack is still on for 2027 Edition**
-   - The user asked about turning it off. If it stays on, the R495 pack offer will be visible to trade visitors.
-   - Action: decide on/off, then toggle in Settings → Sample Pack.
+## What I'll change
 
-6. **Payments tab is not mounted in tenant Settings**
-   - `PaymentsTab` exists but is not reachable from Admin Settings, so PayFast credentials cannot be entered per tenant.
-   - Fix: add Payments between Financial and Quotes in `AdminSettings.tsx`, guarded for owners/admins.
+### 1. Three short steps instead of one long one
 
-7. **Impersonation edge error for cross-tenant staff**
-   - Staff who are branch managers in one tenant but customers in another are blocked from impersonation because the staff check is global.
-   - Fix: scope the staff block to the tenant being impersonated and surface the real error in the UI.
+Send becomes a sequence the screen drives, each step small enough to always finish:
 
-8. **Trade-customer flag can revert for existing customers**
-   - Duplicate active memberships can cause the trade flag to flip back off.
-   - Fix: enforce the tenant-wide trade resolution and repair the affected records.
+1. **Prepare** — creates the campaign, makes sure the Resend fields and shared "General" list exist, and generates all 700 personal activation links in a handful of bulk database operations (seconds, not minutes). Recipients are saved as "pending".
+2. **Upload contacts** — repeats, handling about 75 recipients each time, pacing safely under Resend's rate limit. Roughly 3–4 minutes total, with a live count on screen.
+3. **Send** — trims the shared list to exactly your chosen recipients, then creates the broadcast.
 
-## Test plan (do not skip)
+### 2. Resume instead of restart
 
-- **Email test**: send the campaign to 5 internal test addresses first; verify sender, branding, activation link, unsubscribe and that it does not 422.
-- **Activation test**: open the activation link on mobile and desktop; confirm the white logo shows, the form works, and sign-in succeeds.
-- **Order test**: place a test order as a trade customer, go through checkout, pay, and confirm the order appears in Impress Print with the correct spec, artwork and delivery charge.
-- **Dispatch test**: mark the supplier order as dispatched with a waybill; confirm the 2027 Edition order updates and the customer dispatch email sends.
-- **Mobile test**: walk the shop page, product page, upload flow and checkout on a phone.
+If a step fails or you close the tab, the campaign stays on screen with a **Resume** button that continues from the first recipient not yet uploaded. Nothing is duplicated and nobody is emailed twice — the broadcast only goes out at the final step.
 
-## Go / no-go criteria
+### 3. Fix the contact-list tidy-up
 
-- [ ] Security scan is clean or the PII finding is intentionally ignored.
-- [ ] Test campaign sends successfully to internal addresses.
-- [ ] White logo is uploaded and the activation page looks right.
-- [ ] A test order flows from 2027 Edition into Impress Print and back with dispatch details.
-- [ ] Sample pack decision is made and applied.
-- [ ] Payments tab is reachable so PayFast settings can be maintained.
+Read the whole list, not just the first page, so no one left over from a previous campaign can receive this one. If the list can't be fully read, the send stops before the broadcast is created — as it does now.
 
-## Out of scope for this launch
+### 4. Progress you can watch
 
-- Inter-tenant invoicing between 2027 Edition and Impress Print.
-- Suppliers outside the app.
-- New product families beyond the existing calendar/deskpad/planner outsource flow.
+A progress bar with "312 of 700 prepared", the number skipped (no email, unsubscribed, previously bounced) and any failures listed by name, so you can see it working rather than staring at a spinner.
+
+## What you should do in the morning
+
+1. Open the campaign and run **Dry run** — confirms the recipient count, the wording and the images, sends nothing.
+2. Send a **test** to yourself and check the activation button lands on the right page.
+3. Press **Send** and leave the tab open for the few minutes the contact upload takes. If it stops, press **Resume**.
+
+Optional, and worth it: press **Prepare** tonight. The activation links get generated and stored, so in the morning only the upload and the broadcast remain.
+
+## Technical notes
+
+- `resend-broadcast-send/index.ts` gains a `phase` parameter (`prepare` | `sync` | `finalise`) replacing the single monolithic pass. `prepare` writes `platform_email_campaign_recipients` rows with `status: 'pending'` and bulk-upserts `platform_branch_activation_pages` (one select of existing rows by target id + one bulk insert + one bulk update, replacing 700 round trips). `sync` claims the next `batch_size` pending rows for the campaign, pushes contacts, and flips them to `sent`/`failed`. `finalise` runs the trim and `createBroadcast`, then sets the campaign to `sent`. Each phase returns `{ campaign_id, remaining, totals }`.
+- `_shared/resend.ts`: `listSegmentContacts` gains cursor/limit pagination looping until exhausted.
+- `AdminCommunications.tsx`: `send()` becomes a driver loop over the phases with progress state, a cancel control, and a Resume action bound to a `running` campaign with pending recipients.
+- Dry run, single-recipient test, and the non-Resend `send-branch-marketing-campaign` path are unchanged.
