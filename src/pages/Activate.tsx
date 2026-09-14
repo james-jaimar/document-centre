@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface PageInfo {
   tenant_name: string | null;
   tenant_logo_url: string | null;
+  tenant_logo_light_url?: string | null;
   primary_color: string | null;
   branch_name: string | null;
   branch_city: string | null;
