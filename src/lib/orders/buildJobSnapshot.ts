@@ -600,7 +600,13 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
 
   // Build merge directives for the eventual server-side PDF concatenation.
   // Raster products (photo/canvas prints) have their own assembly path.
-  const mergeDirectives = isRasterProduct ? [] : buildMergeDirectives(sections, documents);
+  const isSaddleStitched =
+    item.product_families?.kind === "saddle_stitched" ||
+    item.product_families?.slug === "booklets";
+  const mergeDirectives = isRasterProduct
+    ? []
+    : buildMergeDirectives(sections, documents, isSaddleStitched);
+
   const sourceAssets = isRasterProduct ? [] : buildSourceAssets(documents);
 
   return {
