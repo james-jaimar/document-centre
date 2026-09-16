@@ -428,19 +428,31 @@ function buildPageSequence(
 
   for (const item of pending) emitDivider(item);
 
-  // ── Saddle-stitched booklet padding: total pages must be divisible by 4 ──
+  // ── Saddle-stitched booklet padding ──
+  // The cover is its own folded sheet; the BODY must reach a multiple of 4 on
+  // its own. Blanks therefore belong at the end of the body, BEFORE the back
+  // cover — not at the very end of the sequence.
   if (productType === "saddle_stitched") {
-    const contentCount = result.length;
-    const remainder = contentCount % 4;
-    if (remainder !== 0) {
-      const blanksNeeded = 4 - remainder;
-      for (let b = 0; b < blanksNeeded; b++) {
-        result.push({
-          thumbnailUrl: "", pageIndex: -1, isColor: true,
-        });
-      }
+    const isCoverFace = (r: (typeof result)[number]) =>
+      r.section?.section_type === "front_cover" || r.section?.section_type === "back_cover";
+    let lastBodyIdx = -1;
+    let bodyCount = 0;
+    result.forEach((r, i) => {
+      if (isCoverFace(r)) return;
+      bodyCount++;
+      lastBodyIdx = i;
+    });
+    const remainder = bodyCount % 4;
+    if (bodyCount > 0 && remainder !== 0) {
+      const blanks = Array.from({ length: 4 - remainder }, () => ({
+        thumbnailUrl: "",
+        pageIndex: -1,
+        isColor: true,
+      }));
+      result.splice(lastBodyIdx + 1, 0, ...blanks);
     }
   }
+
 
   return result;
 }
