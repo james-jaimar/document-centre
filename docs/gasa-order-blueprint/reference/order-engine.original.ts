@@ -1,0 +1,3526 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { processAutoRefund } from "../_shared/refunds.ts";
+import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
+import { mirrorSupplierOrders } from "../_shared/supplier-mirror.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function err(message: string, status = 400) {
+  return json({ error: message }, status);
+}
+
+// ── Branch-scoped staff guard ──────────────────────────────
+// Mirrors the pattern used in `production-pdf`: any active tenant_membership
+// counts (owner/admin/sales/production/accounts/branch_manager/store_operator),
+// but branch-scoped memberships only authorise actions on orders in their
+// own branch. Returns null on success, or an error message string on denial.
+async function assertOrderStaffAccess(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order: { app_id: string | null; tenant_id: string | null; branch_id: string | null },
+  opts: { adminOnly?: boolean } = {},
+): Promise<string | null> {
+  if (!order?.tenant_id) return "Order has no tenant context";
+
+  // Platform admins bypass.
+  const { data: roles } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId);
+  if ((roles ?? []).some((r: any) => r.role === "platform_admin")) return null;
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("role, branch_id")
+    .eq("profile_id", userId)
+    .eq("tenant_id", order.tenant_id)
+    .eq("is_active", true);
+
+  if (!memberships?.length) return "No active membership for this tenant";
+
+  const allowedRoles = opts.adminOnly
+    ? ["owner", "admin"]
+    : ["owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"];
+
+  const ok = memberships.some((m: any) => {
+    if (!allowedRoles.includes(m.role)) return false;
+    // Tenant-wide membership: branch_id null → allowed for any order branch.
+    if (m.branch_id == null) return true;
+    // Branch-scoped membership: must match the order's branch.
+    return order.branch_id != null && m.branch_id === order.branch_id;
+  });
+
+  if (!ok) {
+    return opts.adminOnly
+      ? "Only owners or admins of this branch/tenant may perform this action"
+      : "Not authorised for this order's branch";
+  }
+  return null;
+}
+
+// ── Side-effect helpers (fire-and-forget) ───────────────────
+async function isDemoOrder(admin: ReturnType<typeof createClient>, order_id: string): Promise<boolean> {
+  try {
+    const { data } = await admin.from("orders").select("is_demo").eq("id", order_id).maybeSingle();
+    return !!(data as any)?.is_demo;
+  } catch { return false; }
+}
+
+async function triggerEmail(_authHeader: string, order_id: string, event_key: string, extra: Record<string, unknown> = {}) {
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${url}/functions/v1/send-order-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ order_id, event_key, ...extra }),
+    });
+    if (!res.ok) {
+      console.error(`triggerEmail ${event_key} failed: ${res.status} ${await res.text().catch(() => "")}`);
+    }
+  } catch (e) {
+    console.error("triggerEmail failed:", e);
+  }
+}
+
+async function triggerInvoice(_authHeader: string, order_id: string, kind: string): Promise<{ invoice_id?: string } | null> {
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${url}/functions/v1/generate-invoice-pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ order_id, kind }),
+    });
+    if (!res.ok) {
+      console.error(`triggerInvoice ${kind} failed: ${res.status} ${await res.text().catch(() => "")}`);
+      return null;
+    }
+    const data = await res.json().catch(() => null);
+    return data && typeof data === "object" ? { invoice_id: (data as any).invoice_id } : null;
+  } catch (e) {
+    console.error("triggerInvoice failed:", e);
+    return null;
+  }
+}
+
+const STATUS_EVENT_MAP: Record<string, string> = {
+  in_production: "in_production",
+  ready: "ready_for_collection",
+  completed: "completed",
+};
+
+// ── Authenticated user client + service client ──────────────
+function clients(authHeader: string) {
+  const url = Deno.env.get("SUPABASE_URL")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  // User-scoped client for auth verification
+  const userClient = createClient(url, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  // Service role client for mutations (bypasses RLS)
+  const admin = createClient(url, serviceKey);
+
+  return { userClient, admin };
+}
+
+// ── Fulfilment gate ─────────────────────────────────────────
+// The tenant setting `delivery.methods_enabled` decides which fulfilment
+// options the storefront may offer. Enforce it server-side so a tampered
+// client can't place a collection order at a delivery-only tenant.
+// Returns null when allowed, or an error string.
+async function checkFulfilmentAllowed(
+  admin: ReturnType<typeof createClient>,
+  tenant_id: string | null | undefined,
+  branch_id: string | null | undefined,
+  fulfillment_type: string | null | undefined,
+): Promise<string | null> {
+  if (!tenant_id || !fulfillment_type) return null;
+  if (fulfillment_type !== "collection" && fulfillment_type !== "delivery") return null;
+
+  let methods: string[] | null = null;
+  try {
+    const { data } = await admin.rpc("resolve_tenant_setting", {
+      p_tenant_id: tenant_id,
+      p_category: "delivery",
+      p_key: "methods_enabled",
+    });
+    const raw = typeof data === "string" ? JSON.parse(data) : data;
+    if (Array.isArray(raw)) methods = raw.filter((m: unknown) => typeof m === "string") as string[];
+  } catch (_e) {
+    return null; // never block on a settings read failure
+  }
+  if (methods === null) return null; // unconfigured → legacy behaviour
+
+  if (fulfillment_type === "collection") {
+    if (!methods.includes("collection")) return "Collection is not available from this store";
+    if (branch_id) {
+      const { data: b } = await admin.from("branches").select("settings").eq("id", branch_id).maybeSingle();
+      const s = (b as any)?.settings ?? null;
+      if (s && s.collection_available === false) return "Collection is not available from this branch";
+    }
+    return null;
+  }
+
+  const deliveryLike = ["courier", "delivery", "postal"];
+  if (!methods.some((m) => deliveryLike.includes(m))) return "Delivery is not available from this store";
+  return null;
+}
+
+
+// ── Branch subscription gate ────────────────────────────────
+// Returns null when allowed, or an error string when the branch is
+// read-only (no/cancelled/past_due subscription) AND the caller cannot bypass
+// (platform admin or tenant owner/admin for the branch's tenant).
+async function checkBranchGate(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  branch_id: string | null | undefined,
+): Promise<string | null> {
+  if (!branch_id) return null;
+
+  const [{ data: roleRow }, { data: branchRow }, { data: subRow }] = await Promise.all([
+    admin.from("user_roles").select("role").eq("user_id", userId).eq("role", "platform_admin").maybeSingle(),
+    admin.from("branches").select("tenant_id").eq("id", branch_id).maybeSingle(),
+    admin.from("branch_subscriptions").select("status,billing_status").eq("branch_id", branch_id).maybeSingle(),
+  ]);
+
+  if (roleRow) return null; // platform admin
+
+  if (branchRow?.tenant_id) {
+    const { data: tm } = await admin
+      .from("tenant_memberships")
+      .select("role")
+      .eq("profile_id", userId)
+      .eq("tenant_id", branchRow.tenant_id)
+      .eq("is_active", true)
+      .in("role", ["owner", "admin"])
+      .maybeSingle();
+    if (tm) return null; // tenant admin bypass
+  }
+
+  if (!subRow) return "This branch does not have an active subscription. Please contact your tenant administrator.";
+  const status = subRow.status || "";
+  const billing = subRow.billing_status || "";
+  if (status === "active" || status === "trialing" || billing === "paid" || billing === "free") return null;
+  if (status === "past_due") return "This branch's subscription payment is past due. New orders are paused.";
+  if (status === "cancelled" || status === "canceled") return "This branch's subscription was cancelled. New orders are paused.";
+  if (billing === "pending_payment") return "This branch is awaiting subscription payment. New orders are paused.";
+  return `This branch's subscription is not active (status: ${status || billing || "unknown"}).`;
+}
+
+/**
+ * Resolve the credit facility that applies to a customer: a personal credit
+ * account (branch-specific first, then tenant-wide), else the linked company's
+ * credit limit. Mirrors `resolveCredit` + the company fallback on the client.
+ */
+type CreditFacility = {
+  credit_limit: number;
+  payment_terms_days: number;
+  account_ref: string | null;
+  source: string;
+  company_id: string | null;
+  profile_id: string | null;
+};
+
+async function resolveCreditFacility(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  profileId: string,
+  branchId: string | null,
+): Promise<CreditFacility | null> {
+  const { data: accounts } = await admin
+    .from("customer_credit_accounts")
+    .select("id, branch_id, is_active, credit_limit, payment_terms_days, account_ref")
+    .eq("tenant_id", tenantId)
+    .eq("customer_profile_id", profileId)
+    .eq("is_active", true);
+
+  const list = (accounts ?? []) as any[];
+  const personal =
+    (branchId ? list.find((a) => a.branch_id === branchId) : null) ??
+    list.find((a) => a.branch_id == null) ??
+    null;
+  if (personal) {
+    return {
+      credit_limit: Number(personal.credit_limit ?? 0),
+      payment_terms_days: Number(personal.payment_terms_days ?? 30),
+      account_ref: personal.account_ref ?? null,
+      source: `credit_account:${personal.id}`,
+      company_id: null,
+      profile_id: profileId,
+    };
+  }
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("company:company_id (id, is_active, credit_limit, payment_terms_days, mis_account_number)")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId)
+    .eq("is_active", true);
+
+  for (const m of (memberships ?? []) as any[]) {
+    const c = m.company;
+    if (!c || c.is_active === false) continue;
+    if (Number(c.credit_limit ?? 0) > 0) {
+      return {
+        credit_limit: Number(c.credit_limit),
+        payment_terms_days: Number(c.payment_terms_days ?? 30),
+        account_ref: c.mis_account_number ?? null,
+        source: `company:${c.id}`,
+        company_id: c.id,
+        profile_id: null,
+      };
+    }
+  }
+  return null;
+}
+
+/** Current outstanding balance on the facility's account ledger. */
+async function accountBalance(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  facility: CreditFacility,
+): Promise<number> {
+  try {
+    const { data } = await admin.rpc("resolve_account_balance", {
+      p_tenant_id: tenantId,
+      p_company_id: facility.company_id,
+      p_profile_id: facility.profile_id,
+    });
+    return Number((data as any)?.balance ?? 0);
+  } catch (_e) {
+    return 0;
+  }
+}
+
+/**
+ * Server-side mirror of src/lib/validation/addressSchema.ts. Returns an error
+ * message when the delivery address isn't good enough to ship to, else null.
+ */
+function validateDeliveryAddress(addr: any): string | null {
+  const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  if (!addr || typeof addr !== "object") return "A delivery address is required";
+  if (!s(addr.contact_name) && !s(addr.company_name)) {
+    return "Delivery address needs a contact name or company";
+  }
+  if (!s(addr.line1)) return "Delivery address needs a street address";
+  if (!s(addr.city)) return "Delivery address needs a city or town";
+  if (!s(addr.province)) return "Delivery address needs a province";
+  const country = s(addr.country).toLowerCase();
+  const isZA = country === "" || country === "za" || country === "south africa";
+  const pc = s(addr.postal_code).replace(/\s+/g, "");
+  if (isZA ? !/^\d{4}$/.test(pc) : !/^[A-Za-z0-9-]{3,10}$/.test(pc)) {
+    return "Delivery address needs a valid postal code";
+  }
+  const digits = s(addr.phone).replace(/[^\d]/g, "");
+  if (digits.length < 9 || digits.length > 15) return "Delivery address needs a valid phone number";
+  const email = s(addr.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return "Delivery address needs a valid email address";
+  return null;
+}
+
+/* ── Sample packs ────────────────────────────────────────────
+ * A fixed-price "one of each" pack for trade buyers. The browser may ask for
+ * it, but everything that matters — eligibility and price — is decided here.
+ */
+
+interface SamplePackConfig {
+  enabled: boolean;
+  price: number;
+  familyIds: string[];
+  tradeOnly: boolean;
+  onePerCompany: boolean;
+}
+
+async function resolveSamplePackConfig(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<SamplePackConfig> {
+  const { data } = await admin
+    .from("tenant_settings")
+    .select("setting_key, setting_value")
+    .eq("tenant_id", tenantId)
+    .eq("category", "sample_pack");
+  const map: Record<string, unknown> = {};
+  for (const row of (data ?? []) as any[]) map[row.setting_key] = row.setting_value;
+  const bool = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : v === "true" ? true : v === "false" ? false : d);
+  const families = Array.isArray(map.family_ids)
+    ? (map.family_ids as unknown[]).filter((v): v is string => typeof v === "string")
+    : [];
+  return {
+    enabled: bool(map.enabled, false),
+    price: Number(map.price ?? 0) || 0,
+    familyIds: families,
+    tradeOnly: bool(map.trade_only, true),
+    onePerCompany: bool(map.one_per_company, true),
+  };
+}
+
+function jobFamilyId(job: any): string | null {
+  const snap = job?.product_snapshot ?? {};
+  return snap.product_family_id ?? snap.product_family?.id ?? null;
+}
+
+/** Returns an error message when this sample pack order may not be placed. */
+async function checkSamplePack(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  profileId: string,
+  jobs: any[],
+  cfg: SamplePackConfig,
+): Promise<string | null> {
+  if (!cfg.enabled || cfg.familyIds.length === 0 || cfg.price <= 0) {
+    return "Sample packs aren't available at the moment.";
+  }
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("is_trade_customer, company_id, company:company_id (id, is_active, is_trade_customer, sample_pack_allowance)")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId)
+    .eq("is_active", true);
+  const rows = (memberships ?? []) as any[];
+  const isTrade = rows.some(
+    (m) => m.is_trade_customer === true || (m.company?.is_active !== false && m.company?.is_trade_customer === true),
+  );
+  if (cfg.tradeOnly && !isTrade) return "Sample packs are only available to trade accounts.";
+
+  const families = jobs.map(jobFamilyId).filter(Boolean) as string[];
+  const exactlyOneEach =
+    families.length === cfg.familyIds.length &&
+    cfg.familyIds.every((id) => families.filter((f) => f === id).length === 1);
+  if (!exactlyOneEach) return "A sample pack must contain exactly one of each included product.";
+
+  if (cfg.onePerCompany) {
+    const allowance = Number(
+      rows.find((m) => m.company?.sample_pack_allowance != null)?.company?.sample_pack_allowance ?? 1,
+    );
+    const companyIds = rows.map((m) => m.company_id).filter(Boolean);
+    let taken = 0;
+    if (companyIds.length) {
+      const { data: mates } = await admin
+        .from("tenant_memberships")
+        .select("profile_id")
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .in("company_id", companyIds);
+      const profileIds = [...new Set([...(mates ?? []).map((m: any) => m.profile_id), profileId])];
+      const { count } = await admin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("is_sample_pack", true)
+        .neq("admin_status", "cancelled")
+        .in("ordered_by_profile_id", profileIds);
+      taken = count ?? 0;
+    } else {
+      const { count } = await admin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("is_sample_pack", true)
+        .neq("admin_status", "cancelled")
+        .eq("ordered_by_profile_id", profileId);
+      taken = count ?? 0;
+    }
+    if (taken >= (Number.isFinite(allowance) ? allowance : 1)) {
+      return "This account has already had its sample pack.";
+    }
+  }
+
+  return null;
+}
+
+/** Tenant VAT rate as a fraction (0.15), 0 when tax is off. */
+async function tenantTaxFraction(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<number> {
+  const { data } = await admin
+    .from("tenant_settings")
+    .select("setting_key, setting_value")
+    .eq("tenant_id", tenantId)
+    .eq("category", "financial");
+  const map: Record<string, unknown> = {};
+  for (const row of (data ?? []) as any[]) map[row.setting_key] = row.setting_value;
+  const rate = Number(map.tax_rate ?? 0) || 0;
+  const enabledRaw = map.tax_enabled;
+  const enabled = (enabledRaw === undefined || enabledRaw === null ? rate > 0 : !!enabledRaw) && rate > 0;
+  return enabled ? rate / 100 : 0;
+}
+
+// ── Action handlers ─────────────────────────────────────────
+
+
+async function createOrderWithJobs(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { app_slug, tenant_id, branch_id, customer, order, billing_address, delivery_address, fulfillment_type, pricing, jobs } = payload;
+  // Online payments create the order in a HELD state: not submitted, not
+  // announced, no proforma, no email, and the customer's cart is left intact
+  // until the gateway confirms (or the customer falls back to EFT).
+  const holdForPayment = payload.hold_for_payment === true;
+
+  if (!app_slug || !tenant_id || !customer?.profile_id || !customer?.email || !jobs?.length) {
+    return err("Missing required fields: app_slug, tenant_id, customer (profile_id, email), jobs[]");
+  }
+
+
+  // Branch subscription gate
+  const gateMsg = await checkBranchGate(admin, userId, branch_id);
+  if (gateMsg) return json({ error: gateMsg, code: "branch_subscription_blocked" }, 402);
+
+  // Fulfilment gate — only methods the tenant has enabled may be used.
+  const resolvedFulfilment = fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null));
+  const fulMsg = await checkFulfilmentAllowed(admin, tenant_id, branch_id, resolvedFulfilment);
+  if (fulMsg) return err(fulMsg);
+
+  // Address gate — the browser is not the only check. A delivery order must
+  // carry a deliverable address (someone to receive it, a street, a town, a
+  // province, a valid postal code and a way to contact them).
+  if (resolvedFulfilment === "delivery") {
+    const addrMsg = validateDeliveryAddress(delivery_address);
+    if (addrMsg) return err(addrMsg);
+  }
+
+  // Prepaid (C.O.D.) customers may only place orders that are held for an
+  // online payment — no account / EFT bypass from a tampered client.
+  try {
+    const { data: membership } = await admin
+      .from("tenant_memberships")
+      .select("payment_terms_mode, company:company_id (payment_terms_mode, is_active)")
+      .eq("tenant_id", tenant_id)
+      .eq("profile_id", customer.profile_id)
+      .maybeSingle();
+    const companyMode = (membership as any)?.company?.is_active === false
+      ? null
+      : (membership as any)?.company?.payment_terms_mode ?? null;
+    const mode = (membership as any)?.payment_terms_mode ?? companyMode ?? "account";
+    if (mode === "prepaid" && !holdForPayment) {
+      const { data: invoiceSetting } = await admin
+        .from("tenant_settings")
+        .select("setting_value")
+        .eq("tenant_id", tenant_id)
+        .eq("category", "payments")
+        .eq("setting_key", "allow_prepaid_invoice")
+        .maybeSingle();
+      const allowPrepaidInvoice = invoiceSetting?.setting_value === true;
+      if (allowPrepaidInvoice && payload.payment_method === "offline") {
+        // Tenant explicitly permits a pro forma invoice instead of immediate online payment.
+      } else {
+      return json(
+        {
+          error: "This account must pay online at checkout (C.O.D.).",
+          code: "prepayment_required",
+        },
+        403,
+      );
+      }
+    }
+  } catch (e) {
+    console.warn("[order-engine] payment terms check failed (non-fatal):", e);
+  }
+
+  // Sample pack: one flat price for one of each product, delivery included.
+  const isSamplePack = payload.sample_pack === true;
+  if (isSamplePack) {
+    const cfg = await resolveSamplePackConfig(admin, tenant_id);
+    const packMsg = await checkSamplePack(admin, tenant_id, customer.profile_id, jobs, cfg);
+    if (packMsg) return json({ error: packMsg, code: "sample_pack_not_allowed" }, 403);
+
+    const gross = Math.round(cfg.price * 100) / 100;
+    const fraction = await tenantTaxFraction(admin, tenant_id);
+    const net = Math.round((gross / (1 + fraction)) * 100) / 100;
+    Object.assign(pricing ?? (payload.pricing = {}), {
+      subtotal: net,
+      discount_amount: 0,
+      delivery_amount: 0,
+      vat_amount: Math.round((gross - net) * 100) / 100,
+      total_amount: gross,
+      amount_paid: 0,
+      amount_due: gross,
+    });
+    // Every item in the pack is included in that one price.
+    for (const job of jobs) {
+      job.net_price = 0;
+      job.gross_price = 0;
+    }
+  }
+
+  // On-account orders: re-resolve the credit facility server-side so a tampered
+  // client can't claim account terms it doesn't have.
+  const paymentMethod: string | null = payload.payment_method ?? null;
+  let creditTerms: { credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null = null;
+  if (paymentMethod === "account") {
+    creditTerms = await resolveCreditFacility(admin, tenant_id, customer.profile_id, branch_id || null);
+    if (!creditTerms) {
+      return json(
+        { error: "No credit facility is available for this account.", code: "credit_facility_required" },
+        403,
+      );
+    }
+    const orderTotal = Number(pricing?.total_amount ?? 0);
+    const balance = await accountBalance(admin, tenant_id, creditTerms);
+    const available = creditTerms.credit_limit - balance;
+    if (creditTerms.credit_limit > 0 && orderTotal > available) {
+      return json(
+        { error: "This order exceeds the available credit on this account.", code: "credit_limit_exceeded" },
+        403,
+      );
+    }
+  }
+
+
+
+
+
+
+  // Resolve app_id from slug
+  const { data: app, error: appErr } = await admin
+    .from("apps")
+    .select("id")
+    .eq("slug", app_slug)
+    .eq("is_active", true)
+    .single();
+
+  if (appErr || !app) {
+    console.error("[order-engine] app_lookup failed", { app_slug, error: appErr });
+    return err(`app_lookup failed: ${appErr?.message ?? `unknown app ${app_slug}`}`, 404);
+  }
+  const app_id = app.id;
+
+  // Generate order number
+  // Tenant-scoped series when the tenant has its own prefix configured;
+  // falls back to the shared app-wide series inside the function.
+  const { data: orderNum, error: numErr } = await admin.rpc("generate_order_number", {
+    p_app_id: app_id,
+    p_tenant_id: tenant_id,
+  });
+  if (numErr || !orderNum) {
+    console.error("[order-engine] generate_order_number failed", numErr);
+    return err(`generate_order_number failed: ${numErr?.message ?? "no number returned"}`);
+  }
+
+
+  // If this cart already produced a held order (customer bounced off the
+  // gateway and came back), cancel it so we don't stack duplicates.
+  const cartOrderId = order?.metadata?.cart_order_id ?? null;
+  if (holdForPayment && cartOrderId) {
+    try {
+      await admin
+        .from("orders")
+        .update({ admin_status: "cancelled", customer_status: "cancelled" })
+        .eq("admin_status", "pending_payment")
+        .eq("ordered_by_profile_id", customer.profile_id)
+        .contains("metadata", { cart_order_id: cartOrderId });
+    } catch (e) {
+      console.warn("[order-engine] superseding previous held order failed (non-fatal):", e);
+    }
+  }
+
+  // Insert order
+  const { data: newOrder, error: orderErr } = await admin
+    .from("orders")
+    .insert({
+      app_id,
+      tenant_id,
+      branch_id: branch_id || null,
+      order_number: orderNum,
+      external_order_ref: order?.external_order_ref || null,
+      source_channel: order?.source_channel || null,
+      storefront_name: order?.storefront_name || null,
+      ordered_by_profile_id: customer.profile_id,
+      customer_email: customer.email,
+      customer_name: customer.name || null,
+      company_name: customer.company_name || null,
+      user_id: customer.profile_id,
+      admin_status: holdForPayment ? "pending_payment" : (creditTerms ? "approved" : "new_order"),
+      customer_status: holdForPayment
+        ? "pending_payment"
+        : (creditTerms ? "in_production" : "awaiting_payment"),
+      payment_status: "unpaid",
+      fulfilment_status: "pending",
+      currency: pricing?.currency || order?.currency || "ZAR",
+      subtotal: pricing?.subtotal || 0,
+      discount_amount: pricing?.discount_amount || 0,
+      delivery_amount: pricing?.delivery_amount || 0,
+      vat_amount: pricing?.vat_amount || 0,
+      total_amount: pricing?.total_amount || 0,
+      amount_paid: pricing?.amount_paid || 0,
+      amount_due: pricing?.amount_due || pricing?.total_amount || 0,
+      date_required: order?.date_required || null,
+      turnaround_time_text: order?.turnaround_time_text || null,
+      fulfillment_type: fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null)),
+      external_code: order?.external_code || null,
+      notes_customer: order?.notes_customer || null,
+      po_number: order?.po_number || null,
+      cost_centre: order?.cost_centre || null,
+      metadata: {
+        ...(order?.metadata || {}),
+        ...(holdForPayment ? { payment_hold: true, held_at: new Date().toISOString() } : {}),
+        ...(paymentMethod ? { payment_method: paymentMethod } : {}),
+        ...(creditTerms
+          ? {
+              payment_terms_days: creditTerms.payment_terms_days,
+              mis_account_number: creditTerms.account_ref,
+              credit_source: creditTerms.source,
+              payment_due_at: new Date(
+                Date.now() + creditTerms.payment_terms_days * 86400000,
+              ).toISOString(),
+            }
+          : {}),
+      },
+      submitted_at: holdForPayment ? null : new Date().toISOString(),
+      is_demo: payload.is_demo === true,
+      is_sample_pack: isSamplePack,
+    })
+
+    .select("id, order_number, is_demo")
+    .single();
+
+  if (orderErr || !newOrder) {
+    console.error("[order-engine] order_insert failed", orderErr);
+    return err(`order_insert failed: ${orderErr?.message ?? "unknown"}`);
+  }
+
+  // Build job inserts
+  const jobInserts = jobs.map((j: any, idx: number) => {
+    const seqNo = idx + 1;
+    const jobNumber = `${orderNum}-${seqNo}`;
+    return {
+      order_id: newOrder.id,
+      app_id,
+      tenant_id,
+      branch_id: branch_id || null,
+      job_number: jobNumber,
+      sequence_no: seqNo,
+      external_product_key: j.external_product_key || null,
+      product_name: j.product_name,
+      product_category: j.product_category || null,
+      job_name: j.job_name || null,
+      quantity: j.quantity || 0,
+      unit_label: j.unit_label || null,
+      net_price: j.net_price || 0,
+      cost_price: j.cost_price || 0,
+      vat_rate: j.vat_rate ?? 15,
+      gross_price: j.gross_price || 0,
+      product_snapshot: j.product_snapshot || {},
+      configuration: j.configuration || {},
+      production_specs: j.production_specs || {},
+      integration_payload: j.integration_payload || {},
+    };
+  });
+
+  // Insert addresses
+  const addressInserts: any[] = [];
+  if (billing_address) {
+    addressInserts.push({ order_id: newOrder.id, address_type: "billing", ...billing_address });
+  }
+  if (delivery_address) {
+    addressInserts.push({ order_id: newOrder.id, address_type: "delivery", ...delivery_address });
+  }
+
+  // Any active customer membership already establishes tenant access. Do not
+  // add a tenant-level consumer row beside an existing branch trade record.
+  const ensureMembership = (async () => {
+    const { data: existing } = await admin
+      .from("tenant_memberships")
+      .select("id")
+      .eq("profile_id", customer.profile_id)
+      .eq("tenant_id", tenant_id)
+      .eq("app_id", app_id)
+      .eq("role", "customer")
+      .limit(1)
+      .maybeSingle();
+    if (existing) return { error: null };
+    return await admin.from("tenant_memberships").insert({
+      profile_id: customer.profile_id,
+      tenant_id,
+      app_id,
+      role: "customer",
+      is_active: true,
+    });
+  })();
+
+  // Run all independent post-order writes in parallel
+  const [jobsResult, addressesResult, pricingResult, timelineResult, membershipResult] = await Promise.all([
+    admin.from("order_jobs").insert(jobInserts).select("id, job_number, sequence_no"),
+    addressInserts.length
+      ? admin.from("order_addresses").insert(addressInserts)
+      : Promise.resolve({ error: null }),
+    pricing
+      ? admin.from("order_pricing_snapshots").insert({
+          order_id: newOrder.id,
+          version_no: 1,
+          currency: pricing.currency || "ZAR",
+          subtotal: pricing.subtotal || 0,
+          discount_amount: pricing.discount_amount || 0,
+          delivery_amount: pricing.delivery_amount || 0,
+          vat_rate: 15,
+          vat_amount: pricing.vat_amount || 0,
+          total_amount: pricing.total_amount || 0,
+          amount_paid: pricing.amount_paid || 0,
+          amount_due: pricing.amount_due || pricing.total_amount || 0,
+          pricing_snapshot: pricing,
+        })
+      : Promise.resolve({ error: null }),
+    admin.from("timeline_events").insert({
+      app_id,
+      tenant_id,
+      branch_id: branch_id || null,
+      order_id: newOrder.id,
+      event_type: "order_created",
+      visibility: "both",
+      actor_type: "system",
+      actor_profile_id: userId,
+      description: `Order ${orderNum} created with ${jobs.length} job(s)`,
+      metadata: { job_count: jobs.length },
+    }),
+    ensureMembership,
+  ]);
+
+  if (jobsResult.error) {
+    console.error("[order-engine] jobs_insert failed", jobsResult.error);
+    return err(`jobs_insert failed: ${jobsResult.error.message}`);
+  }
+  if ((addressesResult as any)?.error) {
+    console.error("[order-engine] addresses_insert failed", (addressesResult as any).error);
+    return err(`addresses_insert failed: ${(addressesResult as any).error.message}`);
+  }
+  if ((pricingResult as any)?.error) {
+    console.error("[order-engine] pricing_snapshot_insert failed", (pricingResult as any).error);
+    return err(`pricing_snapshot_insert failed: ${(pricingResult as any).error.message}`);
+  }
+  if ((timelineResult as any)?.error) {
+    console.error("[order-engine] timeline_insert failed", (timelineResult as any).error);
+    return err(`timeline_insert failed: ${(timelineResult as any).error.message}`);
+  }
+  if ((membershipResult as any)?.error) {
+    console.error("[order-engine] membership_upsert failed", (membershipResult as any).error);
+    return err(`membership_upsert failed: ${(membershipResult as any).error.message}`);
+  }
+  const newJobs = jobsResult.data;
+
+  // Sample pack: the flat pack price lives as an adjustment line, because the
+  // order total is recomputed from jobs + adjustments (and every pack job is 0).
+  if (isSamplePack) {
+    const packNet = Number(pricing?.subtotal ?? 0);
+    const { error: adjErr } = await admin.from("order_adjustments").insert({
+      order_id: newOrder.id,
+      description: "Sample pack — one of each, delivery included",
+      amount: packNet,
+      created_by: userId ?? null,
+      metadata: { sample_pack: true },
+    });
+    if (adjErr) {
+      console.error("[order-engine] sample_pack_adjustment_insert failed", adjErr);
+      return err(`sample_pack_adjustment_insert failed: ${adjErr.message}`);
+    }
+    const { error: syncErr } = await admin.rpc("sync_order_amounts", { p_order_id: newOrder.id });
+    if (syncErr) console.warn("[order-engine] sample_pack sync_order_amounts failed:", syncErr);
+  }
+
+
+  // Insert proofs only if any jobs request them (rare in checkout flow)
+  const proofJobs = jobs
+    .map((j: any, idx: number) => ({ j, newJob: newJobs?.[idx] }))
+    .filter((x: any) => x.j.proof && x.newJob);
+
+  if (proofJobs.length > 0) {
+    const proofInserts = proofJobs.map(({ j, newJob }: any) => ({
+      app_id,
+      tenant_id,
+      order_id: newOrder.id,
+      job_id: newJob.id,
+      proof_type: j.proof.proof_type,
+      proof_status: "pending",
+      viewer_type: j.proof.viewer_type,
+      viewer_url: j.proof.viewer_url || null,
+      document_id: j.proof.document_id || null,
+      metadata: j.proof.metadata || {},
+    }));
+    await Promise.all([
+      admin.from("job_proofs").insert(proofInserts),
+      admin
+        .from("order_jobs")
+        .update({ proof_status: "pending" })
+        .in("id", proofJobs.map((x: any) => x.newJob.id)),
+    ]);
+  }
+
+  // Recompute totals from authoritative jobs + tenant tax config so VAT and
+  // amount_due are populated even if the client didn't provide them.
+  try {
+    await syncOrderTotals(admin, newOrder.id);
+  } catch (e) {
+    console.warn("[order-engine] syncOrderTotals (post-create) failed", e);
+  }
+
+  // Account orders are approved on arrival — push the jobs into production too.
+  if (creditTerms && !holdForPayment) {
+    try {
+      await admin
+        .from("order_jobs")
+        .update({ job_status: "approved_for_production" })
+        .eq("order_id", newOrder.id)
+        .not("job_status", "in", "(completed,cancelled)");
+    } catch (e) {
+      console.warn("[order-engine] account order job cascade failed (non-fatal):", e);
+    }
+    try {
+      await mirrorSupplierOrders(admin, newOrder.id);
+    } catch (e) {
+      console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+    }
+  }
+
+  // Post the charge onto the customer's account ledger so the running balance
+  // (and therefore their available credit) reflects this order.
+  if (creditTerms && !holdForPayment) {
+    try {
+      const { data: fresh } = await admin
+        .from("orders")
+        .select("total_amount, currency, app_id")
+        .eq("id", newOrder.id)
+        .maybeSingle();
+      const chargeAmount = Number((fresh as any)?.total_amount ?? pricing?.total_amount ?? 0);
+      if (chargeAmount > 0) {
+        const due = new Date(Date.now() + creditTerms.payment_terms_days * 86400000);
+        await admin.from("customer_account_ledger").insert({
+          tenant_id: tenant_id,
+          app_id: (fresh as any)?.app_id ?? (newOrder as any).app_id,
+          branch_id: branch_id || null,
+          company_id: creditTerms.company_id,
+          customer_profile_id: creditTerms.company_id ? null : customer.profile_id,
+          entry_type: "charge",
+          amount: chargeAmount,
+          currency: (fresh as any)?.currency ?? pricing?.currency ?? "ZAR",
+          order_id: newOrder.id,
+          reference: newOrder.order_number,
+          note: `Order ${newOrder.order_number}`,
+          entry_date: new Date().toISOString().slice(0, 10),
+          due_date: due.toISOString().slice(0, 10),
+          created_by: userId,
+        });
+      }
+    } catch (e) {
+      console.warn("[order-engine] account ledger charge failed (non-fatal):", e);
+    }
+  }
+
+  return json({
+    order_id: newOrder.id,
+    order_number: newOrder.order_number,
+    held_for_payment: holdForPayment,
+    on_account: !!creditTerms,
+    jobs: newJobs,
+  }, 201);
+
+}
+
+/**
+ * Promote a held (awaiting online payment) order into a real order.
+ * Customer-facing entry point — used when they abandon the gateway and choose
+ * EFT instead. Gateways call the shared helper directly from their webhooks.
+ */
+async function activateHeldOrderAction(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, reason } = payload;
+  if (!order_id) return err("Missing order_id");
+
+  const { data: o } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, ordered_by_profile_id, user_id, admin_status")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (!o) return err("Order not found", 404);
+
+  const isOwner = o.ordered_by_profile_id === userId || o.user_id === userId;
+  if (!isOwner) {
+    const denied = await assertOrderStaffAccess(admin, userId, o as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const result = await activateHeldOrderShared(
+    admin as any,
+    order_id,
+    reason === "paid" ? "paid" : "eft",
+  );
+  return json({ success: true, ...result });
+}
+
+
+
+async function updateJobStatus(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { job_id, job_status, reason } = payload;
+  if (!job_id || !job_status) return err("Missing job_id or job_status");
+
+  // Get current job (incl. order for branch context)
+  const { data: job, error: jobErr } = await admin
+    .from("order_jobs")
+    .select("id, order_id, job_status, app_id, tenant_id, job_number, order:orders!inner(branch_id)")
+    .eq("id", job_id)
+    .single();
+
+  if (jobErr || !job) return err("Job not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, {
+    app_id: (job as any).app_id,
+    tenant_id: (job as any).tenant_id,
+    branch_id: (job as any).order?.branch_id ?? null,
+  });
+  if (denied) return err(denied, 403);
+
+  const fromStatus = job.job_status;
+
+  // Update job status (trigger handles customer_job_status + rollup)
+  const { error: updErr } = await admin
+    .from("order_jobs")
+    .update({ job_status })
+    .eq("id", job_id);
+
+  if (updErr) return err(`Failed to update: ${updErr.message}`);
+
+  // Record status history
+  await admin.from("status_history").insert({
+    app_id: job.app_id,
+    tenant_id: job.tenant_id,
+    order_id: job.order_id,
+    job_id: job.id,
+    entity_type: "job",
+    from_status: fromStatus,
+    to_status: job_status,
+    reason: reason || null,
+    changed_by: userId,
+  });
+
+  // Timeline event
+  await admin.from("timeline_events").insert({
+    app_id: job.app_id,
+    tenant_id: job.tenant_id,
+    order_id: job.order_id,
+    job_id: job.id,
+    event_type: "job_status_changed",
+    visibility: "both",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Job ${job.job_number} status changed from ${fromStatus} to ${job_status}`,
+    metadata: { from_status: fromStatus, to_status: job_status, reason },
+  });
+
+  return json({ success: true, from_status: fromStatus, to_status: job_status });
+}
+
+// ── Order-level status workflow ─────────────────────────────
+// Maps admin_status → { customer_status, fulfilment_status, job_status_cascade }
+const ORDER_STATUS_MAP: Record<string, {
+  customer_status: string;
+  fulfilment_status?: string;
+  cascade_job_status?: string;
+}> = {
+  new_order:          { customer_status: "awaiting_payment", fulfilment_status: "pending" },
+  under_review:       { customer_status: "awaiting_payment", fulfilment_status: "pending" },
+  approved:           { customer_status: "in_production",    fulfilment_status: "pending", cascade_job_status: "approved_for_production" },
+  in_production:      { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "in_production" },
+  sent_to_print:      { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "sent_to_print" },
+  qa:                 { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "qa" },
+  ready_for_dispatch: { customer_status: "ready",            fulfilment_status: "ready", cascade_job_status: "ready" },
+  dispatched:         { customer_status: "dispatched",       fulfilment_status: "dispatched" },
+  completed:          { customer_status: "completed",        cascade_job_status: "completed" },
+  on_hold:            { customer_status: "on_hold",          cascade_job_status: "on_hold" },
+  cancelled:          { customer_status: "cancelled",        fulfilment_status: "cancelled", cascade_job_status: "cancelled" },
+};
+
+/** Order stages, earliest first — used to compare progress. */
+const ORDER_STAGE_ORDER = [
+  "new_order",
+  "under_review",
+  "approved",
+  "in_production",
+  "sent_to_print",
+  "qa",
+  "ready_for_dispatch",
+  "dispatched",
+  "completed",
+];
+const orderStageRank = (s: string | null | undefined) => ORDER_STAGE_ORDER.indexOf(String(s ?? ""));
+
+/** Job stages, earliest first. */
+const JOB_STAGE_ORDER = [
+  "draft",
+  "submitted",
+  "under_review",
+  "approved_for_production",
+  "in_production",
+  "sent_to_print",
+  "qa",
+  "ready",
+  "dispatched",
+  "completed",
+];
+const jobStageRank = (s: string | null | undefined) => JOB_STAGE_ORDER.indexOf(String(s ?? ""));
+
+/**
+ * A supplier tenant moved a mirrored trade order forward. Report that back to
+ * the buyer's own order: supplier status, waybill details and — when the rest
+ * of the buyer's order is ready — the matching status transition so their
+ * customer is kept informed. The customer never sees the supplier.
+ */
+async function propagateSupplierStatus(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  supplierOrder: any,
+  adminStatus: string,
+  trackingNumber?: string | null,
+  trackingCarrier?: string | null,
+) {
+  const buyerOrderId = supplierOrder.source_order_id as string;
+  const { data: buyer } = await admin
+    .from("orders")
+    .select(
+      "id, app_id, tenant_id, order_number, admin_status, tracking_number, tracking_carrier, dispatched_at",
+    )
+    .eq("id", buyerOrderId)
+    .maybeSingle();
+  if (!buyer) return;
+
+  const nowIso = new Date().toISOString();
+  const buyerUpdates: Record<string, unknown> = {
+    supplier_status: adminStatus,
+    updated_at: nowIso,
+  };
+  // Never overwrite a waybill the buyer's own staff entered.
+  if (adminStatus === "dispatched") {
+    if (!buyer.tracking_number && trackingNumber) buyerUpdates.tracking_number = trackingNumber;
+    if (!buyer.tracking_carrier && trackingCarrier) buyerUpdates.tracking_carrier = trackingCarrier;
+    if (!buyer.dispatched_at) buyerUpdates.dispatched_at = nowIso;
+  }
+  await admin.from("orders").update(buyerUpdates).eq("id", buyerOrderId);
+
+  await admin.from("timeline_events").insert({
+    app_id: buyer.app_id,
+    tenant_id: buyer.tenant_id,
+    order_id: buyerOrderId,
+    event_type: "supplier_status_changed",
+    visibility: "admin",
+    actor_type: "system",
+    description:
+      adminStatus === "dispatched"
+        ? `Supplier dispatched trade order ${supplierOrder.order_number}` +
+          (trackingNumber ? ` — ${trackingCarrier ? `${trackingCarrier} ` : ""}${trackingNumber}` : "")
+        : `Supplier moved trade order ${supplierOrder.order_number} to ${adminStatus}`,
+    metadata: {
+      supplier_order_id: supplierOrder.id,
+      supplier_status: adminStatus,
+      tracking_number: trackingNumber ?? null,
+      tracking_carrier: trackingCarrier ?? null,
+    },
+  });
+
+  // Holds and cancellations are a flag for buyer staff, never automatic.
+  if (adminStatus === "on_hold" || adminStatus === "cancelled") return;
+
+  // Only advance the buyer's order when their in-house lines have caught up.
+  const targetJobStatus =
+    ORDER_STATUS_MAP[adminStatus]?.cascade_job_status ??
+    (adminStatus === "dispatched" ? "ready" : null);
+  if (targetJobStatus) {
+    const { data: buyerJobs = [] } = await admin
+      .from("order_jobs")
+      .select("id, job_status, product_snapshot")
+      .eq("order_id", buyerOrderId);
+    const { data: assignments = [] } = await admin
+      .from("product_supplier_assignments")
+      .select("product_family_id")
+      .eq("tenant_id", buyer.tenant_id)
+      .eq("is_active", true);
+    const outsourced = new Set((assignments as any[]).map((a) => a.product_family_id));
+    const need = jobStageRank(targetJobStatus);
+    const inHouseBehind = (buyerJobs as any[]).some((j) => {
+      const fam = j.product_snapshot?.product_family_id ?? j.product_snapshot?.product_family?.id;
+      if (fam && outsourced.has(fam)) return false;
+      if (["cancelled", "completed"].includes(String(j.job_status))) return false;
+      return jobStageRank(j.job_status) < need;
+    });
+    if (inHouseBehind) return;
+  }
+
+  // Forward only — never drag the buyer's order backwards.
+  if (orderStageRank(adminStatus) <= orderStageRank(buyer.admin_status)) return;
+
+  await updateOrderStatus(
+    admin,
+    userId,
+    {
+      order_id: buyerOrderId,
+      admin_status: adminStatus,
+      reason: `Supplier order ${supplierOrder.order_number}`,
+      tracking_number: buyer.tracking_number ?? trackingNumber ?? undefined,
+      tracking_carrier: buyer.tracking_carrier ?? trackingCarrier ?? undefined,
+    },
+    { skipAccess: true, propagated: true },
+  );
+}
+
+async function updateOrderStatus(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+  opts: { skipAccess?: boolean; propagated?: boolean } = {},
+) {
+  const { order_id, admin_status, reason, tracking_number, tracking_carrier } = payload;
+  if (!order_id || !admin_status) return err("Missing order_id or admin_status");
+
+  const mapping = ORDER_STATUS_MAP[admin_status];
+  if (!mapping) return err(`Unknown admin_status: ${admin_status}`);
+
+  // Dispatched requires a tracking number
+  if (admin_status === "dispatched" && !tracking_number) {
+    return err("tracking_number is required when marking dispatched");
+  }
+
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select(
+      "id, app_id, tenant_id, branch_id, order_number, admin_status, fulfillment_type, source_order_id",
+    )
+    .eq("id", order_id)
+    .single();
+  if (oErr || !order) return err("Order not found", 404);
+
+  if (!opts.skipAccess) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
+
+
+  const fromStatus = (order as any).admin_status as string;
+  const fulfillmentType = (order as any).fulfillment_type as string | null;
+
+  // Build update payload
+  const nowIso = new Date().toISOString();
+  const updates: Record<string, unknown> = {
+    admin_status,
+    customer_status: mapping.customer_status,
+    updated_at: nowIso,
+  };
+  if (mapping.fulfilment_status !== undefined) {
+    // Final fulfilment state depends on fulfillment_type when "ready" or "dispatched"
+    if (admin_status === "completed") {
+      updates.fulfilment_status = fulfillmentType === "delivery" ? "delivered" : "collected";
+    } else {
+      updates.fulfilment_status = mapping.fulfilment_status;
+    }
+  }
+  if (admin_status === "ready_for_dispatch") updates.ready_at = nowIso;
+  if (admin_status === "dispatched") {
+    updates.dispatched_at = nowIso;
+    updates.tracking_number = tracking_number;
+    if (tracking_carrier) updates.tracking_carrier = tracking_carrier;
+  }
+  if (admin_status === "completed") updates.completed_at = nowIso;
+
+  const { error: updErr } = await admin.from("orders").update(updates).eq("id", order_id);
+  if (updErr) return err(`Failed to update order: ${updErr.message}`);
+
+  // Push outsourced work into the supplier tenant once the order is approved.
+  if (admin_status === "approved" || admin_status === "in_production") {
+    try {
+      await mirrorSupplierOrders(admin, order_id);
+    } catch (e) {
+      console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+    }
+  }
+
+  // Cascade to jobs that haven't reached this stage yet (best-effort)
+  if (mapping.cascade_job_status) {
+    const cascadeTarget = mapping.cascade_job_status;
+    // Skip jobs that are already at a terminal/forward state
+    const skip = new Set(["completed", "cancelled"]);
+    const { data: jobs } = await admin
+      .from("order_jobs")
+      .select("id, job_status")
+      .eq("order_id", order_id);
+    for (const j of jobs ?? []) {
+      if (skip.has((j as any).job_status)) continue;
+      if ((j as any).job_status === cascadeTarget) continue;
+      await admin.from("order_jobs").update({ job_status: cascadeTarget }).eq("id", (j as any).id);
+    }
+  }
+
+  // Status history
+  await admin.from("status_history").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    order_id,
+    entity_type: "order",
+    from_status: fromStatus,
+    to_status: admin_status,
+    reason: reason || null,
+    changed_by: userId,
+  });
+
+  // Timeline event
+  await admin.from("timeline_events").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    order_id,
+    event_type: "order_status_changed",
+    visibility: "both",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Order ${(order as any).order_number} status changed from ${fromStatus} to ${admin_status}`,
+    metadata: { from_status: fromStatus, to_status: admin_status, reason, tracking_number, tracking_carrier },
+  });
+
+  // This is a mirrored trade order: report progress and waybill back to the
+  // buyer's own order so their customer can be kept informed.
+  if ((order as any).source_order_id && !opts.propagated) {
+    try {
+      await propagateSupplierStatus(
+        admin,
+        userId,
+        order as any,
+        admin_status,
+        tracking_number,
+        tracking_carrier,
+      );
+    } catch (e) {
+      console.warn("[order-engine] supplier status propagation failed (non-fatal):", e);
+    }
+  }
+
+
+
+  return json({
+    success: true,
+    from_status: fromStatus,
+    to_status: admin_status,
+    fulfillment_type: fulfillmentType,
+  });
+}
+
+async function recordPaymentEvent(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, provider, status, amount } = payload;
+  if (!order_id || !provider || !status || amount == null) {
+    return err("Missing required fields: order_id, provider, status, amount");
+  }
+
+  // Get order (incl. branch for access guard)
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, amount_paid, amount_due")
+    .eq("id", order_id)
+    .single();
+
+  if (oErr || !order) return err("Order not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, order as any);
+  if (denied) return err(denied, 403);
+
+  // Insert payment
+  const { data: payment, error: pErr } = await admin
+    .from("payments")
+    .insert({
+      order_id,
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      provider,
+      provider_transaction_id: payload.provider_transaction_id || null,
+      payment_reference: payload.payment_reference || null,
+      status,
+      amount,
+      currency: payload.currency || "ZAR",
+      initiated_at: status === "initiated" ? new Date().toISOString() : null,
+      paid_at: status === "paid" ? new Date().toISOString() : null,
+      raw_payload: payload.raw_payload || {},
+      metadata: payload.metadata || {},
+    })
+    .select("id")
+    .single();
+
+  if (pErr) return err(`Failed to record payment: ${pErr.message}`);
+
+  // Update order amounts if paid
+  if (status === "paid") {
+    const newPaid = (order.amount_paid || 0) + amount;
+    const newDue = Math.max((order.amount_due || 0) - amount, 0);
+    const newPaymentStatus = newDue <= 0 ? "paid" : "part_paid";
+
+    await admin
+      .from("orders")
+      .update({
+        amount_paid: newPaid,
+        amount_due: newDue,
+        payment_status: newPaymentStatus,
+      })
+      .eq("id", order_id);
+
+    // Payment is an approval event for outsourced work — push it to the
+    // supplier tenant (idempotent on orders.source_order_id).
+    if (newPaymentStatus === "paid") {
+      try {
+        await mirrorSupplierOrders(admin, order_id);
+      } catch (e) {
+        console.warn("[order-engine] supplier mirror failed (non-fatal):", e);
+      }
+    }
+  }
+
+
+  // Status history
+  await admin.from("status_history").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    order_id,
+    entity_type: "payment",
+    from_status: null,
+    to_status: status,
+    changed_by: userId,
+  });
+
+  // Timeline
+  await admin.from("timeline_events").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    order_id,
+    event_type: "payment_recorded",
+    visibility: "both",
+    actor_type: status === "paid" ? "system" : "admin",
+    actor_profile_id: userId,
+    description: `Payment of ${amount} ${payload.currency || "ZAR"} recorded (${status}) via ${provider}`,
+    metadata: { payment_id: payment?.id, amount, status, provider },
+  });
+
+  return json({ success: true, payment_id: payment?.id });
+}
+
+/** Provider-aware refund: raise a refund_pending credit adjustment and
+ *  immediately attempt to push it back through Stripe / PayFast. Falls back
+ *  to "manual_required" when no online charge can be matched. */
+async function raiseRefund(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, amount, reason } = payload ?? {};
+  if (!order_id || amount == null) return err("Missing order_id or amount");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id, { adminOnly: false });
+  if (denied || !order) return err(denied || "Order not found", 403);
+
+  const refundAmt = Math.round(Number(amount) * 100) / 100;
+  if (!(refundAmt > 0)) return err("Refund amount must be positive");
+  if (refundAmt > Number((order as any).amount_paid || 0)) return err("Refund exceeds amount paid");
+
+  const adjustmentId = await createRefundPendingAdjustment(
+    admin,
+    order_id,
+    refundAmt,
+    reason?.trim() ? `Refund: ${reason.trim()}` : "Refund",
+    reason?.trim() || "Staff-initiated refund",
+    userId,
+  );
+
+  const { data: adj } = await admin
+    .from("order_adjustments")
+    .select("status, metadata")
+    .eq("id", adjustmentId)
+    .maybeSingle();
+  const status = (adj as any)?.status ?? "refund_pending";
+
+  return json({
+    success: true,
+    adjustment_id: adjustmentId,
+    status,
+    manual_required: status === "refund_pending",
+    provider: ((adj as any)?.metadata as any)?.provider ?? null,
+  });
+}
+
+async function refundPayment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, amount, reason } = payload;
+  if (!order_id || amount == null) return err("Missing order_id or amount");
+
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, order_number, amount_paid, currency")
+    .eq("id", order_id)
+    .single();
+  if (oErr || !order) return err("Order not found", 404);
+
+  const refundAmt = Number(amount);
+  if (refundAmt <= 0) return err("Refund amount must be positive");
+  if (refundAmt > Number(order.amount_paid)) return err("Refund exceeds amount paid");
+
+  const { data: payment, error: pErr } = await admin
+    .from("payments")
+    .insert({
+      order_id,
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      provider: payload.provider || "manual",
+      status: "refunded",
+      amount: -refundAmt,
+      currency: order.currency,
+      payment_reference: reason || "Refund",
+      paid_at: new Date().toISOString(),
+      metadata: { reason },
+    })
+    .select("id")
+    .single();
+  if (pErr) return err(`Failed to record refund: ${pErr.message}`);
+
+  const newPaid = Math.max(Number(order.amount_paid) - refundAmt, 0);
+  const fullyRefunded = newPaid <= 0;
+
+  await admin
+    .from("orders")
+    .update({
+      amount_paid: newPaid,
+      payment_status: fullyRefunded ? "refunded" : "part_paid",
+    })
+    .eq("id", order_id);
+
+  await admin.from("status_history").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    order_id,
+    entity_type: "payment",
+    from_status: "paid",
+    to_status: "refunded",
+    reason: reason || null,
+    changed_by: userId,
+  });
+
+  await admin.from("timeline_events").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    order_id,
+    event_type: "payment_refunded",
+    visibility: "both",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Refund of ${refundAmt} ${order.currency} processed`,
+    metadata: { payment_id: payment?.id, amount: refundAmt, reason },
+  });
+
+  return json({ success: true, payment_id: payment?.id });
+}
+
+async function uploadOrderDocument(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, job_id, document_type, file_name, storage_bucket, storage_path } = payload;
+  if (!document_type || !file_name || !storage_path) {
+    return err("Missing required fields: document_type, file_name, storage_path");
+  }
+  if (!order_id && !job_id) {
+    return err("Must provide order_id or job_id");
+  }
+
+  // Resolve app_id/tenant_id from order or job
+  let app_id: string, tenant_id: string, branch_id: string | null = null, resolved_order_id = order_id;
+
+  if (job_id) {
+    const { data: job } = await admin
+      .from("order_jobs")
+      .select("app_id, tenant_id, branch_id, order_id")
+      .eq("id", job_id)
+      .single();
+    if (!job) return err("Job not found", 404);
+    app_id = job.app_id;
+    tenant_id = job.tenant_id;
+    branch_id = job.branch_id;
+    resolved_order_id = job.order_id;
+  } else {
+    const { data: order } = await admin
+      .from("orders")
+      .select("app_id, tenant_id, branch_id")
+      .eq("id", order_id)
+      .single();
+    if (!order) return err("Order not found", 404);
+    app_id = order.app_id;
+    tenant_id = order.tenant_id;
+    branch_id = order.branch_id;
+  }
+
+  const denied = await assertOrderStaffAccess(admin, userId, { app_id, tenant_id, branch_id });
+  if (denied) return err(denied, 403);
+
+  const { data: doc, error: docErr } = await admin
+    .from("order_documents")
+    .insert({
+      app_id,
+      tenant_id,
+      branch_id,
+      order_id: resolved_order_id,
+      job_id: job_id || null,
+      document_type,
+      title: payload.title || null,
+      file_name,
+      storage_bucket: storage_bucket || "documents",
+      storage_path,
+      public_url: payload.public_url || null,
+      mime_type: payload.mime_type || null,
+      file_size_bytes: payload.file_size_bytes || null,
+      is_customer_visible: payload.is_customer_visible ?? false,
+      source_app_managed: payload.source_app_managed ?? false,
+      metadata: payload.metadata || {},
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+
+  if (docErr) return err(`Failed to attach document: ${docErr.message}`);
+
+  // Timeline
+  await admin.from("timeline_events").insert({
+    app_id,
+    tenant_id,
+    branch_id,
+    order_id: resolved_order_id,
+    job_id: job_id || null,
+    event_type: "document_attached",
+    visibility: payload.is_customer_visible ? "both" : "admin",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Document "${file_name}" (${document_type}) attached`,
+    metadata: { document_id: doc?.id, document_type },
+  });
+
+  return json({ success: true, document_id: doc?.id }, 201);
+}
+
+async function createJobProof(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { job_id, proof_type, viewer_type } = payload;
+  if (!job_id || !proof_type || !viewer_type) {
+    return err("Missing required fields: job_id, proof_type, viewer_type");
+  }
+
+  const { data: job } = await admin
+    .from("order_jobs")
+    .select("id, order_id, app_id, tenant_id, job_number")
+    .eq("id", job_id)
+    .single();
+
+  if (!job) return err("Job not found", 404);
+
+  const { data: proof, error: proofErr } = await admin
+    .from("job_proofs")
+    .insert({
+      app_id: job.app_id,
+      tenant_id: job.tenant_id,
+      order_id: job.order_id,
+      job_id,
+      proof_type,
+      proof_status: "pending",
+      viewer_type,
+      viewer_url: payload.viewer_url || null,
+      document_id: payload.document_id || null,
+      metadata: payload.metadata || {},
+    })
+    .select("id")
+    .single();
+
+  if (proofErr) return err(`Failed to create proof: ${proofErr.message}`);
+
+  // Update job proof_status
+  await admin
+    .from("order_jobs")
+    .update({ proof_status: "pending" })
+    .eq("id", job_id);
+
+  // Timeline
+  await admin.from("timeline_events").insert({
+    app_id: job.app_id,
+    tenant_id: job.tenant_id,
+    order_id: job.order_id,
+    job_id,
+    event_type: "proof_created",
+    visibility: "both",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Proof created for job ${job.job_number} (${proof_type})`,
+    metadata: { proof_id: proof?.id, proof_type, viewer_type },
+  });
+
+  return json({ success: true, proof_id: proof?.id }, 201);
+}
+
+const MAX_ATTACHMENTS_PER_MESSAGE = 5;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_MIME = new Set<string>([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/csv",
+  "text/plain",
+]);
+const ALLOWED_ATTACHMENT_EXT = /\.(pdf|jpe?g|png|webp|gif|heic|heif|docx?|xlsx?|pptx?|csv|txt)$/i;
+
+/**
+ * Sign a short-lived download URL for a message attachment, but only after
+ * confirming the caller may read the parent order. The generic s3-storage
+ * function signs any path for any signed-in user, so attachment reads must
+ * be brokered here.
+ */
+async function signMessageAttachment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const attachmentId = payload?.attachment_id;
+  if (!attachmentId) return err("Missing attachment_id");
+
+  const { data: att } = await admin
+    .from("message_attachments")
+    .select("id, file_path, message_id, order_id")
+    .eq("id", attachmentId)
+    .maybeSingle();
+  if (!att) return err("Attachment not found", 404);
+
+  const { data: message } = await admin
+    .from("messages")
+    .select("id, is_internal")
+    .eq("id", (att as any).message_id)
+    .maybeSingle();
+  if (!message) return err("Attachment not found", 404);
+
+  const { data: order } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, ordered_by_profile_id")
+    .eq("id", (att as any).order_id)
+    .maybeSingle();
+  if (!order) return err("Attachment not found", 404);
+
+  const isOwner = (order as any).ordered_by_profile_id === userId;
+  if (!isOwner || (message as any).is_internal) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const AWS_S3_API_KEY = Deno.env.get("AWS_S3_API_KEY");
+  if (!LOVABLE_API_KEY || !AWS_S3_API_KEY) return err("Storage not configured", 500);
+
+  const signRes = await fetch(
+    "https://connector-gateway.lovable.dev/api/v1/sign_storage_url?provider=aws_s3&mode=read",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "X-Connection-Api-Key": AWS_S3_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ object_path: (att as any).file_path }),
+    },
+  );
+  if (!signRes.ok) {
+    console.error("[order-engine] sign attachment failed:", signRes.status, await signRes.text());
+    return err("Attachment is temporarily unavailable. Please retry shortly.", 503);
+  }
+  const signed = await signRes.json();
+  return json({ url: signed.url });
+}
+
+async function sendMessage(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, job_id, message_body, sender_type, is_internal } = payload;
+  if (!order_id || !message_body || !sender_type) {
+    return err("Missing required fields: order_id, message_body, sender_type");
+  }
+
+  // Resolve app context from order
+  const { data: order } = await admin
+    .from("orders")
+    .select("app_id, tenant_id, branch_id, order_number, ordered_by_profile_id")
+    .eq("id", order_id)
+    .single();
+
+  if (!order) return err("Order not found", 404);
+
+  // Customer-originated messages: must own the order and cannot be internal.
+  // Staff-originated messages: enforce branch-scoped staff access.
+  if (sender_type === "customer") {
+    if ((order as any).ordered_by_profile_id !== userId || is_internal) {
+      return err("Not authorised to message on this order", 403);
+    }
+  } else {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const { data: msg, error: msgErr } = await admin
+    .from("messages")
+    .insert({
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      branch_id: order.branch_id,
+      order_id,
+      job_id: job_id || null,
+      sender_profile_id: userId,
+      sender_type,
+      recipient_type: payload.recipient_type || "thread",
+      message_body,
+      is_internal: is_internal ?? false,
+    })
+    .select("id, created_at")
+    .single();
+
+  if (msgErr) return err(`Failed to send message: ${msgErr.message}`);
+
+  // ── Attachments (metadata only; bytes already in S3) ──────────────
+  const rawAttachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+  if (rawAttachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    return err(`You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`);
+  }
+  if (rawAttachments.length > 0 && msg?.id) {
+    const expectedPrefix = `tenants/${order.tenant_id}/branches/${order.branch_id ?? "_"}/messages/${order_id}/`;
+    const rows: any[] = [];
+    for (const att of rawAttachments) {
+      const filePath = String(att?.file_path ?? "");
+      const size = Number(att?.file_size ?? 0);
+      const mime = String(att?.mime_type ?? "application/octet-stream");
+      if (!filePath.startsWith(expectedPrefix)) {
+        return err("Attachment path is not valid for this order", 400);
+      }
+      if (!Number.isFinite(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES) {
+        return err("Attachments must be 50 MB or smaller", 400);
+      }
+      if (!ALLOWED_ATTACHMENT_MIME.has(mime) && !ALLOWED_ATTACHMENT_EXT.test(filePath)) {
+        return err("That file type isn't allowed here", 400);
+      }
+      rows.push({
+        message_id: msg.id,
+        app_id: order.app_id,
+        tenant_id: order.tenant_id,
+        branch_id: order.branch_id,
+        order_id,
+        file_name: String(att?.file_name ?? "attachment"),
+        file_path: filePath,
+        file_size: Math.round(size),
+        mime_type: mime,
+        uploaded_by: userId,
+      });
+    }
+    const { error: attErr } = await admin.from("message_attachments").insert(rows);
+    if (attErr) return err(`Failed to save attachments: ${attErr.message}`);
+  }
+
+  // Timeline event (internal messages only visible to admin)
+  await admin.from("timeline_events").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    branch_id: order.branch_id,
+    order_id,
+    job_id: job_id || null,
+    event_type: "message_sent",
+    visibility: is_internal ? "admin" : "both",
+    actor_type: sender_type,
+    actor_profile_id: userId,
+    description: is_internal
+      ? `Internal note added on order ${order.order_number}`
+      : `Message sent on order ${order.order_number}`,
+    metadata: { message_id: msg?.id, is_internal, attachment_count: rawAttachments.length },
+  });
+
+  return json({ success: true, message_id: msg?.id, created_at: msg?.created_at }, 201);
+}
+
+async function reorderOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const {
+    order_id,
+    dry_run = false,
+    job_overrides,
+    notes_customer: notesOverride,
+    po_number: poOverride,
+    cost_centre: costCentreOverride,
+  } = payload;
+  if (!order_id) return err("Missing order_id");
+
+  // Load source order + jobs + delivery address
+  const { data: source, error: sErr } = await admin
+    .from("orders")
+    .select(
+      "id, app_id, tenant_id, branch_id, ordered_by_profile_id, customer_email, customer_name, company_name, currency, fulfillment_type, po_number, cost_centre, notes_customer, metadata, date_required, turnaround_time_text, order_number"
+    )
+    .eq("id", order_id)
+    .single();
+  if (sErr || !source) return err("Source order not found", 404);
+
+  // Only the original customer (or staff for that order) may reorder
+  if (source.ordered_by_profile_id !== userId) {
+    const denied = await assertOrderStaffAccess(admin, userId, source as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const [{ data: jobsRaw }, { data: addresses }] = await Promise.all([
+    admin
+      .from("order_jobs")
+      .select(
+        "product_name, product_category, job_name, quantity, unit_label, net_price, cost_price, vat_rate, gross_price, product_snapshot, configuration, production_specs, integration_payload, external_product_key, sequence_no"
+      )
+      .eq("order_id", order_id)
+      .order("sequence_no"),
+    admin
+      .from("order_addresses")
+      .select("address_type, contact_name, company_name, line1, line2, suburb, city, province, postal_code, country, phone, email, instructions")
+      .eq("order_id", order_id),
+  ]);
+
+  if (!jobsRaw?.length) return err("No items to reorder");
+
+  // Apply customer overrides (qty change, removal). Re-price by scaling the
+  // snapshot unit price by the new quantity so totals stay consistent.
+  const overridesBySeq = new Map<number, { quantity?: number; remove?: boolean }>();
+  if (Array.isArray(job_overrides)) {
+    for (const o of job_overrides) {
+      if (o && typeof o.sequence_no === "number") {
+        overridesBySeq.set(o.sequence_no, { quantity: o.quantity, remove: o.remove });
+      }
+    }
+  }
+
+  const jobs = (jobsRaw as any[])
+    .filter((j) => !overridesBySeq.get(j.sequence_no)?.remove)
+    .map((j) => {
+      const o = overridesBySeq.get(j.sequence_no);
+      const origQty = Number(j.quantity || 0) || 1;
+      const newQty = o?.quantity && o.quantity > 0 ? Math.floor(o.quantity) : origQty;
+      if (newQty === origQty) return j;
+      const scale = newQty / origQty;
+      return {
+        ...j,
+        quantity: newQty,
+        net_price: Number(j.net_price || 0) * scale,
+        cost_price: Number(j.cost_price || 0) * scale,
+        gross_price: Number(j.gross_price || 0) * scale,
+      };
+    });
+
+  if (!jobs.length) return err("No items remain after removals");
+
+  const delivery = (addresses ?? []).find((a: any) => a.address_type === "delivery");
+  const billing = (addresses ?? []).find((a: any) => a.address_type === "billing");
+  const subtotal = jobs.reduce((s, j) => s + Number(j.net_price ?? 0), 0);
+
+  if (dry_run) {
+    return json({
+      preview: true,
+      source_order_id: source.id,
+      source_order_number: source.order_number,
+      currency: source.currency || "ZAR",
+      fulfillment_type: source.fulfillment_type,
+      branch_id: source.branch_id,
+      notes_customer: source.notes_customer,
+      po_number: source.po_number,
+      cost_centre: source.cost_centre,
+      jobs,
+      delivery_address: delivery || null,
+      billing_address: billing || null,
+      subtotal,
+    });
+  }
+
+  // Resolve app slug for createOrderWithJobs
+  const { data: app } = await admin
+    .from("apps")
+    .select("slug")
+    .eq("id", source.app_id)
+    .single();
+  if (!app) return err("App not found", 404);
+
+  const payloadOut = {
+    app_slug: app.slug,
+    tenant_id: source.tenant_id,
+    branch_id: source.branch_id,
+    customer: {
+      profile_id: source.ordered_by_profile_id,
+      email: source.customer_email,
+      name: source.customer_name,
+      company_name: source.company_name,
+    },
+    order: {
+      source_channel: "reorder",
+      notes_customer: notesOverride ?? source.notes_customer,
+      po_number: poOverride ?? source.po_number,
+      cost_centre: costCentreOverride ?? source.cost_centre,
+      metadata: { ...(source.metadata || {}), reordered_from: order_id },
+    },
+    pricing: {
+      currency: source.currency || "ZAR",
+      subtotal,
+      vat_amount: 0,
+      delivery_amount: 0,
+      total_amount: subtotal,
+      amount_paid: 0,
+      amount_due: subtotal,
+    },
+    fulfillment_type: source.fulfillment_type,
+    delivery_address: delivery || undefined,
+    billing_address: billing || undefined,
+    jobs,
+  };
+
+  return await createOrderWithJobs(admin, userId, payloadOut);
+}
+
+async function cancelOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, reason } = payload;
+  if (!order_id) return err("Missing order_id");
+  if (!reason || typeof reason !== "string" || reason.trim().length < 3) {
+    return err("A cancellation reason is required");
+  }
+
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, payment_status, amount_paid, customer_status, ordered_by_profile_id")
+    .eq("id", order_id)
+    .single();
+  if (oErr || !order) return err("Order not found", 404);
+
+  if (order.admin_status === "cancelled" || order.order_status === "cancelled") {
+    return err("Order is already cancelled");
+  }
+  if (order.admin_status === "completed") {
+    return err("Completed orders cannot be cancelled");
+  }
+
+  // Permission: staff (owner/admin, branch-matched) OR customer self-cancel
+  // when the order has not yet entered production / proof / dispatch.
+  const isOwner = (order as any).ordered_by_profile_id === userId;
+  const SELF_CANCEL_OK = new Set(["awaiting_payment", "proof_pending"]);
+  const ADMIN_SELF_CANCEL_OK = new Set(["new_order", "under_review"]);
+  const customerCanCancel =
+    isOwner &&
+    SELF_CANCEL_OK.has(order.customer_status as string) &&
+    ADMIN_SELF_CANCEL_OK.has(order.admin_status as string);
+
+  if (!customerCanCancel) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
+    if (denied) return err(denied, 403);
+  }
+
+  const refundPending = Number(order.amount_paid) > 0;
+
+  // Cancel non-completed/non-cancelled jobs
+  const { error: jobsErr } = await admin
+    .from("order_jobs")
+    .update({ job_status: "cancelled" })
+    .eq("order_id", order_id)
+    .not("job_status", "in", "(completed,cancelled)");
+  if (jobsErr) return err(`Failed to cancel jobs: ${jobsErr.message}`);
+
+  // Cancel the order itself
+  const { error: updErr } = await admin
+    .from("orders")
+    .update({
+      admin_status: "cancelled",
+      order_status: "cancelled",
+      customer_status: "cancelled",
+      fulfilment_status: "cancelled",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", order_id);
+  if (updErr) return err(`Failed to cancel order: ${updErr.message}`);
+
+  await Promise.all([
+    admin.from("status_history").insert({
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      order_id,
+      entity_type: "order",
+      from_status: order.admin_status,
+      to_status: "cancelled",
+      reason,
+      changed_by: userId,
+    }),
+    admin.from("timeline_events").insert({
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      branch_id: order.branch_id,
+      order_id,
+      event_type: "order_cancelled",
+      visibility: "both",
+      actor_type: "admin",
+      actor_profile_id: userId,
+      description: `Order ${order.order_number} cancelled${refundPending ? " (refund pending)" : ""}: ${reason}`,
+      metadata: { reason, refund_pending: refundPending, amount_paid: order.amount_paid },
+    }),
+  ]);
+
+  // Auto-raise refund_pending adjustment (and auto-refund through the
+  // original provider) so the branch sees a clear action item.
+  if (refundPending) {
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      Number(order.amount_paid),
+      `Refund owed — order cancelled (${reason.slice(0, 80)})`,
+      reason,
+      userId,
+    );
+  }
+
+  return json({ success: true, refund_pending: refundPending });
+}
+
+
+// ── Admin-only order editing ────────────────────────────────
+
+async function fetchOrderForAdmin(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order_id: string,
+  opts: { adminOnly?: boolean } = {},
+) {
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, payment_status, amount_paid, total_amount, amount_due, customer_email, ordered_by_profile_id, fulfillment_type, delivery_amount, discount_amount, vat_amount, subtotal, currency, metadata")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (error || !order) return { error: "Order not found", order: null };
+  const adminOnly = opts.adminOnly !== false;
+  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly });
+  if (denied) return { error: denied, order: null };
+  return { error: null, order };
+}
+
+
+async function logTimeline(
+  admin: ReturnType<typeof createClient>,
+  o: any,
+  userId: string,
+  event_type: string,
+  description: string,
+  metadata: Record<string, unknown> = {},
+  visibility: "admin" | "customer" | "both" = "admin",
+) {
+  await admin.from("timeline_events").insert({
+    app_id: o.app_id,
+    tenant_id: o.tenant_id,
+    branch_id: o.branch_id,
+    order_id: o.id,
+    event_type,
+    visibility,
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description,
+    metadata,
+  });
+}
+
+/**
+ * After any pricing mutation, call sync_order_amounts (SECURITY DEFINER RPC
+ * in DB) — but it's not exposed. We re-read totals, then if the total
+ * increased above amount_paid on a previously-paid order, notify customer.
+ */
+async function recomputeAndNotify(
+  admin: ReturnType<typeof createClient>,
+  authHeader: string,
+  order_id: string,
+  prevPaymentStatus: string,
+) {
+  // Trigger DB recompute by calling the function via direct SQL (no RPC wrapper exists)
+  // Workaround: bump updated_at via an UPDATE that re-derives nothing — we instead
+  // rely on the fact that our edge function already updated the relevant columns,
+  // then re-derive subtotal/total/amount_due/payment_status from current values.
+  const { data: jobs } = await admin
+    .from("order_jobs")
+    .select("net_price")
+    .eq("order_id", order_id);
+  const { data: adjs } = await admin
+    .from("order_adjustments")
+    .select("amount")
+    .eq("order_id", order_id);
+  const { data: o } = await admin
+    .from("orders")
+    .select("discount_amount, delivery_amount, vat_amount, amount_paid")
+    .eq("id", order_id)
+    .single();
+
+  const jobsTotal = (jobs ?? []).reduce((s, j: any) => s + Number(j.net_price || 0), 0);
+  const adjTotal = (adjs ?? []).reduce((s, a: any) => s + Number(a.amount || 0), 0);
+  const subtotal = jobsTotal + adjTotal;
+  const total = Math.round((subtotal - Number((o as any).discount_amount || 0) + Number((o as any).delivery_amount || 0) + Number((o as any).vat_amount || 0)) * 100) / 100;
+  const paid = Number((o as any).amount_paid || 0);
+  const due = Math.round((total - paid) * 100) / 100;
+  const payment_status = paid <= 0 ? "unpaid" : paid >= total ? "paid" : "partial";
+
+  await admin
+    .from("orders")
+    .update({ subtotal, total_amount: total, amount_due: due, payment_status, updated_at: new Date().toISOString() })
+    .eq("id", order_id);
+
+  // If order was paid and now has a positive due amount, trigger payment request email
+  if (prevPaymentStatus === "paid" && due > 0.005) {
+    try {
+      await triggerEmail(authHeader, order_id, "payment_request", { force: true });
+    } catch (e) {
+      console.error("payment_request email failed:", e);
+    }
+  }
+}
+
+async function updateOrderPricing(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, fulfillment_type, delivery_amount, discount_amount, vat_amount, delivery_description } = payload;
+  if (!order_id) return err("order_id required");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+  if (denied) return err(denied, 403);
+
+  const o = order as any;
+  const updates: Record<string, unknown> = {};
+  const changes: string[] = [];
+
+  if (typeof fulfillment_type === "string" && fulfillment_type !== o.fulfillment_type) {
+    updates.fulfillment_type = fulfillment_type;
+    changes.push(`fulfillment ${o.fulfillment_type ?? "—"} → ${fulfillment_type}`);
+  }
+  if (delivery_amount !== undefined && Number(delivery_amount) !== Number(o.delivery_amount)) {
+    updates.delivery_amount = Number(delivery_amount);
+    changes.push(`delivery R${Number(o.delivery_amount).toFixed(2)} → R${Number(delivery_amount).toFixed(2)}`);
+  }
+  if (discount_amount !== undefined && Number(discount_amount) !== Number(o.discount_amount)) {
+    updates.discount_amount = Number(discount_amount);
+    changes.push(`discount R${Number(o.discount_amount).toFixed(2)} → R${Number(discount_amount).toFixed(2)}`);
+  }
+  if (vat_amount !== undefined && Number(vat_amount) !== Number(o.vat_amount)) {
+    updates.vat_amount = Number(vat_amount);
+    changes.push(`VAT R${Number(o.vat_amount).toFixed(2)} → R${Number(vat_amount).toFixed(2)}`);
+  }
+  if (typeof delivery_description === "string") {
+    const meta = (o.metadata as any) ?? {};
+    meta.delivery_description = delivery_description;
+    updates.metadata = meta;
+  }
+
+  if (Object.keys(updates).length === 0) return json({ success: true, unchanged: true });
+
+  const { error: upErr } = await admin.from("orders").update(updates).eq("id", order_id);
+  if (upErr) return err(`Failed to update order: ${upErr.message}`);
+
+  await logTimeline(admin, o, userId, "pricing_updated", `Admin updated pricing: ${changes.join(", ")}`, { changes, updates });
+
+  return json({ success: true, prev_payment_status: o.payment_status });
+}
+
+async function updateJobNetPrice(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { job_id, net_price } = payload;
+  if (!job_id || net_price === undefined) return err("job_id and net_price required");
+
+  const { data: job } = await admin
+    .from("order_jobs")
+    .select("id, order_id, net_price, job_number, app_id, tenant_id, branch_id, quantity, gross_price")
+    .eq("id", job_id)
+    .maybeSingle();
+  if (!job) return err("Job not found", 404);
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, (job as any).order_id);
+  if (denied) return err(denied, 403);
+
+  const newPrice = Number(net_price);
+  const oldPrice = Number((job as any).net_price);
+  if (newPrice === oldPrice) return json({ success: true, unchanged: true });
+
+  // Update net + gross (preserve any per-unit interpretation by recomputing simply as net)
+  const { error: upErr } = await admin
+    .from("order_jobs")
+    .update({ net_price: newPrice, gross_price: newPrice })
+    .eq("id", job_id);
+  if (upErr) return err(`Failed to update job price: ${upErr.message}`);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "job_price_updated",
+    `Admin overrode price for ${(job as any).job_number}: R${oldPrice.toFixed(2)} → R${newPrice.toFixed(2)}`,
+    { job_id, old_price: oldPrice, new_price: newPrice },
+  );
+
+  return json({ success: true, prev_payment_status: (order as any).payment_status });
+}
+
+async function addOrderAdjustment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, description, amount } = payload;
+  if (!order_id || !description || amount === undefined) return err("order_id, description, amount required");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+  if (denied) return err(denied, 403);
+
+  const { data: adj, error: insErr } = await admin
+    .from("order_adjustments")
+    .insert({ order_id, description: String(description).trim(), amount: Number(amount), created_by: userId })
+    .select("id")
+    .single();
+  if (insErr) return err(`Failed to add adjustment: ${insErr.message}`);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "adjustment_added",
+    `Admin added line item "${description}" (R${Number(amount).toFixed(2)})`,
+    { adjustment_id: adj?.id, description, amount },
+  );
+
+  return json({ success: true, adjustment_id: adj?.id, prev_payment_status: (order as any).payment_status }, 201);
+}
+
+async function removeOrderAdjustment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { adjustment_id } = payload;
+  if (!adjustment_id) return err("adjustment_id required");
+
+  const { data: adj } = await admin
+    .from("order_adjustments")
+    .select("id, order_id, description, amount")
+    .eq("id", adjustment_id)
+    .maybeSingle();
+  if (!adj) return err("Adjustment not found", 404);
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, (adj as any).order_id);
+  if (denied) return err(denied, 403);
+
+  const { error: delErr } = await admin.from("order_adjustments").delete().eq("id", adjustment_id);
+  if (delErr) return err(`Failed to remove adjustment: ${delErr.message}`);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "adjustment_removed",
+    `Admin removed line item "${(adj as any).description}" (R${Number((adj as any).amount).toFixed(2)})`,
+    { adjustment_id, description: (adj as any).description, amount: (adj as any).amount },
+  );
+
+  return json({ success: true, prev_payment_status: (order as any).payment_status });
+}
+
+async function updateOrderAddress(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, address_type, address } = payload;
+  if (!order_id || !address_type || !address) return err("order_id, address_type, address required");
+  if (!["delivery", "billing"].includes(address_type)) return err("address_type must be delivery or billing");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+  if (denied) return err(denied, 403);
+
+  // Upsert: if a row of this type exists, update; otherwise insert
+  const { data: existing } = await admin
+    .from("order_addresses")
+    .select("id")
+    .eq("order_id", order_id)
+    .eq("address_type", address_type)
+    .maybeSingle();
+
+  const fields = {
+    company_name: address.company_name ?? null,
+    contact_name: address.contact_name ?? null,
+    line1: address.line1 ?? null,
+    line2: address.line2 ?? null,
+    suburb: address.suburb ?? null,
+    city: address.city ?? null,
+    province: address.province ?? null,
+    postal_code: address.postal_code ?? null,
+    country: address.country ?? null,
+    phone: address.phone ?? null,
+    email: address.email ?? null,
+    instructions: address.instructions ?? null,
+  };
+
+  if (existing) {
+    const { error: upErr } = await admin.from("order_addresses").update(fields).eq("id", (existing as any).id);
+    if (upErr) return err(`Failed to update address: ${upErr.message}`);
+  } else {
+    const { error: insErr } = await admin
+      .from("order_addresses")
+      .insert({ order_id, address_type, ...fields });
+    if (insErr) return err(`Failed to insert address: ${insErr.message}`);
+  }
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "address_updated",
+    `Admin updated ${address_type} address`,
+    { address_type, fields },
+  );
+
+  return json({ success: true });
+}
+
+// ── Customer self-service (edit window only) ────────────────
+
+const CUSTOMER_EDIT_ADMIN_OK = new Set(["new_order", "under_review"]);
+const CUSTOMER_EDIT_JOB_OK = new Set(["new", "awaiting_payment", "proof_pending", "on_hold"]);
+
+async function loadCustomerEditableOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order_id: string,
+) {
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, customer_status, payment_status, amount_paid, total_amount, currency, fulfillment_type, ordered_by_profile_id, metadata")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (error || !order) return { error: "Order not found", order: null as any, jobs: [] as any[] };
+  if ((order as any).ordered_by_profile_id !== userId) {
+    return { error: "Only the order's customer may edit it", order: null as any, jobs: [] as any[] };
+  }
+  if (!CUSTOMER_EDIT_ADMIN_OK.has((order as any).admin_status)) {
+    return { error: "This order can no longer be changed — please message the branch", order: null as any, jobs: [] as any[] };
+  }
+  const { data: jobs } = await admin
+    .from("order_jobs")
+    .select("id, sequence_no, job_number, job_status, product_name, quantity, net_price, cost_price, gross_price")
+    .eq("order_id", order_id)
+    .order("sequence_no");
+  if ((jobs ?? []).some((j: any) => !CUSTOMER_EDIT_JOB_OK.has(j.job_status))) {
+    return { error: "Production has already started on at least one item", order: null as any, jobs: [] as any[] };
+  }
+  return { error: null, order, jobs: jobs ?? [] };
+}
+
+/** Recompute totals from current jobs+adjustments+overheads, store on orders. */
+async function syncOrderTotals(admin: ReturnType<typeof createClient>, order_id: string) {
+  const [{ data: jobs }, { data: adjs }, { data: o }] = await Promise.all([
+    admin.from("order_jobs").select("net_price").eq("order_id", order_id),
+    admin.from("order_adjustments").select("amount, status").eq("order_id", order_id),
+    admin.from("orders").select("tenant_id, branch_id, discount_amount, delivery_amount, vat_amount, amount_paid, metadata").eq("id", order_id).single(),
+  ]);
+  const jobsTotal = (jobs ?? []).reduce((s, j: any) => s + Number(j.net_price || 0), 0);
+  const adjTotal = (adjs ?? [])
+    .filter((a: any) => a.status === "active")
+    .reduce((s, a: any) => s + Number(a.amount || 0), 0);
+  const subtotal = Math.round((jobsTotal + adjTotal) * 100) / 100;
+  const discount = Number((o as any).discount_amount || 0);
+  const delivery = Number((o as any).delivery_amount || 0);
+  const taxable = Math.round((subtotal - discount + delivery) * 100) / 100;
+
+  // Resolve tax config from tenant + branch financial settings.
+  // Branch overrides tenant. Mirrors src/lib/tax/resolveBranchTax.ts.
+  let taxEnabled = false;
+  let taxRate = 0;
+  let taxInclusive = false;
+  const tenantId = (o as any).tenant_id as string | null;
+  const branchId = (o as any).branch_id as string | null;
+  if (tenantId) {
+    const [{ data: tRows }, { data: bRows }] = await Promise.all([
+      admin.from("tenant_settings").select("setting_key, setting_value").eq("tenant_id", tenantId).eq("category", "financial"),
+      branchId
+        ? admin.from("branch_settings").select("setting_key, setting_value").eq("branch_id", branchId).eq("category", "financial")
+        : Promise.resolve({ data: [] as any[] } as any),
+    ]);
+    const toMap = (rows: any[] | null | undefined) => {
+      const m: Record<string, unknown> = {};
+      for (const r of rows ?? []) m[r.setting_key] = r.setting_value;
+      return m;
+    };
+    const t = toMap(tRows as any[]);
+    const b = toMap(bRows as any[]);
+    const pick = (k: string) => (b[k] !== undefined && b[k] !== null ? b[k] : t[k]);
+    taxRate = Number(pick("tax_rate") ?? 0) || 0;
+    const enabledRaw = pick("tax_enabled");
+    taxEnabled = (enabledRaw === undefined || enabledRaw === null ? taxRate > 0 : !!enabledRaw) && taxRate > 0;
+    taxInclusive = !!pick("tax_inclusive");
+  }
+
+  // Compute VAT. Respect a manual override flag set in orders.metadata.
+  const manualVatOverride = !!((o as any).metadata?.vat_override);
+  let vat = Number((o as any).vat_amount || 0);
+  if (!manualVatOverride) {
+    if (!taxEnabled || taxable <= 0) {
+      vat = 0;
+    } else if (taxInclusive) {
+      const net = taxable / (1 + taxRate / 100);
+      vat = Math.round((taxable - net) * 100) / 100;
+    } else {
+      vat = Math.round(taxable * (taxRate / 100) * 100) / 100;
+    }
+  }
+
+  // Inclusive: VAT is already inside `taxable`. Exclusive: add on top.
+  const total = taxInclusive
+    ? taxable
+    : Math.round((taxable + vat) * 100) / 100;
+  const paid = Number((o as any).amount_paid || 0);
+  const due = Math.round((total - paid) * 100) / 100;
+  const payment_status = paid <= 0 ? "unpaid" : paid >= total ? "paid" : "partial";
+  await admin
+    .from("orders")
+    .update({ subtotal, vat_amount: vat, total_amount: total, amount_due: due, payment_status, updated_at: new Date().toISOString() })
+    .eq("id", order_id);
+  return { subtotal, vat, total, due, paid, payment_status };
+}
+
+/** Create a refund_pending negative-amount adjustment, then attempt an
+ *  auto-refund through the provider that took the original payment. Falls
+ *  back to manual ("Mark refunded") if no online charge is found. */
+async function createRefundPendingAdjustment(
+  admin: ReturnType<typeof createClient>,
+  order_id: string,
+  amount: number,
+  description: string,
+  reason: string,
+  userId?: string | null,
+) {
+  const { data: inserted } = await admin
+    .from("order_adjustments")
+    .insert({
+      order_id,
+      description,
+      amount: -Math.abs(amount),
+      status: "refund_pending",
+      metadata: { reason, raised_at: new Date().toISOString() },
+    })
+    .select("id")
+    .single();
+  const adjustmentId = (inserted as any)?.id;
+  if (adjustmentId) {
+    // Fire-and-await so the timeline + payments row are visible by the
+    // time we return; the caller already responded async to the client.
+    try {
+      await processAutoRefund(admin, {
+        adjustment_id: adjustmentId,
+        actor_id: userId ?? null,
+        reason,
+      });
+    } catch (e) {
+      console.error("auto-refund trigger failed", e);
+    }
+  }
+  return adjustmentId as string | undefined;
+}
+
+async function customerChangeQuantities(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, job_overrides } = payload;
+  if (!order_id || !Array.isArray(job_overrides) || !job_overrides.length) {
+    return err("order_id and job_overrides[] required");
+  }
+  const { error: e, order, jobs } = await loadCustomerEditableOrder(admin, userId, order_id);
+  if (e) return err(e, 403);
+
+  const bySeq = new Map<number, { quantity?: number; remove?: boolean }>();
+  for (const o of job_overrides) {
+    if (typeof o?.sequence_no === "number") bySeq.set(o.sequence_no, { quantity: o.quantity, remove: !!o.remove });
+  }
+
+  const remaining = jobs.filter((j: any) => !bySeq.get(j.sequence_no)?.remove);
+  if (!remaining.length) return err("Cannot remove the last item — cancel the order instead");
+
+  // Apply changes: scale price linearly by qty (mirrors reorder flow).
+  const changes: string[] = [];
+  for (const j of jobs as any[]) {
+    const ov = bySeq.get(j.sequence_no);
+    if (!ov) continue;
+    if (ov.remove) {
+      await admin.from("order_jobs").update({ job_status: "cancelled" }).eq("id", j.id);
+      changes.push(`removed ${j.job_number} (${j.product_name})`);
+      continue;
+    }
+    const newQty = ov.quantity && ov.quantity > 0 ? Math.floor(ov.quantity) : Number(j.quantity);
+    const oldQty = Number(j.quantity || 1) || 1;
+    if (newQty === oldQty) continue;
+    const scale = newQty / oldQty;
+    await admin
+      .from("order_jobs")
+      .update({
+        quantity: newQty,
+        net_price: Number(j.net_price || 0) * scale,
+        cost_price: Number(j.cost_price || 0) * scale,
+        gross_price: Number(j.gross_price || 0) * scale,
+      })
+      .eq("id", j.id);
+    changes.push(`${j.job_number}: ${oldQty} → ${newQty}`);
+  }
+
+  if (!changes.length) return json({ success: true, unchanged: true });
+
+  const before = await syncOrderTotals(admin, order_id);
+  const delta = Math.round((before.total - Number((order as any).amount_paid)) * 100) / 100;
+
+  // Negative delta on a paid order ⇒ raise refund pending for the credit.
+  let refundFlagged = false;
+  if (delta < 0 && Number((order as any).amount_paid) > 0) {
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      Math.abs(delta),
+      `Credit owed after customer quantity reduction`,
+      `Customer reduced quantities`,
+      userId,
+    );
+    refundFlagged = true;
+    await syncOrderTotals(admin, order_id);
+  }
+
+  await admin.from("timeline_events").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    branch_id: (order as any).branch_id,
+    order_id,
+    event_type: "customer_edited_quantities",
+    visibility: "both",
+    actor_type: "customer",
+    actor_profile_id: userId,
+    description: `Customer changed items: ${changes.join("; ")} — prices scaled linearly, branch to confirm`,
+    metadata: { changes, refund_flagged: refundFlagged, price_estimated: true },
+  });
+
+  // Flag the order so staff re-check the line prices against the rate card
+  // (linear scaling is wrong for pack / break pricing).
+  await admin
+    .from("orders")
+    .update({
+      metadata: { ...(((order as any).metadata as any) ?? {}), price_review_required: true },
+    })
+    .eq("id", order_id);
+
+  return json({
+    success: true,
+    changes,
+    requires_payment: delta > 0.005,
+    credit_amount: refundFlagged ? Math.abs(delta) : 0,
+  });
+}
+
+/** Statuses where staff may still amend quantities without an override. */
+const ADMIN_QTY_BLOCKED = new Set(["dispatched", "completed", "cancelled"]);
+const ADMIN_QTY_JOB_SAFE = new Set(["new", "awaiting_payment", "proof_pending", "on_hold", "approved"]);
+
+/**
+ * Staff-side order amendment. Mirrors `customerChangeQuantities` but is
+ * authorised through staff membership, requires a reason, and accepts an
+ * explicit `net_price` per line so operators can price pack / break
+ * products correctly instead of relying on linear scaling.
+ */
+async function adminChangeQuantities(
+  admin: ReturnType<typeof createClient>,
+  authHeader: string,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, job_overrides, reason, override_production, notify_customer } = payload ?? {};
+  if (!order_id || !Array.isArray(job_overrides) || !job_overrides.length) {
+    return err("order_id and job_overrides[] required");
+  }
+  if (typeof reason !== "string" || reason.trim().length < 3) {
+    return err("A reason for the change is required");
+  }
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id, { adminOnly: false });
+  if (denied || !order) return err(denied || "Order not found", 403);
+  const o = order as any;
+
+  const { data: statusRow } = await admin
+    .from("orders")
+    .select("admin_status, order_status")
+    .eq("id", order_id)
+    .maybeSingle();
+  const adminStatus = (statusRow as any)?.admin_status ?? "";
+  if (ADMIN_QTY_BLOCKED.has(adminStatus) || (statusRow as any)?.order_status === "cancelled") {
+    return err(`Cannot amend an order that is ${adminStatus || "cancelled"}`, 409);
+  }
+
+  const { data: jobs } = await admin
+    .from("order_jobs")
+    .select("id, sequence_no, job_number, job_status, product_name, quantity, net_price, cost_price, gross_price, print_ready_pdf_path, imposed_pdf_path")
+    .eq("order_id", order_id)
+    .order("sequence_no");
+  const jobList = (jobs ?? []) as any[];
+  if (!jobList.length) return err("Order has no items");
+
+  const byId = new Map<string, { quantity?: number; net_price?: number; remove?: boolean }>();
+  for (const ov of job_overrides) {
+    if (typeof ov?.job_id === "string") {
+      byId.set(ov.job_id, {
+        quantity: ov.quantity,
+        net_price: typeof ov.net_price === "number" ? ov.net_price : undefined,
+        remove: !!ov.remove,
+      });
+    }
+  }
+  const touched = jobList.filter((j) => byId.has(j.id));
+  if (!touched.length) return err("No matching items to change");
+
+  const inProduction = touched.some((j) => !ADMIN_QTY_JOB_SAFE.has(j.job_status));
+  if (inProduction && !override_production) {
+    return json({ success: false, requires_override: true, message: "Production has already started on at least one item" });
+  }
+
+  const remaining = jobList.filter((j) => !byId.get(j.id)?.remove);
+  if (!remaining.length) return err("Cannot remove the last item — cancel the order instead");
+
+  const changes: string[] = [];
+  let estimated = false;
+  const clearArtefacts: string[] = [];
+
+  for (const j of touched) {
+    const ov = byId.get(j.id)!;
+    if (ov.remove) {
+      await admin.from("order_jobs").update({ job_status: "cancelled" }).eq("id", j.id);
+      changes.push(`removed ${j.job_number} (${j.product_name})`);
+      if (j.print_ready_pdf_path || j.imposed_pdf_path) clearArtefacts.push(j.id);
+      continue;
+    }
+    const oldQty = Number(j.quantity || 1) || 1;
+    const newQty = ov.quantity && ov.quantity > 0 ? Math.floor(ov.quantity) : oldQty;
+    const hasPriceOverride = ov.net_price !== undefined && ov.net_price >= 0;
+    if (newQty === oldQty && !hasPriceOverride) continue;
+
+    const scale = newQty / oldQty;
+    const newNet = hasPriceOverride
+      ? Math.round(Number(ov.net_price) * 100) / 100
+      : Math.round(Number(j.net_price || 0) * scale * 100) / 100;
+    if (!hasPriceOverride && newQty !== oldQty) estimated = true;
+
+    await admin
+      .from("order_jobs")
+      .update({
+        quantity: newQty,
+        net_price: newNet,
+        cost_price: Math.round(Number(j.cost_price || 0) * scale * 100) / 100,
+        gross_price: Math.round(Number(j.gross_price || 0) * scale * 100) / 100,
+      })
+      .eq("id", j.id);
+
+    changes.push(
+      `${j.job_number}: ${oldQty} → ${newQty}` +
+        (hasPriceOverride ? ` @ ${newNet.toFixed(2)}` : ""),
+    );
+    if (j.print_ready_pdf_path || j.imposed_pdf_path) clearArtefacts.push(j.id);
+  }
+
+  if (!changes.length) return json({ success: true, unchanged: true });
+
+  // Stale production files must not be printed at the old quantity/spec.
+  if (clearArtefacts.length) {
+    await admin
+      .from("order_jobs")
+      .update({
+        print_ready_pdf_path: null,
+        imposed_pdf_path: null,
+        imposed_components: null,
+        print_ready_assembled_at: null,
+        print_ready_spec_hash: null,
+      })
+      .in("id", clearArtefacts);
+  }
+
+  const prevPaymentStatus = String(o.payment_status || "");
+  const paid = Number(o.amount_paid || 0);
+  const after = await syncOrderTotals(admin, order_id);
+  const delta = Math.round((after.total - paid) * 100) / 100;
+
+  let refundFlagged = false;
+  let creditAmount = 0;
+  if (delta < 0 && paid > 0) {
+    creditAmount = Math.abs(delta);
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      creditAmount,
+      "Credit owed after order amendment",
+      reason.trim(),
+      userId,
+    );
+    refundFlagged = true;
+    await syncOrderTotals(admin, order_id);
+  }
+
+  // Clear the "customer amended, price unchecked" flag — staff have now
+  // reviewed the lines.
+  const meta = { ...((o.metadata as any) ?? {}) };
+  delete meta.price_review_required;
+  const history = Array.isArray(meta.amendment_history) ? meta.amendment_history : [];
+  history.push({ at: new Date().toISOString(), by: userId, reason: reason.trim(), changes });
+  meta.amendment_history = history;
+  await admin.from("orders").update({ metadata: meta }).eq("id", order_id);
+
+  await logTimeline(
+    admin,
+    o,
+    userId,
+    "order_amended",
+    `Order amended: ${changes.join("; ")} — ${reason.trim()}`,
+    { changes, reason: reason.trim(), refund_flagged: refundFlagged, price_estimated: estimated, override_production: !!override_production },
+    "both",
+  );
+
+  await admin.from("status_history").insert({
+    app_id: o.app_id,
+    tenant_id: o.tenant_id,
+    order_id,
+    entity_type: "order",
+    entity_id: order_id,
+    from_status: adminStatus,
+    to_status: adminStatus,
+    changed_by: userId,
+    note: `Amended: ${changes.join("; ")} — ${reason.trim()}`,
+  }).then(undefined, () => {/* status_history shape is advisory */});
+
+  // Settle the delta: reissue the proforma, and ask for the balance when the
+  // amendment pushed the total above what has already been paid.
+  const balanceDue = Math.max(Math.round((after.total - paid) * 100) / 100, 0);
+  const requiresPayment = delta > 0.005;
+  if (notify_customer !== false) {
+    await triggerInvoice(authHeader, order_id, "proforma");
+    if (requiresPayment && paid > 0) {
+      await triggerEmail(authHeader, order_id, "payment_request", { force: true });
+    }
+  }
+
+  return json({
+    success: true,
+    changes,
+    requires_payment: requiresPayment,
+    balance_due: requiresPayment ? balanceDue : 0,
+    credit_amount: creditAmount,
+    price_estimated: estimated,
+    prev_payment_status: prevPaymentStatus,
+  });
+}
+
+
+async function customerChangeFulfillment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, fulfillment_type, delivery_amount, delivery_description } = payload;
+  if (!order_id || !["delivery", "collection"].includes(fulfillment_type)) {
+    return err("order_id and fulfillment_type (delivery|collection) required");
+  }
+  const { error: e, order } = await loadCustomerEditableOrder(admin, userId, order_id);
+  if (e) return err(e, 403);
+
+  const fulMsg = await checkFulfilmentAllowed(
+    admin,
+    (order as any).tenant_id,
+    (order as any).branch_id,
+    fulfillment_type,
+  );
+  if (fulMsg) return err(fulMsg);
+
+
+  const newDelivery = fulfillment_type === "collection" ? 0 : Number(delivery_amount ?? 0);
+  if (fulfillment_type === "delivery" && newDelivery < 0) return err("Delivery amount required for delivery");
+
+  const meta = ((order as any).metadata as any) ?? {};
+  if (typeof delivery_description === "string") meta.delivery_description = delivery_description;
+
+  const { error: upErr } = await admin
+    .from("orders")
+    .update({ fulfillment_type, delivery_amount: newDelivery, metadata: meta })
+    .eq("id", order_id);
+  if (upErr) return err(`Failed to update fulfillment: ${upErr.message}`);
+
+  const after = await syncOrderTotals(admin, order_id);
+  const delta = Math.round((after.total - Number((order as any).amount_paid)) * 100) / 100;
+
+  let refundFlagged = false;
+  if (delta < 0 && Number((order as any).amount_paid) > 0) {
+    await createRefundPendingAdjustment(
+      admin,
+      order_id,
+      Math.abs(delta),
+      `Credit owed after customer fulfillment switch`,
+      `Customer changed fulfillment method`,
+      userId,
+    );
+    refundFlagged = true;
+    await syncOrderTotals(admin, order_id);
+  }
+
+  await admin.from("timeline_events").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    branch_id: (order as any).branch_id,
+    order_id,
+    event_type: "customer_changed_fulfillment",
+    visibility: "both",
+    actor_type: "customer",
+    actor_profile_id: userId,
+    description: `Customer switched to ${fulfillment_type === "delivery" ? "delivery" : "collection"}`,
+    metadata: { from: (order as any).fulfillment_type, to: fulfillment_type, delivery_amount: newDelivery, refund_flagged: refundFlagged },
+  });
+
+  return json({
+    success: true,
+    requires_payment: delta > 0.005,
+    credit_amount: refundFlagged ? Math.abs(delta) : 0,
+  });
+}
+
+async function markRefundCompleted(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { adjustment_id, payment_reference } = payload;
+  if (!adjustment_id) return err("adjustment_id required");
+
+  const { data: adj } = await admin
+    .from("order_adjustments")
+    .select("id, order_id, amount, description, status, metadata")
+    .eq("id", adjustment_id)
+    .maybeSingle();
+  if (!adj) return err("Adjustment not found", 404);
+  if ((adj as any).status !== "refund_pending") return err("Adjustment is not refund_pending");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, (adj as any).order_id);
+  if (denied) return err(denied, 403);
+
+  const refundAmt = Math.abs(Number((adj as any).amount || 0));
+  // Update adjustment to refunded; insert a negative payment for the trail.
+  await admin
+    .from("order_adjustments")
+    .update({
+      status: "refunded",
+      metadata: { ...((adj as any).metadata ?? {}), refunded_at: new Date().toISOString(), refunded_by: userId, payment_reference: payment_reference || null },
+    })
+    .eq("id", adjustment_id);
+
+  const { data: payment } = await admin
+    .from("payments")
+    .insert({
+      order_id: (adj as any).order_id,
+      app_id: (order as any).app_id,
+      tenant_id: (order as any).tenant_id,
+      provider: "manual",
+      status: "refunded",
+      amount: -refundAmt,
+      currency: (order as any).currency,
+      payment_reference: payment_reference || (adj as any).description || "Refund",
+      paid_at: new Date().toISOString(),
+      metadata: { adjustment_id, source: "mark_refund_completed" },
+    })
+    .select("id")
+    .single();
+
+  // Reduce amount_paid by refund, then re-sync.
+  const newPaid = Math.max(Number((order as any).amount_paid || 0) - refundAmt, 0);
+  await admin.from("orders").update({ amount_paid: newPaid }).eq("id", (adj as any).order_id);
+  await syncOrderTotals(admin, (adj as any).order_id);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "refund_completed",
+    `Refund of R${refundAmt.toFixed(2)} marked complete (${(adj as any).description})`,
+    { adjustment_id, payment_id: payment?.id, amount: refundAmt },
+    "both",
+  );
+
+  return json({ success: true, payment_id: payment?.id });
+}
+
+// ── Admin: change fulfillment (collection ↔ delivery) ───────
+// Reusable until admin_status reaches ready_for_dispatch / dispatched /
+// completed / cancelled. Recomputes totals, upserts delivery address,
+// adds a "Delivery — <method>" adjustment line if needed, regenerates
+// the invoice PDF, and (when notify=true and balance > 0) triggers the
+// existing payment_request email so the customer can pay the difference.
+async function adminChangeFulfillment(
+  admin: ReturnType<typeof createClient>,
+  authHeader: string,
+  userId: string,
+  payload: any,
+) {
+  const step = (s: string, extra: Record<string, unknown> = {}) =>
+    console.log(`[adminChangeFulfillment] ${s}`, JSON.stringify(extra));
+  const fail = (message: string, status: number, atStep: string, extra: Record<string, unknown> = {}) => {
+    console.error(`[adminChangeFulfillment] FAIL @${atStep}: ${message}`, JSON.stringify(extra));
+    return new Response(
+      JSON.stringify({ error: message, step: atStep, ...extra }),
+      { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    const {
+      order_id,
+      to,
+      delivery_address,
+      delivery_amount,
+      delivery_description,
+      notify_customer,
+    } = payload ?? {};
+
+    step("entered", { order_id, to, hasAddress: !!delivery_address, delivery_amount });
+
+    if (!order_id || !["delivery", "collection"].includes(to)) {
+      return fail("order_id and to (delivery|collection) required", 400, "validate_input");
+    }
+
+    // Fetch + auth. We intentionally do NOT pass adminOnly here so branch
+    // managers / sales / production staff who own the order's branch can
+    // change fulfillment — same audience that can already edit pricing.
+    const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id, { adminOnly: false });
+
+    if (denied || !order) {
+      return fail(denied || "Order not found", 403, "auth");
+    }
+    const o = order as any;
+    step("loaded_order", { order_number: o.order_number, fulfillment_type: o.fulfillment_type });
+
+    // Status guard — admin can change up until dispatch prep is done.
+    const { data: orderStatusRow, error: statusErr } = await admin
+      .from("orders")
+      .select("admin_status, order_status")
+      .eq("id", order_id)
+      .maybeSingle();
+    if (statusErr) return fail(`Status lookup failed: ${statusErr.message}`, 500, "status_lookup");
+    const adminStatus = (orderStatusRow as any)?.admin_status ?? "";
+    const orderStatus = (orderStatusRow as any)?.order_status ?? "";
+    const BLOCKED = new Set(["ready_for_dispatch", "dispatched", "completed", "cancelled"]);
+    if (BLOCKED.has(adminStatus) || orderStatus === "cancelled") {
+      return fail(`Cannot change fulfillment when order is ${adminStatus || orderStatus}`, 409, "status_guard");
+    }
+
+    const prevType = (o.fulfillment_type as string) ?? null;
+    const prevDelivery = Number(o.delivery_amount || 0);
+    const prevPaymentStatus = String(o.payment_status || "");
+    const newDelivery = to === "collection" ? 0 : Number(delivery_amount ?? 0);
+    if (to === "delivery" && !(newDelivery >= 0)) {
+      return fail("delivery_amount must be a non-negative number when switching to delivery", 400, "validate_delivery_amount");
+    }
+
+    // 1. Update the order's fulfillment + delivery line.
+    const meta = (o.metadata as any) ?? {};
+    const history = Array.isArray(meta.fulfillment_history) ? meta.fulfillment_history : [];
+    history.push({
+      at: new Date().toISOString(),
+      by: userId,
+      from: prevType,
+      to,
+      delivery_amount: newDelivery,
+      delivery_description: delivery_description ?? null,
+    });
+    meta.fulfillment_history = history;
+    if (to === "delivery" && typeof delivery_description === "string") {
+      meta.delivery_description = delivery_description;
+    }
+    if (to === "collection") {
+      delete meta.delivery_description;
+    }
+
+    const { error: upErr } = await admin
+      .from("orders")
+      .update({ fulfillment_type: to, delivery_amount: newDelivery, metadata: meta })
+      .eq("id", order_id);
+    if (upErr) return fail(`Failed to update fulfillment: ${upErr.message}`, 500, "update_order");
+    step("updated_order");
+
+    // 2. Upsert the delivery address when switching to delivery.
+    if (to === "delivery" && delivery_address && typeof delivery_address === "object") {
+      try {
+        const { data: existing } = await admin
+          .from("order_addresses")
+          .select("id")
+          .eq("order_id", order_id)
+          .eq("address_type", "delivery")
+          .maybeSingle();
+        const addrRow = {
+          order_id,
+          address_type: "delivery" as const,
+          company_name: delivery_address.company_name ?? null,
+          contact_name: delivery_address.contact_name ?? null,
+          line1: delivery_address.line1 ?? null,
+          line2: delivery_address.line2 ?? null,
+          suburb: delivery_address.suburb ?? null,
+          city: delivery_address.city ?? null,
+          province: delivery_address.province ?? null,
+          postal_code: delivery_address.postal_code ?? null,
+          country: delivery_address.country ?? "ZA",
+          phone: delivery_address.phone ?? null,
+          email: delivery_address.email ?? null,
+          instructions: delivery_address.instructions ?? null,
+        };
+        if (existing?.id) {
+          const { error: aErr } = await admin.from("order_addresses").update(addrRow).eq("id", (existing as any).id);
+          if (aErr) return fail(`Failed to update delivery address: ${aErr.message}`, 500, "address_update");
+        } else {
+          const { error: aErr } = await admin.from("order_addresses").insert(addrRow);
+          if (aErr) return fail(`Failed to insert delivery address: ${aErr.message}`, 500, "address_insert");
+        }
+        step("upserted_address");
+      } catch (e: any) {
+        return fail(`Address upsert threw: ${e?.message ?? e}`, 500, "address_throw");
+      }
+    }
+
+    // 3. Recompute totals.
+    let after: { subtotal: number; total: number; due: number; paid: number; payment_status: string };
+    try {
+      after = await syncOrderTotals(admin, order_id);
+      step("synced_totals", after);
+    } catch (e: any) {
+      return fail(`Totals recompute failed: ${e?.message ?? e}`, 500, "sync_totals");
+    }
+
+    // 4. Best-effort: payment_request email if order was paid and now owes money.
+    if (after.due > 0.005 && prevPaymentStatus === "paid" && notify_customer) {
+      try {
+        await triggerEmail(authHeader, order_id, "payment_request", { force: true });
+      } catch (e) {
+        console.error("[adminChangeFulfillment] payment_request email failed (non-fatal):", e);
+      }
+    }
+
+    // 5. Best-effort: refund_pending adjustment for collection swap.
+    let refundFlagged = false;
+    let refundAdjustmentId: string | undefined;
+    if (to === "collection" && prevDelivery > 0 && Number(o.amount_paid || 0) >= prevDelivery) {
+      try {
+        refundAdjustmentId = await createRefundPendingAdjustment(
+          admin,
+          order_id,
+          prevDelivery,
+          `Refund of delivery fee after switch to collection`,
+          `Admin switched fulfillment to collection`,
+          userId,
+        );
+        refundFlagged = !!refundAdjustmentId;
+        if (refundFlagged) {
+          after = await syncOrderTotals(admin, order_id);
+        }
+      } catch (e) {
+        console.error("[adminChangeFulfillment] refund_pending raise failed (non-fatal):", e);
+      }
+    }
+
+    // 6. Best-effort: timeline.
+    try {
+      await logTimeline(
+        admin,
+        o,
+        userId,
+        "fulfillment_changed",
+        `Admin changed fulfillment: ${prevType ?? "—"} → ${to}` +
+          (to === "delivery"
+            ? ` (R${newDelivery.toFixed(2)}${delivery_description ? ` · ${delivery_description}` : ""})`
+            : ""),
+        {
+          from: prevType,
+          to,
+          prev_delivery: prevDelivery,
+          new_delivery: newDelivery,
+          delivery_description: delivery_description ?? null,
+          old_total: Number(o.total_amount || 0),
+          new_total: after.total,
+          balance_due: after.due,
+          refund_flagged: refundFlagged,
+          refund_adjustment_id: refundAdjustmentId ?? null,
+          notify_customer: !!notify_customer,
+        },
+        "both",
+      );
+    } catch (e) {
+      console.error("[adminChangeFulfillment] timeline log failed (non-fatal):", e);
+    }
+
+    // 7. Best-effort: regenerate invoice.
+    try {
+      await triggerInvoice(authHeader, order_id, "invoice");
+    } catch (e) {
+      console.error("[adminChangeFulfillment] invoice regen failed (non-fatal):", e);
+    }
+
+    step("done", { refundFlagged, balance_due: after.due });
+
+    return json({
+      success: true,
+      from: prevType,
+      to,
+      delivery_amount: newDelivery,
+      new_total: after.total,
+      balance_due: after.due,
+      refund_flagged: refundFlagged,
+      refund_adjustment_id: refundAdjustmentId ?? null,
+    });
+  } catch (e: any) {
+    return fail(`Unhandled: ${e?.message ?? e}`, 500, "unhandled", { stack: String(e?.stack ?? "") });
+  }
+}
+
+
+// ── Main handler ────────────────────────────────────────────
+
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return err("Unauthorized", 401);
+    }
+
+    const { userClient, admin } = clients(authHeader);
+
+    // Verify user
+    const { data: { user: authedUser }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !authedUser) {
+      return err("Unauthorized", 401);
+    }
+    const userId = authedUser.id;
+
+    // Parse body
+    const body = await req.json();
+    const { action, ...payload } = body;
+
+    if (!action) return err("Missing 'action' field");
+
+    let response: Response;
+    let sideEffects: (() => Promise<void>) | null = null;
+
+    switch (action) {
+      case "createOrderWithJobs": {
+        response = await createOrderWithJobs(admin, userId, payload);
+        if (response.status === 201) {
+          const data = await response.clone().json();
+          // Held orders (online payment handoff) announce nothing until the
+          // gateway confirms — no proforma, no confirmation email.
+          if (data?.order_id && !data?.held_for_payment) {
+            sideEffects = async () => {
+              // On-account orders get a real tax invoice due on terms; everyone
+              // else gets a proforma until they pay.
+              const inv = await triggerInvoice(
+                authHeader,
+                data.order_id,
+                data?.on_account ? "invoice" : "proforma",
+              );
+              await triggerEmail(
+                authHeader,
+                data.order_id,
+                "order_received",
+                inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+              );
+            };
+          }
+
+        }
+        break;
+      }
+      case "activateHeldOrder": {
+        response = await activateHeldOrderAction(admin, userId, payload);
+        break;
+      }
+      case "updateJobStatus": {
+        response = await updateJobStatus(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          const eventKey = STATUS_EVENT_MAP[data?.to_status];
+          if (eventKey && payload.job_id) {
+            sideEffects = async () => {
+              const { data: j } = await admin
+                .from("order_jobs")
+                .select("order_id")
+                .eq("id", payload.job_id)
+                .single();
+              if (j?.order_id) await triggerEmail(authHeader, j.order_id, eventKey);
+            };
+          }
+        }
+        break;
+      }
+      case "updateOrderStatus": {
+        response = await updateOrderStatus(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          const to = data?.to_status as string | undefined;
+          const fulfillment = data?.fulfillment_type as string | null | undefined;
+          if (to && payload.order_id) {
+            let eventKey: string | null = null;
+            const extra: Record<string, unknown> = {};
+            if (to === "ready_for_dispatch" && fulfillment === "collection") {
+              eventKey = "ready_for_collection";
+            } else if (to === "dispatched") {
+              eventKey = "dispatched";
+              if (payload.tracking_number) extra.tracking_number = payload.tracking_number;
+              if (payload.tracking_carrier) extra.tracking_carrier = payload.tracking_carrier;
+            } else if (to === "completed") {
+              eventKey = "completed";
+            }
+            if (eventKey) {
+              sideEffects = async () => {
+                await triggerEmail(authHeader, payload.order_id, eventKey!, extra);
+              };
+            }
+          }
+        }
+        break;
+      }
+      case "recordPaymentEvent": {
+        response = await recordPaymentEvent(admin, userId, payload);
+        if (response.ok && payload.status === "paid" && payload.order_id) {
+          sideEffects = async () => {
+            // Sequence: generate tax invoice first so we can attach it to the email.
+            const inv = await triggerInvoice(authHeader, payload.order_id, "invoice");
+            await triggerEmail(
+              authHeader,
+              payload.order_id,
+              "payment_received",
+              inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+            );
+          };
+        }
+        break;
+      }
+
+      case "raiseRefund": {
+        response = await raiseRefund(admin, userId, payload);
+        break;
+      }
+
+      case "refundPayment": {
+        response = await refundPayment(admin, userId, payload);
+        if (response.ok && payload.order_id) {
+          sideEffects = async () => {
+            await Promise.all([
+              triggerInvoice(authHeader, payload.order_id, "credit_note"),
+              triggerEmail(authHeader, payload.order_id, "refunded", { refund_amount: payload.amount }),
+            ]);
+          };
+        }
+        break;
+      }
+      case "attachOrderDocument":
+        response = await attachOrderDocument(admin, userId, payload);
+        break;
+      case "createJobProof":
+        response = await createJobProof(admin, userId, payload);
+        break;
+      case "signMessageAttachment":
+        response = await signMessageAttachment(admin, userId, payload);
+        break;
+      case "sendMessage":
+        response = await sendMessage(admin, userId, payload);
+        if (response.ok && payload.order_id && !payload.is_internal && payload.sender_type !== "customer") {
+          sideEffects = async () => {
+            await triggerEmail(authHeader, payload.order_id, "new_message", {
+              force: true,
+              message_excerpt: String(payload.message_body || "").slice(0, 240),
+            });
+          };
+        }
+        break;
+
+
+      case "cancelOrder": {
+        response = await cancelOrder(admin, userId, payload);
+        if (response.ok && payload.order_id) {
+          const data = await response.clone().json();
+          sideEffects = async () => {
+            await triggerEmail(authHeader, payload.order_id, "order_cancelled", {
+              reason: payload.reason,
+              refund_pending: data?.refund_pending === true,
+            });
+          };
+        }
+        break;
+      }
+      case "reorderOrder": {
+        response = await reorderOrder(admin, userId, payload);
+        if (response.status === 201) {
+          const data = await response.clone().json();
+          if (data?.order_id) {
+            sideEffects = async () => {
+              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              await triggerEmail(
+                authHeader,
+                data.order_id,
+                "order_received",
+                inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+              );
+            };
+          }
+        }
+        break;
+      }
+      case "generateInvoice": {
+        if (!payload.order_id) {
+          response = err("order_id required");
+        } else {
+          await triggerInvoice(authHeader, payload.order_id, payload.kind || "invoice");
+          response = json({ success: true });
+        }
+        break;
+      }
+      case "updateOrderPricing": {
+        response = await updateOrderPricing(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => {
+              await recomputeAndNotify(admin, authHeader, payload.order_id, data.prev_payment_status);
+            };
+          }
+        }
+        break;
+      }
+      case "updateJobNetPrice": {
+        response = await updateJobNetPrice(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            const { data: j } = await admin.from("order_jobs").select("order_id").eq("id", payload.job_id).single();
+            const oid = (j as any)?.order_id;
+            if (oid) {
+              sideEffects = async () => { await recomputeAndNotify(admin, authHeader, oid, data.prev_payment_status); };
+            }
+          }
+        }
+        break;
+      }
+      case "addOrderAdjustment": {
+        response = await addOrderAdjustment(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => {
+              await recomputeAndNotify(admin, authHeader, payload.order_id, data.prev_payment_status);
+            };
+          }
+        }
+        break;
+      }
+      case "removeOrderAdjustment": {
+        // Capture order_id BEFORE delete (handler deletes the row)
+        const { data: preAdj } = await admin
+          .from("order_adjustments")
+          .select("order_id")
+          .eq("id", payload.adjustment_id)
+          .maybeSingle();
+        const oid = (preAdj as any)?.order_id;
+        response = await removeOrderAdjustment(admin, userId, payload);
+        if (response.ok && oid) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => { await recomputeAndNotify(admin, authHeader, oid, data.prev_payment_status); };
+          }
+        }
+        break;
+      }
+      case "updateOrderAddress":
+        response = await updateOrderAddress(admin, userId, payload);
+        break;
+      case "customerChangeQuantities":
+        response = await customerChangeQuantities(admin, userId, payload);
+        break;
+      case "adminChangeQuantities":
+        response = await adminChangeQuantities(admin, authHeader!, userId, payload);
+        break;
+
+      case "customerChangeFulfillment":
+        response = await customerChangeFulfillment(admin, userId, payload);
+        break;
+      case "markRefundCompleted":
+        response = await markRefundCompleted(admin, userId, payload);
+        break;
+      case "adminChangeFulfillment":
+        response = await adminChangeFulfillment(admin, authHeader!, userId, payload);
+        break;
+
+
+      default:
+        return err(`Unknown action: ${action}`, 400);
+    }
+
+    if (sideEffects) sideEffects().catch((e) => console.error("sideEffects:", e));
+    return response;
+  } catch (e) {
+    console.error("order-engine error:", e);
+    return err("Internal server error", 500);
+  }
+});
