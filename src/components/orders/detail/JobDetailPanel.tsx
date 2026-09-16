@@ -51,6 +51,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const jobSize = resolveJobSize(job, config);
   const jobOrientation = orientationOf(jobSize);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const customerFiles = buildCustomerFiles(sourceDocumentsForJob(job, sourceDocuments), jobDocs);
 
 
   return (
