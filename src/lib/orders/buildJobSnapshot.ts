@@ -454,17 +454,44 @@ export type MergeDirective =
       paper_weight_gsm?: number | null;
 
     }
-  | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" };
+  | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" | "booklet_pad" };
 
 
 function buildMergeDirectives(
   sections: DocumentSectionRow[],
   documents: DocumentRow[],
+  isSaddleStitched = false,
 ): MergeDirective[] {
   const directives: MergeDirective[] = [];
   const ordered = sortSectionsByRole(
     sections.filter((s) => s.section_type !== "tab" && s.section_type !== "insert"),
   );
+
+  // Saddle-stitch: the cover is its own folded sheet, so the BODY must reach a
+  // multiple of 4 on its own. The padding therefore belongs at the end of the
+  // body, before the back cover — matching the customer-approved preview.
+  const pagesForSection = (s: DocumentSectionRow, doc?: DocumentRow) => {
+    const docPages = doc?.page_count ?? 0;
+    const start = s.page_range_start ?? 0;
+    const end = s.page_range_end ?? (docPages - 1);
+    return Math.max(0, Math.min(end, docPages - 1) - start + 1);
+  };
+  let bodyPad = 0;
+  if (isSaddleStitched) {
+    const bodyPages = ordered
+      .filter((s) => s.section_type !== "front_cover" && s.section_type !== "back_cover")
+      .reduce(
+        (sum, s) =>
+          sum + pagesForSection(s, s.document_id ? documents.find((d) => d.id === s.document_id) : undefined),
+        0,
+      );
+    const remainder = bodyPages % 4;
+    if (bodyPages > 0 && remainder !== 0) bodyPad = 4 - remainder;
+  }
+  const lastBodyId = [...ordered]
+    .reverse()
+    .find((s) => s.section_type !== "front_cover" && s.section_type !== "back_cover")?.id;
+
   for (const s of ordered) {
     const isCover = s.section_type === "front_cover" || s.section_type === "back_cover";
     const doc = s.document_id ? documents.find((d) => d.id === s.document_id) : undefined;
@@ -491,7 +518,11 @@ function buildMergeDirectives(
       paper_weight_gsm: s.paper_weight_gsm ?? null,
     });
 
-
+    if (bodyPad > 0 && s.id === lastBodyId) {
+      for (let i = 0; i < bodyPad; i++) {
+        directives.push({ kind: "blank_page", reason: "booklet_pad" });
+      }
+    }
 
     if (isSimplexCover && s.section_type === "front_cover") {
       directives.push({ kind: "blank_page", reason: "simplex_cover_back" });
@@ -499,6 +530,7 @@ function buildMergeDirectives(
   }
   return directives;
 }
+
 
 function buildSourceAssets(documents: DocumentRow[]) {
   const seen = new Set<string>();
