@@ -51,7 +51,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const jobSize = resolveJobSize(job, config);
   const jobOrientation = orientationOf(jobSize);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const customerFiles = buildCustomerFiles(sourceDocumentsForJob(job, sourceDocuments), jobDocs);
+  const customerFiles = buildCustomerFiles(
+    sourceDocumentsForJob(job, sourceDocuments),
+    jobDocs,
+    config,
+  );
+  const uploadedArtwork = (config as any).uploaded_artwork ?? (config as any).raw_spec?.uploaded_artwork;
 
 
   return (
@@ -207,10 +212,10 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
       </div>
 
       {/* Templated / supplied artwork — admin proof (same render the customer approved) */}
-      {((config as any).templated_artwork || (config as any).uploaded_artwork) && (
+      {((config as any).templated_artwork || uploadedArtwork) && (
         <ArtworkAdminProof
           templatedArtwork={(config as any).templated_artwork}
-          uploadedArtwork={(config as any).uploaded_artwork}
+          uploadedArtwork={uploadedArtwork}
         />
       )}
 

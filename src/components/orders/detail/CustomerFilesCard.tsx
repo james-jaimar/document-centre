@@ -36,6 +36,7 @@ const stripExt = (name: string) => name.replace(/\.pdf$/i, "");
 export function buildCustomerFiles(
   sourceDocs: PreviewSourceDocument[],
   jobDocs: any[],
+  configuration?: any,
 ): CustomerFileEntry[] {
   const out: CustomerFileEntry[] = [];
   const seen = new Set<string>();
@@ -55,6 +56,27 @@ export function buildCustomerFiles(
 
   sourceDocs.forEach((doc, idx) => push(doc, `Document ${idx + 1}.pdf`));
   jobDocs.forEach((doc, idx) => push(doc, `Attachment ${idx + 1}.pdf`));
+
+  // Some orders never created a `documents` row — the only record of the
+  // customer's upload is the artwork snapshot on the job specification.
+  const snapshots = [
+    configuration?.uploaded_artwork,
+    configuration?.raw_spec?.uploaded_artwork,
+  ].filter(Boolean);
+
+  snapshots.forEach((art: any, idx: number) => {
+    const path = art?.storage_path || art?.file_path;
+    if (!path || seen.has(path)) return;
+    seen.add(path);
+    out.push({
+      key: art?.document_id ?? path,
+      name: art?.file_name || `Artwork ${idx + 1}.pdf`,
+      path,
+      pageCount: art?.page_count ?? null,
+      sizeBytes: art?.file_size ?? null,
+    });
+  });
+
   return out;
 }
 
