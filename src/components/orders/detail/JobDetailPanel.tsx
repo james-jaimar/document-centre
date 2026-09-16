@@ -12,6 +12,7 @@ import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
 import ArtworkAdminProof from "./ArtworkAdminProof";
 import JobWeightCard from "./JobWeightCard";
+import CustomerFilesCard, { buildCustomerFiles } from "./CustomerFilesCard";
 
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
