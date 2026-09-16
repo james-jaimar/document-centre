@@ -107,6 +107,66 @@ describe("buildPreviewSnapshot", () => {
     ]);
   });
 
+  it("pads the booklet body to a multiple of 4 before the back cover", () => {
+    const mk = (id: string, type: string, sort: number, start: number | null = null, end: number | null = null) => ({
+      id,
+      document_id: `${id}-doc`,
+      section_type: type,
+      page_range_start: start,
+      page_range_end: end,
+      is_color: true,
+      is_duplex: true,
+      label: type,
+      color: null,
+      sort_order: sort,
+    });
+
+    const snapshot = buildPreviewSnapshot({
+      productType: "saddle_stitched",
+      selectedOptions: {},
+      productOptions: [],
+      sections: [mk("body", "body", 0), mk("front", "front_cover", 1, 0, 1), mk("back", "back_cover", 2)],
+      documents: [
+        {
+          id: "front-doc",
+          file_name: "front.pdf",
+          page_count: 4,
+          page_width_mm: 210,
+          page_height_mm: 297,
+          thumbnail_urls: Array.from({ length: 4 }, (_, i) => `front-${i + 1}`),
+        },
+        {
+          id: "body-doc",
+          file_name: "body.pdf",
+          page_count: 69,
+          page_width_mm: 210,
+          page_height_mm: 297,
+          thumbnail_urls: Array.from({ length: 69 }, (_, i) => `body-${i + 1}`),
+        },
+        {
+          id: "back-doc",
+          file_name: "back.pdf",
+          page_count: 2,
+          page_width_mm: 210,
+          page_height_mm: 297,
+          thumbnail_urls: ["back-1", "back-2"],
+        },
+      ],
+    });
+
+    expect(snapshot.pageRoles).toHaveLength(76);
+    // 2 cover faces + 69 body + 3 blanks = 74, then the back cover pair.
+    expect(snapshot.pageRoles.slice(71, 76)).toEqual([
+      "blank_back",
+      "blank_back",
+      "blank_back",
+      "back_cover",
+      "back_cover",
+    ]);
+    expect(snapshot.thumbnails.slice(74)).toEqual(["back-1", "back-2"]);
+  });
+
+
   it("persists per-page PDF source paths for high-resolution saved previews", () => {
     const snapshot = buildPreviewSnapshot({
       productType: "business_cards",
