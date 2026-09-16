@@ -1,0 +1,569 @@
+import { supabase } from "@/integrations/supabase/client";
+import { CURRENT_INVOICE_RENDERER_VERSION } from "./invoiceRenderer";
+import type {
+  CreateOrderPayload,
+  UpdateJobStatusPayload,
+  RecordPaymentPayload,
+  AttachDocumentPayload,
+} from "./types";
+
+async function invokeOrderEngine<T = unknown>(
+  action: string,
+  payload: Record<string, unknown>
+): Promise<T> {
+  const { data, error } = await supabase.functions.invoke("order-engine", {
+    body: { action, ...payload },
+  });
+
+  if (error) {
+    // Supabase's FunctionsHttpError swallows the response body — recover it
+    // from error.context so the toast shows the actual reason (e.g. role
+    // denial, validation message, or the step that failed).
+    let detail = "";
+    try {
+      const ctx: any = (error as any)?.context;
+      if (ctx && typeof ctx.text === "function") {
+        const raw = await ctx.text();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            detail = parsed?.error || parsed?.message || raw;
+            if (parsed?.step) detail += ` (step: ${parsed.step})`;
+          } catch {
+            detail = raw;
+          }
+        }
+      }
+    } catch { /* noop */ }
+    throw new Error(detail || error.message || `order-engine ${action} failed`);
+  }
+
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data as T;
+}
+
+// ── Secure document access helpers ──────────────────────────
+
+/**
+ * Download or view a document via the secure document-access edge function.
+ * Never exposes direct Supabase storage URLs to the browser.
+ */
+async function accessDocument(
+  type: "invoice" | "document",
+  id: string,
+  fileName: string,
+  disposition: "attachment" | "inline" = "attachment"
+) {
+  const { data, error } = await supabase.functions.invoke("document-access", {
+    body: { type, id, disposition },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to access document");
+  }
+
+  // data is a Blob when the function returns binary
+  const blob = data instanceof Blob ? data : new Blob([data], { type: "application/pdf" });
+  const blobUrl = URL.createObjectURL(blob);
+
+  if (disposition === "inline") {
+    window.open(blobUrl, "_blank");
+    // Revoke after a delay so the tab can load
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } else {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
+/**
+ * Check whether a stored invoice PDF matches the order's current totals.
+ * If stale (and refreshable), call generate-invoice-pdf in refresh mode so
+ * the on-disk PDF reflects the latest totals, VAT, delivery, payments etc.
+ * Receipts and credit notes are immutable snapshots and never refreshed.
+ */
+export async function ensureInvoiceFresh(invoiceId: string): Promise<void> {
+  const { data: inv } = await supabase
+    .from("order_invoices")
+    .select("id, kind, order_id, tenant_id, total_amount, amount_paid, issued_at, renderer_version")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (!inv) return;
+  if (!["invoice", "proforma"].includes(inv.kind)) return;
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("total_amount, amount_paid, updated_at")
+    .eq("id", inv.order_id)
+    .maybeSingle();
+  if (!order) return;
+
+  // Document presentation (terms, footer, titles, VAT label) lives in
+  // tenant_settings — a change there must also invalidate the stored PDF,
+  // otherwise the first render is served forever.
+  let settingsChangedAt: string | null = null;
+  if (inv.tenant_id) {
+    const { data: setting } = await supabase
+      .from("tenant_settings")
+      .select("updated_at")
+      .eq("tenant_id", inv.tenant_id)
+      .in("category", ["documents", "financial", "branding", "invoices"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    settingsChangedAt = (setting as { updated_at?: string } | null)?.updated_at ?? null;
+  }
+
+  const eq = (a: any, b: any) => Number(a ?? 0).toFixed(2) === Number(b ?? 0).toFixed(2);
+  const newerThanIssue = (ts: string | null | undefined) =>
+    !!ts && !!inv.issued_at && new Date(ts) > new Date(inv.issued_at);
+  // A change to the PDF layout itself (wording, columns, VAT handling) doesn't
+  // touch the order or its settings, so version-stamp comparison is the only
+  // thing that invalidates those stored files.
+  const outdatedLayout =
+    Number((inv as { renderer_version?: number | null }).renderer_version ?? 0) <
+    CURRENT_INVOICE_RENDERER_VERSION;
+
+  const stale =
+    outdatedLayout ||
+    !eq(inv.total_amount, order.total_amount) ||
+    (inv.kind === "invoice" && !eq(inv.amount_paid, order.amount_paid)) ||
+    newerThanIssue(order.updated_at) ||
+    newerThanIssue(settingsChangedAt);
+
+  if (!stale) return;
+
+  const { data, error } = await supabase.functions.invoke("generate-invoice-pdf", {
+    body: { invoice_id: invoiceId },
+  });
+  if (error) throw new Error(error.message || "Failed to refresh invoice PDF");
+  if ((data as any)?.error) throw new Error((data as any).error);
+}
+
+
+export async function downloadInvoice(invoiceId: string, fileName: string) {
+  await ensureInvoiceFresh(invoiceId);
+  return accessDocument("invoice", invoiceId, fileName, "attachment");
+}
+
+export async function viewInvoice(invoiceId: string, fileName: string) {
+  await ensureInvoiceFresh(invoiceId);
+  return accessDocument("invoice", invoiceId, fileName, "inline");
+}
+
+export async function downloadDocument(documentId: string, fileName: string) {
+  return accessDocument("document", documentId, fileName, "attachment");
+}
+
+export async function viewDocument(documentId: string, fileName: string) {
+  return accessDocument("document", documentId, fileName, "inline");
+}
+
+// ── Exported mutation functions ─────────────────────────────
+
+export async function createOrderWithJobs(payload: CreateOrderPayload) {
+  return invokeOrderEngine<{
+    order_id: string;
+    order_number: string;
+    jobs: Array<{ id: string; job_number: string; sequence_no: number }>;
+  }>("createOrderWithJobs", payload as unknown as Record<string, unknown>);
+}
+
+export async function updateJobStatus(payload: UpdateJobStatusPayload) {
+  return invokeOrderEngine<{
+    success: boolean;
+    from_status: string;
+    to_status: string;
+  }>("updateJobStatus", payload as unknown as Record<string, unknown>);
+}
+
+export async function updateOrderStatus(payload: {
+  order_id: string;
+  admin_status:
+    | "new_order"
+    | "under_review"
+    | "approved"
+    | "in_production"
+    | "sent_to_print"
+    | "qa"
+    | "ready_for_dispatch"
+    | "dispatched"
+    | "completed"
+    | "on_hold"
+    | "cancelled";
+  reason?: string;
+  tracking_number?: string;
+  tracking_carrier?: string;
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    from_status: string;
+    to_status: string;
+    fulfillment_type: string | null;
+  }>("updateOrderStatus", payload as unknown as Record<string, unknown>);
+}
+
+export async function recordPaymentEvent(payload: RecordPaymentPayload) {
+  return invokeOrderEngine<{
+    success: boolean;
+    payment_id: string;
+  }>("recordPaymentEvent", payload as unknown as Record<string, unknown>);
+}
+
+export async function attachOrderDocument(payload: AttachDocumentPayload) {
+  return invokeOrderEngine<{
+    success: boolean;
+    document_id: string;
+  }>("attachOrderDocument", payload as unknown as Record<string, unknown>);
+}
+
+export async function createJobProof(payload: {
+  job_id: string;
+  proof_type: string;
+  viewer_type: string;
+  viewer_url?: string;
+  document_id?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    proof_id: string;
+  }>("createJobProof", payload);
+}
+
+export async function sendMessage(payload: {
+  order_id: string;
+  job_id?: string;
+  message_body: string;
+  sender_type: "admin" | "customer" | "system";
+  recipient_type?: "thread" | "customer" | "admin";
+  is_internal?: boolean;
+  attachments?: {
+    file_name: string;
+    file_path: string;
+    file_size: number;
+    mime_type: string;
+  }[];
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    message_id: string;
+    created_at: string;
+  }>("sendMessage", payload);
+}
+
+export async function refundPayment(payload: {
+  order_id: string;
+  amount: number;
+  reason?: string;
+  provider?: string;
+}) {
+  return invokeOrderEngine<{ success: boolean; payment_id: string }>("refundPayment", payload);
+}
+
+export async function raiseRefund(payload: {
+  order_id: string;
+  amount: number;
+  reason?: string;
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    adjustment_id: string;
+    status: string;
+    manual_required: boolean;
+    provider: string | null;
+  }>("raiseRefund", payload);
+}
+
+export async function cancelOrder(payload: { order_id: string; reason: string }) {
+  return invokeOrderEngine<{ success: boolean; refund_pending: boolean }>("cancelOrder", payload);
+}
+
+export type ReorderJobPreview = {
+  sequence_no: number;
+  product_name: string;
+  product_category: string | null;
+  job_name: string | null;
+  quantity: number;
+  unit_label: string | null;
+  net_price: number;
+  gross_price: number;
+  vat_rate: number;
+  product_snapshot?: any;
+  configuration?: any;
+};
+
+export type ReorderPreview = {
+  preview: true;
+  source_order_id: string;
+  source_order_number: string;
+  currency: string;
+  fulfillment_type: string | null;
+  branch_id: string | null;
+  notes_customer: string | null;
+  po_number: string | null;
+  cost_centre: string | null;
+  jobs: ReorderJobPreview[];
+  delivery_address: any | null;
+  billing_address: any | null;
+  subtotal: number;
+};
+
+export async function reorderPreview(order_id: string): Promise<ReorderPreview> {
+  return invokeOrderEngine<ReorderPreview>("reorderOrder", { order_id, dry_run: true });
+}
+
+export async function reorderOrder(payload: {
+  order_id: string;
+  job_overrides?: Array<{ sequence_no: number; quantity?: number; remove?: boolean }>;
+  notes_customer?: string | null;
+  po_number?: string | null;
+  cost_centre?: string | null;
+}) {
+  return invokeOrderEngine<{
+    order_id: string;
+    order_number: string;
+    jobs: Array<{ id: string; job_number: string; sequence_no: number }>;
+    currency?: string;
+  }>("reorderOrder", payload);
+}
+
+export async function generateInvoice(payload: {
+  order_id: string;
+  kind?: "proforma" | "invoice" | "credit_note" | "receipt";
+}) {
+  return invokeOrderEngine<{ success: boolean }>("generateInvoice", payload);
+}
+
+export async function sendInvoiceEmail(invoiceId: string, orderId: string) {
+  await ensureInvoiceFresh(invoiceId);
+  const { data, error } = await supabase.functions.invoke("send-order-email", {
+    body: { order_id: orderId, event_key: "invoice_sent", invoice_id: invoiceId, force: true },
+  });
+  if (error) throw new Error(error.message || "Failed to send invoice email");
+  if ((data as any)?.error === "EMAIL_NOT_CONFIGURED") {
+    const { handleEmailSendError } = await import("@/lib/email/handleEmailSendError");
+    handleEmailSendError(data);
+    const err: any = new Error((data as any).message || "Email not configured");
+    err.handled = true;
+    err.code = "EMAIL_NOT_CONFIGURED";
+    throw err;
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data;
+}
+
+export async function requestPayment(orderId: string) {
+  const { data, error } = await supabase.functions.invoke("send-order-email", {
+    body: { order_id: orderId, event_key: "payment_request", force: true },
+  });
+  if (error) throw new Error(error.message || "Failed to send payment request");
+  if ((data as any)?.error === "EMAIL_NOT_CONFIGURED") {
+    const { handleEmailSendError } = await import("@/lib/email/handleEmailSendError");
+    handleEmailSendError(data);
+    const err: any = new Error((data as any).message || "Email not configured");
+    err.handled = true;
+    err.code = "EMAIL_NOT_CONFIGURED";
+    throw err;
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data;
+}
+
+// ── Admin order editing ─────────────────────────────────────
+
+export async function updateOrderPricing(payload: {
+  order_id: string;
+  fulfillment_type?: "delivery" | "collection";
+  delivery_amount?: number;
+  discount_amount?: number;
+  vat_amount?: number;
+  delivery_description?: string;
+}) {
+  return invokeOrderEngine<{ success: boolean }>("updateOrderPricing", payload as any);
+}
+
+export async function updateJobNetPrice(payload: { job_id: string; net_price: number }) {
+  return invokeOrderEngine<{ success: boolean }>("updateJobNetPrice", payload as any);
+}
+
+export async function addOrderAdjustment(payload: { order_id: string; description: string; amount: number }) {
+  return invokeOrderEngine<{ success: boolean; adjustment_id: string }>("addOrderAdjustment", payload as any);
+}
+
+export async function removeOrderAdjustment(payload: { adjustment_id: string }) {
+  return invokeOrderEngine<{ success: boolean }>("removeOrderAdjustment", payload as any);
+}
+
+export async function updateOrderAddress(payload: {
+  order_id: string;
+  address_type: "delivery" | "billing";
+  address: Record<string, string | null | undefined>;
+}) {
+  return invokeOrderEngine<{ success: boolean }>("updateOrderAddress", payload as any);
+}
+
+// ── Customer self-service order edits ───────────────────────
+
+export type CustomerEditResult = {
+  success: boolean;
+  requires_payment?: boolean;
+  credit_amount?: number;
+  changes?: string[];
+  unchanged?: boolean;
+};
+
+export async function customerChangeQuantities(payload: {
+  order_id: string;
+  job_overrides: Array<{ sequence_no: number; quantity?: number; remove?: boolean }>;
+}) {
+  return invokeOrderEngine<CustomerEditResult>("customerChangeQuantities", payload);
+}
+
+// ── Staff order amendment ───────────────────────────────────
+
+export type AdminChangeQuantitiesResult = {
+  success: boolean;
+  unchanged?: boolean;
+  requires_override?: boolean;
+  error?: string;
+  changes?: string[];
+  requires_payment?: boolean;
+  balance_due?: number;
+  credit_amount?: number;
+  price_estimated?: boolean;
+};
+
+export async function adminChangeQuantities(payload: {
+  order_id: string;
+  reason: string;
+  override_production?: boolean;
+  notify_customer?: boolean;
+  job_overrides: Array<{ job_id: string; quantity?: number; net_price?: number; remove?: boolean }>;
+}) {
+  return invokeOrderEngine<AdminChangeQuantitiesResult>("adminChangeQuantities", payload);
+}
+
+
+
+export async function customerChangeFulfillment(payload: {
+  order_id: string;
+  fulfillment_type: "delivery" | "collection";
+  delivery_amount?: number;
+  delivery_description?: string;
+}) {
+  return invokeOrderEngine<CustomerEditResult>("customerChangeFulfillment", payload);
+}
+
+export interface AdminChangeFulfillmentResult {
+  success: boolean;
+  from: "delivery" | "collection" | null;
+  to: "delivery" | "collection";
+  delivery_amount: number;
+  new_total: number;
+  balance_due: number;
+  refund_flagged: boolean;
+  refund_adjustment_id: string | null;
+}
+
+export async function adminChangeFulfillment(payload: {
+  order_id: string;
+  to: "delivery" | "collection";
+  delivery_address?: Record<string, string | null | undefined>;
+  delivery_amount?: number;
+  delivery_description?: string;
+  notify_customer?: boolean;
+}) {
+  return invokeOrderEngine<AdminChangeFulfillmentResult>("adminChangeFulfillment", payload as any);
+}
+
+
+export async function markRefundCompleted(payload: {
+  adjustment_id: string;
+  payment_reference?: string;
+}) {
+  return invokeOrderEngine<{ success: boolean; payment_id?: string }>(
+    "markRefundCompleted",
+    payload,
+  );
+}
+
+/**
+ * Trigger a real refund through the original payment provider
+ * (Stripe `refunds.create` or PayFast `/refund`). Falls back to a manual
+ * outcome when the order wasn't paid online.
+ */
+export async function processOnlineRefund(payload: {
+  adjustment_id: string;
+  amount?: number;
+}) {
+  const { data, error } = await supabase.functions.invoke("payments-refund", {
+    body: payload,
+  });
+  if (error) throw new Error(error.message || "Refund failed");
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data as {
+    ok: true;
+    outcome: "refund_initiated" | "refunded" | "manual_required";
+    provider?: "stripe" | "payfast";
+    provider_refund_id?: string;
+  };
+}
+
+
+
+export interface ProcessDocumentResult {
+  assetId: string;
+  grayscaleJobId?: string;
+  resizeJobId?: string;
+  error?: string;
+}
+
+/**
+ * Orchestrate grayscale/resize calls for a single document.
+ * Fires and forgets — returns immediately with job IDs for optional polling.
+ * Does NOT block order placement on failure (graceful degradation).
+ */
+export async function processDocumentForProduction(params: {
+  backendAssetId: string;
+  needsGrayscale: boolean;
+  needsResize: boolean;
+  targetWidthMm?: number;
+  targetHeightMm?: number;
+  /** Pass the product's required orientation so resize atomically
+   *  rotates any mismatched pages while scaling. */
+  dominantOrientation?: "portrait" | "landscape" | null;
+}): Promise<ProcessDocumentResult> {
+  const { grayscale, resize } = await import("@/lib/documentCentreApi");
+  const result: ProcessDocumentResult = { assetId: params.backendAssetId };
+
+  try {
+    if (params.needsGrayscale) {
+      const { job_id } = await grayscale(params.backendAssetId);
+      result.grayscaleJobId = job_id;
+    }
+    if (params.needsResize && params.targetWidthMm && params.targetHeightMm) {
+      const { job_id } = await resize(
+        params.backendAssetId,
+        params.targetWidthMm,
+        params.targetHeightMm,
+        "fit",
+        params.dominantOrientation,
+      );
+      result.resizeJobId = job_id;
+    }
+  } catch (e: any) {
+    console.warn("[processDocumentForProduction] failed (non-blocking):", e?.message);
+    result.error = e?.message ?? "Processing failed";
+  }
+
+  return result;
+}
