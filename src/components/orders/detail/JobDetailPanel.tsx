@@ -12,6 +12,7 @@ import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 import CanvasPrintsAdminGallery from "./CanvasPrintsAdminGallery";
 import ArtworkAdminProof from "./ArtworkAdminProof";
 import JobWeightCard from "./JobWeightCard";
+import CustomerFilesCard, { buildCustomerFiles } from "./CustomerFilesCard";
 
 import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -50,6 +51,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const jobSize = resolveJobSize(job, config);
   const jobOrientation = orientationOf(jobSize);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const customerFiles = buildCustomerFiles(sourceDocumentsForJob(job, sourceDocuments), jobDocs);
 
 
   return (
@@ -223,24 +225,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         />
       ) : (
 
-        /* Attached files — hidden for photo prints jobs (gallery shows them visually instead) */
-        jobDocs.length > 0 && (
-          <div className="rounded-lg border bg-card p-3">
-            <h3 className="text-xs font-semibold mb-1.5">Customer's Attached Files</h3>
-            <div className="space-y-0.5">
-              {jobDocs.map((doc: any) => (
-                <div key={doc.id} className="flex items-center gap-2 text-xs">
-                  <span className="text-primary hover:underline cursor-pointer">{doc.file_name}</span>
-                  {doc.file_size_bytes && (
-                    <span className="text-muted-foreground">
-                      ({(doc.file_size_bytes / 1024).toFixed(0)}KB)
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )
+        /* Uploaded files — hidden for photo prints jobs (gallery shows them visually instead) */
+        <CustomerFilesCard
+          files={customerFiles}
+          orderNumber={orderNumber ?? null}
+          jobNumber={job.job_number}
+        />
       )}
 
       <ProductionPanel
