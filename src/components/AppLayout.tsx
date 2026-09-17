@@ -35,12 +35,12 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen w-full bg-background">
       <AppSidebar unreadOrderCount={totalUnread} />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-12 items-center justify-end gap-2 border-b bg-background px-4">
           <NewOrderBell ordersBasePath={buildAdminPath("/admin/orders", tenantId)} scopeToBranch={false} />
           <StaffMessagesBell ordersBasePath={buildAdminPath("/admin/orders", tenantId)} />
         </header>
-        <main className="flex-1 overflow-auto p-6">
+        <main className="min-w-0 flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </div>

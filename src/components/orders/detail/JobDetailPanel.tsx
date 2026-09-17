@@ -60,7 +60,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
 
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       {/* Merged Job header + info card */}
       <div className="rounded-lg border bg-card p-3 space-y-2">
         {/* Header row */}

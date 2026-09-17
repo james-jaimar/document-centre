@@ -258,9 +258,9 @@ export default function BranchOrderDetail() {
 
 
       {/* 3-column layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr_360px] gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         {/* LEFT */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="text-sm font-medium text-primary">Order Details</div>
           <Tabs defaultValue="summary" className="w-full">
             <TabsList className="w-full grid grid-cols-4 h-8">
@@ -295,7 +295,7 @@ export default function BranchOrderDetail() {
         </div>
 
         {/* CENTER */}
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
             <JobDetailPanel job={selectedJob} documents={documents} sourceDocuments={sourceDocuments} currency={order.currency} orderNumber={order.order_number} />
@@ -307,7 +307,7 @@ export default function BranchOrderDetail() {
         </div>
 
         {/* RIGHT */}
-        <div>
+        <div className="min-w-0">
           <TimelinePanel
             orderId={order.id}
             timeline={timeline}
