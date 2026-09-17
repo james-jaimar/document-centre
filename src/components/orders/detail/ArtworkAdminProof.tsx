@@ -179,11 +179,11 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
     : uploadedArtwork.file_name ?? "Supplied artwork";
 
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold flex items-center gap-1.5">
-          <ImageIcon className="h-3.5 w-3.5" />
-          {heading} — {label}
+    <div className="min-w-0 max-w-full overflow-hidden rounded-lg border bg-card p-3 space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <h3 className="flex min-w-0 items-center gap-1.5 text-xs font-semibold">
+          <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate" title={`${heading} — ${label}`}>{heading} — {label}</span>
         </h3>
         <div className="flex items-center gap-2">
           {pages.length > 1 && (
@@ -212,9 +212,9 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
           <button
             type="button"
             onClick={() => setProofOpen(true)}
-            className="block w-full rounded-md border bg-muted/30 p-2"
+            className="block min-w-0 max-w-full overflow-hidden rounded-md border bg-muted/30 p-2"
           >
-            <canvas ref={canvasRef} className="w-full h-auto rounded-sm shadow-sm" />
+            <canvas ref={canvasRef} className="block h-auto max-w-full rounded-sm shadow-sm" />
           </button>
 
           {pages.length > 1 && (

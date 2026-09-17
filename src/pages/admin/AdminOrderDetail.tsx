@@ -123,10 +123,10 @@ export default function AdminOrderDetail() {
   const accountTermsDays = Number(orderMeta.payment_terms_days ?? 30);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Button variant="outline" size="sm" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
           </Button>
@@ -141,7 +141,7 @@ export default function AdminOrderDetail() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {orderedByProfile?.id && (
             <ImpersonateCustomerButton
               profileId={orderedByProfile.id}
@@ -223,9 +223,9 @@ export default function AdminOrderDetail() {
       />
 
       {/* 3-column layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr_360px] gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         {/* LEFT: Order details + job list */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="text-sm font-medium text-primary">Order Details</div>
           <Tabs defaultValue="summary" className="w-full">
             <TabsList className="w-full grid grid-cols-4 h-8">
@@ -260,7 +260,7 @@ export default function AdminOrderDetail() {
         </div>
 
         {/* CENTER: Job detail */}
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
             <JobDetailPanel job={selectedJob} documents={documents} sourceDocuments={sourceDocuments} currency={order.currency} orderNumber={order.order_number} />
@@ -272,7 +272,7 @@ export default function AdminOrderDetail() {
         </div>
 
         {/* RIGHT: Timeline + messaging */}
-        <div>
+        <div className="min-w-0">
           <TimelinePanel
             orderId={order.id}
             timeline={timeline}
