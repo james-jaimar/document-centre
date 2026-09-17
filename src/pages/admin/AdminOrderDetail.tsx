@@ -126,7 +126,7 @@ export default function AdminOrderDetail() {
     <div className="min-w-0 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Button variant="outline" size="sm" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
           </Button>
@@ -141,7 +141,7 @@ export default function AdminOrderDetail() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {orderedByProfile?.id && (
             <ImpersonateCustomerButton
               profileId={orderedByProfile.id}

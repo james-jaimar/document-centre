@@ -71,7 +71,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
           </div>
           <div className="text-right">
             <div className="text-[11px] text-muted-foreground">Job Name</div>
-            <div className="text-xs font-semibold">{job.job_name || job.product_name}</div>
+            <div className="break-words text-xs font-semibold">{job.job_name || job.product_name}</div>
           </div>
         </div>
 
@@ -133,12 +133,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         {/* Job info */}
         <div className="grid grid-cols-[100px_1fr] gap-y-1 text-xs">
           <span className="text-muted-foreground">Product</span>
-          <span className="font-medium">{job.product_name}</span>
+          <span className="min-w-0 break-words font-medium">{job.product_name}</span>
 
           {job.product_category && (
             <>
               <span className="text-muted-foreground">Category</span>
-              <span>{job.product_category}</span>
+               <span className="min-w-0 break-words">{job.product_category}</span>
             </>
           )}
 
@@ -163,7 +163,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
               return (
                 <div key={n} className="contents">
                   <span className={emphasise ? "text-primary font-semibold" : "text-muted-foreground"}>{label}</span>
-                  <span className={emphasise ? "text-sm font-bold text-primary" : undefined}>{value}</span>
+                   <span className={emphasise ? "min-w-0 break-words text-sm font-bold text-primary" : "min-w-0 break-words"}>{value}</span>
                 </div>
               );
             })}
@@ -183,7 +183,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
                 return (
                   <div key={iIdx} className="contents">
                     <span className={emphasise ? "text-primary font-semibold" : "text-muted-foreground"}>{item.label}</span>
-                    <span className={emphasise ? "text-sm font-bold text-primary" : undefined}>{item.value}</span>
+                     <span className={emphasise ? "min-w-0 break-words text-sm font-bold text-primary" : "min-w-0 break-words"}>{item.value}</span>
                   </div>
                 );
               })}

@@ -163,7 +163,7 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
                     <span className="text-[10px] text-muted-foreground">{getTimeAgo(item.created_at)}</span>
                   </div>
                   <div className={cn(
-                    "rounded-md px-3 py-2 text-xs",
+                    "break-words rounded-md px-3 py-2 text-xs",
                     item.is_internal
                       ? "bg-muted text-muted-foreground border border-dashed border-border"
                       : item.sender_type === "customer"
@@ -185,7 +185,7 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
                     </div>
                     <span className="text-[10px] text-muted-foreground">{getTimeAgo(item.created_at)}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">{item.description}</p>
+                  <p className="break-words text-xs text-muted-foreground">{item.description}</p>
                 </div>
               )}
             </div>
