@@ -19,7 +19,7 @@
 - [ ] Live run: verify domain in Resend, connect Impress Print, test send, dry run, small broadcast
 
 ## The 2027 Edition second campaign (2026-09-17)
-- [ ] Finalise the advanced email template and remove the unresolved custom pixel
-- [ ] Add a previous-campaign recipient audience with suppression reapplied
-- [ ] Preserve safe campaign attribution across storefront navigation and activation completion
-- [ ] Prepare the eligible follow-up campaign without sending
+- [x] Finalise the advanced email template and remove the unresolved custom pixel
+- [x] Add a previous-campaign recipient audience with suppression reapplied
+- [x] Preserve safe campaign attribution across storefront navigation and activation completion
+- [x] Prepare the eligible follow-up campaign without sending
