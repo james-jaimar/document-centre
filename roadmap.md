@@ -17,3 +17,9 @@
 - [x] Campaigns send as Resend broadcasts with hosted unsubscribe
 - [x] Webhook folds opens/clicks/bounces/complaints/unsubscribes into history + suppression
 - [ ] Live run: verify domain in Resend, connect Impress Print, test send, dry run, small broadcast
+
+## The 2027 Edition second campaign (2026-09-17)
+- [ ] Finalise the advanced email template and remove the unresolved custom pixel
+- [ ] Add a previous-campaign recipient audience with suppression reapplied
+- [ ] Preserve safe campaign attribution across storefront navigation and activation completion
+- [ ] Prepare the eligible follow-up campaign without sending
