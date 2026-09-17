@@ -32,6 +32,10 @@ const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "ready_for_dispatch", "completed", "on_hold", "cancelled",
 ];
 
+const DEFAULT_ADMIN_STATUSES = ALL_ADMIN_STATUSES.filter(
+  (status): status is OrderAdminStatus => status !== "cancelled",
+);
+
 /** Submitted, but nobody on the team has opened it yet. */
 export function isUnopened(order: any): boolean {
   return !!order?.submitted_at && !order?.first_opened_at && order?.admin_status !== "cancelled";
@@ -81,7 +85,7 @@ export default function AdminOrders() {
   const filters: AdminOrderListFilters = {
     tenant_id: tenantId || undefined,
     search: search || undefined,
-    admin_status: selectedStatuses.length ? selectedStatuses : undefined,
+    admin_status: selectedStatuses.length ? selectedStatuses : DEFAULT_ADMIN_STATUSES,
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     unopened_only: unopenedOnly || undefined,
     sample_pack_only: samplePackOnly || undefined,
