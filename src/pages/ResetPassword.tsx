@@ -9,6 +9,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
+import { campaignAnalyticsFields, readCampaignAttribution } from "@/lib/marketingAttribution";
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -109,6 +110,12 @@ const ResetPassword = () => {
           });
         } catch {
           /* best-effort */
+        }
+        const gtag = (window as any).gtag;
+        if (typeof gtag === "function") {
+          gtag("event", "activation_completed", {
+            ...campaignAnalyticsFields(readCampaignAttribution()),
+          });
         }
         toast.success("Password set — welcome to your branch.");
         navigate(next === "branch" ? "/branch" : "/branch", { replace: true });

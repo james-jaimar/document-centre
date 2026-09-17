@@ -21,7 +21,7 @@ import { applyMergeTokens, renderEmailShell } from "@/lib/email/renderEmailPrevi
 import { unknownEmailTokens, unresolvedEmailImages } from "@/lib/email/advancedEmail";
 
 
-type Audience = "branch" | "company" | "customer";
+type Audience = "branch" | "company" | "customer" | "previous_campaign";
 
 interface Recipient {
   id: string;
@@ -59,10 +59,19 @@ interface CampaignRow {
 
 }
 
+interface PreviousCampaign {
+  id: string;
+  subject_snapshot: string;
+  created_at: string;
+  audience: "branch" | "company" | "customer";
+  total_recipients: number;
+}
+
 const AUDIENCE_LABEL: Record<Audience, string> = {
   branch: "Branches",
   company: "Businesses",
   customer: "Customers",
+  previous_campaign: "Previous campaign recipients",
 };
 
 const TOKENS = [
@@ -113,6 +122,10 @@ function ComposeTab() {
   const [templateSlug, setTemplateSlug] = useState("");
   const [branches, setBranches] = useState<Recipient[]>([]);
   const [companies, setCompanies] = useState<Recipient[]>([]);
+  const [previousCampaigns, setPreviousCampaigns] = useState<PreviousCampaign[]>([]);
+  const [previousCampaignId, setPreviousCampaignId] = useState("");
+  const [previousRecipients, setPreviousRecipients] = useState<Recipient[]>([]);
+  const [previousAudience, setPreviousAudience] = useState<"branch" | "company" | "customer">("company");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
@@ -169,9 +182,53 @@ function ComposeTab() {
       setCompanies(((c ?? []) as any[]).map((r) => ({
         id: r.id, name: r.trading_name || r.name, email: r.email,
       })));
+
+      const { data: prior } = await supabase
+        .from("platform_email_campaigns" as any)
+        .select("id, subject_snapshot, created_at, audience, total_recipients")
+        .eq("tenant_id", tenantId)
+        .in("status", ["sent", "completed"])
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const campaigns = ((prior ?? []) as unknown as PreviousCampaign[])
+        .filter((campaign) => ["branch", "company", "customer"].includes(campaign.audience));
+      setPreviousCampaigns(campaigns);
+      if (campaigns.length) setPreviousCampaignId((current) => current || campaigns[0].id);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
+
+  useEffect(() => {
+    if (audience !== "previous_campaign" || !previousCampaignId) {
+      setPreviousRecipients([]);
+      return;
+    }
+    (async () => {
+      const campaign = previousCampaigns.find((row) => row.id === previousCampaignId);
+      if (!campaign) return;
+      const idColumn = campaign.audience === "branch" ? "branch_id"
+        : campaign.audience === "company" ? "company_id" : "profile_id";
+      const { data } = await supabase
+        .from("platform_email_campaign_recipients" as any)
+        .select(`email, contact_name, org_name, ${idColumn}`)
+        .eq("campaign_id", previousCampaignId)
+        .eq("status", "sent")
+        .not(idColumn, "is", null)
+        .order("created_at", { ascending: true })
+        .limit(1000);
+      const seen = new Set<string>();
+      const recipients = ((data ?? []) as any[]).flatMap((row) => {
+        const id = String(row[idColumn] ?? "");
+        const email = String(row.email ?? "").trim().toLowerCase();
+        if (!id || !email || seen.has(email)) return [];
+        seen.add(email);
+        return [{ id, email, name: row.org_name || row.contact_name || email, secondary: "Previously sent" }];
+      });
+      setPreviousAudience(campaign.audience);
+      setPreviousRecipients(recipients);
+      setSelected(new Set(recipients.map((recipient) => recipient.id)));
+    })();
+  }, [audience, previousCampaignId, previousCampaigns]);
 
   // A campaign prepared earlier (even in another session) stays ready to send.
   useEffect(() => {
@@ -207,7 +264,7 @@ function ComposeTab() {
 
   const pool: Recipient[] = audience === "branch" ? branches
     : audience === "company" ? companies
-    : customerRecipients;
+    : audience === "customer" ? customerRecipients : previousRecipients;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -216,7 +273,10 @@ function ComposeTab() {
       r.name.toLowerCase().includes(q) || (r.email ?? "").toLowerCase().includes(q));
   }, [pool, search]);
 
-  useEffect(() => { setSelected(new Set()); setResult(null); }, [audience]);
+  useEffect(() => {
+    if (audience !== "previous_campaign") setSelected(new Set());
+    setResult(null);
+  }, [audience]);
 
   const template = templates.find((t) => t.slug === templateSlug);
   const templateIssues = template ? [
@@ -266,7 +326,7 @@ function ComposeTab() {
       {
         tenant_id: tenantId,
         template_slug: templateSlug,
-        audience,
+        audience: audience === "previous_campaign" ? previousAudience : audience,
         recipient_ids: ids,
         dry_run: dryRun,
         ...(viaResend && !dryRun ? { phase: "prepare" } : {}),
@@ -419,7 +479,7 @@ function ComposeTab() {
         <CardContent className="space-y-4">
           <div>
             <Label>Send to</Label>
-            <div className="grid grid-cols-3 gap-2 mt-1">
+             <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 mt-1">
               {(Object.keys(AUDIENCE_LABEL) as Audience[]).map((a) => (
                 <button key={a} type="button" onClick={() => setAudience(a)}
                   className={`border rounded-md p-2 text-sm ${audience === a ? "border-primary bg-primary/5 font-medium" : "hover:bg-muted/40"}`}>
@@ -427,6 +487,25 @@ function ComposeTab() {
                 </button>
               ))}
             </div>
+
+          {audience === "previous_campaign" && (
+            <div>
+              <Label>Previous campaign</Label>
+              <Select value={previousCampaignId} onValueChange={setPreviousCampaignId}>
+                <SelectTrigger><SelectValue placeholder="Select a campaign" /></SelectTrigger>
+                <SelectContent>
+                  {previousCampaigns.map((campaign) => (
+                    <SelectItem key={campaign.id} value={campaign.id}>
+                      {campaign.subject_snapshot} · {new Date(campaign.created_at).toLocaleDateString()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Successful recipients are selected automatically. Current unsubscribes, complaints and bounces are checked again during preparation.
+              </p>
+            </div>
+          )}
           </div>
 
           <div>
@@ -450,7 +529,7 @@ function ComposeTab() {
 
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder={`Search ${AUDIENCE_LABEL[audience].toLowerCase()}…`}
+             <Input className="pl-9" placeholder={`Search ${AUDIENCE_LABEL[audience].toLowerCase()}…`}
               value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
 

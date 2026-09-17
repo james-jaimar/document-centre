@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { campaignAnalyticsFields, captureCampaignAttribution } from "@/lib/marketingAttribution";
 
 /**
  * Sends a GA4 `page_view` event on every SPA route change.
@@ -13,6 +14,7 @@ export function useGAPageViews() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const attribution = captureCampaignAttribution(location.search);
     const gtag = (window as any).gtag;
     if (typeof gtag !== "function") return;
 
@@ -24,6 +26,7 @@ export function useGAPageViews() {
       page_path: pagePath,
       page_location: pageLocation,
       page_title: pageTitle,
+      ...campaignAnalyticsFields(attribution),
     });
   }, [location.pathname, location.search]);
 }
