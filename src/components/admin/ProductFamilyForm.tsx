@@ -100,6 +100,8 @@ interface FormValues {
   expected_page_count: number | null;
   expected_trim_width_mm: number | null;
   expected_trim_height_mm: number | null;
+  max_trim_width_mm: number | null;
+  max_trim_height_mm: number | null;
 
 }
 
@@ -142,6 +144,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       expected_page_count: null,
       expected_trim_width_mm: null,
       expected_trim_height_mm: null,
+      max_trim_width_mm: null,
+      max_trim_height_mm: null,
 
     },
   });
@@ -174,6 +178,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         expected_page_count: (fam as any).expected_page_count ?? null,
         expected_trim_width_mm: (fam as any).expected_trim_width_mm ?? null,
         expected_trim_height_mm: (fam as any).expected_trim_height_mm ?? null,
+        max_trim_width_mm: (fam as any).max_trim_width_mm ?? null,
+        max_trim_height_mm: (fam as any).max_trim_height_mm ?? null,
 
       });
     } else {
@@ -199,6 +205,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       expected_page_count: null,
       expected_trim_width_mm: null,
       expected_trim_height_mm: null,
+      max_trim_width_mm: null,
+      max_trim_height_mm: null,
 
       });
     }
