@@ -100,6 +100,8 @@ interface FormValues {
   expected_page_count: number | null;
   expected_trim_width_mm: number | null;
   expected_trim_height_mm: number | null;
+  max_trim_width_mm: number | null;
+  max_trim_height_mm: number | null;
 
 }
 
@@ -142,6 +144,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       expected_page_count: null,
       expected_trim_width_mm: null,
       expected_trim_height_mm: null,
+      max_trim_width_mm: null,
+      max_trim_height_mm: null,
 
     },
   });
@@ -174,6 +178,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         expected_page_count: (fam as any).expected_page_count ?? null,
         expected_trim_width_mm: (fam as any).expected_trim_width_mm ?? null,
         expected_trim_height_mm: (fam as any).expected_trim_height_mm ?? null,
+        max_trim_width_mm: (fam as any).max_trim_width_mm ?? null,
+        max_trim_height_mm: (fam as any).max_trim_height_mm ?? null,
 
       });
     } else {
@@ -199,6 +205,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       expected_page_count: null,
       expected_trim_width_mm: null,
       expected_trim_height_mm: null,
+      max_trim_width_mm: null,
+      max_trim_height_mm: null,
 
       });
     }
@@ -470,6 +478,56 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                     page count doesn't match, is rejected with a message telling the customer what was
                     expected and what we found. Leave pages blank to accept any page count.
                   </p>
+
+                  <div className="space-y-2 border-t pt-3">
+                    <FormLabel className="text-xs">Maximum artwork size (optional)</FormLabel>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <FormField
+                        control={form.control}
+                        name="max_trim_width_mm"
+                        render={({ field }) => (
+                          <FormItem className="w-32">
+                            <FormLabel className="text-xs">Max width (mm)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                placeholder="None"
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="max_trim_height_mm"
+                        render={({ field }) => (
+                          <FormItem className="w-32">
+                            <FormLabel className="text-xs">Max height (mm)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                placeholder="None"
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Set both to accept any artwork that fits inside these bounds (either orientation)
+                      instead of demanding the exact finished size.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

@@ -32,6 +32,7 @@ import { useAddItemToCart } from "@/hooks/useCart";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, isAbortError, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
+import { imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +60,18 @@ import SamplePackProgressStrip from "@/components/storefront/SamplePackProgressS
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
 
+/** Physical page size of a JPG/PNG, read at 300 DPI (print resolution). */
+async function imagePageSizeMm(file: File): Promise<TargetSize> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const mm = (px: number) => (px / 300) * 25.4;
+    return { widthMm: mm(img.naturalWidth), heightMm: mm(img.naturalHeight) };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export interface UploadedArtworkSpec {
   document_id?: string | null;
   storage_path: string;
@@ -76,6 +89,10 @@ export interface ArtworkGeometry {
   trim_width_mm?: number | null;
   trim_height_mm?: number | null;
   bleed_mm?: number | null;
+  /** When set, any artwork fitting inside these bounds is accepted instead of
+   *  having to match the finished size exactly. */
+  max_trim_width_mm?: number | null;
+  max_trim_height_mm?: number | null;
 }
 
 interface Props {
@@ -142,6 +159,10 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const expectedPages = reference?.page_count ?? null;
   const expectedW = reference?.trim_width_mm ?? null;
   const expectedH = reference?.trim_height_mm ?? null;
+  const maxW = reference?.max_trim_width_mm ?? null;
+  const maxH = reference?.max_trim_height_mm ?? null;
+  /** Bounds mode: anything up to maxW x maxH is fine (either orientation). */
+  const useMaxBounds = !!(maxW && maxH);
 
   // ── Hydrate from a saved order item
   useEffect(() => {
@@ -233,10 +254,14 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const cancelUpload = useCallback(() => uploadAbort.current?.abort(), []);
 
   const handleFile = useCallback(
-    async (file: File) => {
-      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-      if (!isPdf) {
-        setRejection("Please upload a print-ready PDF. Images and Office files aren't accepted here.");
+    async (original: File) => {
+      const isPdf =
+        original.type === "application/pdf" || /\.pdf$/i.test(original.name);
+      const isJpgOrPng =
+        /^image\/(jpeg|png)$/i.test(original.type) ||
+        /\.(jpe?g|png)$/i.test(original.name);
+      if (!isPdf && !isJpgOrPng) {
+        setRejection("Please upload a PDF, JPG or PNG file.");
         return;
       }
       const controller = new AbortController();
@@ -244,6 +269,9 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
       setBusy(true);
       setRejection(null);
       try {
+        // JPG / PNG are converted to a single-page PDF at 300 DPI so they run
+        // through exactly the same proof + print pipeline as a supplied PDF.
+        const file = isPdf ? original : await imageFileToPdf(original, await imagePageSizeMm(original));
         const rendered = await rasterisePdfPages(file, {
           targetLongPx: 1400,
           knockoutWhite: false,
@@ -261,7 +289,23 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           return;
         }
 
-        if (expectedW && expectedH) {
+        if (useMaxBounds && maxW && maxH) {
+          const w = first.widthMm;
+          const h = first.heightMm;
+          const within =
+            (w <= maxW + TRIM_TOLERANCE_MM && h <= maxH + TRIM_TOLERANCE_MM) ||
+            (w <= maxH + TRIM_TOLERANCE_MM && h <= maxW + TRIM_TOLERANCE_MM);
+          if (!within) {
+            setRejection(
+              `Your artwork can be up to ${Math.round(maxW)} × ${Math.round(
+                maxH,
+              )} mm — your file measures ${Math.round(w)} × ${Math.round(
+                h,
+              )} mm. Please re-export it smaller.`,
+            );
+            return;
+          }
+        } else if (expectedW && expectedH) {
           const fitsUpright =
             Math.abs(first.widthMm - expectedW) <= TRIM_TOLERANCE_MM &&
             Math.abs(first.heightMm - expectedH) <= TRIM_TOLERANCE_MM;
@@ -329,7 +373,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         setBusy(false);
       }
     },
-    [ensureOrder, expectedPages, expectedW, expectedH],
+    [ensureOrder, expectedPages, expectedW, expectedH, useMaxBounds, maxW, maxH],
   );
 
   const clearFile = () => {
@@ -533,12 +577,19 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">Artwork requirements</p>
             <ul className="mt-1.5 space-y-1">
-              <li>Print-ready PDF only</li>
+              <li>PDF, JPG or PNG</li>
               {expectedPages && <li>Exactly {expectedPages} pages</li>}
-              {expectedW && expectedH && (
+              {useMaxBounds ? (
                 <li>
-                  Finished size {Math.round(expectedW)} × {Math.round(expectedH)} mm
+                  Up to {Math.round(maxW!)} × {Math.round(maxH!)} mm
                 </li>
+              ) : (
+                expectedW &&
+                expectedH && (
+                  <li>
+                    Finished size {Math.round(expectedW)} × {Math.round(expectedH)} mm
+                  </li>
+                )
               )}
               {!!reference?.bleed_mm && <li>{reference.bleed_mm} mm bleed with crop marks</li>}
             </ul>
@@ -578,7 +629,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
                 <Upload className="h-6 w-6 text-primary" />
               )}
               <span className="text-sm font-medium">
-                {busy ? "Checking your file…" : "Drop your print-ready PDF"}
+                {busy ? "Checking your file…" : "Drop your PDF, JPG or PNG"}
               </span>
               <span className="text-xs text-muted-foreground">
                 {busy ? "This can take a while on a slow connection" : "or click to browse"}
@@ -599,7 +650,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,image/jpeg,image/png"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];

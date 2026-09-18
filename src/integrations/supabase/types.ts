@@ -5889,6 +5889,8 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           kind: string | null
+          max_trim_height_mm: number | null
+          max_trim_width_mm: number | null
           name: string
           photo_library_enabled: boolean | null
           pricing_addons: Json
@@ -5918,6 +5920,8 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           kind?: string | null
+          max_trim_height_mm?: number | null
+          max_trim_width_mm?: number | null
           name: string
           photo_library_enabled?: boolean | null
           pricing_addons?: Json
@@ -5947,6 +5951,8 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           kind?: string | null
+          max_trim_height_mm?: number | null
+          max_trim_width_mm?: number | null
           name?: string
           photo_library_enabled?: boolean | null
           pricing_addons?: Json

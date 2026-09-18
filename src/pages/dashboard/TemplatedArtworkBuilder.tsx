@@ -1184,6 +1184,9 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   /** Expected geometry for the upload route: the published layout when there
    *  is one, otherwise the family's supplied-artwork settings. */
   const uploadGeometry = useMemo(() => {
+    const f = family as any;
+    const maxW = f?.max_trim_width_mm ?? null;
+    const maxH = f?.max_trim_height_mm ?? null;
     const t = templates[0] as any;
     if (t) {
       return {
@@ -1191,15 +1194,18 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         trim_width_mm: t.trim_width_mm ?? null,
         trim_height_mm: t.trim_height_mm ?? null,
         bleed_mm: t.bleed_mm ?? null,
+        max_trim_width_mm: maxW,
+        max_trim_height_mm: maxH,
       };
     }
-    const f = family as any;
     if (!f) return null;
     return {
       page_count: f.expected_page_count ?? null,
       trim_width_mm: f.expected_trim_width_mm ?? null,
       trim_height_mm: f.expected_trim_height_mm ?? null,
       bleed_mm: null,
+      max_trim_width_mm: maxW,
+      max_trim_height_mm: maxH,
     };
   }, [templates, family]);
 
