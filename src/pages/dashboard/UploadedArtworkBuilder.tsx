@@ -241,10 +241,14 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const cancelUpload = useCallback(() => uploadAbort.current?.abort(), []);
 
   const handleFile = useCallback(
-    async (file: File) => {
-      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-      if (!isPdf) {
-        setRejection("Please upload a print-ready PDF. Images and Office files aren't accepted here.");
+    async (original: File) => {
+      const isPdf =
+        original.type === "application/pdf" || /\.pdf$/i.test(original.name);
+      const isJpgOrPng =
+        /^image\/(jpeg|png)$/i.test(original.type) ||
+        /\.(jpe?g|png)$/i.test(original.name);
+      if (!isPdf && !isJpgOrPng) {
+        setRejection("Please upload a PDF, JPG or PNG file.");
         return;
       }
       const controller = new AbortController();
@@ -252,6 +256,9 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
       setBusy(true);
       setRejection(null);
       try {
+        // JPG / PNG are converted to a single-page PDF at 300 DPI so they run
+        // through exactly the same proof + print pipeline as a supplied PDF.
+        const file = isPdf ? original : await imageFileToPdf(original, await imagePageSizeMm(original));
         const rendered = await rasterisePdfPages(file, {
           targetLongPx: 1400,
           knockoutWhite: false,
