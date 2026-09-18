@@ -76,6 +76,10 @@ export interface ArtworkGeometry {
   trim_width_mm?: number | null;
   trim_height_mm?: number | null;
   bleed_mm?: number | null;
+  /** When set, any artwork fitting inside these bounds is accepted instead of
+   *  having to match the finished size exactly. */
+  max_trim_width_mm?: number | null;
+  max_trim_height_mm?: number | null;
 }
 
 interface Props {
