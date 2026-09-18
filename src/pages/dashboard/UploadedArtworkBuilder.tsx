@@ -629,7 +629,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
                 <Upload className="h-6 w-6 text-primary" />
               )}
               <span className="text-sm font-medium">
-                {busy ? "Checking your file…" : "Drop your print-ready PDF"}
+                {busy ? "Checking your file…" : "Drop your PDF, JPG or PNG"}
               </span>
               <span className="text-xs text-muted-foreground">
                 {busy ? "This can take a while on a slow connection" : "or click to browse"}
