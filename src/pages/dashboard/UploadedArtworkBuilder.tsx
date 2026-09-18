@@ -32,6 +32,7 @@ import { useAddItemToCart } from "@/hooks/useCart";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { downloadFromS3, isAbortError, uploadToS3 } from "@/lib/s3Storage";
 import { rasterisePdfPages, loadImage, type RasterisedPage } from "@/lib/artworkTemplates/pdfPages";
+import { imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import ArtworkProofModal from "@/components/artwork/ArtworkProofModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
