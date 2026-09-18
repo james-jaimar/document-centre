@@ -146,6 +146,10 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
   const expectedPages = reference?.page_count ?? null;
   const expectedW = reference?.trim_width_mm ?? null;
   const expectedH = reference?.trim_height_mm ?? null;
+  const maxW = reference?.max_trim_width_mm ?? null;
+  const maxH = reference?.max_trim_height_mm ?? null;
+  /** Bounds mode: anything up to maxW x maxH is fine (either orientation). */
+  const useMaxBounds = !!(maxW && maxH);
 
   // ── Hydrate from a saved order item
   useEffect(() => {
