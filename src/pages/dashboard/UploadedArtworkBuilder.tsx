@@ -650,7 +650,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,image/jpeg,image/png"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
