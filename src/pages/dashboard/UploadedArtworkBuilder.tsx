@@ -276,7 +276,23 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           return;
         }
 
-        if (expectedW && expectedH) {
+        if (useMaxBounds && maxW && maxH) {
+          const w = first.widthMm;
+          const h = first.heightMm;
+          const within =
+            (w <= maxW + TRIM_TOLERANCE_MM && h <= maxH + TRIM_TOLERANCE_MM) ||
+            (w <= maxH + TRIM_TOLERANCE_MM && h <= maxW + TRIM_TOLERANCE_MM);
+          if (!within) {
+            setRejection(
+              `Your artwork can be up to ${Math.round(maxW)} × ${Math.round(
+                maxH,
+              )} mm — your file measures ${Math.round(w)} × ${Math.round(
+                h,
+              )} mm. Please re-export it smaller.`,
+            );
+            return;
+          }
+        } else if (expectedW && expectedH) {
           const fitsUpright =
             Math.abs(first.widthMm - expectedW) <= TRIM_TOLERANCE_MM &&
             Math.abs(first.heightMm - expectedH) <= TRIM_TOLERANCE_MM;
