@@ -60,6 +60,18 @@ import SamplePackProgressStrip from "@/components/storefront/SamplePackProgressS
 /** How far the uploaded trim may differ from the expected trim, in mm. */
 const TRIM_TOLERANCE_MM = 2;
 
+/** Physical page size of a JPG/PNG, read at 300 DPI (print resolution). */
+async function imagePageSizeMm(file: File): Promise<TargetSize> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const mm = (px: number) => (px / 300) * 25.4;
+    return { widthMm: mm(img.naturalWidth), heightMm: mm(img.naturalHeight) };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export interface UploadedArtworkSpec {
   document_id?: string | null;
   storage_path: string;
