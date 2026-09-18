@@ -577,12 +577,19 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
           <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">Artwork requirements</p>
             <ul className="mt-1.5 space-y-1">
-              <li>Print-ready PDF only</li>
+              <li>PDF, JPG or PNG</li>
               {expectedPages && <li>Exactly {expectedPages} pages</li>}
-              {expectedW && expectedH && (
+              {useMaxBounds ? (
                 <li>
-                  Finished size {Math.round(expectedW)} × {Math.round(expectedH)} mm
+                  Up to {Math.round(maxW!)} × {Math.round(maxH!)} mm
                 </li>
+              ) : (
+                expectedW &&
+                expectedH && (
+                  <li>
+                    Finished size {Math.round(expectedW)} × {Math.round(expectedH)} mm
+                  </li>
+                )
               )}
               {!!reference?.bleed_mm && <li>{reference.bleed_mm} mm bleed with crop marks</li>}
             </ul>
