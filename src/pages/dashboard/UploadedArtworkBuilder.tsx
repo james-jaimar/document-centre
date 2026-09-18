@@ -373,7 +373,7 @@ const UploadedArtworkBuilder = forwardRef<HTMLDivElement, Props>(function Upload
         setBusy(false);
       }
     },
-    [ensureOrder, expectedPages, expectedW, expectedH],
+    [ensureOrder, expectedPages, expectedW, expectedH, useMaxBounds, maxW, maxH],
   );
 
   const clearFile = () => {
