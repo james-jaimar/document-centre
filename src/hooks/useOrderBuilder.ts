@@ -141,7 +141,7 @@ export function useCreateOrder() {
       const { data: membership } = await supabase
         .from("tenant_memberships")
         .select("tenant_id, app_id")
-        .eq("profile_id", user.id)
+        .eq("profile_id", actorId)
         .eq("is_active", true)
         .limit(1)
         .maybeSingle();
@@ -153,7 +153,7 @@ export function useCreateOrder() {
         const { data: profile } = await supabase
           .from("profiles")
           .select("tenant_id")
-          .eq("id", user.id)
+          .eq("id", actorId)
           .single();
         tenantId = profile?.tenant_id ?? null;
       }
@@ -162,7 +162,7 @@ export function useCreateOrder() {
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
-          user_id: user.id,
+          user_id: actorId,
           tenant_id: tenantId,
           app_id: appId,
           branch_id: branchId,
