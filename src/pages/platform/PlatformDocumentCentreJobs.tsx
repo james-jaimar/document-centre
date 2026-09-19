@@ -51,6 +51,16 @@ export default function PlatformDocumentCentreJobs() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Apps that have produced jobs in the current result set. The print server
+  // is shared with other Lovable apps, which tag their jobs via X-Ops-App-Id.
+  const appOptions = Array.from(
+    new Set((jobs.data ?? []).map((j) => j.app_id).filter((a): a is string => !!a)),
+  ).sort();
+
+  const visibleJobs = (jobs.data ?? []).filter(
+    (j) => appId === "all" || (j.app_id ?? "") === appId,
+  );
+
   // Count jobs that have been "running" / "started" for > 15 min — these are
   // the likely-orphaned rows the reconciler will sweep.
   const stuckCount = (jobs.data ?? []).filter((j) => {
