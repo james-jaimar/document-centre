@@ -4,6 +4,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Tables } from "@/integrations/supabase/types";
 import type { ItemSpec } from "@/lib/calculatePrice";
+import { ensureGuestSession } from "@/lib/guestSession";
+
+/** Read the storefront slug from a /t/:slug/... path, if we're on one. */
+function readTenantSlugFromPath(): string | null {
+  if (typeof window === "undefined") return null;
+  const m = window.location.pathname.match(/^\/t\/([^/]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
 
 type Order = Tables<"orders">;
 type OrderItem = Tables<"order_items">;
