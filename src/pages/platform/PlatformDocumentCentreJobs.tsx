@@ -92,6 +92,13 @@ export default function PlatformDocumentCentreJobs() {
               {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={appId} onValueChange={setAppId}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="App" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All apps</SelectItem>
+              {appOptions.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <Input placeholder="Filter by tenant_id" value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="w-64" />
           <Button size="sm" variant="outline" onClick={() => jobs.refetch()}>
             <RefreshCw className="h-4 w-4" />
