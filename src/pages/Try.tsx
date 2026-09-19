@@ -27,18 +27,12 @@ export default function Try() {
           return;
         }
 
-        const { error: signInErr } = await supabase.auth.signInAnonymously({
-          options: { data: { is_demo: true, display_name: "Demo Visitor" } },
-        });
-        if (signInErr) throw signInErr;
+        // Single-flight guest sign-in (also calls demo-bootstrap).
+        const id = await ensureGuestSession(null);
+        if (!id) throw new Error("Failed to start demo. Please try again.");
 
         // Wait briefly for the trigger to wire profile + membership
         await new Promise((r) => setTimeout(r, 400));
-
-        const { error: bootErr } = await supabase.functions.invoke("demo-bootstrap");
-        if (bootErr) {
-          console.warn("demo-bootstrap warning:", bootErr);
-        }
 
         if (!cancelled) navigate("/t/demo", { replace: true });
       } catch (e: any) {
