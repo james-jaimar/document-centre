@@ -22,6 +22,7 @@ export default function PlatformDocumentCentreJobs() {
   const qc = useQueryClient();
   const [status, setStatus] = useState("all");
   const [tenantId, setTenantId] = useState("");
+  const [appId, setAppId] = useState("all");
   const [selected, setSelected] = useState<OpsJob | null>(null);
 
   const jobs = useQuery({
