@@ -4,6 +4,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Tables } from "@/integrations/supabase/types";
 import type { ItemSpec } from "@/lib/calculatePrice";
+import { ensureGuestSession } from "@/lib/guestSession";
+
+/** Read the storefront slug from a /t/:slug/... path, if we're on one. */
+function readTenantSlugFromPath(): string | null {
+  if (typeof window === "undefined") return null;
+  const m = window.location.pathname.match(/^\/t\/([^/]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
 
 type Order = Tables<"orders">;
 type OrderItem = Tables<"order_items">;
@@ -109,7 +117,14 @@ export function useCreateOrder() {
           ? { productFamilyId: input, branchId: null as string | null }
           : { productFamilyId: input.productFamilyId, branchId: input.branchId ?? null };
 
-      if (!user) throw new Error("Not authenticated");
+      // The visitor may be mid-bootstrap (or have had their guest session
+      // replaced by a concurrent sign-in). Re-establish it once before failing.
+      let actorId = user?.id ?? null;
+      if (!actorId) {
+        const slug = readTenantSlugFromPath();
+        actorId = await ensureGuestSession(slug).catch(() => null);
+      }
+      if (!actorId) throw new Error("Your session expired. Please refresh the page and try again.");
 
       // Branch subscription gate (client-side precheck — DB also enforces via RLS).
       if (branchId) {
@@ -126,7 +141,7 @@ export function useCreateOrder() {
       const { data: membership } = await supabase
         .from("tenant_memberships")
         .select("tenant_id, app_id")
-        .eq("profile_id", user.id)
+        .eq("profile_id", actorId)
         .eq("is_active", true)
         .limit(1)
         .maybeSingle();
@@ -138,7 +153,7 @@ export function useCreateOrder() {
         const { data: profile } = await supabase
           .from("profiles")
           .select("tenant_id")
-          .eq("id", user.id)
+          .eq("id", actorId)
           .single();
         tenantId = profile?.tenant_id ?? null;
       }
@@ -147,7 +162,7 @@ export function useCreateOrder() {
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
-          user_id: user.id,
+          user_id: actorId,
           tenant_id: tenantId,
           app_id: appId,
           branch_id: branchId,
