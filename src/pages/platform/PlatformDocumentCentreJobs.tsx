@@ -118,6 +118,7 @@ export default function PlatformDocumentCentreJobs() {
                 <TableHead>Operation</TableHead>
                 <TableHead>Queue</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>App</TableHead>
                 <TableHead>Tenant</TableHead>
                 <TableHead className="text-right">Retries</TableHead>
                 <TableHead className="text-right">Duration</TableHead>
@@ -126,7 +127,7 @@ export default function PlatformDocumentCentreJobs() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {jobs.data?.map((j) => (
+              {visibleJobs.map((j) => (
                 <TableRow key={j.id} className="cursor-pointer" onClick={() => setSelected(j)}>
                   <TableCell className="font-mono text-xs">{j.operation}</TableCell>
                   <TableCell className="text-xs">{j.queue}</TableCell>
@@ -135,6 +136,7 @@ export default function PlatformDocumentCentreJobs() {
                       {j.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-xs">{j.app_id ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs truncate max-w-32">{j.tenant_id ?? "—"}</TableCell>
                   <TableCell className="text-right">{j.retries}</TableCell>
                   <TableCell className="text-right text-xs">{j.duration_ms ? `${j.duration_ms}ms` : "—"}</TableCell>
@@ -156,8 +158,8 @@ export default function PlatformDocumentCentreJobs() {
                   </TableCell>
                 </TableRow>
               ))}
-              {jobs.data?.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No jobs</TableCell></TableRow>
+              {visibleJobs.length === 0 && (
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No jobs</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
