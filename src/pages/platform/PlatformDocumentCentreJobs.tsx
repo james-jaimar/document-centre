@@ -22,6 +22,7 @@ export default function PlatformDocumentCentreJobs() {
   const qc = useQueryClient();
   const [status, setStatus] = useState("all");
   const [tenantId, setTenantId] = useState("");
+  const [appId, setAppId] = useState("all");
   const [selected, setSelected] = useState<OpsJob | null>(null);
 
   const jobs = useQuery({
@@ -49,6 +50,16 @@ export default function PlatformDocumentCentreJobs() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // Apps that have produced jobs in the current result set. The print server
+  // is shared with other Lovable apps, which tag their jobs via X-Ops-App-Id.
+  const appOptions = Array.from(
+    new Set((jobs.data ?? []).map((j) => j.app_id).filter((a): a is string => !!a)),
+  ).sort();
+
+  const visibleJobs = (jobs.data ?? []).filter(
+    (j) => appId === "all" || (j.app_id ?? "") === appId,
+  );
 
   // Count jobs that have been "running" / "started" for > 15 min — these are
   // the likely-orphaned rows the reconciler will sweep.
@@ -81,6 +92,13 @@ export default function PlatformDocumentCentreJobs() {
               {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={appId} onValueChange={setAppId}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="App" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All apps</SelectItem>
+              {appOptions.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <Input placeholder="Filter by tenant_id" value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="w-64" />
           <Button size="sm" variant="outline" onClick={() => jobs.refetch()}>
             <RefreshCw className="h-4 w-4" />
@@ -107,6 +125,7 @@ export default function PlatformDocumentCentreJobs() {
                 <TableHead>Operation</TableHead>
                 <TableHead>Queue</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>App</TableHead>
                 <TableHead>Tenant</TableHead>
                 <TableHead className="text-right">Retries</TableHead>
                 <TableHead className="text-right">Duration</TableHead>
@@ -115,7 +134,7 @@ export default function PlatformDocumentCentreJobs() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {jobs.data?.map((j) => (
+              {visibleJobs.map((j) => (
                 <TableRow key={j.id} className="cursor-pointer" onClick={() => setSelected(j)}>
                   <TableCell className="font-mono text-xs">{j.operation}</TableCell>
                   <TableCell className="text-xs">{j.queue}</TableCell>
@@ -124,6 +143,7 @@ export default function PlatformDocumentCentreJobs() {
                       {j.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-xs">{j.app_id ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs truncate max-w-32">{j.tenant_id ?? "—"}</TableCell>
                   <TableCell className="text-right">{j.retries}</TableCell>
                   <TableCell className="text-right text-xs">{j.duration_ms ? `${j.duration_ms}ms` : "—"}</TableCell>
@@ -145,8 +165,8 @@ export default function PlatformDocumentCentreJobs() {
                   </TableCell>
                 </TableRow>
               ))}
-              {jobs.data?.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No jobs</TableCell></TableRow>
+              {visibleJobs.length === 0 && (
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No jobs</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
