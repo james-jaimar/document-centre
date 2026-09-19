@@ -109,7 +109,14 @@ export function useCreateOrder() {
           ? { productFamilyId: input, branchId: null as string | null }
           : { productFamilyId: input.productFamilyId, branchId: input.branchId ?? null };
 
-      if (!user) throw new Error("Not authenticated");
+      // The visitor may be mid-bootstrap (or have had their guest session
+      // replaced by a concurrent sign-in). Re-establish it once before failing.
+      let actorId = user?.id ?? null;
+      if (!actorId) {
+        const slug = readTenantSlugFromPath();
+        actorId = await ensureGuestSession(slug).catch(() => null);
+      }
+      if (!actorId) throw new Error("Your session expired. Please refresh the page and try again.");
 
       // Branch subscription gate (client-side precheck — DB also enforces via RLS).
       if (branchId) {
