@@ -103,6 +103,8 @@ export interface StorefrontPagesConfig {
   trade_heading: string;
   trade_body: string;
   trade_cta: string;
+  /** Trade-band button destination: tenant-relative ("account") or in-app absolute ("/contact"). */
+  trade_cta_path: string;
   trade_benefits: string[];
   shop_heading: string;
   shop_subcopy: string;
@@ -182,6 +184,7 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   trade_heading: "Ordering for a business?",
   trade_body: "Open a trade account for volume pricing, saved artwork and invoiced billing.",
   trade_cta: "Talk to us",
+  trade_cta_path: "account",
   trade_benefits: ["Volume pricing", "Saved artwork & repeat orders", "Invoiced billing"],
   shop_heading: "Shop",
   shop_subcopy: "Every product available to you, with live pricing.",

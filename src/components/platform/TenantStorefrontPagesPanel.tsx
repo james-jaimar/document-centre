@@ -184,6 +184,7 @@ export default function TenantStorefrontPagesPanel({ tenantId }: { tenantId: str
                 {text("trade_heading", "Heading")}
                 {text("trade_body", "Body", true)}
                 {text("trade_cta", "Button label")}
+                {text("trade_cta_path", "Button link (e.g. account or /contact)")}
                 {text("footer_note", "Footer note")}
               </AccordionContent>
             </AccordionItem>
