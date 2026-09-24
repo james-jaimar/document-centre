@@ -1,22 +1,26 @@
-# Contact form test: why no email arrived
+# "Book a Demo" button on the demo store → contact page
 
-## What happened (confirmed from the saved enquiry)
+## What we found
 
-Your test was received and saved at 06:59 UTC today, but the message was `fsdgsgsdfgdfgd` — one long string with no spaces. The anti-bot filter we added in August scores "message with no spaces" as spam (the bots were sending exactly that), so the enquiry was stored as **Spam** and, by design, no emails were sent (no team notification, no auto-reply). That rule is what stopped the bounce-back flood.
+The button at the bottom of the demo storefront (`/t/demo`, the "Want this working for your print shop?" band) is the **trade band**. Its label ("BOOK A DEMO") comes from the demo tenant's storefront settings, but its destination is hard-coded in `src/pages/storefront/StorefrontHome.tsx`: it navigates to the account page, which bounces anonymous visitors to the login page. The same hard-coded destination applies to every tenant's trade band.
 
-You can see it in Platform admin → Enquiries → **Spam** tab. Email sending itself is not broken — a normal sentence (like your 6 August test) goes through.
+## Plan
 
-## Suggested small fix
+Make the trade-band button's destination a configurable setting (matching the existing pattern used by the wide-banner CTA), then point the demo tenant's at the contact page.
 
-The thank-you screen currently says "We've sent a confirmation to …" even when nothing was sent, which is misleading. Change it to neutral wording: "Thanks — we've got your message and someone will be in touch shortly." We keep showing success to spam (so bots learn nothing), but it no longer promises an email.
+1. **Add `trade_cta_path` to the storefront config** (`src/hooks/useStorefrontPages.ts`):
+   - New field on the type, default `"account"` (current behaviour, so nothing changes for existing tenants unless set).
 
-Optionally, soften the rule so a no-spaces message only counts as spam when combined with another signal (e.g. random-looking name, very fast submit). Recommended to leave it as-is, since it's the rule catching most bots.
+2. **Use it in `StorefrontHome.tsx`**: the trade band's click handler navigates to `config.trade_cta_path || "account"`. Tenant-relative values (e.g. `account`) stay inside the tenant portal; values starting with `/` (e.g. `/contact`) navigate directly.
 
-## To re-test
+3. **Add a "Button link" field to both admin editors** so it stays admin-driven, no hard-coding:
+   - Platform → tenant storefront editor (`src/pages/platform/PlatformStorefrontDetail.tsx`, Trade band section).
+   - Tenant admin storefront panel (`src/components/platform/TenantStorefrontPagesPanel.tsx`, Trade band & footer section).
 
-Submit the form with a real sentence; you should get the auto-reply and hello@ should get the notification.
+4. **Set the demo tenant's config** (`tenant_settings`, category `storefront`, key `config`, tenant `72347b5f-...`): `trade_cta_path = "/contact"` so the BOOK A DEMO button opens the Document Centre contact page.
 
-## Technical notes
+## Verification
 
-- `src/pages/Contact.tsx`: success-state copy only.
-- Optional: `supabase/functions/_shared/contact-spam.ts` line 75, lower `message_no_spaces` from 3 to 2.
+- Typecheck (`npx tsgo --noEmit -p tsconfig.app.json`) and `git diff --check`.
+- Playwright on the public demo store: load `/t/demo`, click BOOK A DEMO, confirm it lands on `/contact` with the contact form.
+- Confirm no change for other tenants (default still `account`).
