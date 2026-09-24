@@ -443,6 +443,7 @@ export default function PlatformStorefrontDetail() {
             <div className="grid gap-3 md:grid-cols-2">
               {text("trade_heading", "Heading")}
               {text("trade_cta", "CTA label")}
+              {text("trade_cta_path", "Button link (e.g. account or /contact)")}
             </div>
             {text("trade_body", "Body", true)}
             {stringList("trade_benefits", "Benefits", "Volume pricing")}

@@ -107,7 +107,11 @@ export default function StorefrontHome() {
         body={config.trade_body}
         cta={config.trade_cta}
         benefits={config.trade_benefits}
-        onClick={() => navigate(tenantPath("account"))}
+        onClick={() => {
+          const path = (config.trade_cta_path || "account").trim();
+          if (path.startsWith("/")) navigate(path);
+          else navigate(tenantPath(path));
+        }}
       />
     ),
     assurance_footer: (
