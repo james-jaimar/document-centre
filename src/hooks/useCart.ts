@@ -322,6 +322,25 @@ export function useEditCartItem() {
           });
         }
 
+        // Keep spec.uploaded_artwork pointing at the cloned file — the original
+        // path is deleted when the replaced cart item is cleaned up.
+        const spec: any = sourceItem.spec;
+        const art = spec?.uploaded_artwork;
+        if (art?.storage_path) {
+          const idx = docs.findIndex((d) => d.file_path === art.storage_path || d.id === art.document_id);
+          if (idx >= 0) {
+            const newArt = {
+              ...art,
+              storage_path: docInserts[idx].file_path,
+              document_id: newDocs?.[idx]?.id ?? art.document_id,
+            };
+            await supabase
+              .from("order_items")
+              .update({ spec: { ...spec, uploaded_artwork: newArt } })
+              .eq("id", clonedItem.id);
+          }
+        }
+
         const { data: sections } = await supabase
           .from("document_sections")
           .select("*")
