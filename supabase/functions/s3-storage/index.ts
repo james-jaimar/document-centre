@@ -284,6 +284,9 @@ Deno.serve(async (req) => {
       if (!fileRes.ok) {
         const txt = await fileRes.text().catch(() => "");
         console.error(`[s3-storage] download fetch ${object_path} [${fileRes.status}]: ${txt}`);
+        if (fileRes.status === 404 || fileRes.status === 403 && txt.includes("NoSuchKey") || txt.includes("NoSuchKey")) {
+          return json({ error: `File not found in storage (ref: ${ref})`, code: "not_found" }, 404);
+        }
         return json({ error: friendlyError("loading your preview", ref) }, 503);
       }
 
