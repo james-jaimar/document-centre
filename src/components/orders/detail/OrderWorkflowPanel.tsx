@@ -240,7 +240,7 @@ export function OrderWorkflowPanel({ order }: Props) {
       </div>
 
       {/* Dispatch form */}
-      {showDispatchForm && showDispatchAction && (
+      {showDispatchForm && (
         <div className="space-y-2 rounded-md border bg-muted/30 p-2">
           <div className="grid grid-cols-2 gap-2">
             <div>
