@@ -68,7 +68,10 @@ const PRIMARY_NEXT: Record<AdminStatus, Array<{ status: AdminStatus; label: stri
   cancelled: [],
 };
 
-const SECONDARY: AdminStatus[] = ["on_hold", "cancelled"];
+const ALL_STATUSES: AdminStatus[] = [
+  "new_order", "under_review", "approved", "in_production", "sent_to_print",
+  "qa", "ready_for_dispatch", "dispatched", "completed", "on_hold", "cancelled",
+];
 
 export function OrderWorkflowPanel({ order }: Props) {
   const qc = useQueryClient();
@@ -206,34 +209,34 @@ export function OrderWorkflowPanel({ order }: Props) {
           </Button>
         )}
 
-        {/* More dropdown for on_hold / cancel */}
-        {(order.admin_status !== "completed" && order.admin_status !== "cancelled") && (
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy}>
-                More <ChevronDown className="h-3 w-3 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {SECONDARY.filter((s) => s !== order.admin_status).map((s) =>
-                s === "cancelled" ? (
-                  <DropdownMenuItem
-                    key={s}
-                    className="text-destructive"
-                    onClick={() => setConfirmCancel(true)}
-                  >
-                    Cancel order
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem key={s} onClick={() => transition(s)}>
-                    {ADMIN_STATUS_CONFIG[s].label}
-                  </DropdownMenuItem>
-                ),
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {/* Set any status directly */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy}>
+              Set status <ChevronDown className="h-3 w-3 ml-1" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+            {ALL_STATUSES.map((s) => {
+              const current = s === order.admin_status;
+              return (
+                <DropdownMenuItem
+                  key={s}
+                  disabled={current}
+                  className={s === "cancelled" ? "text-destructive" : undefined}
+                  onClick={() => {
+                    if (s === "cancelled") setConfirmCancel(true);
+                    else if (s === "dispatched") setShowDispatchForm(true);
+                    else transition(s);
+                  }}
+                >
+                  {ADMIN_STATUS_CONFIG[s].label}
+                  {current ? " (current)" : ""}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Dispatch form */}
