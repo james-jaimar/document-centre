@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import PlaceholderPanel from "@/components/artwork/PlaceholderPanel";
 import {
   normaliseWatermarkValue,
@@ -8,9 +8,17 @@ import {
   type TemplatedPlaceholderValue,
 } from "@/lib/artworkTemplates/types";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("applies 100% through the checkbox, keeps it after reload, and returns to 10% when unchecked", () => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
   const placeholder = {
     id: "watermark", name: "Watermark", kind: "image", is_watermark: true,
     width_mm: 100, height_mm: 100,
