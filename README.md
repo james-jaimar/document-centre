@@ -19,4 +19,4 @@ npm run dev
 
 ## Deployment
 
-Deployed via Lovable. Custom domain configured in **Project Settings → Domains**.
+Deployed via Lovable. Custom domain configured in **Project Settings → Domains**..
