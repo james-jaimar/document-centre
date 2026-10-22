@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Image as ImageIcon, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { downloadFromS3 } from "@/lib/s3Storage";
 import { getCachedBlobUrl, registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import {
@@ -65,6 +66,12 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
   const trimWidthMm: number = isTemplated
     ? Number(templatedArtwork.trim_width_mm) || 0
     : Number(uploadedArtwork?.trim_width_mm) || 0;
+
+  const originalDensityWatermarks = placeholders.filter(
+    (p) => p.is_watermark && Object.values(values).some(
+      (v) => v.placeholder_id === p.id && v.kind === "image" && v.preserve_original_density === true,
+    ),
+  );
 
   const [pages, setPages] = useState<RasterisedPage[]>([]);
   const [pageImages, setPageImages] = useState<Record<number, HTMLImageElement>>({});
@@ -206,6 +213,18 @@ export default function ArtworkAdminProof({ templatedArtwork, uploadedArtwork, h
         </div>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {originalDensityWatermarks.length > 0 && (
+        <div className="space-y-1">
+          <Badge variant="outline" className="max-w-full whitespace-normal text-xs">
+            Original-density watermark · production review required
+          </Badge>
+          <p className="text-xs text-muted-foreground break-words">
+            {originalDensityWatermarks.map((p) => p.name).join(", ")}: supplied artwork is used at 100% original density.
+            Check that the watermark is no stronger than 10% and the calendar remains readable before printing.
+          </p>
+        </div>
+      )}
 
       {!loading && pages.length > 0 && (
         <>

@@ -23,3 +23,8 @@
 - [x] Add a previous-campaign recipient audience with suppression reapplied
 - [x] Preserve safe campaign attribution across storefront navigation and activation completion
 - [x] Prepare the eligible follow-up campaign without sending
+
+## Original-density watermarks (2026-10-22)
+- [x] Add opt-in original-density checkbox and production-review note
+- [x] Preserve the choice in saved artwork and flag it in the admin proof
+- [x] Verify density rules and checkbox behaviour (8 tests passed; authenticated tenant end-to-end check unavailable)

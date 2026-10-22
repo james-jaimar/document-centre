@@ -67,6 +67,7 @@ import {
   DEFAULT_CMYK,
   keyBelongsTo,
   normaliseCmyk,
+  normaliseWatermarkValue,
   pickForPage,
   placeholdersForPage,
   valueKey,
@@ -197,14 +198,6 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
   const packFlow = useSamplePackFlow(samplePack, familyId);
   const hydrated = useRef(false);
 
-  /** Watermark boxes may never print above 10% — enforced wherever a value lands. */
-  const capWatermark = (
-    p: { is_watermark?: boolean } | undefined,
-    v: TemplatedPlaceholderValue,
-  ): TemplatedPlaceholderValue =>
-    p?.is_watermark ? ({ ...v, opacity: Math.min((v as any).opacity ?? 0.1, 0.1) } as any) : v;
-
-
   useEffect(() => {
     if (hydrated.current) return;
     const s = (orderItem?.spec as any)?.templated_artwork as TemplatedArtworkSpec | undefined;
@@ -215,7 +208,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
     for (const v of s.placeholders ?? []) {
       const def = (s.placeholder_defs ?? []).find((d) => d.id === v.placeholder_id);
       const page = v.kind === "image" ? (v.page_index ?? null) : null;
-      map[valueKey(v.placeholder_id, page)] = capWatermark(def, v);
+      map[valueKey(v.placeholder_id, page)] = normaliseWatermarkValue(def, v);
     }
     setValues(map);
     setPerPageIds(s.per_page_placeholder_ids ?? []);
@@ -240,7 +233,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
         // per-page picture for each page the customer filled in.
         const own = Object.entries(values)
           .filter(([k]) => keyBelongsTo(k, p.id))
-          .map(([, v]) => v);
+          .map(([, v]) => normaliseWatermarkValue(p, v));
         if (own.length > 0) return own;
         // Colour boxes always ship a value so the composer paints the default.
         if (p.kind === "colour") {
@@ -511,7 +504,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
           const k = valueKey(t.id, page ?? null);
           if (v == null) delete next[k];
           else
-            next[k] = capWatermark(t, {
+            next[k] = normaliseWatermarkValue(t, {
               ...v,
               placeholder_id: t.id,
               ...(page == null ? {} : { page_index: page }),
@@ -799,7 +792,7 @@ const TemplatedArtworkBuilder = forwardRef<HTMLDivElement>(function TemplatedArt
                 if (!up) throw new Error("the upload did not complete");
                 const v = buildValue(up, i + 1, sourcePdfPath);
                 for (const target of ph ? siblingsOf(ph) : []) {
-                  batchValues[valueKey(target.id, i)] = capWatermark(target, {
+                  batchValues[valueKey(target.id, i)] = normaliseWatermarkValue(target, {
                     ...v,
                     placeholder_id: target.id,
                     page_index: i,
