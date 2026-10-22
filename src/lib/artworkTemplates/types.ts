@@ -303,6 +303,8 @@ export interface TemplatedImageValue {
   background_hex?: string | null;
   /** 0–1 — e.g. 0.1 for a watermark. Applied by both preview and PDF server. */
   opacity?: number;
+  /** Customer supplied an already-lightened watermark; production must review its density. */
+  preserve_original_density?: boolean;
   /** Set when the image came from a stock library instead of a customer file. */
   source?: StockImageSource | null;
   /** Zero-based page this picture belongs to. Absent/null = every page. */
@@ -340,6 +342,25 @@ export type TemplatedPlaceholderValue =
   | TemplatedImageValue
   | TemplatedTextValue
   | TemplatedColourValue;
+
+/** Keep normal watermarks capped, unless the customer explicitly retains native density. */
+export function normaliseWatermarkValue(
+  placeholder: { is_watermark?: boolean } | undefined,
+  value: TemplatedPlaceholderValue,
+): TemplatedPlaceholderValue {
+  if (!placeholder?.is_watermark) return value;
+  if (value.kind === "image" && value.preserve_original_density === true) {
+    return { ...value, opacity: 1 };
+  }
+  return { ...value, opacity: Math.min(value.opacity ?? 0.1, 0.1) };
+}
+
+export function setOriginalWatermarkDensity(
+  value: TemplatedImageValue,
+  preserve: boolean,
+): TemplatedImageValue {
+  return { ...value, preserve_original_density: preserve, opacity: preserve ? 1 : 0.1 };
+}
 
 
 export interface TemplatedArtworkSpec {

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { Loader2, ImageIcon, Type, Upload, Trash2, Check, Palette, Images, RefreshCw } from "lucide-react";
 import {
@@ -16,6 +17,7 @@ import {
   cmykToHex,
   effectivePlacementDpi,
   normaliseCmyk,
+  setOriginalWatermarkDensity,
   type ArtworkPlaceholder,
   type TemplatedColourValue,
   type TemplatedImageValue,
@@ -435,10 +437,22 @@ export default function PlaceholderPanel({
           {placeholder.is_watermark ? (
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-foreground">Watermark strength</Label>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id={`original-density-${placeholder.id}`}
+                  checked={v.preserve_original_density === true}
+                  onCheckedChange={(checked) => onChange(setOriginalWatermarkDensity(v, checked === true))}
+                  aria-describedby={`density-note-${placeholder.id}`}
+                  className="mt-0.5 shrink-0"
+                />
+                <Label htmlFor={`original-density-${placeholder.id}`} className="text-xs leading-relaxed">
+                  Leave artwork at 100% original density (already lightened)
+                </Label>
+              </div>
               <div className="flex gap-2">
                 {[0.05, 0.1].map((o) => {
                   const current = Math.min(v.opacity ?? 0.1, 0.1);
-                  const selected = Math.abs(current - o) < 0.001;
+                  const selected = !v.preserve_original_density && Math.abs(current - o) < 0.001;
                   return (
                     <Button
                       key={o}
@@ -446,15 +460,18 @@ export default function PlaceholderPanel({
                       size="sm"
                       variant={selected ? "default" : "outline"}
                       className="flex-1"
-                      onClick={() => onChange({ ...v, opacity: o })}
+                      disabled={v.preserve_original_density === true}
+                      onClick={() => onChange({ ...v, preserve_original_density: false, opacity: o })}
                     >
                       {Math.round(o * 100)}%
                     </Button>
                   );
                 })}
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Watermarks print at 10% maximum so the artwork underneath stays readable.
+              <p id={`density-note-${placeholder.id}`} className="text-[11px] text-muted-foreground">
+                {v.preserve_original_density
+                  ? "We will not lighten your artwork again. Our production team will check that the supplied watermark is no stronger than 10% and the calendar remains readable before printing."
+                  : "Watermarks are lightened to 5% or 10%. If your file is already lightened, select original density to avoid lightening it again."}
               </p>
             </div>
           ) : (
