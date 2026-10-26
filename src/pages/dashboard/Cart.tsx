@@ -28,6 +28,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useStorefrontPages } from "@/hooks/useStorefrontPages";
 
 export default function Cart() {
   const { tenantPath } = useTenantSlug();
@@ -42,6 +44,8 @@ export default function Cart() {
   const editItem = useEditCartItem();
   const saveAsQuote = useSaveCartAsQuote();
   const { user } = useAuth();
+  const { tenantId } = useTenantContext();
+  const { softLaunch, config: sfConfig } = useStorefrontPages(tenantId);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
   const [authOpen, setAuthOpen] = useState(false);
@@ -237,10 +241,20 @@ export default function Cart() {
               : <FileText className="h-4 w-4 mr-1" />}
             Save as Quote
           </Button>
-          <Button size="lg" onClick={() => navigate(tenantPath("checkout"))}>
-            Proceed to Checkout
-            <ArrowRight className="h-4 w-4 ml-1" />
-          </Button>
+          {softLaunch ? (
+            <div className="flex flex-col items-end gap-1">
+              <Button size="lg" onClick={() => navigate("/contact")}>
+                Online ordering opens soon — Enquire
+                <ArrowRight className="h-4 w-4 ml-1" />
+              </Button>
+              <p className="max-w-sm text-right text-xs text-muted-foreground">{sfConfig.soft_launch.message}</p>
+            </div>
+          ) : (
+            <Button size="lg" onClick={() => navigate(tenantPath("checkout"))}>
+              Proceed to Checkout
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          )}
         </div>
       </div>
 

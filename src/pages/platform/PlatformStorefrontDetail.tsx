@@ -222,6 +222,26 @@ export default function PlatformStorefrontDetail() {
             <Switch checked={draft.enabled} onCheckedChange={(v) => set("enabled", v)} />
           </div>
 
+          <div className="space-y-3 rounded-lg border p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-semibold">Soft launch (checkout paused)</Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Customers can browse, see prices, upload and design, but cannot place an order.
+                </p>
+              </div>
+              <Switch
+                checked={draft.soft_launch.enabled}
+                onCheckedChange={(v) => set("soft_launch", { ...draft.soft_launch, enabled: v })}
+              />
+            </div>
+            <Textarea
+              value={draft.soft_launch.message}
+              onChange={(e) => set("soft_launch", { ...draft.soft_launch, message: e.target.value })}
+              rows={2}
+            />
+          </div>
+
           <div className="rounded-lg border">
             {PAGE_LABELS.map((p) => (
               <div key={p.key} className="flex items-center justify-between border-b p-4 last:border-b-0">

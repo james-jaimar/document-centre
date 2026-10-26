@@ -14,6 +14,7 @@ import AppLayout from "@/components/AppLayout";
 import BranchLayout from "@/components/BranchLayout";
 import CustomerLayout from "@/components/CustomerLayout";
 import DemoGateGuard from "@/components/legal/DemoGateGuard";
+import SoftLaunchGuard from "@/components/storefront/SoftLaunchGuard";
 
 import Auth from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
@@ -198,7 +199,7 @@ function customerRoutes() {
       <Route path="orders/:id/canvas-prints" element={<CanvasPrintsBuilder />} />
       <Route path="orders/:id/custom-artwork" element={<TemplatedArtworkBuilder />} />
       <Route path="cart" element={<Cart />} />
-      <Route path="checkout" element={<Checkout />} />
+      <Route path="checkout" element={<SoftLaunchGuard><Checkout /></SoftLaunchGuard>} />
       <Route path="terms" element={<PortalTerms />} />
       <Route path="privacy" element={<PortalPrivacy />} />
       {/* Auth-required routes */}
