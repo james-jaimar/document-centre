@@ -47,7 +47,24 @@ export const PAYMENT_STATUS_CONFIG: Record<PaymentStatus, { label: string; color
   paid:      { label: 'Paid',      color: 'bg-green-100 text-green-800' },
   failed:    { label: 'Failed',    color: 'bg-red-100 text-red-800' },
   refunded:  { label: 'Refunded',  color: 'bg-gray-100 text-gray-800' },
+  on_account: { label: 'On Account', color: 'bg-sky-100 text-sky-800' },
 };
+
+/**
+ * Display-only payment status. Trade account orders keep payment_status =
+ * 'unpaid' in the database (the balance is tracked in the account ledger
+ * until terms are settled), but staff should see "On Account" rather than a
+ * red "Unpaid" badge. Once any payment is recorded the real status shows.
+ */
+export function resolveDisplayPaymentStatus(order: {
+  payment_status?: string | null;
+  metadata?: Record<string, any> | null;
+}): PaymentStatus {
+  const status = (order.payment_status ?? 'unpaid') as PaymentStatus;
+  const onAccount = order.metadata?.payment_method === 'account';
+  if (onAccount && (status === 'unpaid' || status === 'requested')) return 'on_account';
+  return status;
+}
 
 // ─── Job status ───────────────────────────────────────────
 

@@ -28,7 +28,9 @@ export type OrderCustomerStatus =
   | 'cancelled'
   | 'dispatched';
 
-export type PaymentStatus = 'unpaid' | 'requested' | 'part_paid' | 'paid' | 'failed' | 'refunded';
+// 'on_account' is display-only (derived from metadata.payment_method === 'account');
+// it is never persisted to orders.payment_status.
+export type PaymentStatus = 'unpaid' | 'requested' | 'part_paid' | 'paid' | 'failed' | 'refunded' | 'on_account';
 export type FulfilmentStatus = 'pending' | 'in_production' | 'ready' | 'dispatched' | 'delivered' | 'collected' | 'cancelled';
 
 export type JobStatus =

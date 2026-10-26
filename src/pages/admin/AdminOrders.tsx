@@ -464,6 +464,8 @@ export default function AdminOrders() {
 }
 
 function PaymentIcon({ status }: { status: string }) {
+  if (status === "on_account")
+    return <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700">ACCOUNT</span>;
   if (status === "paid")
     return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" aria-label="Paid" />;
   if (status === "part_paid")

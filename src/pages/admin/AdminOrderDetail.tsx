@@ -115,12 +115,16 @@ export default function AdminOrderDetail() {
     }
   };
 
-  const paymentConfig = PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG];
-  const adminConfig = ADMIN_STATUS_CONFIG[order.admin_status as keyof typeof ADMIN_STATUS_CONFIG];
-  const isCancelled = order.admin_status === "cancelled";
   const orderMeta = ((order as any).metadata ?? {}) as Record<string, any>;
   const onAccount = orderMeta.payment_method === "account";
   const accountTermsDays = Number(orderMeta.payment_terms_days ?? 30);
+  const displayPaymentStatus = resolveDisplayPaymentStatus({
+    payment_status: order.payment_status,
+    metadata: orderMeta,
+  });
+  const paymentConfig = PAYMENT_STATUS_CONFIG[displayPaymentStatus];
+  const adminConfig = ADMIN_STATUS_CONFIG[order.admin_status as keyof typeof ADMIN_STATUS_CONFIG];
+  const isCancelled = order.admin_status === "cancelled";
 
   return (
     <div className="min-w-0 space-y-4">
@@ -133,11 +137,11 @@ export default function AdminOrderDetail() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
             {adminConfig && <StatusBadge {...adminConfig} />}
-            {paymentConfig && <StatusBadge {...paymentConfig} />}
-            {onAccount && (
-              <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                On account — {accountTermsDays} day terms
-              </span>
+            {paymentConfig && (
+              <StatusBadge
+                {...paymentConfig}
+                label={onAccount ? `On Account · ${accountTermsDays}d terms` : paymentConfig.label}
+              />
             )}
           </div>
         </div>
