@@ -10,6 +10,7 @@ import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import { buildPreviewSnapshot } from "@/lib/orders/buildPreviewSnapshot";
 import { resolveBranchTax, computeVat } from "@/lib/tax/resolveBranchTax";
 import { resolveOrderItemWeight, toSpecWeight } from "@/lib/weight/itemWeight";
+import { remapClonedArtwork } from "@/lib/orders/remapClonedArtwork";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
@@ -268,10 +269,11 @@ export function useEditCartItem() {
       if (cloneErr) throw cloneErr;
 
       // Clone linked documents
-      const { data: docs } = await supabase
+      const { data: docs, error: docsErr } = await supabase
         .from("documents")
         .select("*")
         .eq("order_item_id", orderItemId);
+      if (docsErr) throw docsErr;
 
       if (docs && docs.length > 0) {
         // Physically copy each S3 object to a new key keyed by the cloned order_item_id.
@@ -288,8 +290,8 @@ export function useEditCartItem() {
             try {
               await copyS3Object(d.file_path, newPath);
             } catch (e) {
-              console.error("[useEditCartItem] S3 copy failed, reusing original path", e);
-              newPath = d.file_path; // fall back rather than block the edit
+              console.error("[useEditCartItem] S3 copy failed", e);
+              throw new Error("Could not copy your artwork safely. Your original cart item is unchanged; please try again.");
             }
           }
           docInserts.push({
@@ -309,37 +311,28 @@ export function useEditCartItem() {
           });
         }
 
-        const { data: newDocs } = await supabase
+        const { data: newDocs, error: newDocsErr } = await supabase
           .from("documents")
           .insert(docInserts)
-          .select("id");
+          .select("id, file_path");
+        if (newDocsErr) throw newDocsErr;
+        if (!newDocs || newDocs.length !== docs.length) throw new Error("Could not save all copied artwork documents.");
 
         // Clone document sections
         const docIdMap = new Map<string, string>();
-        if (newDocs) {
-          docs.forEach((old, i) => {
-            if (newDocs[i]) docIdMap.set(old.id, newDocs[i].id);
-          });
-        }
+        const clonedDocuments = docs.map((old, i) => {
+          const copied = newDocs.find((doc) => doc.file_path === docInserts[i].file_path);
+          if (!copied) throw new Error("Could not match copied artwork to its document.");
+          docIdMap.set(old.id, copied.id);
+          return { originalId: old.id, originalPath: old.file_path, clonedId: copied.id, clonedPath: copied.file_path };
+        });
 
-        // Keep spec.uploaded_artwork pointing at the cloned file — the original
-        // path is deleted when the replaced cart item is cleaned up.
-        const spec: any = sourceItem.spec;
-        const art = spec?.uploaded_artwork;
-        if (art?.storage_path) {
-          const idx = docs.findIndex((d) => d.file_path === art.storage_path || d.id === art.document_id);
-          if (idx >= 0) {
-            const newArt = {
-              ...art,
-              storage_path: docInserts[idx].file_path,
-              document_id: newDocs?.[idx]?.id ?? art.document_id,
-            };
-            await supabase
-              .from("order_items")
-              .update({ spec: { ...spec, uploaded_artwork: newArt } })
-              .eq("id", clonedItem.id);
-          }
-        }
+        // Every artwork family must refer to the safe copies before the editor opens.
+        const { error: specErr } = await supabase
+          .from("order_items")
+          .update({ spec: remapClonedArtwork(sourceItem.spec, clonedDocuments) })
+          .eq("id", clonedItem.id);
+        if (specErr) throw specErr;
 
         const { data: sections } = await supabase
           .from("document_sections")

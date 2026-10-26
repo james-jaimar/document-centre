@@ -28,3 +28,8 @@
 - [x] Add opt-in original-density checkbox and production-review note
 - [x] Preserve the choice in saved artwork and flag it in the admin proof
 - [x] Verify density rules and checkbox behaviour (8 tests passed; authenticated tenant end-to-end check unavailable)
+
+## Cart-edit artwork storage (2026-10-26)
+- [x] Remap uploaded, template, photo and canvas artwork to cloned documents; stop edits on failed copies or saves
+- [x] Include template uploads in Customer Files with original file extensions
+- [x] Run regression tests (18 passed) and confirm preview build; authenticated live checks unavailable with external unmanaged Supabase
