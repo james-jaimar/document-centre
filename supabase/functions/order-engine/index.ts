@@ -570,7 +570,7 @@ async function createOrderWithJobs(
   // On-account orders: re-resolve the credit facility server-side so a tampered
   // client can't claim account terms it doesn't have.
   const paymentMethod: string | null = payload.payment_method ?? null;
-  let creditTerms: { credit_limit: number; payment_terms_days: number; account_ref: string | null; source: string } | null = null;
+  let creditTerms: CreditFacility | null = null;
   if (paymentMethod === "account") {
     creditTerms = await resolveCreditFacility(admin, tenant_id, customer.profile_id, branch_id || null);
     if (!creditTerms) {
