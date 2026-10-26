@@ -18,7 +18,7 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
        source_channel, storefront_name,
        customer_name, company_name, customer_email,
        admin_status, customer_status, payment_status, fulfilment_status,
-       total_amount, amount_paid, amount_due, currency,
+       total_amount, amount_paid, amount_due, currency, metadata,
        date_required, turnaround_time_text,
        created_at, updated_at, submitted_at, completed_at,
        first_opened_at, first_opened_by, is_sample_pack,

@@ -20,6 +20,7 @@ import {
   ADMIN_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
   URGENCY_CONFIG,
+  resolveDisplayPaymentStatus,
 } from "@/lib/orders/status-maps";
 import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
@@ -373,7 +374,7 @@ export default function AdminOrders() {
                       <TableCell className="text-right">—</TableCell>
                       <TableCell className="text-right">{formatCurrency(order.total_amount)}</TableCell>
                       <TableCell className="text-center">
-                        <PaymentIcon status={order.payment_status} />
+                        <PaymentIcon status={resolveDisplayPaymentStatus(order)} />
                       </TableCell>
                       <TableCell className="text-center">—</TableCell>
                       <TableCell className="text-center">—</TableCell>
@@ -408,7 +409,7 @@ export default function AdminOrders() {
                     <TableCell className="text-right">{Number(job.quantity).toLocaleString()}</TableCell>
                     <TableCell className="text-right">{formatCurrency(job.gross_price)}</TableCell>
                     <TableCell className="text-center">
-                      <PaymentIcon status={order.payment_status} />
+                      <PaymentIcon status={resolveDisplayPaymentStatus(order)} />
                     </TableCell>
                     <TableCell className="text-center">
                       <ReadyIcon status={job.job_status} />
@@ -464,6 +465,8 @@ export default function AdminOrders() {
 }
 
 function PaymentIcon({ status }: { status: string }) {
+  if (status === "on_account")
+    return <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700">ACCOUNT</span>;
   if (status === "paid")
     return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" aria-label="Paid" />;
   if (status === "part_paid")
