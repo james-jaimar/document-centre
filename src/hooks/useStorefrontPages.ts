@@ -116,6 +116,8 @@ export interface StorefrontPagesConfig {
   footer_note: string;
   /** Per product-family gallery images (family id -> image urls). */
   images: Record<string, string[]>;
+  /** Soft launch: customers can browse, price and design, but checkout is paused. */
+  soft_launch: { enabled: boolean; message: string };
 }
 
 export const STOREFRONT_SECTION_KEYS: StorefrontSectionKey[] = [
@@ -195,6 +197,11 @@ export const STOREFRONT_PAGES_DEFAULTS: StorefrontPagesConfig = {
   footer_items: ["Secure checkout", "Card, EFT & instant EFT", "Need help? Talk to us"],
   footer_note: "",
   images: {},
+  soft_launch: {
+    enabled: false,
+    message:
+      "We're in soft launch. Browse, price and design freely — online ordering opens soon. Contact us to reserve an early print run.",
+  },
 };
 
 function coerce(raw: unknown): StorefrontPagesConfig {
@@ -228,6 +235,7 @@ function coerce(raw: unknown): StorefrontPagesConfig {
       : STOREFRONT_PAGES_DEFAULTS.section_order,
 
     images: v.images ?? {},
+    soft_launch: { ...STOREFRONT_PAGES_DEFAULTS.soft_launch, ...(v.soft_launch ?? {}) },
   };
 }
 
@@ -259,6 +267,8 @@ export function useStorefrontPages(tenantId: string | null | undefined) {
     /** True only when the master switch AND the specific page are on. */
     isPageEnabled: (page: keyof StorefrontPagesConfig["pages"]) =>
       config.enabled && config.pages[page],
+    /** Checkout paused for soft launch. */
+    softLaunch: config.soft_launch.enabled,
     isLoading: query.isLoading,
     isFetched: query.isFetched,
   };
