@@ -26,7 +26,13 @@ const originalPathFor = (doc: any): string | null => {
   return doc?.file_path || doc?.storage_path || processed || null;
 };
 
-const stripExt = (name: string) => name.replace(/\.pdf$/i, "");
+export function customerFileDownloadName(file: CustomerFileEntry, orderNumber?: string | null, jobNumber?: string | null): string {
+  const extension = file.name.match(/\.([a-z0-9]+)$/i)?.[1]
+    ?? file.path.match(/\.([a-z0-9]+)$/i)?.[1]
+    ?? "pdf";
+  const stem = file.name.replace(/\.[a-z0-9]+$/i, "");
+  return buildFilename([orderNumber, jobNumber, stem], extension);
+}
 
 /**
  * Build the de-duplicated list of files the customer uploaded for one job,
@@ -77,6 +83,16 @@ export function buildCustomerFiles(
     });
   });
 
+  // Placed template jobs retain original uploads in their artwork snapshot.
+  for (const artwork of [configuration?.templated_artwork, configuration?.raw_spec?.templated_artwork]) {
+    if (!Array.isArray(artwork?.placeholders)) continue;
+    artwork.placeholders.forEach((value: any, idx: number) => {
+      if (!value?.storage_path && !value?.file_path) return;
+      const extension = (value.storage_path || value.file_path).match(/\.([a-z0-9]+)$/i)?.[1] || "jpg";
+      push({ ...value, id: value.document_id }, `Template artwork ${idx + 1}.${extension}`);
+    });
+  }
+
   return out;
 }
 
@@ -93,7 +109,7 @@ export default function CustomerFilesCard({ files, orderNumber, jobNumber }: Pro
   if (files.length === 0) return null;
 
   const nameFor = (f: CustomerFileEntry) =>
-    buildFilename([orderNumber, jobNumber, stripExt(f.name)], "pdf");
+    customerFileDownloadName(f, orderNumber, jobNumber);
 
   const grab = async (f: CustomerFileEntry) => {
     setBusyKey(f.key);
