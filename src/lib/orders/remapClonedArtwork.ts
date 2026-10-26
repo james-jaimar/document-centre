@@ -15,10 +15,12 @@ export function remapClonedArtwork<T>(spec: T, documents: ClonedArtworkDocument[
     if (!value || typeof value !== "object") return value;
     const record = value as Record<string, unknown>;
     const clone = (typeof record.storage_path === "string" ? byPath.get(record.storage_path) : undefined)
+      ?? (typeof record.original_storage_path === "string" ? byPath.get(record.original_storage_path) : undefined)
       ?? (typeof record.document_id === "string" ? byId.get(record.document_id) : undefined);
     const updated = Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, remap(entry)]));
     if (clone) {
       if ("storage_path" in record) updated.storage_path = clone.clonedPath;
+      if ("original_storage_path" in record) updated.original_storage_path = clone.clonedPath;
       if ("document_id" in record) updated.document_id = clone.clonedId;
     }
     return updated;

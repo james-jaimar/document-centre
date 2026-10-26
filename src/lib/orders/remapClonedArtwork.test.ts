@@ -23,13 +23,13 @@ describe("cart-edit artwork references", () => {
   });
 
   it("remaps every photo print rather than just the first", () => {
-    const spec = { photo_prints: { photos: documents.map((doc) => ({ storage_path: doc.originalPath, document_id: doc.originalId, quantity: 3 })) } };
-    expect(remapClonedArtwork(spec, documents).photo_prints.photos).toEqual(documents.map((doc) => ({ storage_path: doc.clonedPath, document_id: doc.clonedId, quantity: 3 })));
+    const spec = { photo_prints: { photos: documents.map((doc) => ({ original_storage_path: doc.originalPath, document_id: doc.originalId, quantity: 3 })) } };
+    expect(remapClonedArtwork(spec, documents).photo_prints.photos).toEqual(documents.map((doc) => ({ original_storage_path: doc.clonedPath, document_id: doc.clonedId, quantity: 3 })));
   });
 
   it("remaps canvas print documents by ID even when their path is outdated", () => {
-    const spec = { canvas_prints: { canvases: [{ document_id: "header-doc", storage_path: "stale/header.jpg", wrap_slug: "mirror" }] } };
-    expect(remapClonedArtwork(spec, documents).canvas_prints.canvases[0]).toEqual({ document_id: "new-header", storage_path: "order-items/edit/header.jpg", wrap_slug: "mirror" });
+    const spec = { canvas_prints: { canvases: [{ document_id: "header-doc", original_storage_path: "stale/header.jpg", wrap_slug: "mirror" }] } };
+    expect(remapClonedArtwork(spec, documents).canvas_prints.canvases[0]).toEqual({ document_id: "new-header", original_storage_path: "order-items/edit/header.jpg", wrap_slug: "mirror" });
   });
 
   it("retains the existing uploaded-artwork fix and matches by path without requiring an ID", () => {
