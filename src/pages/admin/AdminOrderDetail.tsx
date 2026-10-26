@@ -21,7 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { markOrderOpened } from "@/hooks/useUnopenedOrders";
 import { toast } from "sonner";
 import { buildAdminPath } from "@/lib/adminRouting";
-import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
+import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG, resolveDisplayPaymentStatus } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
