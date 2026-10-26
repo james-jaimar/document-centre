@@ -234,6 +234,7 @@ type CreditFacility = {
   account_ref: string | null;
   source: string;
   company_id: string | null;
+  company_name: string | null;
   profile_id: string | null;
 };
 
@@ -262,13 +263,14 @@ async function resolveCreditFacility(
       account_ref: personal.account_ref ?? null,
       source: `credit_account:${personal.id}`,
       company_id: null,
+      company_name: null,
       profile_id: profileId,
     };
   }
 
   const { data: memberships } = await admin
     .from("tenant_memberships")
-    .select("company:company_id (id, is_active, credit_limit, payment_terms_days, mis_account_number)")
+    .select("company:company_id (id, name, is_active, credit_limit, payment_terms_days, mis_account_number)")
     .eq("tenant_id", tenantId)
     .eq("profile_id", profileId)
     .eq("is_active", true);
@@ -283,6 +285,7 @@ async function resolveCreditFacility(
         account_ref: c.mis_account_number ?? null,
         source: `company:${c.id}`,
         company_id: c.id,
+        company_name: c.name ?? null,
         profile_id: null,
       };
     }
@@ -649,7 +652,7 @@ async function createOrderWithJobs(
       ordered_by_profile_id: customer.profile_id,
       customer_email: customer.email,
       customer_name: customer.name || null,
-      company_name: customer.company_name || null,
+      company_name: customer.company_name || creditTerms?.company_name || null,
       user_id: customer.profile_id,
       admin_status: holdForPayment ? "pending_payment" : (creditTerms ? "approved" : "new_order"),
       customer_status: holdForPayment
