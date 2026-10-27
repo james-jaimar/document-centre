@@ -37,5 +37,5 @@
 ## Invoice send tracking (2026-10-27)
 - [x] Record confirmed invoice/pro forma sends in the order timeline; rolled-back database regression passed
 - [x] Show send state, last recipient/time and resend control on document icons
-- [x] Seven send-state tests passed; preview build OK; deployed function rejects invalid input without sending mail
-- [ ] Authenticated customer-send UI verification unavailable with external unmanaged Supabase; optional combined test rerun blocked by package-registry DNS failure
+- [x] Twelve invoice/payment tests passed; deployed function rejects invalid input without sending mail; package download issue resolved
+- [ ] Authenticated customer-send UI verification unavailable with external unmanaged Supabase
