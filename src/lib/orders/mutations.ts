@@ -358,6 +358,8 @@ export async function sendInvoiceEmail(invoiceId: string, orderId: string) {
     throw err;
   }
   if ((data as any)?.error) throw new Error((data as any).error);
+  const { assertInvoiceEmailQueued } = await import("@/lib/orders/invoice-delivery");
+  assertInvoiceEmailQueued(data);
   return data;
 }
 

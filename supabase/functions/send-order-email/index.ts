@@ -5,12 +5,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { enqueueEmail, EmailNotConfiguredError } from "../_shared/email-queue.ts";
 import { kickEmailWorker } from "../_shared/email-kick.ts";
 import { INVOICE_RENDERER_VERSION } from "../_shared/invoice-renderer.ts";
+import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+import { z } from 'npm:zod@3';
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+const RequestSchema = z.object({
+  order_id: z.string().uuid(),
+  event_key: z.string().min(1).max(80),
+  force: z.boolean().optional(),
+  invoice_id: z.string().uuid().optional(),
+  tracking_number: z.string().max(255).optional(),
+  tracking_carrier: z.string().max(255).optional(),
+  refund_amount: z.number().nonnegative().optional(),
+  reason: z.string().max(10000).optional(),
+  refund_pending: z.boolean().optional(),
+  message_excerpt: z.string().max(10000).optional(),
+});
 
 const json = (d: unknown, s = 200) =>
   new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -233,11 +242,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const url = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const url = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!url || !serviceKey || !anonKey) return json({ error: "Email service not configured" }, 500);
     const admin = createClient(url, serviceKey);
 
-    const body = await req.json();
+    const parsed = RequestSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
+    const body = parsed.data;
     const { order_id, event_key, force = false, invoice_id } = body || {};
     if (!order_id || !event_key) return json({ error: "order_id and event_key required" }, 400);
 
@@ -272,7 +285,7 @@ Deno.serve(async (req) => {
       const isServiceRole = bearer && bearer === serviceKey;
       if (!isServiceRole) {
         if (!authHeader) return json({ error: "Unauthorized" }, 401);
-        const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        const userClient = createClient(url, anonKey, {
           global: { headers: { Authorization: authHeader } },
         });
         const { data: u } = await userClient.auth.getUser();
@@ -322,7 +335,9 @@ Deno.serve(async (req) => {
 
     if (ATTACH_EVENTS.has(eventKey)) {
       if (invoice_id) {
-        const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
+        const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id)
+          .eq("order_id", order_id).eq("tenant_id", order.tenant_id).single();
+        if (!inv) return json({ error: "Invoice not found for this order" }, 404);
         invoice = inv;
       } else {
         // Auto-resolve the most appropriate invoice for this order/event.
@@ -346,7 +361,7 @@ Deno.serve(async (req) => {
           if (!invoice && eventKey === "payment_request") {
             try {
               const genRes = await fetch(
-                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-invoice-pdf`,
+                `${url}/functions/v1/generate-invoice-pdf`,
                 {
                   method: "POST",
                   headers: {
@@ -385,7 +400,7 @@ Deno.serve(async (req) => {
       ) {
         try {
           const refreshRes = await fetch(
-            `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-invoice-pdf`,
+            `${url}/functions/v1/generate-invoice-pdf`,
             {
               method: "POST",
               headers: {
@@ -520,6 +535,9 @@ Deno.serve(async (req) => {
     const senderEmail = (notif.sender_email as string) || null;
 
     const attachments: Array<any> = [];
+    if (eventKey === "invoice_sent" && (!invoice?.storage_bucket || !invoice?.storage_path)) {
+      return json({ error: "Invoice PDF is not available to send" }, 400);
+    }
     if (ATTACH_EVENTS.has(eventKey) && invoice?.storage_bucket && invoice?.storage_path) {
       attachments.push({
         filename: `${invoice.invoice_number || "invoice"}.pdf`,
@@ -540,7 +558,7 @@ Deno.serve(async (req) => {
     }
 
 
-    await enqueueEmail(admin, {
+    const queuedEmail = await enqueueEmail(admin, {
       tenant_id: order.tenant_id,
       branch_id: order.branch_id ?? null,
       app_id: order.app_id,
@@ -553,7 +571,7 @@ Deno.serve(async (req) => {
       category: "order",
       related_type: "order",
       related_id: order_id,
-      metadata: { event_key: eventKey, order_number: ctx.orderNo, ...(invoice_id ? { invoice_id } : {}) },
+      metadata: { event_key: eventKey, order_number: ctx.orderNo, ...(invoice?.id ? { invoice_id: invoice.id } : {}) },
       attachments: attachments.length ? attachments : undefined,
     });
 
@@ -561,7 +579,7 @@ Deno.serve(async (req) => {
     kickEmailWorker();
 
 
-    return json({ success: true, queued: true });
+    return json({ success: true, queued: true, email_outbox_id: queuedEmail.id });
   } catch (e) {
     if (e instanceof EmailNotConfiguredError) {
       console.warn("send-order-email skipped: sender not configured", { scope: e.scope, tenant_id: e.tenant_id, branch_id: e.branch_id });
