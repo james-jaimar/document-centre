@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, Clock, Send, Lock } from "lucide-react";
+import { MessageSquare, Clock, Send, Lock, MailCheck } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendMessage } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
@@ -178,12 +178,14 @@ export function TimelinePanel({ orderId, timeline, messages, appId, tenantId, br
                 <div>
                   <div className="flex items-center justify-between mb-0.5">
                     <div className="flex items-center gap-1.5">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      {item.event_type === "invoice_sent"
+                        ? <MailCheck className="h-3 w-3 text-success" />
+                        : <Clock className="h-3 w-3 text-muted-foreground" />}
                       <span className="text-xs font-medium">
                         {item.actor_type === "system" ? "System Action" : item.actor_name || "Admin"}
                       </span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground">{getTimeAgo(item.created_at)}</span>
+                    <span className="text-[10px] text-muted-foreground" title={format(new Date(item.created_at), "dd MMM yyyy HH:mm")}>{getTimeAgo(item.created_at)}</span>
                   </div>
                   <p className="break-words text-xs text-muted-foreground">{item.description}</p>
                 </div>

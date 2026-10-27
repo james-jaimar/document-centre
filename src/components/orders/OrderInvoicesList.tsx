@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Download, Eye, FileText, Send, Loader2, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Download, Eye, FileText, Send, Loader2, ChevronDown, ChevronRight, RefreshCw, Check, Clock, AlertCircle } from "lucide-react";
 import { downloadInvoice, viewInvoice, sendInvoiceEmail, generateInvoice } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { resolveInvoiceDelivery, type InvoiceEmail } from "@/lib/orders/invoice-delivery";
 
 interface Invoice {
   id: string;
@@ -17,6 +19,7 @@ interface Invoice {
   total_amount: number;
   currency: string;
   issued_at: string;
+  metadata?: unknown;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -33,15 +36,18 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [showSuperseded, setShowSuperseded] = useState(false);
+  const [emails, setEmails] = useState<InvoiceEmail[]>([]);
+  const queryClient = useQueryClient();
+  const deliveryFingerprint = useRef<string | null>(null);
   const [payment, setPayment] = useState<{
     payment_status: string | null;
     amount_paid: number;
     total_amount: number;
   } | null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    const [{ data }, { data: order }] = await Promise.all([
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    const [{ data }, { data: order }, emailResult] = await Promise.all([
       supabase
         .from("order_invoices")
         .select("*")
@@ -52,8 +58,21 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
         .select("payment_status, amount_paid, total_amount")
         .eq("id", orderId)
         .maybeSingle(),
+      staff
+        ? supabase.from("email_outbox")
+            .select("id, status, sent_at, queued_at, to_email, metadata")
+            .eq("related_type", "order").eq("related_id", orderId)
+            .order("queued_at", { ascending: false }).limit(1000)
+        : Promise.resolve({ data: [] }),
     ]);
     setInvoices((data || []) as Invoice[]);
+    const nextEmails = (emailResult.data || []) as InvoiceEmail[];
+    setEmails(nextEmails);
+    const fingerprint = JSON.stringify(nextEmails.map(email => [email.id, email.status, email.sent_at]));
+    if (deliveryFingerprint.current !== null && deliveryFingerprint.current !== fingerprint) {
+      queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] });
+    }
+    deliveryFingerprint.current = fingerprint;
     setPayment(
       order
         ? {
@@ -67,8 +86,16 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
   };
 
   useEffect(() => {
+    deliveryFingerprint.current = null;
+    setEmails([]);
     load();
-  }, [orderId]);
+    // Poll confirmed sends because the Cloud Run worker completes asynchronously.
+    if (!staff) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(false);
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [orderId, staff]);
 
   // Once a tax invoice exists, the proforma is superseded — keep it available
   // for audit, but tuck it away behind a toggle.
@@ -123,8 +150,9 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
     setSendingId(inv.id);
     try {
       await sendInvoiceEmail(inv.id, orderId);
-      toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} sent to customer`);
-      await load();
+      toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} queued for sending`);
+      await load(false);
+      queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] });
     } catch (e: any) {
       if (!e?.handled) toast.error(e.message);
     } finally {
@@ -171,6 +199,12 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
 
   const renderRow = (inv: Invoice, muted = false) => {
     const badge = paidBadge(inv.kind);
+    const delivery = resolveInvoiceDelivery(inv.id, inv.metadata, emails);
+    const sentDate = delivery.lastSentAt ? new Date(delivery.lastSentAt) : null;
+    const sentAt = sentDate && !Number.isNaN(sentDate.getTime()) ? format(sentDate, "dd MMM yyyy HH:mm") : null;
+    const sendLabel = delivery.pending ? "Email queued — waiting to send"
+      : delivery.failed ? "Last send failed — retry sending"
+      : delivery.sent ? "Send again" : "Send to customer";
     return (
       <div key={inv.id} className="px-3 py-1.5 flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -195,14 +229,22 @@ export function OrderInvoicesList({ orderId, staff = false }: { orderId: string;
           </p>
         </div>
         <div className="flex items-center gap-0.5">
-          <Tooltip>
+          {staff && <Tooltip>
             <TooltipTrigger asChild>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleSend(inv)} disabled={sendingId === inv.id}>
-                {sendingId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              <Button size="icon" variant="ghost" aria-label={sendLabel}
+                className={cn("h-7 w-7 relative", delivery.sent && !delivery.failed && !delivery.pending && "text-success", delivery.failed && "text-destructive")}
+                onClick={() => handleSend(inv)} disabled={sendingId === inv.id || delivery.pending}>
+                {sendingId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : delivery.pending ? <Clock className="h-3 w-3" />
+                  : delivery.failed ? <AlertCircle className="h-3 w-3" />
+                  : <><Send className="h-3 w-3" />{delivery.sent && <Check className="absolute right-0.5 bottom-0.5 h-2.5 w-2.5" />}</>}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Send to customer</TooltipContent>
-          </Tooltip>
+            <TooltipContent className="max-w-xs break-words">
+              <p>{sendLabel}</p>
+              {sentAt && <p>Last sent {sentAt}{delivery.sentTo ? ` to ${delivery.sentTo}` : ""}</p>}
+            </TooltipContent>
+          </Tooltip>}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleView(inv)} disabled={busyId === inv.id}>
