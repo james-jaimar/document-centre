@@ -33,3 +33,8 @@
 - [x] Remap uploaded, template, photo and canvas artwork to cloned documents; stop edits on failed copies or saves
 - [x] Include template uploads in Customer Files with original file extensions
 - [x] Run regression tests (18 passed) and confirm preview build; authenticated live checks unavailable with external unmanaged Supabase
+
+## Invoice send tracking (2026-10-27)
+- [ ] Record confirmed invoice/pro forma sends in the order timeline
+- [ ] Show send state, last recipient/time and resend control on document icons
+- [ ] Test send-state rules and verify available checks without emailing real customers
