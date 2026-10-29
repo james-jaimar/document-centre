@@ -15,6 +15,8 @@ from typing import Any
 from supabase import create_client, Client
 
 from app.core.config import settings
+from app.services.artwork_revision_guard import remember_configuration, expected_configuration
+import json
 
 
 @dataclass
@@ -79,6 +81,7 @@ def load_job_bundle(job_id: str) -> JobBundle:
 
     job_cfg = job.get("configuration")
     configuration: dict[str, Any] | None = job_cfg if isinstance(job_cfg, dict) else None
+    remember_configuration(job_id, job_cfg)
     source_order_item_id = configuration.get("source_order_item_id") if isinstance(configuration, dict) else None
 
     order = None
@@ -371,7 +374,13 @@ def write_artefact_path(job_id: str, column: str, storage_path: str) -> None:
     if column not in {"print_ready_pdf_path", "imposed_pdf_path", "job_ticket_pdf_path"}:
         raise ValueError(f"Refusing to write to unexpected column {column!r}")
     sb = _client()
-    sb.table("order_jobs").update({column: storage_path}).eq("id", job_id).execute()
+    query = sb.table("order_jobs").update({column: storage_path}).eq("id", job_id)
+    expected = expected_configuration(job_id)
+    if expected is not None:
+        query = query.eq("configuration", json.dumps(expected))
+    result = query.execute()
+    if not result.data:
+        raise RuntimeError("Artwork changed during rendering; superseded output was not published")
 
 
 def write_job_field(job_id: str, column: str, value) -> None:
@@ -391,7 +400,13 @@ def write_job_field(job_id: str, column: str, value) -> None:
     }:
         raise ValueError(f"Refusing to write to unexpected column {column!r}")
     sb = _client()
-    sb.table("order_jobs").update({column: value}).eq("id", job_id).execute()
+    query = sb.table("order_jobs").update({column: value}).eq("id", job_id)
+    expected = expected_configuration(job_id)
+    if expected is not None:
+        query = query.eq("configuration", json.dumps(expected))
+    result = query.execute()
+    if not result.data:
+        raise RuntimeError("Artwork changed during rendering; superseded output was not published")
 
 
 # ---------------------------------------------------------------------------

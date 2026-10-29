@@ -41,7 +41,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const jobDocs = documents.filter((d: any) => d.job_id === job.id);
 
   const previewSnap = ((config as any).preview ?? {}) as any;
-  const fallbackPreview = buildPreviewFallback(sourceDocumentsForJob(job, sourceDocuments));
+  const fallbackPreview = buildPreviewFallback((config as any).artwork_revision ? [] : sourceDocumentsForJob(job, sourceDocuments));
   const savedThumbs: string[] = Array.isArray(previewSnap.thumbnails) ? previewSnap.thumbnails : [];
   const previewThumbs = savedThumbs.length > 0 ? savedThumbs : fallbackPreview.thumbnails;
   const previewPdfSources = Array.isArray(previewSnap.pdfSources) && previewSnap.pdfSources.length > 0
