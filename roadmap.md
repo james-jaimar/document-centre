@@ -39,3 +39,9 @@
 - [x] Show send state, last recipient/time and resend control on document icons
 - [x] Twelve invoice/payment tests passed; deployed function rejects invalid input without sending mail; package download issue resolved
 - [ ] Authenticated customer-send UI verification unavailable with external unmanaged Supabase
+
+## Finishing, tickets and placed-order artwork (2026-10-29)
+- [ ] Preserve custom finishing selections in new snapshots and show legacy selections in job details
+- [ ] Include finishing and PO details in generated job tickets; test renderer
+- [ ] Add controlled customer/staff artwork updates with retained originals, timeline audit and stale-output invalidation
+- [ ] Run focused tests and preview checks; authenticated live verification requires an available account session

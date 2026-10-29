@@ -105,11 +105,13 @@ function resolveSelectedOptions(
   productOptions: ProductOptionRow[]
 ): ResolvedOption[] {
   const resolved: ResolvedOption[] = [];
+  const consumed = new Set<string>();
 
   for (const opt of productOptions) {
     const optionSlug = opt.name.toLowerCase().replace(/\s+/g, "_");
     const raw = selected[opt.id] ?? selected[optionSlug] ?? selected[opt.name];
     if (!raw) continue;
+    for (const key of [opt.id, optionSlug, opt.name]) consumed.add(key);
 
     const values = opt.values;
     const slugs = Array.isArray(raw) ? raw : [raw];
@@ -149,6 +151,20 @@ function resolveSelectedOptions(
     }
   }
 
+  // Artwork builders save display-labelled choices without product_options rows.
+  // Preserve those choices without introducing a second pricing calculation.
+  for (const [name, raw] of Object.entries(selected)) {
+    if (consumed.has(name) || !raw) continue;
+    for (const value of Array.isArray(raw) ? raw : [raw]) {
+      if (typeof value !== "string" || !value.trim()) continue;
+      resolved.push({
+        option_id: "", option_name: name,
+        option_slug: name.toLowerCase().replace(/\s+/g, "_"),
+        group: /finish|laminat|corner|padd/i.test(name) ? "Finishing" : "Selected options",
+        selected_label: value, selected_slug: value, price_impact: 0, metadata: {},
+      });
+    }
+  }
   return resolved;
 }
 
@@ -389,7 +405,7 @@ function buildSummary(resolved: ResolvedOption[], spec: any, totalPages: number)
 
   const size = findByName("size");
   const binding = findByGroup("Binding") ?? findByName("binding");
-  const pages = totalPages || spec?.page_count;
+  const pages = spec?.page_count || totalPages;
 
   if (size) {
     summary.primary_spec_1_label = "Size";
