@@ -24,13 +24,14 @@ export function artworkChoices(configuration: any): { path: string; name: string
 
 export default function ArtworkUpdateControl({ orderId, jobs, staff = false }: { orderId: string; jobs: any[]; staff?: boolean }) {
   const qc = useQueryClient();
+  const eligible = jobs.filter(j => isJobRevisable(j, staff));
   const [open, setOpen] = useState(false);
-  const [jobId, setJobId] = useState(jobs[0]?.id || "");
+  const [jobId, setJobId] = useState(eligible[0]?.id || "");
   const [path, setPath] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const job = jobs.find(j => j.id === jobId);
+  const job = eligible.find(j => j.id === jobId) || eligible[0];
   const choices = artworkChoices(job?.configuration);
   const raster = job?.configuration?.photo_prints || job?.configuration?.canvas_prints;
   const templated = !!job?.configuration?.templated_artwork;
