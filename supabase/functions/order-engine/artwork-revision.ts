@@ -1,29 +1,5 @@
 import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
-
-export const EARLY_JOB_STATUSES = new Set(["new", "new_job", "awaiting_files", "awaiting_payment", "proof_pending", "awaiting_proof", "proof_ready", "proof_approved", "approved_for_production"]);
-export function canReviseArtwork(order: any, job: any, staff: boolean): boolean {
-  return (staff ? ["new_order", "under_review", "approved"] : ["new_order", "under_review"]).includes(order.admin_status)
-    && EARLY_JOB_STATUSES.has(job.job_status);
-}
-
-export function replaceArtworkPath(value: any, oldPath: string, replacement: any): any {
-  if (Array.isArray(value)) return value.map(v => replaceArtworkPath(v, oldPath, replacement));
-  if (!value || typeof value !== "object") return value;
-  const result = Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replaceArtworkPath(v, oldPath, replacement)]));
-  if (value.storage_path === oldPath || value.file_path === oldPath) {
-    if (value.storage_path === oldPath) result.storage_path = replacement.storage_path;
-    if (value.file_path === oldPath) result.file_path = replacement.storage_path;
-    result.file_name = replacement.file_name;
-    result.file_size = replacement.file_size_bytes;
-    // Concrete new paths must not resolve back through an old backend asset.
-    delete result.asset_id;
-    delete result.thumbnail_path;
-    delete result.thumbnail_url;
-    delete result.preview_url;
-    delete result.preview_path;
-  }
-  return result;
-}
+import { canReviseArtwork, replaceArtworkPath } from "./artwork-revision-rules.ts";
 
 function pathRecords(value: any, result: any[] = []): any[] {
   if (!value || typeof value !== "object") return result;
@@ -90,6 +66,11 @@ export async function artworkRevision(admin: any, userId: string, authHeader: st
     if (!pdf.getPageCount()) return fail("The PDF has no pages");
     const original = pathRecords(cfg).find(r => (r.storage_path || r.file_path) === oldPath);
     if (!cfg.templated_artwork && original?.page_count && pdf.getPageCount() !== original.page_count) return fail("Replacement PDF must keep the original page count; contact the branch for specification changes");
+    if (!cfg.templated_artwork && original?.page_width_mm && original?.page_height_mm) {
+      const box = pdf.getPage(0).getTrimBox();
+      const width = box.width * 25.4 / 72, height = box.height * 25.4 / 72;
+      if (Math.abs(width - original.page_width_mm) > 2 || Math.abs(height - original.page_height_mm) > 2) return fail("Replacement PDF must keep the original page dimensions; contact the branch for specification changes");
+    }
   } else if (revision.mime_type === "image/png") {
     if (bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) return fail("Invalid PNG artwork");
   } else if (bytes[0] !== 255 || bytes[1] !== 216) return fail("Invalid JPG artwork");

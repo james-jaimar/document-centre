@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReviseArtwork, replaceArtworkPath } from "../../supabase/functions/order-engine/artwork-revision";
+import { canReviseArtwork, replaceArtworkPath } from "../../supabase/functions/order-engine/artwork-revision-rules";
 
 describe("placed artwork revisions", () => {
   it("permits customers during initial order review", () => {
