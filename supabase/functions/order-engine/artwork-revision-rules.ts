@@ -1,7 +1,13 @@
 export const EARLY_JOB_STATUSES = new Set(["new", "new_job", "awaiting_files", "awaiting_payment", "proof_pending", "awaiting_proof", "proof_ready", "proof_approved", "approved_for_production"]);
+/** Staff may replace artwork while the job is still in production; once it is sent to print (or later) artwork is locked. */
+export const STAFF_JOB_STATUSES = new Set([...EARLY_JOB_STATUSES, "in_production"]);
+export const STAFF_ORDER_STATUSES = new Set(["new_order", "under_review", "approved", "in_production"]);
 export function canReviseArtwork(order: any, job: any, staff: boolean): boolean {
-  return (staff ? ["new_order", "under_review", "approved"] : ["new_order", "under_review"]).includes(order.admin_status)
-    && EARLY_JOB_STATUSES.has(job.job_status);
+  return (staff ? [...STAFF_ORDER_STATUSES] : ["new_order", "under_review"]).includes(order.admin_status)
+    && (staff ? STAFF_JOB_STATUSES : EARLY_JOB_STATUSES).has(job.job_status);
+}
+export function isJobRevisable(job: any, staff: boolean): boolean {
+  return (staff ? STAFF_JOB_STATUSES : EARLY_JOB_STATUSES).has(job?.job_status);
 }
 
 export function replaceArtworkPath(value: any, oldPath: string, replacement: any): any {
