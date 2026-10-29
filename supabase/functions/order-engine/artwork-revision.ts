@@ -76,7 +76,7 @@ export async function artworkRevision(admin: any, userId: string, authHeader: st
   } else if (bytes[0] !== 255 || bytes[1] !== 216) return fail("Invalid JPG artwork");
   const configuration = replaceArtworkPath(cfg, oldPath, revision);
   delete configuration.preview;
-  configuration.artwork_revision = { id: revision.id, file_name: revision.file_name, updated_at: new Date().toISOString(), review_required: true };
+  configuration.artwork_revision = { id: revision.id, file_name: revision.file_name, previous_path: oldPath, updated_at: new Date().toISOString(), review_required: true };
   const { data, error } = await admin.rpc("apply_order_artwork_revision", { p_document_id: revision.id, p_actor: userId,
     p_expected_configuration: cfg, p_configuration: configuration });
   if (error) return fail(error.message);

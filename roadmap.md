@@ -42,6 +42,8 @@
 
 ## Finishing, tickets and placed-order artwork (2026-10-29)
 - [x] Preserve custom finishing selections in new snapshots and show legacy selections in job details
-- [ ] Include finishing and PO details in generated job tickets; test renderer
-- [ ] Add controlled customer/staff artwork updates with retained originals, timeline audit and stale-output invalidation
-- [ ] Run focused tests and preview checks; authenticated live verification requires an available account session
+- [x] Include finishing, PO, company and schedule details in job-ticket renderer; three Python tests passed
+- [x] Add controlled customer/staff artwork updates with retained originals, timeline audit and stale-output invalidation; seven frontend and two Deno tests passed
+- [x] Preview builds clean and sign-in page loads without runtime errors
+- [ ] Live customer/staff revision verification blocked by external unmanaged authentication; photo/canvas layout replacement not supported
+- [ ] Regenerate CAL-26023 ticket after Cloud Run deployment; deployed renderer and GitHub/Amplify sync not verifiable here
