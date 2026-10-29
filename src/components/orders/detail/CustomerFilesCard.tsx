@@ -49,11 +49,12 @@ export function buildCustomerFiles(
 
   const push = (doc: any, fallbackName: string) => {
     const path = originalPathFor(doc);
+    if (doc?.metadata?.state === "uploading") return;
     if (!path || seen.has(path)) return;
     seen.add(path);
     out.push({
       key: doc?.id ?? path,
-      name: doc?.file_name || fallbackName,
+      name: `${doc?.file_name || fallbackName}${doc?.metadata?.superseded_by || path === configuration?.artwork_revision?.previous_path ? " (previous artwork)" : ""}`,
       path,
       pageCount: doc?.page_count ?? null,
       sizeBytes: doc?.file_size ?? doc?.file_size_bytes ?? null,

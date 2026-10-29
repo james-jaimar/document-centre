@@ -8278,6 +8278,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      apply_order_artwork_revision: {
+        Args: {
+          p_actor: string
+          p_configuration: Json
+          p_document_id: string
+          p_expected_configuration: Json
+        }
+        Returns: Json
+      }
       apply_tenant_plan_to_branches: {
         Args: { p_tenant_id: string }
         Returns: number

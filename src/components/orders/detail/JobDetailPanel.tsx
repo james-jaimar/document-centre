@@ -19,6 +19,7 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
 import { resolveJobSize, orientationOf, isSizeLabel } from "@/lib/orders/jobSize";
 import { withRawProductionOptions } from "@/lib/orders/production-options";
+import ArtworkUpdateControl from "@/components/orders/ArtworkUpdateControl";
 
 interface Props {
   job: any;
@@ -40,7 +41,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const jobDocs = documents.filter((d: any) => d.job_id === job.id);
 
   const previewSnap = ((config as any).preview ?? {}) as any;
-  const fallbackPreview = buildPreviewFallback(sourceDocumentsForJob(job, sourceDocuments));
+  const fallbackPreview = buildPreviewFallback((config as any).artwork_revision ? [] : sourceDocumentsForJob(job, sourceDocuments));
   const savedThumbs: string[] = Array.isArray(previewSnap.thumbnails) ? previewSnap.thumbnails : [];
   const previewThumbs = savedThumbs.length > 0 ? savedThumbs : fallbackPreview.thumbnails;
   const previewPdfSources = Array.isArray(previewSnap.pdfSources) && previewSnap.pdfSources.length > 0
@@ -213,6 +214,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
       </div>
 
       {/* Templated / supplied artwork — admin proof (same render the customer approved) */}
+      {job.order_id && <ArtworkUpdateControl orderId={job.order_id} jobs={[job]} staff />}
+      {(config as any).artwork_revision?.review_required && (
+        <div className="border border-primary/30 bg-primary/5 p-3 text-xs">
+          Artwork updated: {(config as any).artwork_revision.file_name}. New proof review required.
+        </div>
+      )}
       {((config as any).templated_artwork || uploadedArtwork) && (
         <ArtworkAdminProof
           templatedArtwork={(config as any).templated_artwork}

@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { processAutoRefund } from "../_shared/refunds.ts";
 import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
 import { mirrorSupplierOrders } from "../_shared/supplier-mirror.ts";
+import { artworkRevision } from "./artwork-revision.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -3268,6 +3269,11 @@ Deno.serve(async (req) => {
     let sideEffects: (() => Promise<void>) | null = null;
 
     switch (action) {
+      case "prepareArtworkRevision":
+      case "applyArtworkRevision":
+        response = json(await artworkRevision(admin, userId, authHeader, payload,
+          action === "prepareArtworkRevision" ? "prepare" : "apply", assertOrderStaffAccess));
+        break;
       case "createOrderWithJobs": {
         response = await createOrderWithJobs(admin, userId, payload);
         if (response.status === 201) {
