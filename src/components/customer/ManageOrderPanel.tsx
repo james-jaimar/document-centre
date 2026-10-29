@@ -24,6 +24,7 @@ import {
 import { isCustomerEditable } from "@/lib/orders/editability";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useFulfilmentMethods } from "@/hooks/useFulfilmentMethods";
+import ArtworkUpdateControl from "@/components/orders/ArtworkUpdateControl";
 
 type Job = {
   id: string;
@@ -50,6 +51,9 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
 
   const editable = isCustomerEditable(order, jobs);
 
+  const artworkEditable = ["new_order", "under_review"].includes(order.admin_status)
+    && jobs.some(job => ["new", "new_job", "awaiting_files", "awaiting_payment", "proof_pending", "awaiting_proof", "proof_ready", "proof_approved", "approved_for_production"].includes(job.job_status || ""));
+
   if (!editable) {
     return (
       <Card>
@@ -57,6 +61,7 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
           <CardTitle className="text-base">Manage order</CardTitle>
         </CardHeader>
         <CardContent>
+          {artworkEditable && <ArtworkUpdateControl orderId={order.id} jobs={jobs} />}
           <p className="text-sm text-muted-foreground">
             This order has been picked up by the branch and is now in production. To
             request a change, please send a message below and the branch will respond.
@@ -90,6 +95,7 @@ export function ManageOrderPanel({ order, jobs, onAfterChange }: Props) {
           starts, changes need to be requested by message.
         </p>
         <div className="flex flex-wrap gap-2">
+          {artworkEditable && <ArtworkUpdateControl orderId={order.id} jobs={jobs} />}
           <Button size="sm" variant="outline" onClick={() => setQtyOpen(true)}>
             <Package className="h-3.5 w-3.5 mr-1.5" />
             Change items / quantities
