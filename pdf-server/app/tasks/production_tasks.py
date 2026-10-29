@@ -1028,6 +1028,8 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
         source-files list (with `bundle.asset_paths` fallback).
       - Writable production fields: Due, Operator, Started, Completed, QC, Notes.
     """
+    from app.services.ticket_details import ticket_sections, ticket_order_details
+    from xml.sax.saxutils import escape
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -1044,6 +1046,7 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
     branding = bundle.branding or {}
     customer = bundle.customer or {}
     delivery = bundle.delivery_address or {}
+    order_details = ticket_order_details(order, customer, delivery)
 
     brand_hex = branding.get("primary_color") or "#1e293b"
     brand = _hex_to_rl_color(brand_hex, "#1e293b")
@@ -1162,6 +1165,8 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
             body,
         )],
     ]
+    if order_details["po_number"]:
+        identity_left.append([Paragraph(f"PO Number: <b>{escape(str(order_details['po_number']))}</b>", body)])
     id_tbl = Table(identity_left, colWidths=[155 * mm])
     id_tbl.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -1184,11 +1189,11 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
     # 3. Customer + Fulfilment + Due / Required by  (NO pricing)
     # ------------------------------------------------------------------
     cust_name = _safe(customer.get("full_name") or customer.get("email") or order.get("customer_name"))
-    cust_company = customer.get("company") or (delivery.get("company_name") if delivery else None) or ""
+    cust_company = escape(str(order_details["company"]))
     cust_email = customer.get("email") or order.get("customer_email") or ""
     cust_phone = customer.get("phone") or (delivery.get("phone") if delivery else "") or ""
 
-    fulfilment_mode = (order.get("fulfilment_type") or order.get("delivery_method") or "collection").lower()
+    fulfilment_mode = order_details["fulfilment"].lower()
     is_delivery = fulfilment_mode in ("delivery", "shipping", "courier")
 
     if is_delivery and delivery:
@@ -1210,8 +1215,8 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
                         branch.get("phone") or ""]
         fulfil_lines = [l for l in fulfil_lines if l]
 
-    due_value = job.get("ready_at") or order.get("required_by") or order.get("delivery_date")
-    turnaround = order.get("turnaround") or snap.get("turnaround") or "—"
+    due_value = order_details["due"] or job.get("ready_at")
+    turnaround = order_details["turnaround"] or snap.get("turnaround") or "—"
 
     schedule_lines = [
         f"<font color='#64748b'>Date required</font><br/><b>{_safe(due_value)}</b>",
@@ -1260,7 +1265,8 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
     flow.append(Paragraph("PRODUCTION SPECIFICATIONS", h_section))
 
     summary = (cfg.get("summary") or {}) if isinstance(cfg, dict) else {}
-    cfg_sections = (cfg.get("sections") or []) if isinstance(cfg, dict) else []
+    cfg_sections = ticket_sections(cfg, (bundle.order_item or {}).get("spec"))
+    raw_pages = (cfg.get("raw_spec") or {}).get("page_count")
 
     # Flatten all spec pairs (summary first, then every section's items) into
     # a single compact 3-column grid. Skip section titles — the labels carry
@@ -1279,7 +1285,9 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
         spec_pairs.append((label.strip(), str(value).strip()))
 
     for i in (1, 2, 3):
-        _push(summary.get(f"primary_spec_{i}_label"), summary.get(f"primary_spec_{i}_value"))
+        label = summary.get(f"primary_spec_{i}_label")
+        value = raw_pages if label == "Pages" and raw_pages else summary.get(f"primary_spec_{i}_value")
+        _push(label, value)
 
     if isinstance(cfg_sections, list):
         for section in cfg_sections:
@@ -1315,7 +1323,7 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
             cells = []
             for k, v in chunk:
                 cells.append(Paragraph(
-                    f"<font color='#64748b' size='7.5'>{k.upper()}</font><br/><b>{v}</b>",
+                    f"<font color='#64748b' size='7.5'>{escape(k.upper())}</font><br/><b>{escape(v)}</b>",
                     body,
                 ))
             while len(cells) < 3:

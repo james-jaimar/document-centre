@@ -18,6 +18,7 @@ import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
 import { buildPreviewFallback, sourceDocumentsForJob, type PreviewSourceDocument } from "@/lib/orders/previewFallbacks";
 import { resolveJobSize, orientationOf, isSizeLabel } from "@/lib/orders/jobSize";
+import { withRawProductionOptions } from "@/lib/orders/production-options";
 
 interface Props {
   job: any;
@@ -34,7 +35,7 @@ interface Props {
 export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, sourceDocuments = [] }: Props) {
   const fmt = (amount: number) => formatPrice(Number(amount ?? 0), currency);
   const config: JobConfiguration = job.configuration || {};
-  const sections: ConfigSection[] = config.sections || [];
+  const sections: ConfigSection[] = withRawProductionOptions(config.sections, (config as any).raw_spec);
   const summary = config.summary || {};
   const jobDocs = documents.filter((d: any) => d.job_id === job.id);
 

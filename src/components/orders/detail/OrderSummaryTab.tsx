@@ -3,6 +3,7 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { format } from "date-fns";
 import { OrderWorkflowPanel } from "./OrderWorkflowPanel";
+import { resolveDisplayPaymentStatus } from "@/lib/orders/status-maps";
 
 interface Props {
   order: any;
@@ -30,7 +31,7 @@ export function OrderSummaryTab({ order, jobs, selectedJobId, onSelectJob }: Pro
           <div>
             <span className="text-muted-foreground">Payment</span>
             <div className="mt-1">
-              <StatusBadge {...PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG]} />
+              <StatusBadge {...PAYMENT_STATUS_CONFIG[resolveDisplayPaymentStatus(order)]} />
             </div>
           </div>
         </div>
@@ -58,6 +59,12 @@ export function OrderSummaryTab({ order, jobs, selectedJobId, onSelectJob }: Pro
             <span className="text-muted-foreground">Company</span>
             <span>{order.company_name || "—"}</span>
           </div>
+          {order.po_number && (
+            <div className="flex justify-between gap-2">
+              <span className="text-muted-foreground">PO Number</span>
+              <span className="min-w-0 break-words text-right">{order.po_number}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Date Required</span>
             <span>{order.date_required ? format(new Date(order.date_required), "yyyy/MM/dd") : "—"}</span>
