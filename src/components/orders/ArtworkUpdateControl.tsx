@@ -1,5 +1,5 @@
-import { isJobRevisable } from "@/lib/orders/artwork-revision-rules";
-import { useState } from react-placeholder;
+import { isJobRevisable } from "../../../supabase/functions/order-engine/artwork-revision-rules";
+import { useState } from "react";
 import { Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -62,15 +62,15 @@ export default function ArtworkUpdateControl({ orderId, jobs, staff = false }: {
     } catch (error: any) { toast.error(error.message || "Artwork update failed"); }
     finally { setBusy(false); }
   }
-  if (!jobs.length) return null;
+  if (!eligible.length) return null;
   return <>
     <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Upload className="mr-1.5 h-3.5 w-3.5" />Update artwork</Button>
     <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value); }}>
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Update artwork</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label>Job</Label><Select value={jobId} onValueChange={value => { setJobId(value); setPath(""); setFile(null); }}>
-            <SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{jobs.map(j => <SelectItem key={j.id} value={j.id}>{j.job_number} — {j.product_name}</SelectItem>)}</SelectContent>
+            <div><Label>Job</Label><Select value={job?.id} onValueChange={value => { setJobId(value); setPath(""); setFile(null); }}>
+            <SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{eligible.map(j => <SelectItem key={j.id} value={j.id}>{j.job_number} — {j.product_name}</SelectItem>)}</SelectContent>
           </Select></div>
           {raster ? <p className="text-sm text-muted-foreground">Please contact the branch for photo or canvas layout changes.</p> : <>
             <div><Label>Artwork to replace</Label><Select value={path} onValueChange={setPath}>
