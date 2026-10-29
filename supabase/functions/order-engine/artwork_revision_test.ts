@@ -2,9 +2,10 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { canReviseArtwork, replaceArtworkPath } from "./artwork-revision-rules.ts";
 import { artworkRevision } from "./artwork-revision.ts";
 
-Deno.test("artwork revision denies production and permits initial customer review", () => {
+Deno.test("artwork revision permits staff during production but closes once sent to print", () => {
   assertEquals(canReviseArtwork({ admin_status: "under_review" }, { job_status: "new_job" }, false), true);
-  assertEquals(canReviseArtwork({ admin_status: "approved" }, { job_status: "in_production" }, true), false);
+  assertEquals(canReviseArtwork({ admin_status: "in_production" }, { job_status: "in_production" }, true), true);
+  assertEquals(canReviseArtwork({ admin_status: "approved" }, { job_status: "sent_to_print" }, true), false);
   assertEquals(typeof artworkRevision, "function");
 });
 Deno.test("artwork remap retains immutable price and original object", () => {
