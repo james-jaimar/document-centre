@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReviseArtwork, replaceArtworkPath } from "../../supabase/functions/order-engine/artwork-revision-rules";
+import { canReviseArtwork, isJobRevisable, replaceArtworkPath } from "../../supabase/functions/order-engine/artwork-revision-rules";
 
 describe("placed artwork revisions", () => {
   it("permits customers during initial order review", () => {
@@ -8,8 +8,20 @@ describe("placed artwork revisions", () => {
   it("blocks customers after approval", () => {
     expect(canReviseArtwork({ admin_status: "approved" }, { job_status: "proof_approved" }, false)).toBe(false);
   });
-  it("blocks staff when a job is already in production", () => {
-    expect(canReviseArtwork({ admin_status: "under_review" }, { job_status: "in_production" }, true)).toBe(false);
+  it("allows staff to replace artwork while the job is still in production", () => {
+    expect(canReviseArtwork({ admin_status: "approved" }, { job_status: "in_production" }, true)).toBe(true);
+    expect(canReviseArtwork({ admin_status: "in_production" }, { job_status: "in_production" }, true)).toBe(true);
+    expect(canReviseArtwork({ admin_status: "in_production" }, { job_status: "awaiting_proof" }, true)).toBe(true);
+  });
+  it("blocks artwork changes once the job goes to print", () => {
+    expect(canReviseArtwork({ admin_status: "in_production" }, { job_status: "sent_to_print" }, true)).toBe(false);
+    expect(canReviseArtwork({ admin_status: "sent_to_print" }, { job_status: "in_production" }, true)).toBe(false);
+    expect(canReviseArtwork({ admin_status: "in_production" }, { job_status: "completed" }, true)).toBe(false);
+  });
+  it("filters which jobs expose the update control", () => {
+    expect(isJobRevisable({ job_status: "in_production" }, true)).toBe(true);
+    expect(isJobRevisable({ job_status: "sent_to_print" }, true)).toBe(false);
+    expect(isJobRevisable({ job_status: "in_production" }, false)).toBe(false);
   });
   it("retains prices and unrelated files while replacing all active artwork references", () => {
     const original = { price: 13901.95, templated_artwork: { placeholders: [{ storage_path: "old.pdf", thumbnail_path: "old.jpg" }] },
