@@ -15,6 +15,7 @@ import { orderRowClass, NewMarker } from "@/pages/admin/AdminOrders";
 import {
   ADMIN_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
+  resolveDisplayPaymentStatus,
 } from "@/lib/orders/status-maps";
 import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
@@ -390,7 +391,7 @@ export default function BranchOrders() {
                       <TableCell className="text-right">—</TableCell>
                       <TableCell className="text-right">{formatCurrency(order.total_amount)}</TableCell>
                       <TableCell className="text-center">
-                        <PaymentIcon status={order.payment_status} />
+                        <PaymentIcon status={resolveDisplayPaymentStatus(order)} />
                       </TableCell>
                       <TableCell className="text-center">—</TableCell>
                       <TableCell className="text-center">—</TableCell>
@@ -434,7 +435,7 @@ export default function BranchOrders() {
                     <TableCell className="text-right">{Number(job.quantity).toLocaleString()}</TableCell>
                     <TableCell className="text-right">{formatCurrency(job.gross_price)}</TableCell>
                     <TableCell className="text-center">
-                      <PaymentIcon status={order.payment_status} />
+                      <PaymentIcon status={resolveDisplayPaymentStatus(order)} />
                     </TableCell>
                     <TableCell className="text-center">
                       <ReadyIcon status={job.job_status} />

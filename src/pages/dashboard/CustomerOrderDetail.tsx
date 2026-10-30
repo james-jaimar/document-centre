@@ -32,6 +32,7 @@ import ReorderReviewDialog from "@/components/customer/ReorderReviewDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { resolveDisplayPaymentStatus } from "@/lib/orders/status-maps";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
@@ -76,6 +77,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   refunded: "Refunded",
   failed: "Payment Failed",
   requested: "Payment Requested",
+  on_account: "On Account · 30d",
 };
 
 const PAYMENT_COLOR: Record<string, string> = {
@@ -85,6 +87,7 @@ const PAYMENT_COLOR: Record<string, string> = {
   refunded: "bg-gray-100 text-gray-700 border-gray-200",
   failed: "bg-red-100 text-red-700 border-red-200",
   requested: "bg-amber-100 text-amber-800 border-amber-200",
+  on_account: "bg-sky-100 text-sky-800 border-sky-200",
 };
 
 const JOB_STATUS_LABEL: Record<string, string> = {
@@ -339,10 +342,10 @@ const CustomerOrderDetail = () => {
           <span
             className={cn(
               "inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium",
-              PAYMENT_COLOR[order.payment_status] || "bg-muted text-muted-foreground"
+              PAYMENT_COLOR[resolveDisplayPaymentStatus(order)] || "bg-muted text-muted-foreground"
             )}
           >
-            {PAYMENT_LABEL[order.payment_status] || order.payment_status}
+            {PAYMENT_LABEL[resolveDisplayPaymentStatus(order)] || order.payment_status}
           </span>
         </div>
       </div>
@@ -691,14 +694,19 @@ const CustomerOrderDetail = () => {
                     </div>
                   ))}
                 <div className="flex justify-between font-bold pt-1">
-                  <span>Amount Due</span>
-                  <span className={order.amount_due > 0 ? "text-destructive" : "text-green-600"}>
+                  <span>{resolveDisplayPaymentStatus(order) === "on_account" ? "Charged to Account" : "Amount Due"}</span>
+                  <span className={resolveDisplayPaymentStatus(order) === "on_account" ? "text-sky-700" : order.amount_due > 0 ? "text-destructive" : "text-green-600"}>
                     {fmt(order.amount_due)}
                   </span>
                 </div>
               </div>
 
-              {order.amount_due > 0 && (
+              {resolveDisplayPaymentStatus(order) === "on_account" && (
+                <p className="text-xs text-muted-foreground pt-2">
+                  Charged to your trade account on 30-day terms — it will appear on your monthly statement. No payment needed now.
+                </p>
+              )}
+              {order.amount_due > 0 && resolveDisplayPaymentStatus(order) !== "on_account" && (
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button size="sm" onClick={handlePayNow} className="gap-1.5">
                     <CreditCard className="h-3.5 w-3.5" />
