@@ -12,6 +12,7 @@ import { format, differenceInDays } from "date-fns";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { resolveDisplayPaymentStatus } from "@/lib/orders/status-maps";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
 import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
@@ -48,6 +49,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   refunded: "Refunded",
   failed: "Payment Failed",
   requested: "Payment Requested",
+  on_account: "On Account · 30d",
 };
 
 const PAYMENT_COLOR: Record<string, string> = {
@@ -57,6 +59,7 @@ const PAYMENT_COLOR: Record<string, string> = {
   refunded: "bg-gray-100 text-gray-700 border-gray-200",
   failed: "bg-red-100 text-red-700 border-red-200",
   requested: "bg-amber-100 text-amber-800 border-amber-200",
+  on_account: "bg-sky-100 text-sky-800 border-sky-200",
 };
 
 const isPlaced = (o: any) => !!o.order_number && !!o.app_id;
@@ -207,7 +210,7 @@ const CustomerOrders = () => {
     const productNames = jobs.slice(0, 2).map((j: any) => j.product_name).filter(Boolean);
     const moreCount = Math.max(itemCount - productNames.length, 0);
     const statusKey = order.customer_status;
-    const paymentKey = order.payment_status;
+    const paymentKey = resolveDisplayPaymentStatus(order);
     const unread = unreadMap[order.id] || 0;
     return (
       <button

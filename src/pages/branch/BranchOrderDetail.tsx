@@ -21,7 +21,7 @@ import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
 import { markOrderOpened } from "@/hooks/useUnopenedOrders";
 import { toast } from "sonner";
-import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
+import { PAYMENT_STATUS_CONFIG, resolveDisplayPaymentStatus } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -163,7 +163,7 @@ export default function BranchOrderDetail() {
     }
   };
 
-  const paymentConfig = PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG];
+  const paymentConfig = PAYMENT_STATUS_CONFIG[resolveDisplayPaymentStatus(order)];
 
   return (
     <div className="space-y-4">

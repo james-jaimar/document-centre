@@ -58,10 +58,10 @@ export const PAYMENT_STATUS_CONFIG: Record<PaymentStatus, { label: string; color
  */
 export function resolveDisplayPaymentStatus(order: {
   payment_status?: string | null;
-  metadata?: Record<string, any> | null;
+  metadata?: unknown;
 }): PaymentStatus {
   const status = (order.payment_status ?? 'unpaid') as PaymentStatus;
-  const onAccount = order.metadata?.payment_method === 'account';
+  const onAccount = (order.metadata as Record<string, any> | null | undefined)?.payment_method === 'account';
   if (onAccount && (status === 'unpaid' || status === 'requested')) return 'on_account';
   return status;
 }
