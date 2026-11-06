@@ -25,6 +25,11 @@
 - Add a server test: an A5 file with 3 mm bleed and crop marks, scaled to A4, should come out at 210×297 trim and 216×303 page, with the crop marks removed.
 - After the PDF server redeploys, re-scale INV-01002-1 from the original upload, then re-assemble and re-impose. Check the result visually.
 
+## Also: booklet imposition opens with an Acrobat page error (INV-01003-1)
+- The "Booklet A4 → SRA3 Bleed & Crops" imposition finished and saved at 05:21. Acrobat reports a broken page when opening it.
+- Download that imposed file and check it with qpdf to find the broken page object. The booklet imposition function is the likely source; the regular 2-up worked.
+- Fix the booklet writer. Add a test that the booklet output passes `qpdf --check`, then re-impose INV-01003-1.
+
 ## Note on Amplify
 Your screenshot shows Deployment 1495 at 6:50 AM. That was before this morning's package fix went in. Look for a newer deployment after that commit. It should go green.
 
