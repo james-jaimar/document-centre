@@ -369,18 +369,31 @@ def load_job_bundle(job_id: str) -> JobBundle:
 
 
 
+def _ensure_configuration_current(sb, job_id: str) -> None:
+    """Refuse to publish if the job's artwork changed while rendering.
+
+    Compares in Python rather than filtering on the JSON in the request URL,
+    which breaks (URL too long) for large multi-document/tab configurations.
+    """
+    expected = expected_configuration(job_id)
+    if expected is None:
+        return
+    row = sb.table("order_jobs").select("configuration").eq("id", job_id).limit(1).execute().data
+    if not row:
+        raise RuntimeError(f"Job {job_id} not found; output was not published")
+    if row[0].get("configuration") != expected:
+        raise RuntimeError("Artwork changed during rendering; superseded output was not published")
+
+
 def write_artefact_path(job_id: str, column: str, storage_path: str) -> None:
     """Persist the artefact storage path back onto the order_jobs row."""
     if column not in {"print_ready_pdf_path", "imposed_pdf_path", "job_ticket_pdf_path"}:
         raise ValueError(f"Refusing to write to unexpected column {column!r}")
     sb = _client()
-    query = sb.table("order_jobs").update({column: storage_path}).eq("id", job_id)
-    expected = expected_configuration(job_id)
-    if expected is not None:
-        query = query.eq("configuration", json.dumps(expected))
-    result = query.execute()
+    _ensure_configuration_current(sb, job_id)
+    result = sb.table("order_jobs").update({column: storage_path}).eq("id", job_id).execute()
     if not result.data:
-        raise RuntimeError("Artwork changed during rendering; superseded output was not published")
+        raise RuntimeError(f"Job {job_id} not found; output was not published")
 
 
 def write_job_field(job_id: str, column: str, value) -> None:
@@ -400,13 +413,10 @@ def write_job_field(job_id: str, column: str, value) -> None:
     }:
         raise ValueError(f"Refusing to write to unexpected column {column!r}")
     sb = _client()
-    query = sb.table("order_jobs").update({column: value}).eq("id", job_id)
-    expected = expected_configuration(job_id)
-    if expected is not None:
-        query = query.eq("configuration", json.dumps(expected))
-    result = query.execute()
+    _ensure_configuration_current(sb, job_id)
+    result = sb.table("order_jobs").update({column: value}).eq("id", job_id).execute()
     if not result.data:
-        raise RuntimeError("Artwork changed during rendering; superseded output was not published")
+        raise RuntimeError(f"Job {job_id} not found; output was not published")
 
 
 # ---------------------------------------------------------------------------
