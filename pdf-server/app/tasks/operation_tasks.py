@@ -776,6 +776,7 @@ def prepare_for_product(
             "dest_profile": dest_profile,
             "intent": intent,
             "respect_trim_box": respect_trim_box,
+            "trim_pipeline": 2,
         }
         existing_meta = asset.get("metadata") or {}
         if existing_meta.get("prepare_for_product_sig") == prepare_sig:
