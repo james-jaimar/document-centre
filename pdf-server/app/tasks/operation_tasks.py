@@ -210,7 +210,10 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
         with Workspace() as ws:
             src = _download_asset_pdf(db, asset_id, ws)
             out_pdf = ws.path('resized.pdf')
-            pdf_ops.resize_pages(src, out_pdf, width_mm, height_mm, fit_mode, dominant_orientation=dominant_orientation, respect_trim_box=respect_trim_box)
+            # Always honour a real TrimBox: scale the trim to the target, rebuild a
+            # 3 mm bleed and clip the customer's old crop marks. Without this a
+            # bleed file (e.g. A5 with crops) was scaled whole to A4.
+            pdf_ops.resize_pages(src, out_pdf, width_mm, height_mm, fit_mode, dominant_orientation=dominant_orientation, respect_trim_box=True, target_bleed_mm=3.0)
 
             storage_path = unique_name(f'{prefix}derived/resized', '.pdf')
             storage.upload(out_pdf, storage_path, 'application/pdf')
@@ -773,6 +776,7 @@ def prepare_for_product(
             "dest_profile": dest_profile,
             "intent": intent,
             "respect_trim_box": respect_trim_box,
+            "trim_pipeline": 2,
         }
         existing_meta = asset.get("metadata") or {}
         if existing_meta.get("prepare_for_product_sig") == prepare_sig:
