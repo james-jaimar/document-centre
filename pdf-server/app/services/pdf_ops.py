@@ -20,6 +20,17 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+
+def _pdfnum(v) -> str:
+    """Format a number for a PDF content stream. PDF forbids exponent
+    notation (e.g. 1.2e-14), which Acrobat reports as a page error."""
+    v = float(v)
+    if abs(v) < 1e-9:
+        return "0"
+    out = f"{v:.6f}".rstrip("0").rstrip(".")
+    return out if out not in ("", "-0") else "0"
+
+
 class RasterizationIncompleteError(RuntimeError):
     """Raised when Ghostscript could not produce every requested page even
     after per-page retries. Carries the list of missing 1-based page numbers
@@ -2972,15 +2983,15 @@ class PdfOps:
         oy = target_rect.lly - source_rect[1] * sy
 
         if extra_matrix is None:
-            cm = f"{sx} 0 0 {sy} {ox} {oy} cm".encode()
+            cm = f"{_pdfnum(sx)} 0 0 {_pdfnum(sy)} {_pdfnum(ox)} {_pdfnum(oy)} cm".encode()
         else:
             # Compose: first the placement (scale + translate), then the
             # extra transform (applied in target-page coordinates).
             # PDF cm is right-to-left, so emit extra_matrix first.
             m = extra_matrix
             cm = (
-                f"{m.a} {m.b} {m.c} {m.d} {m.e} {m.f} cm "
-                f"{sx} 0 0 {sy} {ox} {oy} cm"
+                f"{_pdfnum(m.a)} {_pdfnum(m.b)} {_pdfnum(m.c)} {_pdfnum(m.d)} {_pdfnum(m.e)} {_pdfnum(m.f)} cm "
+                f"{_pdfnum(sx)} 0 0 {_pdfnum(sy)} {_pdfnum(ox)} {_pdfnum(oy)} cm"
             ).encode()
 
         target_page.contents_add(b"q\n" + cm + f" /{name} Do\nQ\n".encode())
@@ -4111,7 +4122,7 @@ class PdfOps:
                 tx = (w - w * s) / 2 - bleed_pt
                 ty = (h - h * s) / 2 - bleed_pt
                 # Wrap existing content in a save/scale/restore matrix
-                cm = f"q\n{s} 0 0 {s} {tx} {ty} cm\n".encode()
+                cm = f"q\n{_pdfnum(s)} 0 0 {_pdfnum(s)} {_pdfnum(tx)} {_pdfnum(ty)} cm\n".encode()
                 end = b"\nQ\n"
                 page.contents_add(cm, prepend=True)
                 page.contents_add(end, prepend=False)
