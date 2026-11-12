@@ -4027,7 +4027,10 @@ class PdfOps:
                 height_mm=target_height_mm,
                 fit_mode=fit_mode,
                 dominant_orientation=dominant_orientation,
-                respect_trim_box=respect_trim_box,
+                # Always trim-aware with a fixed 3 mm press bleed; no-op for
+                # files whose TrimBox equals the MediaBox.
+                respect_trim_box=True,
+                target_bleed_mm=3.0,
             )
             stats["steps"].append("resize")
             current = resize_out
