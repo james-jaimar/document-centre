@@ -125,6 +125,8 @@ import BranchDiscounts from "@/pages/branch/BranchDiscounts";
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
+import PlatformLiveActivity from "@/pages/platform/PlatformLiveActivity";
+import { PresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
 import PlatformProducts from "@/pages/platform/PlatformProducts";
@@ -468,6 +470,11 @@ function AppRoutes() {
             <PlatformTenants />
           </ProtectedRoute>
         } />
+        <Route path="/platform/live" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformLiveActivity />
+          </ProtectedRoute>
+        } />
         <Route path="/platform/users" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformUsers />
@@ -614,6 +621,7 @@ const App = () => (
             <OAuthReturnRedirect />
             <TenantProvider>
               <ImpersonationProvider>
+                <PresenceHeartbeat />
                 <AppRoutes />
               </ImpersonationProvider>
             </TenantProvider>

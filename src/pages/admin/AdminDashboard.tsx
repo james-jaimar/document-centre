@@ -1,7 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LiveSessionsPanel } from "@/components/presence/LiveSessionsPanel";
+import { useTenantContext as useTenant } from "@/hooks/useTenantContext";
 import { Building2, Users, Package, DollarSign } from "lucide-react";
 
 const AdminDashboard = () => {
+  const { tenantId, membershipRole, isPlatformAdmin } = useTenant();
+  const canSeePresence = isPlatformAdmin || ["owner", "admin"].includes((membershipRole ?? "").toLowerCase());
   return (
     <div className="space-y-6">
       <div>
@@ -51,6 +55,8 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {canSeePresence && tenantId && <LiveSessionsPanel tenantId={tenantId} />}
     </div>
   );
 };

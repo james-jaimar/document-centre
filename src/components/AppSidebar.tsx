@@ -25,6 +25,7 @@ import {
   Truck,
   Inbox,
   Megaphone,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -84,6 +85,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
     items: [
       { to: "/platform", icon: <Globe size={20} />, label: "Tenants" },
       { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
+      { to: "/platform/live", icon: <Radio size={20} />, label: "Live Activity" },
       { to: "/platform/demo", icon: <Sparkles size={20} />, label: "Demo Activity" },
       { to: "/platform/subscriptions", icon: <CreditCard size={20} />, label: "Tenant Subscriptions" },
       { to: "/platform/branch-subscriptions", icon: <CreditCard size={20} />, label: "Branch Subscriptions" },

@@ -8212,6 +8212,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_presence: {
+        Row: {
+          current_path: string | null
+          display_name: string | null
+          email: string | null
+          first_seen_at: string
+          last_seen_at: string
+          role: string | null
+          tenant_id: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          current_path?: string | null
+          display_name?: string | null
+          email?: string | null
+          first_seen_at?: string
+          last_seen_at?: string
+          role?: string | null
+          tenant_id?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          current_path?: string | null
+          display_name?: string | null
+          email?: string | null
+          first_seen_at?: string
+          last_seen_at?: string
+          role?: string | null
+          tenant_id?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           branch_id: string | null
@@ -8597,6 +8633,10 @@ export type Database = {
           trial_ends_at: string
           updated_at: string
         }[]
+      }
+      presence_heartbeat: {
+        Args: { _path: string; _tenant_id: string; _user_agent?: string }
+        Returns: undefined
       }
       profile_belongs_to_branch: {
         Args: { _branch_id: string; _profile_id: string }
