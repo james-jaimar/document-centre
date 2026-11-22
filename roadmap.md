@@ -1,8 +1,9 @@
 ## Optional customer bookshelf (2026-11-22)
-- [ ] Add a disabled-by-default per-tenant switch
-- [ ] Save configured PDF products to a private named bookshelf
-- [ ] Browse, rename, remove, and reorder or revise bookshelf products using existing order flows
-- [ ] Verify tenant gating and bookshelf rules; report authenticated checks unavailable if blocked
+- [x] Add a disabled-by-default per-tenant switch; confirmed zero tenants enabled
+- [x] Save configured PDF products and independent thumbnails to a private named bookshelf with SKU and retained revisions
+- [x] Browse, rename, remove, and restore copies for current-price review or artwork revision using existing order flows
+- [x] Verify safeguards: 19 frontend/helper tests and four order-engine tests passed; preview builds clean; order-engine deployed
+- [ ] Signed-in save → revise → review → cart verification blocked by external unmanaged Supabase authentication
 
 
 ## Invoice / pro forma documents (2026-09-03)
