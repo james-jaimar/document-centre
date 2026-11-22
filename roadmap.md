@@ -1,3 +1,9 @@
+## Optional customer bookshelf (2026-11-22)
+- [ ] Add a disabled-by-default per-tenant switch
+- [ ] Save configured PDF products to a private named bookshelf
+- [ ] Browse, rename, remove, and reorder or revise bookshelf products using existing order flows
+- [ ] Verify tenant gating and bookshelf rules; report authenticated checks unavailable if blocked
+
 
 ## Invoice / pro forma documents (2026-09-03)
 - [x] Customer VAT + account number on the invoice metadata strip (currently the seller's)
