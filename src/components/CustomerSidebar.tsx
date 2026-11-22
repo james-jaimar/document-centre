@@ -11,8 +11,10 @@ import {
   LogOut,
   LogIn,
   PackageOpen,
+  BookOpen,
 } from "lucide-react";
 import { useSamplePack } from "@/hooks/useSamplePack";
+import { useBookshelfEnabled } from "@/hooks/useBookshelf";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +43,7 @@ export default function CustomerSidebar() {
   const { activeBranch } = useBranch();
   const { homePath, shopPath, shopEnabled } = useStorefrontNav();
   const { eligible: samplePackEligible } = useSamplePack();
+  const { data: bookshelfEnabled } = useBookshelfEnabled();
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
@@ -64,6 +67,7 @@ export default function CustomerSidebar() {
       ? [{ to: tenantPath("sample-pack"), icon: PackageOpen, label: "Sample Pack", exact: false }]
       : []),
     { to: tenantPath("orders"), icon: ClipboardList, label: "Orders", exact: false },
+    ...(bookshelfEnabled ? [{ to: tenantPath("bookshelf"), icon: BookOpen, label: "My Bookshelf", exact: false }] : []),
     { to: tenantPath("quotes"), icon: FileText, label: "Quotes", exact: false },
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true },
     { to: tenantPath("account"), icon: Settings, label: "My Account", exact: false },

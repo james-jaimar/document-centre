@@ -96,7 +96,7 @@ function CustomerLayoutInner() {
   const accountArea = useMemo(() => {
     const rest = slug ? pathname.replace(new RegExp(`^/t/${slug}`), "") : pathname;
     const path = rest.replace(/^\//, "").replace(/\/$/, "");
-    return /^(orders|quotes|account|invoices|addresses|documents)(\/|$)/.test(path);
+    return /^(orders|bookshelf|quotes|account|invoices|addresses|documents)(\/|$)/.test(path);
   }, [pathname, slug]);
   const isAnon = isAnonymousUser(user);
   const showSidebar = !chromeless && !!user && !isAnon && accountArea;

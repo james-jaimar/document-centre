@@ -11,6 +11,7 @@ import {
   LogIn,
   MapPin,
   X,
+  BookOpen,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,6 +25,7 @@ import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutPath } from "@
 import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
 import { cn } from "@/lib/utils";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
+import { useBookshelfEnabled } from "@/hooks/useBookshelf";
 
 interface Props {
   open: boolean;
@@ -43,6 +45,7 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
   const cartCount = useCartItemCount();
   const { activeBranch, isMultiBranch, openPicker } = useBranch();
   const { homePath, shopPath, shopEnabled } = useStorefrontNav();
+  const { data: bookshelfEnabled } = useBookshelfEnabled();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
 
@@ -57,6 +60,7 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
     ...(shopEnabled ? [{ to: shopPath, icon: Store, label: "Shop", exact: false }] : []),
     ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false }]),
     { to: tenantPath("orders"), icon: ClipboardList, label: "My Orders", exact: false },
+    ...(bookshelfEnabled ? [{ to: tenantPath("bookshelf"), icon: BookOpen, label: "My Bookshelf", exact: false }] : []),
     { to: tenantPath("quotes"), icon: FileText, label: "My Quotes", exact: false },
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true as const },
     { to: tenantPath("account"), icon: Settings, label: "My Account", exact: false },

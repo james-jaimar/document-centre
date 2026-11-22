@@ -17,6 +17,7 @@ import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
 import TabInsertDrawer from "@/components/order/TabInsertDrawer";
 import SaveConfirmDialog from "@/components/order/SaveConfirmDialog";
+import BookshelfSaveButton from "@/components/customer/BookshelfSaveButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1724,7 +1725,13 @@ export default function OrderBuild() {
               disabled={!canAddToCart}
               isSubmitting={isSubmitting}
             />
-
+            <BookshelfSaveButton
+              orderItemId={orderItemId}
+              name={reference.trim() || productFamily?.name || "Document"}
+              shelfId={(order?.metadata as { bookshelf_item_id?: string } | null)?.bookshelf_item_id}
+              disabled={!canAddToCart || isSubmitting}
+              beforeSave={() => updateSpec.mutateAsync({ id: orderItemId, spec })}
+            />
           </div>
         </div>
 

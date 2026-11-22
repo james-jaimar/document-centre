@@ -12,6 +12,7 @@ const RESERVED_BRANCH_SEGMENTS = new Set([
   "dashboard",
   "print-centre",
   "orders",
+  "bookshelf",
   "cart",
   "checkout",
   "account",

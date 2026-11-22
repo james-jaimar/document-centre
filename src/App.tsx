@@ -56,6 +56,7 @@ import StorefrontShop from "@/pages/storefront/StorefrontShop";
 import StorefrontProduct from "@/pages/storefront/StorefrontProduct";
 import SamplePack from "@/pages/storefront/SamplePack";
 import CustomerOrders from "@/pages/dashboard/CustomerOrders";
+import CustomerBookshelf from "@/pages/dashboard/CustomerBookshelf";
 import CustomerAccount from "@/pages/dashboard/CustomerAccount";
 import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
@@ -208,6 +209,7 @@ function customerRoutes() {
       <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
       <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
       <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+      <Route path="bookshelf" element={<ProtectedRoute><CustomerBookshelf /></ProtectedRoute>} />
       <Route path="quotes" element={<ProtectedRoute><CustomerQuotes /></ProtectedRoute>} />
       <Route path="quotes/:id" element={<ProtectedRoute><CustomerQuoteDetail /></ProtectedRoute>} />
       <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />

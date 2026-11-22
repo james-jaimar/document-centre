@@ -3,6 +3,7 @@ import { processAutoRefund } from "../_shared/refunds.ts";
 import { activateHeldOrder as activateHeldOrderShared } from "../_shared/activate-held-order.ts";
 import { mirrorSupplierOrders } from "../_shared/supplier-mirror.ts";
 import { artworkRevision } from "./artwork-revision.ts";
+import { bookshelfOperation } from "./bookshelf.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -3269,6 +3270,9 @@ Deno.serve(async (req) => {
     let sideEffects: (() => Promise<void>) | null = null;
 
     switch (action) {
+      case "bookshelf":
+        response = json(await bookshelfOperation(admin, authedUser, authHeader, payload));
+        break;
       case "prepareArtworkRevision":
       case "applyArtworkRevision":
         response = json(await artworkRevision(admin, userId, authHeader, payload,

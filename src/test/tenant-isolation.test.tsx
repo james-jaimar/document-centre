@@ -47,6 +47,10 @@ vi.mock("@/integrations/supabase/client", () => {
   const single = (data: unknown) => Promise.resolve({ data, error: null });
   return {
     supabase: {
+      rpc(name: string, params: { p_slug?: string }) {
+        if (name !== "tenant_public_by_slug") throw new Error(`Unexpected tenant RPC: ${name}`);
+        return { maybeSingle: () => single(tenantsBySlug[params.p_slug ?? ""] ?? null) };
+      },
       from(table: string) {
         const builder: Record<string, unknown> = {};
         const filters: Record<string, unknown> = {};
