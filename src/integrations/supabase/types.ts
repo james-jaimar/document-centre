@@ -344,6 +344,69 @@ export type Database = {
         }
         Relationships: []
       }
+      bookshelf_items: {
+        Row: {
+          app_id: string
+          archived_at: string | null
+          branch_id: string | null
+          created_at: string
+          id: string
+          name: string
+          profile_id: string
+          revision: number
+          revision_history: Json
+          sku: string | null
+          snapshot: Json
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          app_id: string
+          archived_at?: string | null
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          profile_id: string
+          revision?: number
+          revision_history?: Json
+          sku?: string | null
+          snapshot?: Json
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string
+          archived_at?: string | null
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          profile_id?: string
+          revision?: number
+          revision_history?: Json
+          sku?: string | null
+          snapshot?: Json
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookshelf_items_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookshelf_items_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_capabilities: {
         Row: {
           branch_id: string
@@ -8327,6 +8390,7 @@ export type Database = {
         Args: { p_tenant_id: string }
         Returns: number
       }
+      bookshelf_enabled: { Args: { p_tenant_id: string }; Returns: boolean }
       branch_setting_own: {
         Args: { p_branch_id: string; p_category: string; p_key: string }
         Returns: Json
@@ -8424,6 +8488,16 @@ export type Database = {
       clone_tenant_pricing_to_branch: {
         Args: { p_branch_id: string }
         Returns: undefined
+      }
+      commit_bookshelf_operation: {
+        Args: {
+          p_action: string
+          p_actor: string
+          p_data?: Json
+          p_id: string
+          p_tenant: string
+        }
+        Returns: Json
       }
       company_account_summary: {
         Args: { p_app_id: string; p_branch_id?: string; p_tenant_id: string }
