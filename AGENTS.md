@@ -1,6 +1,7 @@
 # Architecture rules
 
 - Group bookshelf rows by the saved product-family label in presentation code; category browsing must not mutate immutable snapshots or pricing.
+- Render bookshelf bindings from saved selections with the shared binding resolver and closed-front preview assets; scale artwork proportionally outside the clipped cover so shelf and detail views agree without changing saved specifications.
 
 - Store bookshelf products as private, versioned snapshots with independent PDF and thumbnail copies; restore into new drafts through order-engine and a service-only transaction so cart cleanup and artwork revisions cannot change saved products or placed orders.
 - Require an explicit tenant-local bookshelf setting for reads and mutations, without platform fallback; use the existing builder for current pricing and preflight before bookshelf copies enter the cart.
