@@ -18,6 +18,7 @@ import PriceSummary from "@/components/order/PriceSummary";
 import TabInsertDrawer from "@/components/order/TabInsertDrawer";
 import SaveConfirmDialog from "@/components/order/SaveConfirmDialog";
 import BookshelfSaveButton from "@/components/customer/BookshelfSaveButton";
+import { BookshelfCover } from "@/components/customer/BookshelfRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1603,6 +1604,29 @@ export default function OrderBuild() {
     let express: ReturnType<typeof computeBreakdown> | null = null;
     try { const b = computeBreakdown(); express = b.lines.length > 0 ? b : null; } catch { express = null; }
     const title = reference.trim() || productFamily?.name || "Document";
+    // Restored documents retain independent thumbnails and the saved print
+    // selections, so use the same cover renderer as the shelf and detail view.
+    const coverItem = {
+      name: title,
+      snapshot: {
+        product_name: productFamily?.name ?? "Document",
+        product_family_id: orderItem.product_family_id ?? "",
+        spec: {
+          page_count: spec.page_count,
+          quantity: spec.quantity,
+          is_color: spec.is_color,
+          selected_options: spec.selected_options,
+        },
+        sections,
+        documents: documents.map(document => ({
+          thumbnail_urls: Array.isArray(document.thumbnail_urls)
+            ? document.thumbnail_urls.filter((path): path is string => typeof path === "string")
+            : [],
+          page_width_mm: document.page_width_mm,
+          page_height_mm: document.page_height_mm,
+        })),
+      },
+    };
     const addExpress = async () => {
       if (!express || isSubmitting) return;
       setIsSubmitting(true);
@@ -1622,6 +1646,9 @@ export default function OrderBuild() {
     return (
       <div className="mx-auto w-full max-w-md space-y-6 py-6">
         <Button variant="ghost" size="sm" onClick={() => navigate(tenantPath("bookshelf"))}><ArrowLeft className="mr-1 h-4 w-4" />Back to bookshelf</Button>
+        <div className="flex justify-center py-2 pl-4" aria-label="Saved product preview">
+          <BookshelfCover item={coverItem} />
+        </div>
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">{productFamily?.name}</p>
           <h1 className="text-2xl font-bold text-foreground break-words">{title}</h1>

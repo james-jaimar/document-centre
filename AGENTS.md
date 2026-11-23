@@ -1,7 +1,7 @@
 # Architecture rules
 
 - Group bookshelf rows by the customer-chosen `snapshot.shelf_category` (set by order-engine beside the frozen spec, preserved on revise), falling back to the product-family label; shelf labels and cover shapes are presentation-only and must never change specs or pricing.
-- Render bookshelf bindings from saved selections with the shared binding resolver and closed-front preview assets; scale artwork proportionally outside the clipped cover so shelf and detail views agree without changing saved specifications.
+- Reuse BookshelfCover for shelf, detail and express-order previews from saved/restored thumbnails and print selections; use the shared binding resolver and closed-front assets with clearance outside the clipped cover so all views agree without changing saved specifications.
 
 - Store bookshelf products as private, versioned snapshots with independent PDF and thumbnail copies; restore into new drafts through order-engine and a service-only transaction so cart cleanup and artwork revisions cannot change saved products or placed orders.
 - Require an explicit tenant-local bookshelf setting for reads and mutations, without platform fallback; use the existing builder for current pricing and preflight before bookshelf copies enter the cart.

@@ -16,7 +16,7 @@ const COVER_BOX: Record<BookshelfShape, string> = {
   ring_binder: "h-56 w-[13.3rem]",
 };
 
-export function BookshelfCover({ item }: { item: BookshelfItem }) {
+export function BookshelfCover({ item }: { item: Pick<BookshelfItem, "name" | "snapshot"> }) {
   const raw = item.snapshot.documents?.flatMap(document => document.thumbnail_urls ?? [])
     .find(path => typeof path === "string" && path.length > 0) ?? null;
   const url = useSignedThumbnailUrl(raw);
