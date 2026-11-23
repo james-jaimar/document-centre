@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronLeft, ChevronRight } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import type { BookshelfItem } from "@/hooks/useBookshelf";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 import { Button } from "@/components/ui/button";
@@ -48,22 +48,17 @@ export function BookshelfCover({ item }: { item: BookshelfItem }) {
   return <div className={`bookshelf-book relative shrink-0 rounded-r-sm bg-card ${COVER_BOX[shape]}`}>
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-r-sm border border-border">
       {artwork}
-      {!landscape && <span aria-hidden="true" className="bookshelf-spine absolute inset-y-0 left-0 w-1.5" />}
+      <span aria-hidden="true" className="bookshelf-spine absolute inset-y-0 left-0 w-1.5" />
     </div>
-    {bindingUrl && !bindingFailed && (landscape
-      // Short-edge art is drawn for a left spine; rotate it onto the top edge (presentation binding).
-      ? <img src={bindingUrl} alt="" aria-hidden="true" draggable={false}
-          className="pointer-events-none absolute left-0 top-0 z-10 h-56 w-auto max-w-none origin-top-left select-none"
-          style={{ transform: "translateX(14rem) rotate(90deg) translateX(-33%)" }}
-          onError={() => setBindingFailed(true)} />
-      : <img src={bindingUrl} alt="" aria-hidden="true" draggable={false}
-          className="pointer-events-none absolute left-0 top-0 z-10 h-full w-auto max-w-none -translate-x-1/3 select-none"
-          onError={() => setBindingFailed(true)} />)}
+    {/* Landscape binds on the short left edge with the 210mm art, exactly like the flip-book preview. */}
+    {bindingUrl && !bindingFailed && <img src={bindingUrl} alt="" aria-hidden="true" draggable={false}
+      className="pointer-events-none absolute left-0 top-0 z-10 h-full w-auto max-w-none -translate-x-1/3 select-none"
+      onError={() => setBindingFailed(true)} />}
   </div>;
 }
 
-export default function BookshelfRow({ name, items, onSelect }: {
-  name: string; items: BookshelfItem[]; onSelect: (item: BookshelfItem) => void;
+export default function BookshelfRow({ name, items, onSelect, onRenameShelf }: {
+  name: string; items: BookshelfItem[]; onSelect: (item: BookshelfItem) => void; onRenameShelf?: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
@@ -85,7 +80,7 @@ export default function BookshelfRow({ name, items, onSelect }: {
   return <section aria-label={`${name} shelf`} className="min-w-0">
     <div className="mb-2 flex items-center gap-3">
       <h2 className="min-w-0 break-words text-lg font-semibold text-foreground">{name}</h2>
-      <span className="text-sm tabular-nums text-muted-foreground">{items.length}</span>
+      {onRenameShelf && <Button variant="ghost" size="icon" aria-label={`Rename ${name} shelf`} title="Rename shelf" onClick={onRenameShelf}><Pencil className="h-4 w-4" /></Button>}
       <div className="ml-auto flex shrink-0 gap-1">
         <Button variant="ghost" size="icon" aria-label={`Previous titles in ${name}`} title="Previous titles" disabled={!edges.left} onClick={() => scroll(-1)}><ChevronLeft className="h-4 w-4" /></Button>
         <Button variant="ghost" size="icon" aria-label={`Next titles in ${name}`} title="Next titles" disabled={!edges.right} onClick={() => scroll(1)}><ChevronRight className="h-4 w-4" /></Button>
