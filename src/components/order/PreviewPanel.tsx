@@ -20,6 +20,8 @@ import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/componen
 import { TAB_COLORS } from "@/components/preview/previewTypes";
 import { ringTotalViews, resolveRingView, stepRingView } from "@/lib/preview/ringBinderModel";
 import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
+import PerfectBoundBook3D from "@/components/preview/PerfectBoundBook3D";
+import { calculateSpine } from "@/lib/perfectBinding/spine";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
@@ -40,6 +42,10 @@ interface PreviewPanelProps {
   onScaleModeChange?: (mode: "fit" | "fill") => void;
   /** Product family slug — used to determine fit/fill toggle eligibility */
   productFamilySlug?: string;
+  /** Body paper weight, drives the perfect-bound spine width. */
+  paperGsm?: number | null;
+  /** Title printed on the spine of perfect-bound books. */
+  bookTitle?: string;
 }
 
 interface PageInfo {
@@ -336,6 +342,8 @@ export default function PreviewPanel({
   scaleMode,
   onScaleModeChange,
   productFamilySlug,
+  paperGsm,
+  bookTitle,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -976,6 +984,21 @@ export default function PreviewPanel({
     return sec ? getSectionLabel(sec.section_type, productFamilySlug) : "";
   }, [visibleLeft, visibleRight, finalPages, totalPages, productFamilySlug]);
 
+  const isPerfectBound = productType === "perfect_bound";
+  const [bookView, setBookView] = useState<"book" | "pages">("book");
+  const perfectBound = useMemo(() => {
+    if (!isPerfectBound) return null;
+    const real = pages.filter((p) => p.thumbnailUrl);
+    const front = real.find((p) => p.section?.section_type === "front_cover") ?? real[0];
+    const back = real.filter((p) => p.section?.section_type === "back_cover").pop()
+      ?? (real.length > 1 ? real[real.length - 1] : undefined);
+    const body = real.filter((p) => (p.section?.section_type ?? "body") === "body" && p !== front && p !== back);
+    const duplex = body.every((p) => p.section?.is_duplex ?? true);
+    const spine = calculateSpine({ pages: body.length, duplex, gsm: paperGsm });
+    const trim = canvasSizeMm ?? pdfSizeMm ?? { widthMm: 210, heightMm: 297 };
+    return { front, back, spine, trim };
+  }, [isPerfectBound, pages, paperGsm, canvasSizeMm, pdfSizeMm]);
+
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => {
@@ -997,8 +1020,34 @@ export default function PreviewPanel({
     );
   }
 
+  if (perfectBound && bookView === "book") {
+    return (
+      <div className="flex flex-col items-center gap-4 h-full justify-center py-4">
+        <div className="flex gap-1 rounded-md border border-border p-1">
+          <Button size="sm" variant="secondary">3D cover</Button>
+          <Button size="sm" variant="ghost" onClick={() => setBookView("pages")}>Inside pages</Button>
+        </div>
+        <PerfectBoundBook3D
+          frontPath={perfectBound.front?.thumbnailUrl}
+          backPath={perfectBound.back?.thumbnailUrl}
+          spine={perfectBound.spine}
+          trimMm={perfectBound.trim}
+          title={bookTitle}
+          mono={perfectBound.front ? !perfectBound.front.isColor : false}
+          maxHeightPx={Math.max(220, Math.min(380, containerSize.height - 120))}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center gap-4 h-full">
+      {perfectBound && (
+        <div className="flex gap-1 rounded-md border border-border p-1">
+          <Button size="sm" variant="ghost" onClick={() => setBookView("book")}>3D cover</Button>
+          <Button size="sm" variant="secondary">Inside pages</Button>
+        </div>
+      )}
       <div ref={containerRef} className="relative flex-1 flex items-center justify-center w-full overflow-hidden">
         <button
           onClick={() => setLightboxOpen(true)}

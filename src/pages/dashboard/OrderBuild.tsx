@@ -51,6 +51,7 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import { gsmFromLabel } from "@/lib/perfectBinding/spine";
 import {
   planCoverSplit,
   printedCoverStock,
@@ -910,6 +911,19 @@ export default function OrderBuild() {
 
   // Single source of truth — same helper is used by buildPreviewSnapshot
   // so live builder and saved/admin previews agree on binding artwork.
+  const bodyPaperGsm = useMemo(() => {
+    const opt = options.find((o) => /paper/i.test(o.name) && !/cover/i.test(o.name));
+    if (!opt) return null;
+    const key = Object.keys(spec.selected_options).find((k) => k.toLowerCase() === opt.name.toLowerCase()) ?? opt.name;
+    const slug = spec.selected_options[key];
+    if (!slug) return null;
+    const val = isStructuredValues(opt.values)
+      ? (opt.values as StructuredOptionValue[]).find((v) => v.slug === slug)
+      : undefined;
+    const metaGsm = Number((val?.metadata as Record<string, unknown> | undefined)?.weight_gsm);
+    return metaGsm > 0 ? metaGsm : gsmFromLabel(val?.label ?? String(slug));
+  }, [options, spec.selected_options]);
+
   const bindingArt = useMemo(
     () => selectedBindingArt(spec.selected_options, options),
     [options, spec.selected_options],
@@ -1830,6 +1844,8 @@ export default function OrderBuild() {
             scaleMode={spec.scale_mode ?? "fit"}
             onScaleModeChange={(mode) => setSpec((prev) => ({ ...prev, scale_mode: mode }))}
             productFamilySlug={productFamily?.slug ?? undefined}
+            paperGsm={bodyPaperGsm}
+            bookTitle={reference || orderItem?.title || undefined}
           />
         </div>
       </div>
