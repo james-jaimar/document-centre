@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import type { BookshelfItem } from "@/hooks/useBookshelf";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 import { Button } from "@/components/ui/button";
@@ -57,8 +57,8 @@ export function BookshelfCover({ item }: { item: BookshelfItem }) {
   </div>;
 }
 
-export default function BookshelfRow({ name, items, onSelect, onRenameShelf }: {
-  name: string; items: BookshelfItem[]; onSelect: (item: BookshelfItem) => void; onRenameShelf?: () => void;
+export default function BookshelfRow({ name, items, onSelect, onRenameShelf, onDeleteShelf }: {
+  name: string; items: BookshelfItem[]; onSelect: (item: BookshelfItem) => void; onRenameShelf?: () => void; onDeleteShelf?: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
@@ -81,6 +81,7 @@ export default function BookshelfRow({ name, items, onSelect, onRenameShelf }: {
     <div className="mb-2 flex items-center gap-3">
       <h2 className="min-w-0 break-words text-lg font-semibold text-foreground">{name}</h2>
       {onRenameShelf && <Button variant="ghost" size="icon" aria-label={`Rename ${name} shelf`} title="Rename shelf" onClick={onRenameShelf}><Pencil className="h-4 w-4" /></Button>}
+      {onDeleteShelf && <Button variant="ghost" size="icon" aria-label={`Delete ${name} shelf`} title="Delete shelf" onClick={onDeleteShelf}><Trash2 className="h-4 w-4" /></Button>}
       <div className="ml-auto flex shrink-0 gap-1">
         <Button variant="ghost" size="icon" aria-label={`Previous titles in ${name}`} title="Previous titles" disabled={!edges.left} onClick={() => scroll(-1)}><ChevronLeft className="h-4 w-4" /></Button>
         <Button variant="ghost" size="icon" aria-label={`Next titles in ${name}`} title="Next titles" disabled={!edges.right} onClick={() => scroll(1)}><ChevronRight className="h-4 w-4" /></Button>
