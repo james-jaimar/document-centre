@@ -1,6 +1,6 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
@@ -29,7 +29,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
+import { ArrowLeft, Settings2, Loader2, ShoppingCart, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
@@ -68,6 +68,8 @@ export default function OrderBuild() {
   const { id: orderId } = useParams<{ id: string }>();
   const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const expressBookshelf = searchParams.get("express") === "bookshelf";
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
   const updateSpec = useUpdateOrderItemSpec();
@@ -1590,6 +1592,59 @@ export default function OrderBuild() {
         <Button onClick={() => navigate(tenantPath(`orders/${orderId}/files`))}>
           <ArrowLeft className="h-4 w-4 mr-1" />
           Go to Upload Files
+        </Button>
+      </div>
+    );
+  }
+
+  // Bookshelf express reorder: saved products are set in stone, so only copies
+  // change. Pricing still comes from this builder's live engine.
+  if (expressBookshelf && order && orderItem) {
+    let express: ReturnType<typeof computeBreakdown> | null = null;
+    try { const b = computeBreakdown(); express = b.lines.length > 0 ? b : null; } catch { express = null; }
+    const title = reference.trim() || productFamily?.name || "Document";
+    const addExpress = async () => {
+      if (!express || isSubmitting) return;
+      setIsSubmitting(true);
+      try {
+        await addItemToCart.mutateAsync({
+          orderItemId: orderItem.id, draftOrderId: order.id, title,
+          unitPrice: express.subtotal_per_unit, quantity: spec.quantity, totalPrice: express.total,
+          spec: spec as any, currencyCode: activeCurrency,
+        });
+        toast.success("Added to cart", { action: { label: "View cart", onClick: () => navigate(tenantPath("cart")) } });
+        navigate(tenantPath("bookshelf"));
+      } catch (err: any) {
+        toast.error("Failed to add to cart", { description: err.message });
+      } finally { setIsSubmitting(false); }
+    };
+    const step = (delta: number) => handleQuantityChange(Math.max(1, (spec.quantity || 1) + delta));
+    return (
+      <div className="mx-auto w-full max-w-md space-y-6 py-6">
+        <Button variant="ghost" size="sm" onClick={() => navigate(tenantPath("bookshelf"))}><ArrowLeft className="mr-1 h-4 w-4" />Back to bookshelf</Button>
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{productFamily?.name}</p>
+          <h1 className="text-2xl font-bold text-foreground break-words">{title}</h1>
+          <p className="text-sm text-muted-foreground">{spec.page_count} pages · saved specification</p>
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Copies</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" aria-label="Fewer copies" disabled={isSubmitting || spec.quantity <= 1} onClick={() => step(-1)}><Minus className="h-4 w-4" /></Button>
+            <Input aria-label="Copies" type="number" min={1} step={1} className="w-24 text-center" value={spec.quantity || 1}
+              onChange={(e) => { const q = Math.floor(Number(e.target.value)); if (Number.isFinite(q) && q >= 1) handleQuantityChange(q); }} />
+            <Button variant="outline" size="icon" aria-label="More copies" disabled={isSubmitting} onClick={() => step(1)}><Plus className="h-4 w-4" /></Button>
+          </div>
+        </div>
+        <div className="rounded-md border border-border bg-card p-4">
+          {express ? <>
+            <div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">Per copy</span><span className="font-medium text-foreground">{formatPrice(express.subtotal_per_unit, activeCurrency)}</span></div>
+            <div className="mt-2 flex items-baseline justify-between"><span className="text-sm text-muted-foreground">Total</span><span className="text-2xl font-bold text-foreground">{formatPrice(express.total, activeCurrency)}</span></div>
+          </> : <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Calculating price…</p>}
+        </div>
+        <Button className="w-full" size="lg" disabled={!express || !canAddToCart || isSubmitting} onClick={addExpress}>
+          {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShoppingCart className="mr-2 h-4 w-4" />}
+          Add to cart{express ? ` · ${formatPrice(express.total, activeCurrency)}` : ""}
         </Button>
       </div>
     );

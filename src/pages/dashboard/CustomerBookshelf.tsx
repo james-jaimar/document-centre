@@ -36,7 +36,7 @@ export default function CustomerBookshelf() {
     try {
       const result = await shelf.operation.mutateAsync({ operation: "restore", id: item.id, quantity });
       if (!result.order_id) throw new Error("Could not open your product");
-      navigate(tenantPath(`orders/${result.order_id}/${revise ? "files" : "build"}`));
+      navigate(tenantPath(`orders/${result.order_id}/${revise ? "files" : "build?express=bookshelf"}`));
     } catch { /* operation reports its error */ } finally { setBusyId(null); }
   };
   if (shelf.feature.isLoading) return <Skeleton className="h-40 w-full" />;
@@ -57,7 +57,7 @@ export default function CustomerBookshelf() {
         <div className="flex flex-col gap-6 sm:flex-row"><div className="flex shrink-0 justify-center py-2"><BookshelfCover item={selected} /></div><div className="min-w-0 flex-1 space-y-5">
           <div className="space-y-2 text-sm text-muted-foreground">{selected.sku && <p className="break-all">{selected.sku}</p>}<p>{selected.snapshot.spec.page_count} pages · Revision {selected.revision}</p><p className="break-words">{Object.entries(selected.snapshot.spec.selected_options ?? {}).filter(([key]) => /Binding|Size|Paper/i.test(key)).map(([, value]) => value).join(" · ")}</p><p className="text-xs">Updated {format(new Date(selected.updated_at), "dd MMM yyyy")}</p></div>
           <div className="space-y-2"><Label htmlFor={`copies-${selected.id}`}>Copies</Label><Input id={`copies-${selected.id}`} type="number" min={1} step={1} value={quantities[selected.id] ?? String(selected.snapshot.spec.quantity || 1)} onChange={e => setQuantities(prev => ({ ...prev, [selected.id]: e.target.value }))} /></div>
-          <Button className="w-full" disabled={shelf.operation.isPending} onClick={() => restore(selected, false)}>{busyId === selected.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShoppingCart className="h-4 w-4 mr-2" />}Review & order</Button>
+          <Button className="w-full" disabled={shelf.operation.isPending} onClick={() => restore(selected, false)}>{busyId === selected.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShoppingCart className="h-4 w-4 mr-2" />}Order copies</Button>
         </div></div>
         <div className="flex flex-wrap items-center gap-1 border-t border-border pt-3"><Button className="mr-auto" variant="ghost" size="sm" disabled={shelf.operation.isPending} onClick={() => restore(selected, true)}><RefreshCw className="mr-2 h-3.5 w-3.5" />Update artwork</Button><Button variant="ghost" size="icon" aria-label={`Rename ${selected.name}`} title="Rename product" disabled={shelf.operation.isPending} onClick={() => { setEditing(selected); setName(selected.name); setSku(selected.sku ?? ""); setSelected(null); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Remove ${selected.name}`} title="Remove from bookshelf" disabled={shelf.operation.isPending} onClick={async () => {
           if (!window.confirm(`Remove "${selected.name}" from your bookshelf? Existing orders will not change.`)) return;

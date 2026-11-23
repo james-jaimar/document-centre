@@ -15,7 +15,8 @@ export interface BookshelfItem {
   snapshot: {
     product_name: string;
     product_family_id: string;
-    spec: { page_count: number; quantity: number; selected_options?: Record<string, string> };
+    spec: { page_count: number; quantity: number; is_color?: boolean; selected_options?: Record<string, string> };
+    sections?: { section_type?: string | null; is_color?: boolean | null }[];
     documents: { thumbnail_urls?: string[] }[];
   };
 }
