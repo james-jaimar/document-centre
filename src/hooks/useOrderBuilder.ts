@@ -137,14 +137,30 @@ export function useCreateOrder() {
         }
       }
 
-      // Get user's tenant membership for tenant_id and app_id
-      const { data: membership } = await supabase
+      // Resolve the storefront tenant from the URL so multi-tenant users
+      // never get a draft stamped with a different tenant's membership.
+      const slug = readTenantSlugFromPath();
+      let storefrontTenantId: string | null = null;
+      if (slug) {
+        const { data: storefrontTenant } = await supabase
+          .from("tenants")
+          .select("id")
+          .eq("slug", slug)
+          .maybeSingle();
+        storefrontTenantId = storefrontTenant?.id ?? null;
+      }
+
+      // Get user's tenant membership for tenant_id and app_id, scoped to the
+      // storefront tenant when we're on one.
+      let membershipQuery = supabase
         .from("tenant_memberships")
         .select("tenant_id, app_id")
         .eq("profile_id", actorId)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
+        .eq("is_active", true);
+      if (storefrontTenantId) {
+        membershipQuery = membershipQuery.eq("tenant_id", storefrontTenantId);
+      }
+      const { data: membership } = await membershipQuery.limit(1).maybeSingle();
 
       // Fallback to profile.tenant_id for users without memberships
       let tenantId = membership?.tenant_id ?? null;
@@ -155,7 +171,11 @@ export function useCreateOrder() {
           .select("tenant_id")
           .eq("id", actorId)
           .single();
-        tenantId = profile?.tenant_id ?? null;
+        // Only accept the profile fallback when it matches the storefront
+        // we're actually on (or when there is no storefront in the URL).
+        if (!storefrontTenantId || profile?.tenant_id === storefrontTenantId) {
+          tenantId = profile?.tenant_id ?? null;
+        }
       }
 
       // Create order — stamp with branch_id when available
