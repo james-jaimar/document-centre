@@ -1826,7 +1826,7 @@ export default function OrderBuild() {
           <div className="p-3 shrink-0">
             {!pageLimit.ok && (
               <div role="alert" className="mb-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
-                {pageLimit.message}
+                {"message" in pageLimit ? pageLimit.message : null}
               </div>
             )}
             <PriceSummary
