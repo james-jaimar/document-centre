@@ -30,7 +30,9 @@ export default function BookshelfSaveButton({ orderItemId, name, shelfId, disabl
       await beforeSave();
       await shelf.operation.mutateAsync({ operation: shelfId ? "revise" : "create", id: shelfId, order_item_id: orderItemId, name: title.trim(), sku: sku.trim() });
       setOpen(false);
-      toast.success(shelfId ? "Bookshelf product updated" : "Saved to your bookshelf");
+      toast.success(shelfId ? "Bookshelf product updated" : "Saved to your bookshelf", {
+        action: { label: "View bookshelf", onClick: () => navigate(tenantPath("bookshelf")) },
+      });
       if (shelfId) navigate(tenantPath("bookshelf"));
     } catch (error) {
       if (!shelf.operation.isError) toast.error(error instanceof Error ? error.message : "Could not save your product");

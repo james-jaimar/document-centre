@@ -5,6 +5,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBookshelfEnabled } from "@/hooks/useBookshelf";
+import { isAnonymousUser } from "@/lib/tenantSignOut";
+import { Button } from "@/components/ui/button";
 import { useVisibleProductFamilies } from "@/hooks/useVisibleProductFamilies";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import SamplePackBanner from "@/components/storefront/SamplePackBanner";
@@ -318,6 +321,7 @@ const CustomerDashboard = () => {
   const { slug, tenantPath } = useTenantSlug();
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
+  const { data: bookshelfEnabled } = useBookshelfEnabled();
   const qc = useQueryClient();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
   const { data: recentDocs } = useRecentDocuments(user?.id, tenantId);
@@ -349,11 +353,14 @@ const CustomerDashboard = () => {
   return (
     <div className="space-y-6 md:space-y-8">
       {/* ── Page heading ── */}
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">My Print Centre</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Upload a file or pick a product to get started.
         </p>
+        </div>
+        {bookshelfEnabled === true && user && !isAnonymousUser(user) && <Button variant="outline" className="gap-2" onClick={() => navigate(tenantPath("bookshelf"))}><BookOpen className="h-4 w-4" />My Bookshelf<ArrowRight className="h-4 w-4" /></Button>}
       </div>
 
       <SamplePackBanner />

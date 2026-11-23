@@ -1,3 +1,9 @@
+## Architectural bookshelf (2026-11-23)
+- [x] Group saved products into product-category shelves with upright covers and subtle shelf rails
+- [x] Add enabled-only customer header/account/dashboard links and a direct link after saving
+- [x] Verify desktop/mobile shelf browsing, thumbnail display, search, category filtering and review navigation using isolated fixtures; 17 regression tests passed
+- [ ] Verify the real signed-in customer's shelf and restored order end-to-end; blocked by external unmanaged authentication
+
 ## Optional customer bookshelf (2026-11-22)
 - [x] Add a disabled-by-default per-tenant switch; confirmed zero tenants enabled
 - [x] Save configured PDF products and independent thumbnails to a private named bookshelf with SKU and retained revisions

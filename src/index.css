@@ -50,6 +50,12 @@
     --soft-teal: 167 35% 62%;
     --soft-gold: 40 89% 58%;
 
+    --bookshelf-rail: 185 19% 83%;
+    --bookshelf-rail-edge: 185 16% 64%;
+    --bookshelf-shadow: 210 22% 24%;
+    --bookshelf-book-shadow: 3px 4px 2px hsl(var(--border)), 7px 9px 16px hsl(var(--bookshelf-shadow) / 0.14);
+    --bookshelf-rail-shadow: 0 7px 12px -5px hsl(var(--bookshelf-shadow) / 0.24);
+
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
@@ -97,6 +103,10 @@
     --sidebar-ring: 201 76% 55%;
     --sidebar-muted: 210 20% 60%;
 
+    --bookshelf-rail: 185 16% 27%;
+    --bookshelf-rail-edge: 185 17% 39%;
+    --bookshelf-shadow: 210 30% 2%;
+
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
@@ -120,6 +130,27 @@
 
 /* === Printflow component classes === */
 @layer components {
+  .bookshelf-rail {
+    background: linear-gradient(to bottom, hsl(var(--bookshelf-rail)), hsl(var(--bookshelf-rail-edge)));
+    border-top: 1px solid hsl(var(--card) / 0.8);
+    box-shadow: var(--bookshelf-rail-shadow);
+  }
+
+  .bookshelf-book {
+    box-shadow: var(--bookshelf-book-shadow);
+    transition: transform 180ms ease;
+  }
+
+  .bookshelf-spine {
+    background: linear-gradient(to right, hsl(var(--foreground) / 0.12), transparent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .group:hover .bookshelf-book, .group:focus-visible .bookshelf-book {
+      transform: translateY(-6px) rotate(-1deg);
+    }
+  }
+
   /* Customer portal body gradient — applied by CustomerLayout */
   .customer-body {
     background:

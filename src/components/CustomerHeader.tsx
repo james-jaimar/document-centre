@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
-import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn, MapPin, ChevronDown } from "lucide-react";
+import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn, MapPin, ChevronDown, BookOpen } from "lucide-react";
+import { useBookshelfEnabled } from "@/hooks/useBookshelf";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
@@ -22,6 +23,7 @@ import {
 import MessagesBell from "@/components/customer/MessagesBell";
 import CountryFlagBadge from "@/components/customer/CountryFlagBadge";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { Button } from "@/components/ui/button";
 
 
 export default function CustomerHeader() {
@@ -36,6 +38,7 @@ export default function CustomerHeader() {
   const { activeBranch, isMultiBranch, openPicker, loading: branchesLoading } = useBranch();
   const { multiCurrency } = useRegionalPricing();
   const { homePath, shopPath, shopEnabled } = useStorefrontNav();
+  const { data: bookshelfEnabled } = useBookshelfEnabled();
 
 
   const handleSignOut = async () => {
@@ -73,6 +76,7 @@ export default function CustomerHeader() {
     ...(shopEnabled ? [{ to: shopPath, label: "Shop", end: false }] : []),
     ...(shopEnabled ? [] : [{ to: tenantPath("orders/new"), label: "Create", end: false }]),
     { to: tenantPath("orders"), label: "Orders", end: false },
+    ...(bookshelfEnabled === true ? [{ to: tenantPath("bookshelf"), label: "Bookshelf", end: false }] : []),
     { to: tenantPath("quotes"), label: "Quotes", end: false },
     { to: tenantPath("cart"), label: "Cart", end: false },
     { to: tenantPath("account"), label: "My Account", end: false },
@@ -112,6 +116,9 @@ export default function CustomerHeader() {
 
     return (
       <>
+        {bookshelfEnabled === true && <Button asChild variant="ghost" size="icon" className="xl:hidden" title="My Bookshelf">
+          <Link to={tenantPath("bookshelf")} aria-label="My Bookshelf"><BookOpen className="h-5 w-5" /></Link>
+        </Button>}
         <Link
           to={tenantPath("cart")}
           className="relative rounded-xl p-2 hover:bg-secondary transition-colors"
@@ -158,6 +165,10 @@ export default function CustomerHeader() {
               <ClipboardList className="mr-2 h-4 w-4" />
               My Orders
             </DropdownMenuItem>
+            {bookshelfEnabled === true && <DropdownMenuItem onClick={() => navigate(tenantPath("bookshelf"))}>
+              <BookOpen className="mr-2 h-4 w-4" />
+              My Bookshelf
+            </DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -225,7 +236,7 @@ export default function CustomerHeader() {
 
 
 
-      <nav className="hidden md:flex items-center gap-7 mx-auto">
+      <nav className="hidden xl:flex items-center gap-4 mx-auto whitespace-nowrap">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -238,7 +249,7 @@ export default function CustomerHeader() {
         ))}
       </nav>
 
-      <div className="ml-auto md:ml-0 flex items-center gap-2">
+      <div className="ml-auto xl:ml-0 flex items-center gap-2">
         {renderRightControls()}
       </div>
     </header>
