@@ -43,6 +43,9 @@ interface PrintingRules {
   force_sra3_when_edge_to_edge: boolean;
   binding_size_inherits_from: string | null;
   min_quantity: number;
+  /** Bound products — page limits for the body (blank = no limit). */
+  min_pages?: number | null;
+  max_pages?: number | null;
   /** Canvas wrap products only — which side-depth presets (mm) to expose. */
   canvas_wrap_depths_mm?: number[];
   canvas_default_wrap_mm?: number;
@@ -773,6 +776,34 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                       <FormControl>
                         <Input type="number" min={1} className="h-8" {...field}
                           onChange={(e) => field.onChange(parseInt(e.target.value) || 1)} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="printing_rules.min_pages"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Min pages (body)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={1} className="h-8" placeholder="No limit"
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) || null : null)} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="printing_rules.max_pages"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Max pages (body)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={1} className="h-8" placeholder="No limit"
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) || null : null)} />
                       </FormControl>
                     </FormItem>
                   )}

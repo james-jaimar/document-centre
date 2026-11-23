@@ -1,3 +1,10 @@
+## Perfect bound books (2026-11-23)
+- [x] Admin min/max body page setting per product (40-page default for perfect bound); block add-to-cart outside limits
+- [ ] Perfect Bound product preset in the catalogue
+- [ ] Cover Studio guided path: front + back upload, spine colour, spine title/author
+- [ ] Cover Studio pro path: wrap size guidance, downloadable cover template, single wrap upload
+- [ ] Print server stitches back + spine + front into press-ready wrap PDF
+
 ## Architectural bookshelf (2026-11-23)
 - [x] Group saved products into product-category shelves with upright covers and subtle shelf rails
 - [x] Add enabled-only customer header/account/dashboard links and a direct link after saving

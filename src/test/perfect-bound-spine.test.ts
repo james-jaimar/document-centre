@@ -24,3 +24,15 @@ describe("perfect-bound spine", () => {
     expect(gsmFromLabel("100gsm Laser")).toBe(100);
   });
 });
+
+import { checkPageLimits } from "@/lib/perfectBinding/spine";
+describe("perfect bound page limits", () => {
+  it("defaults to a 40-page minimum for perfect bound", () => {
+    expect(checkPageLimits(36, {}, { perfectBound: true }).ok).toBe(false);
+    expect(checkPageLimits(40, {}, { perfectBound: true }).ok).toBe(true);
+  });
+  it("uses admin min/max when set", () => {
+    expect(checkPageLimits(50, { min_pages: 60 }, { perfectBound: true }).ok).toBe(false);
+    expect(checkPageLimits(301, { max_pages: 300 }).ok).toBe(false);
+  });
+});

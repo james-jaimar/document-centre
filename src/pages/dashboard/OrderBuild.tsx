@@ -51,7 +51,7 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
-import { gsmFromLabel } from "@/lib/perfectBinding/spine";
+import { gsmFromLabel, checkPageLimits } from "@/lib/perfectBinding/spine";
 import {
   planCoverSplit,
   printedCoverStock,
@@ -1142,7 +1142,25 @@ export default function OrderBuild() {
   const [cartTotal, setCartTotal] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0;
+  // Admin-configured body page limits (perfect bound defaults to 40 minimum).
+  const bodyPageCount = useMemo(() => {
+    const seen = new Set<string>();
+    return sections.reduce((sum, section) => {
+      if (section.section_type !== "body" || !section.document_id || seen.has(section.document_id)) return sum;
+      seen.add(section.document_id);
+      return sum + (documents.find((d) => d.id === section.document_id)?.page_count ?? 0);
+    }, 0);
+  }, [sections, documents]);
+  const pageLimit = useMemo(() => {
+    const rules = ((productFamily as any)?.printing_rules ?? {}) as { min_pages?: number | null; max_pages?: number | null };
+    const perfectBound = productType === "perfect_bound";
+    if (!perfectBound && rules.min_pages == null && rules.max_pages == null) return { ok: true } as const;
+    const pages = bodyPageCount || (spec?.page_count ?? 0);
+    if (!pages) return { ok: true } as const;
+    return checkPageLimits(pages, rules, { perfectBound });
+  }, [productFamily, productType, bodyPageCount, spec?.page_count]);
+
+  const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0 && pageLimit.ok;
 
   // Build a pricing-aware spec that includes per-section colour/sides for
   // mixed bound documents. Only printable sections (body/cover) feed the
@@ -1806,6 +1824,11 @@ export default function OrderBuild() {
             )}
           </div>
           <div className="p-3 shrink-0">
+            {!pageLimit.ok && (
+              <div role="alert" className="mb-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                {pageLimit.message}
+              </div>
+            )}
             <PriceSummary
               spec={pricingSpec}
               options={options}

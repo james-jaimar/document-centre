@@ -69,3 +69,33 @@ export function gsmFromLabel(label?: string | null): number | null {
   const m = label?.match(/(\d{2,3})\s*gsm/i);
   return m ? Number(m[1]) : null;
 }
+
+/** Defaults for perfect-bound families when admin leaves limits blank. */
+export const PERFECT_BOUND_DEFAULT_MIN_PAGES = 40;
+export const PERFECT_BOUND_DEFAULT_MAX_PAGES = 500;
+
+export type PageLimitResult =
+  | { ok: true }
+  | { ok: false; reason: "too_few" | "too_many"; limit: number; message: string };
+
+/** Check a body page count against admin-configured family limits. */
+export function checkPageLimits(
+  pages: number,
+  limits: { min_pages?: number | null; max_pages?: number | null },
+  opts: { perfectBound?: boolean } = {},
+): PageLimitResult {
+  const min = limits.min_pages ?? (opts.perfectBound ? PERFECT_BOUND_DEFAULT_MIN_PAGES : null);
+  const max = limits.max_pages ?? (opts.perfectBound ? PERFECT_BOUND_DEFAULT_MAX_PAGES : null);
+  if (min != null && pages < min) {
+    return {
+      ok: false, reason: "too_few", limit: min,
+      message: opts.perfectBound
+        ? `Perfect bound books need at least ${min} pages to bind securely. For fewer pages, try saddle-stitched booklets or wire binding.`
+        : `This product needs at least ${min} pages.`,
+    };
+  }
+  if (max != null && pages > max) {
+    return { ok: false, reason: "too_many", limit: max, message: `This product allows at most ${max} pages.` };
+  }
+  return { ok: true };
+}
