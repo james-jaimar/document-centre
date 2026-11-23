@@ -7,6 +7,7 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 import PriceTotals from "@/components/order/PriceTotals";
+import CartProductCover from "@/components/customer/CartProductCover";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -175,9 +176,15 @@ export default function Cart() {
             return (
               <TableRow key={item.id}>
                 <TableCell>
-                  <div>
+                  <div className="flex items-center gap-3">
+                    <CartProductCover name={item.title || "Untitled"} productName={productName}
+                      productFamilyId={item.product_family_id} spec={item.spec}
+                      documents={[...(item.documents ?? [])].sort((a, b) => a.sort_order - b.sort_order)}
+                      sections={[...(item.document_sections ?? [])].sort((a, b) => a.sort_order - b.sort_order)} />
+                    <div>
                     <div className="font-medium text-foreground">{item.title || "Untitled"}</div>
                     <div className="text-xs text-muted-foreground">{productName}</div>
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-center text-foreground">{item.quantity}</TableCell>

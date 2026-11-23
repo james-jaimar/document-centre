@@ -27,7 +27,7 @@ export function useCart() {
 
       const { data, error } = await supabase
         .from("orders")
-        .select("*, order_items(*, product_families:product_family_id(name, slug, icon))")
+        .select("*, order_items(*, product_families:product_family_id(name, slug, icon), documents(thumbnail_urls,page_width_mm,page_height_mm,sort_order), document_sections(section_type,is_color,sort_order))")
         .eq("user_id", user.id)
         .eq("tenant_id", tenantId)
         .eq("order_status", "cart" as any)

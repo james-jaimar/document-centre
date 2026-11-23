@@ -28,6 +28,7 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { usePriceDisplay } from "@/lib/tax/usePriceDisplay";
 import { useSamplePackConfig } from "@/hooks/useSamplePack";
 import PriceTotals from "@/components/order/PriceTotals";
+import CartProductCover from "@/components/customer/CartProductCover";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
 import AddressPicker from "@/components/customer/AddressPicker";
@@ -1301,8 +1302,12 @@ export default function Checkout() {
           <h3 className="font-semibold text-foreground">Order Summary</h3>
           <div className="space-y-2">
             {items.map((item: any) => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <span className="text-muted-foreground truncate pr-2">
+              <div key={item.id} className="flex items-center gap-2 text-sm">
+                <CartProductCover name={item.title || "Untitled"} productName={item.product_families?.name ?? "Document"}
+                  productFamilyId={item.product_family_id} spec={item.spec}
+                  documents={[...(item.documents ?? [])].sort((a, b) => a.sort_order - b.sort_order)}
+                  sections={[...(item.document_sections ?? [])].sort((a, b) => a.sort_order - b.sort_order)} />
+                <span className="min-w-0 flex-1 break-words text-muted-foreground pr-2">
                   {item.title || "Untitled"} × {item.quantity}
                 </span>
                 <span className="font-mono text-foreground shrink-0">
