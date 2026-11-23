@@ -6,16 +6,27 @@ import { Button } from "@/components/ui/button";
 import { bookshelfCoverIsMono } from "@/lib/bookshelfColour";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import { getBindingImage, normaliseBindingColor } from "@/components/preview/bindingAssets";
+import { bookshelfCoverShape, type BookshelfShape } from "@/lib/bookshelfShape";
+import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
+
+const COVER_BOX: Record<BookshelfShape, string> = {
+  portrait: "h-56 w-40",
+  landscape: "h-40 w-56",
+  square: "h-48 w-48",
+  ring_binder: "h-56 w-[13.3rem]",
+};
 
 export function BookshelfCover({ item }: { item: BookshelfItem }) {
   const raw = item.snapshot.documents?.flatMap(document => document.thumbnail_urls ?? [])
     .find(path => typeof path === "string" && path.length > 0) ?? null;
   const url = useSignedThumbnailUrl(raw);
-  const binding = selectedBindingArt(item.snapshot.spec.selected_options ?? {}, []);
+  const shape = bookshelfCoverShape(item.snapshot);
+  const landscape = shape === "landscape";
+  const binding = shape === "ring_binder" ? null : selectedBindingArt(item.snapshot.spec.selected_options ?? {}, []);
   const bindingUrl = binding ? getBindingImage({
     method: binding.method,
     color: normaliseBindingColor(binding.color),
-    orientation: "portrait",
+    orientation: landscape ? "landscape" : "portrait",
     state: "closed",
   }) : null;
   const mono = bookshelfCoverIsMono(item.snapshot);
@@ -23,21 +34,31 @@ export function BookshelfCover({ item }: { item: BookshelfItem }) {
   const [bindingFailed, setBindingFailed] = useState(false);
   useEffect(() => setFailed(false), [url]);
   useEffect(() => setBindingFailed(false), [bindingUrl]);
-  return <div className="bookshelf-book relative h-56 w-40 shrink-0 rounded-r-sm bg-card">
+  const artwork = url && !failed
+    ? <img src={url} alt={`${item.name} cover`} className={`h-full w-full object-contain${mono ? " grayscale contrast-[1.05]" : ""}`} onError={() => setFailed(true)} />
+    : <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-secondary/50 px-5 text-center"><BookOpen className="h-9 w-9 text-primary" /><span className="line-clamp-4 text-sm font-semibold text-foreground">{item.name}</span></div>;
+
+  if (shape === "ring_binder") {
+    return <div className={`bookshelf-book relative shrink-0 rounded-md ${COVER_BOX.ring_binder}`}>
+      <img src={ringBinderClosed} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 h-full w-full rounded-md object-fill" />
+      <div className="absolute overflow-hidden rounded-sm bg-card" style={{ left: "5%", top: "2.5%", width: "90%", height: "95%" }}>{artwork}</div>
+    </div>;
+  }
+
+  return <div className={`bookshelf-book relative shrink-0 rounded-r-sm bg-card ${COVER_BOX[shape]}`}>
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-r-sm border border-border">
-      {url && !failed
-        ? <img src={url} alt={`${item.name} cover`} className={`h-full w-full object-contain${mono ? " grayscale contrast-[1.05]" : ""}`} onError={() => setFailed(true)} />
-        : <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-secondary/50 px-5 text-center"><BookOpen className="h-9 w-9 text-primary" /><span className="line-clamp-4 text-sm font-semibold text-foreground">{item.name}</span></div>}
-      <span aria-hidden="true" className="bookshelf-spine absolute inset-y-0 left-0 w-1.5" />
+      {artwork}
+      {!landscape && <span aria-hidden="true" className="bookshelf-spine absolute inset-y-0 left-0 w-1.5" />}
     </div>
-    {bindingUrl && !bindingFailed && <img
-      src={bindingUrl}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      className="pointer-events-none absolute left-0 top-0 z-10 h-full w-auto max-w-none -translate-x-1/3 select-none"
-      onError={() => setBindingFailed(true)}
-    />}
+    {bindingUrl && !bindingFailed && (landscape
+      // Short-edge art is drawn for a left spine; rotate it onto the top edge (presentation binding).
+      ? <img src={bindingUrl} alt="" aria-hidden="true" draggable={false}
+          className="pointer-events-none absolute left-0 top-0 z-10 h-56 w-auto max-w-none origin-top-left select-none"
+          style={{ transform: "translateX(14rem) rotate(90deg) translateX(-33%)" }}
+          onError={() => setBindingFailed(true)} />
+      : <img src={bindingUrl} alt="" aria-hidden="true" draggable={false}
+          className="pointer-events-none absolute left-0 top-0 z-10 h-full w-auto max-w-none -translate-x-1/3 select-none"
+          onError={() => setBindingFailed(true)} />)}
   </div>;
 }
 

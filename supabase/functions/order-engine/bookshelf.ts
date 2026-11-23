@@ -37,6 +37,7 @@ export async function bookshelfOperation(admin: any, actor: { id: string; is_ano
     ]);
     if (docs.error || sections.error || family.error || !family.data?.is_active) throw new Error("Could not load this product's PDF configuration");
     snapshot = { product_family_id: item.product_family_id, product_name: family.data.name, spec: item.spec, documents: docs.data, sections: sections.data };
+    if (shelf?.snapshot?.shelf_category) snapshot.shelf_category = shelf.snapshot.shelf_category;
     assertBookshelfPdf(snapshot);
     data.source_item_id = item.id;
     prefix = `tenants/${tenantId}/bookshelf/${id}/${crypto.randomUUID()}`;
@@ -69,6 +70,14 @@ export async function bookshelfOperation(admin: any, actor: { id: string; is_ano
       p_actor: actor.id, p_tenant: tenantId, p_action: mode, p_id: id, p_data: data,
     });
     if (error) throw new Error(error.message);
+    if (["create", "revise", "rename"].includes(mode) && typeof payload.category === "string") {
+      const category = payload.category.trim().slice(0, 80);
+      if (category) {
+        // Shelf label is presentation-only: it sits beside the frozen spec and never touches pricing.
+        const { data: row } = await admin.from("bookshelf_items").select("snapshot").eq("id", id).eq("tenant_id", tenantId).eq("profile_id", actor.id).single();
+        if (row?.snapshot) await admin.from("bookshelf_items").update({ snapshot: { ...row.snapshot, shelf_category: category } }).eq("id", id);
+      }
+    }
     return result;
   } catch (error) {
     if (copiedPaths.length) {

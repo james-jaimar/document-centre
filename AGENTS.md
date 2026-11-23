@@ -1,6 +1,6 @@
 # Architecture rules
 
-- Group bookshelf rows by the saved product-family label in presentation code; category browsing must not mutate immutable snapshots or pricing.
+- Group bookshelf rows by the customer-chosen `snapshot.shelf_category` (set by order-engine beside the frozen spec, preserved on revise), falling back to the product-family label; shelf labels and cover shapes are presentation-only and must never change specs or pricing.
 - Render bookshelf bindings from saved selections with the shared binding resolver and closed-front preview assets; scale artwork proportionally outside the clipped cover so shelf and detail views agree without changing saved specifications.
 
 - Store bookshelf products as private, versioned snapshots with independent PDF and thumbnail copies; restore into new drafts through order-engine and a service-only transaction so cart cleanup and artwork revisions cannot change saved products or placed orders.

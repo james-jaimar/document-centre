@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { useBookshelf, type BookshelfItem } from "@/hooks/useBookshelf";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import BookshelfRow, { BookshelfCover } from "@/components/customer/BookshelfRow";
-import { groupBookshelfItems } from "@/lib/bookshelfGroups";
+import { groupBookshelfItems, bookshelfCategoryNames } from "@/lib/bookshelfGroups";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,7 @@ export default function CustomerBookshelf() {
   const [editing, setEditing] = useState<BookshelfItem | null>(null);
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
+  const [shelfName, setShelfName] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const items = (shelf.data ?? []).filter(item => `${item.name} ${item.sku ?? ""} ${item.snapshot.product_name}`.toLowerCase().includes(search.toLowerCase()));
   const categories = groupBookshelfItems(shelf.data ?? []);
@@ -59,12 +60,12 @@ export default function CustomerBookshelf() {
           <div className="space-y-2"><Label htmlFor={`copies-${selected.id}`}>Copies</Label><Input id={`copies-${selected.id}`} type="number" min={1} step={1} value={quantities[selected.id] ?? String(selected.snapshot.spec.quantity || 1)} onChange={e => setQuantities(prev => ({ ...prev, [selected.id]: e.target.value }))} /></div>
           <Button className="w-full" disabled={shelf.operation.isPending} onClick={() => restore(selected, false)}>{busyId === selected.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShoppingCart className="h-4 w-4 mr-2" />}Order copies</Button>
         </div></div>
-        <div className="flex flex-wrap items-center gap-1 border-t border-border pt-3"><Button className="mr-auto" variant="ghost" size="sm" disabled={shelf.operation.isPending} onClick={() => restore(selected, true)}><RefreshCw className="mr-2 h-3.5 w-3.5" />Update artwork</Button><Button variant="ghost" size="icon" aria-label={`Rename ${selected.name}`} title="Rename product" disabled={shelf.operation.isPending} onClick={() => { setEditing(selected); setName(selected.name); setSku(selected.sku ?? ""); setSelected(null); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Remove ${selected.name}`} title="Remove from bookshelf" disabled={shelf.operation.isPending} onClick={async () => {
+        <div className="flex flex-wrap items-center gap-1 border-t border-border pt-3"><Button className="mr-auto" variant="ghost" size="sm" disabled={shelf.operation.isPending} onClick={() => restore(selected, true)}><RefreshCw className="mr-2 h-3.5 w-3.5" />Update artwork</Button><Button variant="ghost" size="icon" aria-label={`Rename ${selected.name}`} title="Rename product" disabled={shelf.operation.isPending} onClick={() => { setEditing(selected); setName(selected.name); setSku(selected.sku ?? ""); setShelfName(selected.snapshot.shelf_category || selected.snapshot.product_name || ""); setSelected(null); }}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Remove ${selected.name}`} title="Remove from bookshelf" disabled={shelf.operation.isPending} onClick={async () => {
           if (!window.confirm(`Remove "${selected.name}" from your bookshelf? Existing orders will not change.`)) return;
           try { await shelf.operation.mutateAsync({ operation: "archive", id: selected.id }); setSelected(null); toast.success("Product removed from bookshelf"); } catch { /* reported */ }
         }}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>
       </>}
     </DialogContent></Dialog>
-    <Dialog open={!!editing} onOpenChange={open => { if (!open && !shelf.operation.isPending) setEditing(null); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Rename product</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="rename-product">Product name</Label><Input id="rename-product" maxLength={160} value={name} onChange={e => setName(e.target.value)} /></div><div className="space-y-2"><Label htmlFor="rename-sku">SKU / reference</Label><Input id="rename-sku" maxLength={80} value={sku} onChange={e => setSku(e.target.value)} /></div></div><DialogFooter><Button variant="outline" disabled={shelf.operation.isPending} onClick={() => setEditing(null)}>Cancel</Button><Button disabled={!name.trim() || shelf.operation.isPending} onClick={async () => { if (!editing) return; try { await shelf.operation.mutateAsync({ operation: "rename", id: editing.id, name: name.trim(), sku: sku.trim() }); setEditing(null); } catch { /* reported */ } }}>Save changes</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={!!editing} onOpenChange={open => { if (!open && !shelf.operation.isPending) setEditing(null); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Edit product details</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="rename-product">Product name</Label><Input id="rename-product" maxLength={160} value={name} onChange={e => setName(e.target.value)} /></div><div className="space-y-2"><Label htmlFor="rename-category">Shelf / category</Label><Input id="rename-category" list="rename-category-list" maxLength={80} placeholder="Pick a shelf or type a new one" value={shelfName} onChange={e => setShelfName(e.target.value)} /><datalist id="rename-category-list">{bookshelfCategoryNames(shelf.data ?? []).map(n => <option key={n} value={n} />)}</datalist></div><div className="space-y-2"><Label htmlFor="rename-sku">SKU / reference</Label><Input id="rename-sku" maxLength={80} value={sku} onChange={e => setSku(e.target.value)} /></div></div><DialogFooter><Button variant="outline" disabled={shelf.operation.isPending} onClick={() => setEditing(null)}>Cancel</Button><Button disabled={!name.trim() || shelf.operation.isPending} onClick={async () => { if (!editing) return; try { await shelf.operation.mutateAsync({ operation: "rename", id: editing.id, name: name.trim(), sku: sku.trim(), category: shelfName.trim() }); setEditing(null); } catch { /* reported */ } }}>Save changes</Button></DialogFooter></DialogContent></Dialog>
   </div>;
 }
