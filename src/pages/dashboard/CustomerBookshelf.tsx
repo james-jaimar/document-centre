@@ -54,6 +54,20 @@ export default function CustomerBookshelf() {
       setShelfEdit(null); toast.success("Shelf renamed");
     } catch { /* reported */ } finally { setShelfBusy(false); }
   };
+  const [reordering, setReordering] = useState(false);
+  const moveWithinShelf = async (shelfItems: BookshelfItem[], item: BookshelfItem, direction: -1 | 1) => {
+    // Reorder against the full (unfiltered) shelf so search results never drop hidden items' positions.
+    const full = groupBookshelfItems(shelf.data ?? []).find(g => g.products.some(p => p.id === item.id))?.products ?? shelfItems;
+    const ids = full.map(p => p.id);
+    const from = ids.indexOf(item.id);
+    const visible = shelfItems.map(p => p.id);
+    const neighbour = visible[visible.indexOf(item.id) + direction];
+    const to = neighbour ? ids.indexOf(neighbour) : -1;
+    if (from < 0 || to < 0) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    setReordering(true);
+    try { await shelf.operation.mutateAsync({ operation: "reorder", ids }); } catch { /* reported */ } finally { setReordering(false); }
+  };
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const items = (shelf.data ?? []).filter(item => `${item.name} ${item.sku ?? ""} ${item.snapshot.product_name}`.toLowerCase().includes(search.toLowerCase()));
   const categories = groupBookshelfItems(shelf.data ?? []);
@@ -80,7 +94,7 @@ export default function CustomerBookshelf() {
       <div className="relative w-full sm:max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" aria-label="Search bookshelf" placeholder="Search by name or SKU" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <Select value={category} onValueChange={setCategory}><SelectTrigger className="w-full sm:w-56" aria-label="Bookshelf category"><SelectValue placeholder="All categories" /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{categories.map(group => <SelectItem key={group.name} value={group.name}>{group.name}</SelectItem>)}</SelectContent></Select>
     </div>
-    {shelf.isLoading ? <div className="space-y-8">{[1, 2].map(i => <Skeleton key={i} className="h-72 w-full" />)}</div> : shelf.isError ? <div className="space-y-3"><p className="text-destructive">Could not load your saved products.</p><Button variant="outline" onClick={() => shelf.refetch()}>Retry</Button></div> : groups.length === 0 ? <div className="py-16 text-center border-y border-border"><BookOpen className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" /><h2 className="font-semibold text-lg">{search || category !== "all" ? "No matching products" : "Your bookshelf is empty"}</h2>{!search && category === "all" && <Button className="mt-5" variant="outline" onClick={() => navigate(tenantPath("orders/new"))}><Plus className="mr-2 h-4 w-4" />New product</Button>}</div> : <div className="space-y-10">{groups.map(group => <BookshelfRow key={group.name} name={group.name} items={group.products} onSelect={setSelected} onRenameShelf={() => { setShelfEdit({ from: group.name, items: group.products }); setShelfRename(group.name); }} onDeleteShelf={() => { setShelfDelete({ from: group.name, items: group.products }); setShelfTarget(categories.find(c => c.name !== group.name)?.name ?? ""); }} />)}</div>}
+    {shelf.isLoading ? <div className="space-y-8">{[1, 2].map(i => <Skeleton key={i} className="h-72 w-full" />)}</div> : shelf.isError ? <div className="space-y-3"><p className="text-destructive">Could not load your saved products.</p><Button variant="outline" onClick={() => shelf.refetch()}>Retry</Button></div> : groups.length === 0 ? <div className="py-16 text-center border-y border-border"><BookOpen className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" /><h2 className="font-semibold text-lg">{search || category !== "all" ? "No matching products" : "Your bookshelf is empty"}</h2>{!search && category === "all" && <Button className="mt-5" variant="outline" onClick={() => navigate(tenantPath("orders/new"))}><Plus className="mr-2 h-4 w-4" />New product</Button>}</div> : <div className="space-y-10">{groups.map(group => <BookshelfRow key={group.name} name={group.name} items={group.products} onSelect={setSelected} moveDisabled={reordering} onMove={(item, direction) => moveWithinShelf(group.products, item, direction)} onRenameShelf={() => { setShelfEdit({ from: group.name, items: group.products }); setShelfRename(group.name); }} onDeleteShelf={() => { setShelfDelete({ from: group.name, items: group.products }); setShelfTarget(categories.find(c => c.name !== group.name)?.name ?? ""); }} />)}</div>}
     <Dialog open={!!selected} onOpenChange={open => { if (!open && !shelf.operation.isPending) setSelected(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" aria-describedby={undefined}>
       {selected && <><DialogHeader><p className="pr-6 text-xs text-muted-foreground">{selected.snapshot.product_name}</p><DialogTitle className="break-words pr-6">{selected.name}</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-6 sm:flex-row"><div className="flex shrink-0 justify-center py-2"><BookshelfCover item={selected} /></div><div className="min-w-0 flex-1 space-y-5">

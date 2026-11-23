@@ -16,6 +16,8 @@ export interface BookshelfItem {
     product_name: string;
     /** Customer-chosen shelf; presentation only, never affects pricing. */
     shelf_category?: string | null;
+    /** Customer-chosen position within the shelf; presentation only. */
+    shelf_position?: number | null;
     product_family_id: string;
     spec: { page_count: number; quantity: number; is_color?: boolean; selected_options?: Record<string, string> };
     sections?: { section_type?: string | null; is_color?: boolean | null }[];
@@ -56,7 +58,7 @@ export function useBookshelf() {
     },
   });
   const operation = useMutation({
-    mutationFn: async (input: { operation: "create" | "revise" | "restore" | "rename" | "archive"; id?: string; order_item_id?: string; name?: string; sku?: string; category?: string; quantity?: number }) => {
+    mutationFn: async (input: { operation: "create" | "revise" | "restore" | "rename" | "archive" | "reorder"; id?: string; ids?: string[]; order_item_id?: string; name?: string; sku?: string; category?: string; quantity?: number }) => {
       if (!tenantId || !user || isAnonymousUser(user) || feature.data !== true) throw new Error("Bookshelf is unavailable");
       const { data, error } = await supabase.functions.invoke("order-engine", { body: { action: "bookshelf", tenant_id: tenantId, ...input } });
       if (error) {

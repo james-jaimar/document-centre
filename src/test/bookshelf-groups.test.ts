@@ -19,4 +19,9 @@ describe("Bookshelf category rows", () => {
     expect(groupBookshelfItems([item("Legacy manual", " ")])[0].name).toBe("Other documents");
     expect(groupBookshelfItems([])).toEqual([]);
   });
+  it("orders books on a shelf by the customer's chosen position, unpositioned last", () => {
+    const a = item("A", "Manuals"), b = item("B", "Manuals"), c = item("C", "Manuals");
+    b.snapshot.shelf_position = 0; a.snapshot.shelf_position = 1;
+    expect(groupBookshelfItems([a, b, c])[0].products.map(p => p.id)).toEqual(["B", "A", "C"]);
+  });
 });

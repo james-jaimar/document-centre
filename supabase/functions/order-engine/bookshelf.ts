@@ -11,7 +11,22 @@ export async function bookshelfOperation(admin: any, actor: { id: string; is_ano
   if (settingError || membershipError) throw new Error("Could not check bookshelf access");
   assertBookshelfActor(actor, enabled, !!membership?.length);
   const mode = payload.operation;
-  if (!["create", "revise", "restore", "rename", "archive"].includes(mode)) throw new Error("Unknown bookshelf operation");
+  if (!["create", "revise", "restore", "rename", "archive", "reorder"].includes(mode)) throw new Error("Unknown bookshelf operation");
+  if (mode === "reorder") {
+    // Shelf position is presentation-only: stored beside the frozen spec, never touches pricing.
+    const ids = payload.ids;
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || !ids.every((v: unknown) => typeof v === "string")) throw new Error("Invalid shelf order");
+    const { data: rows, error } = await admin.from("bookshelf_items").select("id,snapshot").in("id", ids).eq("profile_id", actor.id).eq("tenant_id", tenantId).is("archived_at", null);
+    if (error || !rows || rows.length !== new Set(ids).size) throw new Error("Bookshelf product not found");
+    const byId = new Map(rows.map((r: any) => [r.id, r]));
+    for (const [index, rowId] of ids.entries()) {
+      const row: any = byId.get(rowId);
+      if (row.snapshot?.shelf_position === index) continue;
+      const { error: updateError } = await admin.from("bookshelf_items").update({ snapshot: { ...row.snapshot, shelf_position: index } }).eq("id", rowId).eq("profile_id", actor.id).eq("tenant_id", tenantId);
+      if (updateError) throw new Error("Could not save shelf order");
+    }
+    return { ok: true };
+  }
   let shelf: any;
   if (mode !== "create") {
     const { data, error } = await admin.from("bookshelf_items").select("*").eq("id", payload.id).eq("profile_id", actor.id).eq("tenant_id", tenantId).is("archived_at", null).single();
@@ -38,6 +53,7 @@ export async function bookshelfOperation(admin: any, actor: { id: string; is_ano
     if (docs.error || sections.error || family.error || !family.data?.is_active) throw new Error("Could not load this product's PDF configuration");
     snapshot = { product_family_id: item.product_family_id, product_name: family.data.name, spec: item.spec, documents: docs.data, sections: sections.data };
     if (shelf?.snapshot?.shelf_category) snapshot.shelf_category = shelf.snapshot.shelf_category;
+    if (typeof shelf?.snapshot?.shelf_position === "number") snapshot.shelf_position = shelf.snapshot.shelf_position;
     assertBookshelfPdf(snapshot);
     data.source_item_id = item.id;
     prefix = `tenants/${tenantId}/bookshelf/${id}/${crypto.randomUUID()}`;

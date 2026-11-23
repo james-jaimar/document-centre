@@ -57,8 +57,10 @@ export function BookshelfCover({ item }: { item: BookshelfItem }) {
   </div>;
 }
 
-export default function BookshelfRow({ name, items, onSelect, onRenameShelf, onDeleteShelf }: {
+export default function BookshelfRow({ name, items, onSelect, onRenameShelf, onDeleteShelf, onMove, moveDisabled }: {
   name: string; items: BookshelfItem[]; onSelect: (item: BookshelfItem) => void; onRenameShelf?: () => void; onDeleteShelf?: () => void;
+  /** Move an item one place left (-1) or right (+1) on this shelf. */
+  onMove?: (item: BookshelfItem, direction: -1 | 1) => void; moveDisabled?: boolean;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
@@ -90,12 +92,16 @@ export default function BookshelfRow({ name, items, onSelect, onRenameShelf, onD
     <div className="relative">
       <div aria-hidden="true" className="bookshelf-rail pointer-events-none absolute inset-x-0 top-[248px] z-10 h-3 rounded-sm" />
       <div ref={scroller} className="flex gap-6 overflow-x-auto overscroll-x-contain px-4 pb-3 pt-1 snap-x snap-mandatory">
-        {items.map(item => <article key={item.id} className="min-w-44 shrink-0 snap-start">
+        {items.map((item, index) => <article key={item.id} className="min-w-44 shrink-0 snap-start">
           <Button variant="ghost" className="group flex h-64 w-full items-end justify-start rounded-none p-0 pb-3 pl-4 hover:bg-transparent" aria-label={`Open ${item.name}`} onClick={() => onSelect(item)}><BookshelfCover item={item} /></Button>
           <div className="pl-4 pt-5">
             <Button variant="link" className="h-auto max-w-full justify-start whitespace-normal p-0 text-left text-sm font-semibold text-foreground" onClick={() => onSelect(item)}>{item.name}</Button>
             <p className="mt-1 text-xs text-muted-foreground">{item.snapshot.spec.page_count} pages · Rev {item.revision}</p>
             {item.sku && <p className="mt-1 truncate text-xs text-muted-foreground" title={item.sku}>{item.sku}</p>}
+            {onMove && items.length > 1 && <div className="mt-1 flex gap-1">
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Move ${item.name} left`} title="Move left" disabled={moveDisabled || index === 0} onClick={() => onMove(item, -1)}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Move ${item.name} right`} title="Move right" disabled={moveDisabled || index === items.length - 1} onClick={() => onMove(item, 1)}><ChevronRight className="h-3.5 w-3.5" /></Button>
+            </div>}
           </div>
         </article>)}
       </div>

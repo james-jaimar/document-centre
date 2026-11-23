@@ -9,7 +9,9 @@ export function groupBookshelfItems(items: BookshelfItem[]) {
     group.push(item);
     groups.set(category, group);
   }
-  return Array.from(groups, ([name, products]) => ({ name, products }))
+  const position = (item: BookshelfItem) => typeof item.snapshot.shelf_position === "number" ? item.snapshot.shelf_position : Number.MAX_SAFE_INTEGER;
+  // Stable sort: customer-chosen order first, unpositioned items keep their incoming (newest-first) order.
+  return Array.from(groups, ([name, products]) => ({ name, products: [...products].sort((a, b) => position(a) - position(b)) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
