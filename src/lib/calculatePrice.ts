@@ -843,7 +843,7 @@ export function calculatePriceFromRateCard(
     const l = (s.label ?? "").toLowerCase();
     return l.includes("cover") || l === "outside" || l === "inside";
   });
-  const coverSheets = coverSections.reduce(
+  const coverSheets = spec.perfect_bound_cover ? 1 : coverSections.reduce(
     (acc, s) => acc + (s.is_duplex ? Math.ceil(s.page_count / 2) : s.page_count),
     0,
   );
@@ -865,7 +865,7 @@ export function calculatePriceFromRateCard(
         // Convert finished-size sheets to parent (e.g. SRA3) sheets when the
         // rate-card row is priced per oversize parent. Lamination rolls are
         // SRA3 — 1 SRA3 sheet laminates `nUp` finished pieces.
-        perSheetParentNUp = finishingNUp(fin.size);
+        perSheetParentNUp = spec.perfect_bound_cover && coverScoped ? 1 : finishingNUp(fin.size);
         multiplier = sheetsPerPiece; // per-piece sheets (display only)
         // Run-level parent sheets, with a 1-sheet minimum (you cannot
         // laminate a fraction of a sheet — and the press won't run less).
@@ -1112,7 +1112,7 @@ export function calculatePriceFromRateCard(
     if (basis === "per_sheet") {
       const coverScoped = looksCoverOnly && coverSheets > 0;
       const sheetsPerPiece = (coverScoped ? coverSheets : totalSheets) || 1;
-      const nUp = parentSizeKey ? finishingNUp(parentSizeKey) : 1;
+      const nUp = spec.perfect_bound_cover && coverScoped ? 1 : parentSizeKey ? finishingNUp(parentSizeKey) : 1;
       const parentSheetsRun = Math.max(
         1,
         Math.ceil((sheetsPerPiece * spec.quantity) / nUp),

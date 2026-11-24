@@ -7,7 +7,7 @@
 - [x] Cover Studio guided path: front + back upload, spine colour, spine title/author
 - [x] Cover Studio pro path: wrap size guidance, downloadable cover template, single wrap upload
 - [x] Implement separate vector cover-wrap production output; four compositor tests passed
-- [x] Desktop/mobile 3D cover controls checked; 37 frontend/helper tests and four edge-function tests passed
+- [x] Desktop/mobile 3D cover controls checked; 38 frontend/helper tests and four edge-function tests passed; order-engine deployed
 - [ ] Configure full-wrap printing + cover-stock prices and enable chosen sizes/stocks; blocked on print-shop pricing choices
 - [ ] Verify deployed Cloud Run wrap output and enable perfect-bound production; blocked on external GitHub/Cloud Run deployment
 - [ ] Verify real signed-in upload → cover → cart → placed order → production PDFs; external unmanaged authentication prevents a session here
