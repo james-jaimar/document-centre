@@ -52,7 +52,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import PerfectBoundCoverStudio from "@/components/order/PerfectBoundCoverStudio";
-import { isPerfectBoundFamily, bodySpine, sectionPageCount, coverValidation } from "@/lib/perfectBinding/workflow";
+import { isPerfectBoundFamily, bodySpine, sectionPageCount, coverValidation, perfectBoundProductionReady } from "@/lib/perfectBinding/workflow";
 import { gsmFromLabel, checkPageLimits } from "@/lib/perfectBinding/spine";
 import {
   planCoverSplit,
@@ -1141,6 +1141,7 @@ export default function OrderBuild() {
   }, [orderItem, spec, updateSpec]);
 
   // ── Add to Cart confirmation dialog state ──
+  const [perfectStage, setPerfectStage] = useState<"paper" | "cover">("paper");
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
   const [cartTotal, setCartTotal] = useState(0);
@@ -1157,8 +1158,12 @@ export default function OrderBuild() {
     const updated = { ...spec.perfect_bound_cover, trim: perfectTrim, spine: perfectBoundSpine };
     if (JSON.stringify(updated) !== JSON.stringify(spec.perfect_bound_cover)) setSpec((prev) => ({ ...prev, perfect_bound_cover: updated }));
   }, [spec.perfect_bound_cover, perfectTrim.widthMm, perfectTrim.heightMm, perfectBoundSpine]);
-  const perfectSetupError = productType === "perfect_bound" && !options.some((o) => o.name.toLowerCase() === "binding" && isStructuredValues(o.values) && o.values.some((v) => v.slug === spec.selected_options[o.name] && (v.metadata?.binding_method === "perfect" || /perfect/i.test(v.label))))
-    ? "This product's perfect-binding option and price still need to be set up by the print shop." : null;
+  const perfectSetupError = productType === "perfect_bound" && !perfectBoundProductionReady(productFamily?.printing_rules)
+    ? "Perfect-bound ordering is awaiting print-shop activation."
+    : productType === "perfect_bound" && !options.some((o) => o.name.toLowerCase() === "binding" && isStructuredValues(o.values) && o.values.some((v) => v.slug === spec.selected_options[o.name] && (v.metadata?.binding_method === "perfect" || /perfect/i.test(v.label))))
+    ? "This product's perfect-binding option and price still need to be set up by the print shop."
+    : productType === "perfect_bound" && !options.some((o) => o.name === "Cover Printing" && isStructuredValues(o.values) && o.values.some((v) => v.slug === spec.selected_options[o.name]))
+    ? "The full cover printing and stock price still needs to be set up by the print shop." : null;
   const pageLimit = useMemo(() => {
     const rules = ((productFamily as any)?.printing_rules ?? {}) as { min_pages?: number | null; max_pages?: number | null };
     const perfectBound = productType === "perfect_bound";
@@ -1292,6 +1297,7 @@ export default function OrderBuild() {
 
 
   const handleAddToCartClick = useCallback(() => {
+    if (!canAddToCart) { toast.error(perfectCoverError || perfectSetupError || ("message" in pageLimit ? pageLimit.message : "Finish the print configuration first.")); return; }
     if (!orderItem || !order) {
       toast.error("Order data is still loading. Please wait.");
       return;
@@ -1315,10 +1321,10 @@ export default function OrderBuild() {
       console.error("add_to_cart_failed", { orderId: order.id, orderItemId: orderItem.id, sections, spec, err });
       toast.error("Unable to calculate price", { description: err.message });
     }
-  }, [orderItem, order, spec, reference, productFamily, sections, computeBreakdown]);
+  }, [orderItem, order, spec, reference, productFamily, sections, computeBreakdown, canAddToCart, perfectCoverError, perfectSetupError, pageLimit]);
 
   const handleConfirmAddToCart = useCallback(async () => {
-    if (!orderItem || !order || isSubmitting) return;
+    if (!orderItem || !order || isSubmitting || !canAddToCart) return;
     const ref = cartReference.trim();
     if (!ref) {
       toast.error("Please enter a reference name");
@@ -1718,7 +1724,7 @@ export default function OrderBuild() {
   }
 
   return (
-    <div className="md:-m-6 xl:-m-8 md:p-3 xl:p-4 md:h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] flex flex-col space-y-3 md:space-y-2 min-h-0">
+    <div className="md:-m-6 xl:-m-8 md:p-3 xl:p-4 md:h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] flex flex-col space-y-3 md:space-y-2 min-h-0 overflow-auto">
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between shrink-0">
         <div>
@@ -1740,10 +1746,19 @@ export default function OrderBuild() {
         </Button>
       </div>
 
-      {productType === "perfect_bound" && orderItemId && <PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} />}
+      {productType === "perfect_bound" && <div className="flex shrink-0 flex-wrap gap-2">
+        <Button variant={perfectStage === "paper" ? "default" : "outline"} onClick={() => setPerfectStage("paper")}>2. Paper & Printing</Button>
+        <Button variant={perfectStage === "cover" ? "default" : "outline"} disabled={!pageLimit.ok || !bodyPaperGsm} onClick={() => setPerfectStage("cover")}>3. Cover Studio</Button>
+        <span className="self-center text-xs text-muted-foreground">{bodyPageCount} inner pages · {perfectBoundSpine.spineMm} mm spine</span>
+      </div>}
+      {productType === "perfect_bound" && perfectStage === "cover" && orderItemId && <PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} />}
 
+      {productType === "perfect_bound" && perfectStage === "cover" && <div className="shrink-0 space-y-2">
+        {perfectSetupError && <p role="alert" className="text-sm text-destructive">{perfectSetupError}</p>}
+        <PriceSummary spec={pricingSpec} options={options} rules={pricingRules} overrides={cascadedOverrides} recipe={useNewEngine ? recipe : null} rateCard={useNewEngine ? rateCard : null} onQuantityChange={handleQuantityChange} onAddToCart={handleAddToCartClick} disabled={!canAddToCart} isSubmitting={isSubmitting} />
+      </div>}
       {/* Split panel */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0">
+      <div className={productType === "perfect_bound" && perfectStage === "cover" ? "hidden" : "flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0"}>
 
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">

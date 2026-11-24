@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { isPerfectBoundFamily, sectionPageCount, bodySpine, coverValidation, DEFAULT_COVER } from "@/lib/perfectBinding/workflow";
+import { isPerfectBoundFamily, sectionPageCount, bodySpine, coverValidation, DEFAULT_COVER, perfectBoundProductionReady } from "@/lib/perfectBinding/workflow";
 import { calculateSpine } from "@/lib/perfectBinding/spine";
 
 describe("perfect-bound workflow", () => {
+  it("keeps ordering off until the admin explicitly confirms production readiness", () => {
+    expect(perfectBoundProductionReady(undefined)).toBe(false);
+    expect(perfectBoundProductionReady({ perfect_bound_production_ready: "true" })).toBe(false);
+    expect(perfectBoundProductionReady({ perfect_bound_production_ready: true })).toBe(true);
+  });
   it("recognises perf-bound and explicit admin/binding settings, not unrelated slugs", () => {
     expect(isPerfectBoundFamily({ slug: "perf-bound" })).toBe(true);
     expect(isPerfectBoundFamily({ slug: "perfect_bound" })).toBe(true);

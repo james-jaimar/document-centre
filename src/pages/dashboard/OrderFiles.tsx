@@ -107,7 +107,8 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
-  const isPerfectBound = isPerfectBoundFamily(productFamily);
+  const savedBinding = (orderItem?.spec as unknown as { selected_options?: { Binding?: string }; perfect_bound_cover?: unknown })?.selected_options?.Binding;
+  const isPerfectBound = isPerfectBoundFamily(productFamily, /perfect/i.test(savedBinding ?? "") ? "perfect" : null);
 
   // Specialised-builder redirect: canvas_wrap and photo_print orders must
   // never render in the generic sectioned uploader. If a customer lands on
@@ -2771,6 +2772,7 @@ export default function OrderFiles() {
         </div>
       </div>
 
+      {isPerfectBound && <p className="text-sm text-muted-foreground">Upload your inner pages first. Choose paper next, then add your cover.</p>}
       {isPerfectBound && innerPages > 0 && !bodyLimit.ok && <p role="alert" className="text-sm text-destructive">{"message" in bodyLimit ? bodyLimit.message : null}</p>}
 
       {/* Three-column layout */}

@@ -8,7 +8,7 @@ describe("catalogue-backed perfect-bound setup", () => {
     expect(PERFECT_BOUND_OPTIONS.find((o) => o.name === "Binding")?.source_filter).toEqual({ category: "binding", binding_method: "perfect" });
   });
   it("separates text stock from cover stock and leaves all prices to the catalogue", () => {
-    expect(PERFECT_BOUND_OPTIONS.find((o) => o.name === "Paper Stock")?.source_filter).toEqual({ categories: ["text"] });
+    expect(PERFECT_BOUND_OPTIONS.find((o) => o.name === "Paper Stock")?.source_filter).toEqual({ categories: ["bond", "text", "coated"] });
     expect(PERFECT_BOUND_OPTIONS.find((o) => o.name === "Cover Stock")?.source_filter).toEqual({ categories: ["cover"] });
     expect(PERFECT_BOUND_OPTIONS.filter((o) => o.name !== "Cover Printing").every((o) => o.source.startsWith("catalog.") && !("price" in o))).toBe(true);
     expect(PERFECT_BOUND_OPTIONS.find((o) => o.name === "Cover Printing")?.source).toBe("manual");

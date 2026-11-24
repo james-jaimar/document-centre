@@ -1,13 +1,16 @@
 ## Perfect bound books (2026-11-23)
-- [ ] Set the admin-owned perfect-binding charge to 7.50 per book (printing, paper and lamination excluded)
+- [x] Set the admin-owned perfect-binding charge to 7.50 per book (printing, paper and lamination excluded)
 - [x] Admin min/max body page setting per product (40-page default for perfect bound); block add-to-cart outside limits
-- [ ] Perfect Bound product preset in the catalogue
-- [ ] Consistent perfect-bound detection including perf-bound and binding metadata
-- [ ] Body-only Files step with automatic assignment, body-page counting and configurable limits
-- [ ] Cover Studio guided path: front + back upload, spine colour, spine title/author
-- [ ] Cover Studio pro path: wrap size guidance, downloadable cover template, single wrap upload
-- [ ] Print server stitches back + spine + front into press-ready wrap PDF
-- [ ] Verify perfect-bound workflow and document admin setup/deployment requirements
+- [x] Perfect Bound product preset in the catalogue; existing family options seeded without changing page limits
+- [x] Consistent perfect-bound detection including perf-bound and binding metadata
+- [x] Body-only Files step with automatic assignment, body-page counting and configurable limits
+- [x] Cover Studio guided path: front + back upload, spine colour, spine title/author
+- [x] Cover Studio pro path: wrap size guidance, downloadable cover template, single wrap upload
+- [x] Implement separate vector cover-wrap production output; four compositor tests passed
+- [x] Desktop/mobile 3D cover controls checked; 37 frontend/helper tests and four edge-function tests passed
+- [ ] Configure full-wrap printing + cover-stock prices and enable chosen sizes/stocks; blocked on print-shop pricing choices
+- [ ] Verify deployed Cloud Run wrap output and enable perfect-bound production; blocked on external GitHub/Cloud Run deployment
+- [ ] Verify real signed-in upload → cover → cart → placed order → production PDFs; external unmanaged authentication prevents a session here
 
 ## Architectural bookshelf (2026-11-23)
 - [x] Group saved products into product-category shelves with upright covers and subtle shelf rails

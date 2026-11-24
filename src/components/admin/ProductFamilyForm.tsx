@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useProductCategories } from "@/hooks/useProductCategories";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ const ALL_FINISHED_SIZES = [
 
 interface PrintingRules {
   binding_method?: string | null;
+  perfect_bound_production_ready?: boolean;
   allowed_finished_sizes: string[];
   default_finished_size: string;
   cover_is_heavy_stock: boolean;
@@ -329,6 +330,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>
                   <SelectItem value="selectable">Customer-selected binding</SelectItem><SelectItem value="perfect">Perfect bound — inner pages then cover</SelectItem>
                 </SelectContent></Select><FormMessage /></FormItem>
+            )} />}
+            {form.watch("kind") === "bound_document" && <FormField control={form.control} name="printing_rules.perfect_bound_production_ready" render={({ field }) => (
+              <FormItem className="flex items-center justify-between gap-3"><div><FormLabel>Perfect-bound production enabled</FormLabel><FormDescription>Enable only after the print server's separate cover-wrap output has been deployed and checked.</FormDescription></div><FormControl><Switch checked={field.value === true} onCheckedChange={field.onChange} /></FormControl></FormItem>
             )} />}
 
             <FormField

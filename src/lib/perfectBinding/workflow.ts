@@ -6,6 +6,10 @@ export function isPerfectBoundFamily(family?: { slug?: string | null; printing_r
   return /^(perf|perfect)[-_]bound(?:[-_]books?)?$/.test((family?.slug ?? "").toLowerCase());
 }
 
+export function perfectBoundProductionReady(rules: unknown): boolean {
+  return !!rules && typeof rules === "object" && (rules as { perfect_bound_production_ready?: unknown }).perfect_bound_production_ready === true;
+}
+
 export interface CoverSource { document_id: string; page: number }
 export interface PerfectBoundCover {
   version: 1;

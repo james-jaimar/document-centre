@@ -1,7 +1,7 @@
 /** Catalogue-backed setup only; prices and stock availability remain admin-owned. */
 export const PERFECT_BOUND_OPTIONS = [
   { name: "Document Size", source: "catalog.sizes", source_filter: null },
-  { name: "Paper Stock", source: "catalog.papers", source_filter: { categories: ["text"] } },
+  { name: "Paper Stock", source: "catalog.papers", source_filter: { categories: ["bond", "text", "coated"] } },
   { name: "Print Colour", source: "catalog.print_attrs", source_filter: { attribute: "colour_mode" } },
   { name: "Print Sides", source: "catalog.print_attrs", source_filter: { attribute: "sides" } },
   { name: "Cover Stock", source: "catalog.papers", source_filter: { categories: ["cover"] } },
