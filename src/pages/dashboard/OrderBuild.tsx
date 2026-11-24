@@ -1723,6 +1723,7 @@ export default function OrderBuild() {
     );
   }
 
+  const coverStageActive = productType === "perfect_bound" && perfectStage === "cover";
   return (
     <div className="md:-m-6 xl:-m-8 md:p-3 xl:p-4 md:h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] flex flex-col space-y-3 md:space-y-2 min-h-0 overflow-auto">
       {/* Header */}
@@ -1751,14 +1752,8 @@ export default function OrderBuild() {
         <Button variant={perfectStage === "cover" ? "default" : "outline"} disabled={!pageLimit.ok || !bodyPaperGsm} onClick={() => setPerfectStage("cover")}>3. Cover Studio</Button>
         <span className="self-center text-xs text-muted-foreground">{bodyPageCount} inner pages · {perfectBoundSpine.spineMm} mm spine</span>
       </div>}
-      {productType === "perfect_bound" && perfectStage === "cover" && orderItemId && <PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} />}
-
-      {productType === "perfect_bound" && perfectStage === "cover" && <div className="shrink-0 space-y-2">
-        {perfectSetupError && <p role="alert" className="text-sm text-destructive">{perfectSetupError}</p>}
-        <PriceSummary spec={pricingSpec} options={options} rules={pricingRules} overrides={cascadedOverrides} recipe={useNewEngine ? recipe : null} rateCard={useNewEngine ? rateCard : null} onQuantityChange={handleQuantityChange} onAddToCart={handleAddToCartClick} disabled={!canAddToCart} isSubmitting={isSubmitting} />
-      </div>}
       {/* Split panel */}
-      <div className={productType === "perfect_bound" && perfectStage === "cover" ? "hidden" : "flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0"}>
+      <div className={"flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0"}>
 
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">
@@ -1772,6 +1767,7 @@ export default function OrderBuild() {
             />
           </div>
           <div className="flex-1 overflow-auto p-3 space-y-3">
+            {coverStageActive && orderItemId ? <PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} part="controls" /> : <>
             <OptionsPanel
               options={options}
               selectedOptions={spec.selected_options}
@@ -1847,6 +1843,7 @@ export default function OrderBuild() {
                 Manage Tabs & Inserts
               </Button>
             )}
+            </>}
           </div>
           <div className="p-3 shrink-0">
             {perfectCoverError && <p role="alert" className="text-sm text-destructive">{perfectCoverError}</p>}
@@ -1883,7 +1880,8 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-2 overflow-auto flex flex-col gap-2">
-          <PreviewPanel
+          {coverStageActive && orderItemId ? <div className="flex-1 min-h-0 flex items-center justify-center"><PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} part="preview" /></div> : <PreviewPanel
+            key={`inside-${perfectStage}`}
             documents={documents}
             sections={sections}
             productType={productType}
@@ -1897,7 +1895,7 @@ export default function OrderBuild() {
             paperGsm={bodyPaperGsm}
             bookTitle={reference || orderItem?.title || undefined}
             insideOnly={productType === "perfect_bound"}
-          />
+          />}
         </div>
       </div>
       {/* Tab/Insert Drawer — only mount after user clicks the button */}

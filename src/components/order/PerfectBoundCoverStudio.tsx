@@ -22,8 +22,10 @@ interface Props {
   trim: { widthMm: number; heightMm: number };
   spine: SpineResult;
   onChange: (cover: PerfectBoundCover) => void;
+  /** Render only the controls (left column) or only the 3D preview (right column). */
+  part?: "all" | "controls" | "preview";
 }
-export default function PerfectBoundCoverStudio({ orderItemId, documents, sections, value, trim, spine, onChange }: Props) {
+export default function PerfectBoundCoverStudio({ orderItemId, documents, sections, value, trim, spine, onChange, part = "all" }: Props) {
   const cover: PerfectBoundCover = { ...DEFAULT_COVER, ...value, trim, spine };
   const wrapSize = coverWrapSizeMm(trim, spine.spineMm, cover.bleed_mm);
   const customSizes = useMemo(() => [
@@ -73,7 +75,9 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       {source && pages > 1 && <div className="flex items-center gap-2"><Label htmlFor={`cover-${side}-page`}>Page</Label><Input id={`cover-${side}-page`} type="number" min={1} max={pages} value={source.page + 1} className="w-24" onChange={(e) => change({ [side]: { ...source, page: Math.max(0, Math.min(pages - 1, Number(e.target.value) - 1)) } })} /></div>}
     </div>;
   };
-  return <section className="border-t pt-6 space-y-4">
+  const preview = <PerfectBoundBook3D frontPath={thumb(cover.mode === "wrap" ? cover.wrap : cover.front)} backPath={thumb(cover.back)} wrapPath={cover.mode === "wrap" ? thumb(cover.wrap) : undefined} spine={spine} trimMm={trim} title={[cover.title, cover.author].filter(Boolean).join(" · ")} spineColor={cover.spine_colour} textColor={cover.text_colour} bleedMm={cover.bleed_mm} />;
+  if (part === "preview") return preview;
+  return <section className={part === "controls" ? "space-y-4" : "border-t pt-6 space-y-4"}>
     <div><h2 className="text-lg font-semibold">Cover Studio</h2><p className="text-sm text-muted-foreground">Spine {spine.spineMm} mm · {spine.sheets} sheets · {trim.widthMm} × {trim.heightMm} mm</p></div>
     <div className="flex flex-wrap gap-2">
       <Button variant={cover.mode === "guided" ? "default" : "outline"} onClick={() => change({ mode: "guided" })}>Front & Back</Button>
@@ -87,8 +91,8 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       catch (err) { toast.error(err instanceof Error ? err.message : "Cover upload failed"); }
     }} />
     {cover.mode === "guided" ? <>
-      <div className="grid gap-4 sm:grid-cols-2">{selector("front", "Front cover")}{selector("back", "Back cover")}</div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={part === "controls" ? "grid gap-4" : "grid gap-4 sm:grid-cols-2"}>{selector("front", "Front cover")}{selector("back", "Back cover")}</div>
+      <div className={part === "controls" ? "grid gap-4" : "grid gap-4 sm:grid-cols-2"}>
         <div className="flex gap-3 items-center"><Label htmlFor="spine-colour">Spine colour</Label><Input id="spine-colour" type="color" value={cover.spine_colour} onChange={(e) => change({ spine_colour: e.target.value })} className="w-12 h-10 p-1" /><Label htmlFor="spine-text-colour">Text colour</Label><Input id="spine-text-colour" type="color" value={cover.text_colour} onChange={(e) => change({ text_colour: e.target.value })} className="w-12 h-10 p-1" /></div>
         <div><Label htmlFor="spine-title">Spine title</Label><Input id="spine-title" maxLength={120} disabled={!spine.textAllowed} value={cover.title} onChange={(e) => change({ title: e.target.value })} /></div>
         <div><Label htmlFor="spine-author">Author</Label><Input id="spine-author" maxLength={100} disabled={!spine.textAllowed} value={cover.author} onChange={(e) => change({ author: e.target.value })} /></div>
@@ -97,6 +101,6 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
     </> : <><p className="text-sm">Wrap: {wrapSize.widthMm} × {wrapSize.heightMm} mm · back + {spine.spineMm} mm spine + front · 3 mm bleed</p>{selector("wrap", "Wrap cover")}</>}
     {isUploading && <p role="status" className="text-sm text-muted-foreground">{Object.values(uploads).find((u) => u.status !== "done")?.statusText ?? "Checking cover PDF…"}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <PerfectBoundBook3D frontPath={thumb(cover.mode === "wrap" ? cover.wrap : cover.front)} backPath={thumb(cover.back)} wrapPath={cover.mode === "wrap" ? thumb(cover.wrap) : undefined} spine={spine} trimMm={trim} title={[cover.title, cover.author].filter(Boolean).join(" · ")} spineColor={cover.spine_colour} textColor={cover.text_colour} bleedMm={cover.bleed_mm} />
+    {part === "all" && preview}
   </section>;
 }
