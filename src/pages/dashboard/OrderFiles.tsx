@@ -10,6 +10,8 @@ import {
   useDeleteSection,
 } from "@/hooks/useOrderBuilder";
 import { useDocumentUpload, recoverThumbnailGaps, reconcileStuckDocument } from "@/hooks/useDocumentUpload";
+import { isPerfectBoundFamily, sectionPageCount } from "@/lib/perfectBinding/workflow";
+import { checkPageLimits } from "@/lib/perfectBinding/spine";
 import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
@@ -96,14 +98,16 @@ export default function OrderFiles() {
       if (!productFamilyId) return null;
       const { data, error } = await supabase
         .from("product_families")
-        .select("name, slug, kind, color_output, cmyk_profile, render_intent")
+        .select("name, slug, kind, color_output, cmyk_profile, render_intent, printing_rules")
         .eq("id", productFamilyId)
         .single();
       if (error) throw error;
-      return data as { name: string; slug: string; kind: string; color_output: string; cmyk_profile: string; render_intent: string };
+      return data as { name: string; slug: string; kind: string; color_output: string; cmyk_profile: string; render_intent: string; printing_rules: { min_pages?: number; max_pages?: number; binding_method?: string } };
     },
     enabled: !!productFamilyId,
   });
+
+  const isPerfectBound = isPerfectBoundFamily(productFamily);
 
   // Specialised-builder redirect: canvas_wrap and photo_print orders must
   // never render in the generic sectioned uploader. If a customer lands on
@@ -2078,6 +2082,8 @@ export default function OrderFiles() {
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
+      if (isPerfectBound && type !== "body") return;
+      if (isPerfectBound && sections.some((s) => s.document_id === selectedDocId && s.section_type === "body")) return;
 
       if (!assertOrientationOk(selectedDocId)) return;
 
@@ -2153,7 +2159,7 @@ export default function OrderFiles() {
         toast.error("Failed to add section", { description: err.message });
       }
     },
-    [selectedDocId, orderItem, sections.length, addSection, familySlug, documents, activePrintSize, getDocEffectiveSize, assertOrientationOk]
+    [selectedDocId, orderItem, sections, addSection, familySlug, documents, activePrintSize, getDocEffectiveSize, assertOrientationOk, isPerfectBound]
   );
 
   // Confirm handler for the cover page-limit prompt — adds the section with
@@ -2694,7 +2700,30 @@ export default function OrderFiles() {
     }
     return out;
   }, [sections, documents, productFamily?.slug]);
-  const canContinue = sections.length > 0 && orientationViolations.size === 0;
+  const bodyAssignmentBusy = useRef(false);
+  const autoAssigned = useRef(new Set<string>());
+  useEffect(() => {
+    if (!isPerfectBound || !orderItem || bodyAssignmentBusy.current) return;
+    const cover = (orderItem.spec as unknown as { perfect_bound_cover?: { front?: { document_id: string }; back?: { document_id: string }; wrap?: { document_id: string } } })?.perfect_bound_cover;
+    const coverIds = new Set([cover?.front?.document_id, cover?.back?.document_id, cover?.wrap?.document_id]);
+    const pending = documents.filter((d) => ["ready", "analyzed"].includes(d.document_status) && !coverIds.has(d.id) && !autoAssigned.current.has(d.id) && !sections.some((s) => s.document_id === d.id));
+    if (!pending.length) return;
+    bodyAssignmentBusy.current = true;
+    void (async () => {
+      try {
+        for (const [index, d] of pending.entries()) {
+          if (orientationViolations.has(d.id) || !assertOrientationOk(d.id)) continue;
+          autoAssigned.current.add(d.id);
+          await addSection.mutateAsync({ order_item_id: orderItem.id, document_id: d.id, section_type: "body", sort_order: sections.length + index, is_duplex: true, is_color: true });
+        }
+      } catch (error) {
+        toast.error("Could not assign inner pages", { description: error instanceof Error ? error.message : "Please assign the file as Body Pages." });
+      } finally { bodyAssignmentBusy.current = false; }
+    })();
+  }, [isPerfectBound, orderItem, documents, sections, addSection, orientationViolations, assertOrientationOk]);
+  const innerPages = sections.filter((s) => s.section_type === "body").reduce((n, s) => n + sectionPageCount(s, documents), 0);
+  const bodyLimit = checkPageLimits(innerPages, productFamily?.printing_rules ?? {}, { perfectBound: isPerfectBound });
+  const canContinue = sections.length > 0 && orientationViolations.size === 0 && (!isPerfectBound || (innerPages > 0 && bodyLimit.ok));
 
   if (loading && !isNewMode) {
     return (
@@ -2716,10 +2745,10 @@ export default function OrderFiles() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-lg md:text-2xl font-bold text-foreground">
-              {productFamily?.name ? `${productFamily.name} — ` : ""}Upload &amp; Organise Files
+              {productFamily?.name ? `${productFamily.name} — ` : ""}{isPerfectBound ? "Inner Pages" : "Upload & Organise Files"}
             </h1>
             <p className="text-muted-foreground mt-1 text-xs md:text-sm">
-              Step 1 of 2 — Upload your PDFs and assign them to document sections
+              {isPerfectBound ? `Inner pages · ${innerPages} pages · minimum ${productFamily?.printing_rules?.min_pages ?? 40}` : "Step 1 of 2 — Upload your PDFs and assign them to document sections"}
             </p>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
@@ -2735,12 +2764,14 @@ export default function OrderFiles() {
               onClick={() => navigate(tenantPath(`orders/${effectiveOrderId}/build`))}
               className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed flex-1 md:flex-none justify-center"
             >
-              Configure Options
+              {isPerfectBound ? "Paper & Cover" : "Configure Options"}
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
       </div>
+
+      {isPerfectBound && innerPages > 0 && !bodyLimit.ok && <p role="alert" className="text-sm text-destructive">{"message" in bodyLimit ? bodyLimit.message : null}</p>}
 
       {/* Three-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_auto_1fr] gap-4 md:gap-5 items-start">
@@ -2821,6 +2852,7 @@ export default function OrderFiles() {
               hasSelectedSection={!!selectedSectionId}
               onRemoveSection={handleRemoveSection}
               familySlug={familySlug}
+              bodyOnly={isPerfectBound}
               selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
                onAutoAssignBrochure={handleAutoAssignBrochure}
                onAutoAssignPanels={handleAutoAssignPanels}
@@ -2854,6 +2886,7 @@ export default function OrderFiles() {
           hasSelectedSection={!!selectedSectionId}
           onRemoveSection={handleRemoveSection}
           familySlug={familySlug}
+          bodyOnly={isPerfectBound}
           selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
            onAutoAssignBrochure={handleAutoAssignBrochure}
            onAutoAssignPanels={handleAutoAssignPanels}

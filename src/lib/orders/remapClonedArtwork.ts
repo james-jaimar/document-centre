@@ -28,7 +28,7 @@ export function remapClonedArtwork<T>(spec: T, documents: ClonedArtworkDocument[
 
   if (!spec || typeof spec !== "object" || Array.isArray(spec)) return spec;
   const result = { ...spec } as Record<string, unknown>;
-  for (const key of ["uploaded_artwork", "templated_artwork", "photo_prints", "canvas_prints"]) {
+  for (const key of ["uploaded_artwork", "templated_artwork", "photo_prints", "canvas_prints", "perfect_bound_cover"]) {
     if (key in result) result[key] = remap(result[key]);
   }
   return result as T;

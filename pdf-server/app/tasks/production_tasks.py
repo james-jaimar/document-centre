@@ -294,6 +294,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # Include merge directives so simplex-cover blank insertion
             # invalidates the cached artefact when directives change.
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
+            "perfect_bound_cover": (bundle.configuration or {}).get("perfect_bound_cover") if isinstance(bundle.configuration, dict) else None,
             "section_flags": section_flags,
             # Bump to invalidate caches when the colour pipeline changes.
             # v6: per-section greyscale for mixed colour jobs + duplex_mode
@@ -655,6 +656,17 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     "file_count": len(group),
                     "steps": comp_steps,
                 })
+
+            from app.services.perfect_bound_assembly import assemble_perfect_bound_cover
+            cover_result = assemble_perfect_bound_cover(bundle, ws, storage)
+            if cover_result:
+                cover_file, cover_report = cover_result
+                cover_path = unique_name(f"production/print-ready/{job_number}-perfect-bound-wrap", ".pdf")
+                storage.upload(cover_file, cover_path, "application/pdf")
+                storage_paths.append(cover_path)
+                warnings.extend(cover_report.get("warnings", []))
+                components_report.append({"component": "cover:perfect-bound", "label": "Perfect bound cover wrap", "storage_path": cover_path, "file_count": 1, "steps": ["perfect-bound-wrap"], **cover_report})
+                steps.append("perfect-bound-wrap")
 
             storage_path = storage_paths[0]
 

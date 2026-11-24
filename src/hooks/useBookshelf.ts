@@ -4,6 +4,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useAuth } from "@/hooks/useAuth";
 import { isAnonymousUser } from "@/lib/tenantSignOut";
 import { toast } from "sonner";
+import type { PerfectBoundCover } from "@/lib/perfectBinding/workflow";
 
 export interface BookshelfItem {
   id: string;
@@ -19,9 +20,9 @@ export interface BookshelfItem {
     /** Customer-chosen position within the shelf; presentation only. */
     shelf_position?: number | null;
     product_family_id: string;
-    spec: { page_count: number; quantity: number; is_color?: boolean; selected_options?: Record<string, string> };
+    spec: { page_count: number; quantity: number; is_color?: boolean; selected_options?: Record<string, string>; perfect_bound_cover?: PerfectBoundCover };
     sections?: { section_type?: string | null; is_color?: boolean | null }[];
-    documents: { thumbnail_urls?: string[]; page_width_mm?: number | null; page_height_mm?: number | null }[];
+    documents: { id?: string; thumbnail_urls?: string[]; page_width_mm?: number | null; page_height_mm?: number | null }[];
   };
 }
 

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { perfectBindingFinishing } from "@/lib/perfectBinding/preset";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -162,7 +163,7 @@ export function useCatalogBackedOptions(
       const name = opt.name ?? "";
       const source = (opt as any).source as string | undefined;
       const sourceFilter = (opt as any).source_filter as
-        | { category?: string; attribute?: string; categories?: string[] }
+        | { category?: string; attribute?: string; categories?: string[]; binding_method?: string }
         | null
         | undefined;
 
@@ -176,6 +177,12 @@ export function useCatalogBackedOptions(
       // ── CATALOG: FINISHING ────────────────────────────────────────────────
       if (source === "catalog.finishing") {
         const category = sourceFilter?.category ?? null;
+        if (sourceFilter?.binding_method === "perfect") {
+          const pool = masterFinishing.filter(perfectBindingFinishing);
+          const saved = isStructured(opt.values) ? opt.values.filter((v) => perfectBindingFinishing({ ...v, code: v.slug })) : [];
+          const next = saved.length ? enrichFinishingValuesFromMaster(saved, pool, masterFinishingPrices, { dropUnmatched: true }) : finishingRowsToValues(pool, category ?? "binding", masterFinishingPrices);
+          return { ...opt, values: preserveDefault(opt.values, next) as any };
+        }
         if (category && masterFinishing.length > 0) {
           const saved = isStructured(opt.values) ? opt.values : [];
           const next =

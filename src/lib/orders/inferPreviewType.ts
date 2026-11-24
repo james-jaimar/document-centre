@@ -5,6 +5,8 @@ const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
   comb_bound: "comb_bound",
   saddle_stitched: "saddle_stitched",
   perfect_bound: "perfect_bound",
+  "perf-bound": "perfect_bound",
+  "perfect-bound": "perfect_bound",
   ring_binder: "ring_binder",
   bi_fold: "bi_fold",
   tri_fold: "tri_fold",
@@ -91,6 +93,7 @@ export function inferPreviewTypeFromJob(job: {
   product_snapshot?: any;
   configuration?: any;
 }): ProductPreviewType {
+  if (job.configuration?.perfect_bound_cover || job.configuration?.raw_spec?.perfect_bound_cover) return "perfect_bound";
   const snapshot = job.product_snapshot || {};
   const selectedOptions: any[] = snapshot.selected_options || [];
 

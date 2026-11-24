@@ -42,7 +42,7 @@ function slugFallback(slug: string | null | undefined): FamilyKind {
   if (["business-cards", "business_cards", "business-card"].includes(s)) return "business_card";
   if (["pull-up-banners", "pull_up_banners", "banners", "banner", "large-format", "large_format"].includes(s)) return "large_format";
   if (["photo-prints", "photo_prints", "photos"].includes(s)) return "photo_print";
-  if (["wire-bound", "wire_bound", "comb-bound", "comb_bound", "spiral-bound", "spiral_bound", "bound-documents", "bound_documents", "perfect-bound", "perfect_bound"].includes(s)) return "bound_document";
+  if (["wire-bound", "wire_bound", "comb-bound", "comb_bound", "spiral-bound", "spiral_bound", "bound-documents", "bound_documents", "perf-bound", "perfect-bound", "perfect_bound"].includes(s)) return "bound_document";
   if (["canvas-prints", "canvas_prints", "canvas-wrap", "canvas_wrap"].includes(s)) return "canvas_wrap";
   if (["deskpads", "deskpad", "desk-pads", "calendars", "calendar", "templated-artwork", "templated_artwork"].includes(s)) return "templated_artwork";
   return "custom";

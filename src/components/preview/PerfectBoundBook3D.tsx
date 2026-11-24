@@ -1,112 +1,91 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Button } from "@/components/ui/button";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import type { SpineResult } from "@/lib/perfectBinding/spine";
 
 interface Props {
-  frontPath?: string;
-  backPath?: string;
-  spine: SpineResult;
-  trimMm: { widthMm: number; heightMm: number };
-  title?: string;
-  spineColor?: string;
-  mono?: boolean;
-  maxHeightPx?: number;
+  frontPath?: string; backPath?: string; wrapPath?: string;
+  spine: SpineResult; trimMm: { widthMm: number; heightMm: number };
+  title?: string; spineColor?: string; textColor?: string; bleedMm?: number;
+  mono?: boolean; maxHeightPx?: number;
 }
-
-const VIEWS = { front: -25, spine: 90, back: 180 } as const;
-
-/** Lightweight CSS-3D paperback: front, spine, back and page-block edges. */
-export default function PerfectBoundBook3D({
-  frontPath, backPath, spine, trimMm, title, spineColor = "hsl(var(--primary))",
-  mono, maxHeightPx = 380,
-}: Props) {
-  const [urls, setUrls] = useState<{ front?: string; back?: string }>({});
-  const [rotY, setRotY] = useState<number>(VIEWS.front);
-  const drag = useRef<{ x: number; start: number } | null>(null);
-
+export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono }: Props) {
+  const host = useRef<HTMLDivElement>(null);
+  const changeView = useRef<(view: string) => void>(() => {});
   useEffect(() => {
-    let off = false;
-    resolveUrls([frontPath ?? "", backPath ?? ""]).then(([front, back]) => {
-      if (!off) setUrls({ front, back });
+    const el = host.current; if (!el) return;
+    const css = getComputedStyle(el);
+    const token = (name: string) => `hsl(${css.getPropertyValue(name).trim()})`;
+    const paper = new THREE.Color(token("--background"));
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); el.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, 1, .1, 100);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enablePan = false; controls.minDistance = 3; controls.maxDistance = 7;
+    const w = 2 * trimMm.widthMm / trimMm.heightMm, h = 2, d = Math.max(.015, 2 * spine.spineMm / trimMm.heightMm);
+    const materials = Array.from({ length: 6 }, () => new THREE.MeshBasicMaterial({ color: paper }));
+    materials[1].color.set(spineColor ?? token("--primary"));
+    const geometry = new THREE.BoxGeometry(w, h, d);
+    scene.add(new THREE.Mesh(geometry, materials));
+    let alive = true;
+    const textures: THREE.Texture[] = [];
+    const texture = (canvas: HTMLCanvasElement, face: number) => {
+      const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace;
+      textures.push(t); materials[face].map = t; materials[face].color.set("white"); materials[face].needsUpdate = true;
+    };
+    const blank = (width: number, height: number) => { const c = document.createElement("canvas"); c.width = width; c.height = height; return c; };
+    const spineCanvas = blank(128, 1600), ctx = spineCanvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = spineColor ?? token("--primary"); ctx.fillRect(0, 0, 128, 1600);
+      if (spine.textAllowed && title) {
+        ctx.translate(64, 800); ctx.rotate(Math.PI / 2); ctx.fillStyle = textColor ?? token("--primary-foreground");
+        ctx.font = "60px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(title, 0, 0, 1380);
+      }
+      texture(spineCanvas, 1);
+    }
+    void resolveUrls([frontPath ?? "", backPath ?? "", wrapPath ?? ""]).then(async (urls) => {
+      for (const [index, url] of urls.entries()) {
+        if (!url) continue;
+        const img = new Image(); img.crossOrigin = "anonymous";
+        try { await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = reject; img.src = url; }); } catch { continue; }
+        if (!alive) return;
+        const paint = (face: number, x: number, y: number, cw: number, ch: number) => {
+          const canvas = blank(face === 1 ? 128 : 1000, 1600), c = canvas.getContext("2d");
+          if (!c) return; c.filter = mono ? "grayscale(1)" : "none";
+          c.drawImage(img, x, y, cw, ch, 0, 0, canvas.width, canvas.height); texture(canvas, face);
+        };
+        if (index === 2) {
+          const totalW = 2 * trimMm.widthMm + spine.spineMm + 2 * bleedMm;
+          const totalH = trimMm.heightMm + 2 * bleedMm;
+          const sx = img.width / totalW, sy = img.height / totalH;
+          paint(5, bleedMm * sx, bleedMm * sy, trimMm.widthMm * sx, trimMm.heightMm * sy);
+          paint(1, (bleedMm + trimMm.widthMm) * sx, bleedMm * sy, spine.spineMm * sx, trimMm.heightMm * sy);
+          paint(4, (bleedMm + trimMm.widthMm + spine.spineMm) * sx, bleedMm * sy, trimMm.widthMm * sx, trimMm.heightMm * sy);
+        } else {
+          const hasBleed = Math.abs(img.width / img.height - (trimMm.widthMm + 2 * bleedMm) / (trimMm.heightMm + 2 * bleedMm)) < .002;
+          const bX = hasBleed ? img.width * bleedMm / (trimMm.widthMm + 2 * bleedMm) : 0;
+          const bY = hasBleed ? img.height * bleedMm / (trimMm.heightMm + 2 * bleedMm) : 0;
+          paint(index === 0 ? 4 : 5, bX, bY, img.width - 2 * bX, img.height - 2 * bY);
+        }
+      }
     }).catch(() => {});
-    return () => { off = true; };
-  }, [frontPath, backPath]);
-
-  const scale = maxHeightPx / trimMm.heightMm;
-  const H = trimMm.heightMm * scale;
-  const W = trimMm.widthMm * scale;
-  const D = Math.max(3, spine.spineMm * scale);
-  const filter = mono ? "grayscale(1) contrast(1.05)" : undefined;
-
-  const face = (extra: React.CSSProperties): React.CSSProperties => ({
-    position: "absolute", left: "50%", top: "50%", backfaceVisibility: "hidden", ...extra,
-  });
-  const pageEdge = "repeating-linear-gradient(90deg, hsl(var(--background)) 0 1px, hsl(var(--muted)) 1px 2px)";
-
-  return (
-    <div className="flex flex-col items-center gap-4 w-full select-none">
-      <div
-        className="relative cursor-grab active:cursor-grabbing"
-        style={{ width: W + D + 80, height: H + 40, perspective: 1600, touchAction: "none" }}
-        onPointerDown={(e) => { drag.current = { x: e.clientX, start: rotY }; (e.target as Element).setPointerCapture?.(e.pointerId); }}
-        onPointerMove={(e) => { if (drag.current) setRotY(drag.current.start + (e.clientX - drag.current.x) * 0.6); }}
-        onPointerUp={() => { drag.current = null; }}
-        aria-label="3D cover preview, drag to rotate"
-      >
-        <div
-          className="absolute inset-0"
-          style={{
-            transformStyle: "preserve-3d",
-            transform: `rotateX(-6deg) rotateY(${rotY}deg)`,
-            transition: drag.current ? "none" : "transform 600ms cubic-bezier(.2,.8,.2,1)",
-          }}
-        >
-          {/* Front */}
-          <div style={face({ width: W, height: H, transform: `translate(-50%,-50%) translateZ(${D / 2}px)`,
-            boxShadow: "inset 6px 0 8px -6px hsl(var(--foreground) / .35)" })}
-            className="bg-card overflow-hidden rounded-r-sm">
-            {urls.front && <img src={urls.front} alt="Front cover" className="h-full w-full object-cover" style={{ filter }} draggable={false} />}
-            {/* hinge score */}
-            <div className="absolute inset-y-0" style={{ left: 6 * scale, width: 1, background: "hsl(var(--foreground) / .12)" }} />
-          </div>
-          {/* Back */}
-          <div style={face({ width: W, height: H, transform: `translate(-50%,-50%) rotateY(180deg) translateZ(${D / 2}px)` })}
-            className="bg-card overflow-hidden rounded-l-sm">
-            {urls.back && <img src={urls.back} alt="Back cover" className="h-full w-full object-cover" style={{ filter }} draggable={false} />}
-          </div>
-          {/* Spine (left edge) */}
-          <div style={face({ width: D, height: H, background: spineColor,
-            transform: `translate(-50%,-50%) rotateY(-90deg) translateZ(${W / 2}px)` })}
-            className="flex items-center justify-center overflow-hidden">
-            {spine.textAllowed && title && (
-              <span className="whitespace-nowrap font-semibold text-primary-foreground"
-                style={{ writingMode: "vertical-rl", fontSize: Math.min(D * 0.55, 16) }}>
-                {title}
-              </span>
-            )}
-          </div>
-          {/* Fore-edge (right) */}
-          <div style={face({ width: D, height: H - 4, background: pageEdge,
-            transform: `translate(-50%,-50%) rotateY(90deg) translateZ(${W / 2 - 2}px)` })} />
-          {/* Top & bottom page blocks */}
-          <div style={face({ width: W - 2, height: D, background: pageEdge,
-            transform: `translate(-50%,-50%) rotateX(90deg) translateZ(${H / 2 - 2}px)` })} />
-          <div style={face({ width: W - 2, height: D, background: pageEdge,
-            transform: `translate(-50%,-50%) rotateX(-90deg) translateZ(${H / 2 - 2}px)` })} />
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        {(Object.keys(VIEWS) as (keyof typeof VIEWS)[]).map((v) => (
-          <Button key={v} size="sm" variant="outline" onClick={() => setRotY(VIEWS[v])} className="capitalize">{v}</Button>
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground text-center">
-        Spine {spine.spineMm} mm · {spine.sheets} sheets
-        {!spine.textAllowed && spine.sheets > 0 && " · too thin for spine text"}
-        {!spine.bindable && spine.sheets > 0 && " · too thin to perfect bind"}
-      </p>
-    </div>
-  );
+    changeView.current = (v) => {
+      const distance = camera.aspect < 1 ? 4.8 : 4;
+      camera.position.set(v === "spine" ? -distance : v === "front" ? -.8 : .8, .15, v === "spine" ? .05 : v === "back" ? -distance : distance);
+      controls.target.set(0, 0, 0); controls.update();
+    };
+    const resize = () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); changeView.current("front"); };
+    const observer = new ResizeObserver(resize); observer.observe(el); resize();
+    let frame = 0;
+    const draw = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(draw); }; draw();
+    return () => { alive = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); geometry.dispose(); materials.forEach((m) => m.dispose()); textures.forEach((t) => t.dispose()); renderer.dispose(); el.removeChild(renderer.domElement); };
+  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono]);
+  return <div className="w-full space-y-3">
+    <div ref={host} className="h-[360px] sm:h-[420px] w-full touch-none" role="img" aria-label="Rotatable book cover preview" />
+    <div className="flex justify-center gap-2">{["front", "spine", "back"].map((v) => <Button key={v} variant="outline" size="sm" className="capitalize" onClick={() => changeView.current(v)}>{v}</Button>)}</div>
+    <p className="text-center text-xs text-muted-foreground">Spine {spine.spineMm} mm · {spine.sheets} sheets</p>
+  </div>;
 }

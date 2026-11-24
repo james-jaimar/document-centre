@@ -8,6 +8,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 type SectionType = "front_cover" | "back_cover" | "body" | "outside" | "inside" | "front" | "back" | "print_sheet";
 
@@ -17,6 +18,7 @@ interface SectionActionsProps {
   hasSelectedSection: boolean;
   onRemoveSection: () => void;
   familySlug?: string | null;
+  bodyOnly?: boolean;
   selectedFilePageCount?: number;
   onAutoAssignBrochure?: () => void;
   onAutoAssignPanels?: () => void;
@@ -101,13 +103,14 @@ export default function SectionActions({
   hasSelectedSection,
   onRemoveSection,
   familySlug,
+  bodyOnly,
   selectedFilePageCount,
   onAutoAssignBrochure,
   onAutoAssignPanels,
   onAutoAssignFlyer,
   onAutoAssignBusinessCard,
 }: SectionActionsProps) {
-  const actions = getActions(familySlug);
+  const actions = bodyOnly ? BOUND_ACTIONS.filter((a) => a.type === "body") : getActions(familySlug);
   const showAutoAssign =
     hasSelectedFile &&
     familySlug === "brochures" &&
@@ -206,7 +209,7 @@ export default function SectionActions({
       )}
 
       {actions.map(({ type, label, icon: Icon }) => (
-        <button
+        <Button variant="ghost"
           key={type}
           disabled={!hasSelectedFile}
           onClick={() => onAddAs(type)}
@@ -220,7 +223,7 @@ export default function SectionActions({
           <Icon className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1">{label}</span>
           <ArrowRight className="h-3 w-3 opacity-40" />
-        </button>
+        </Button>
       ))}
 
       <div className="border-t border-border/60 my-2" />

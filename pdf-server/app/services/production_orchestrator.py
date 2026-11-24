@@ -178,6 +178,27 @@ def load_job_bundle(job_id: str) -> JobBundle:
                         continue
                     asset_paths.append((fname, path))
 
+    # Separate cover sources are not merge directives: preserve them for
+    # wrap assembly without adding them to the inner-page PDF sequence.
+    if isinstance(configuration, dict) and configuration.get("perfect_bound_cover"):
+        cover = configuration["perfect_bound_cover"]
+        frozen = configuration.get("source_assets") or []
+        for side in (["wrap"] if cover.get("mode") == "wrap" else ["back", "front"]):
+            source = cover.get(side) or {}
+            aid = source.get("asset_id")
+            path = source.get("storage_path")
+            if not any((aid and a.get("asset_id") == aid) or (path and a.get("storage_path") == path) for a in frozen if isinstance(a, dict)):
+                raise ValueError("Perfect-bound cover is not a frozen job asset")
+            if aid and aid in asset_lookup:
+                fname, path = asset_lookup[aid]
+            else:
+                fname = f"{side}-cover.pdf"
+            if not path:
+                raise ValueError("Perfect-bound cover source cannot be resolved")
+            cover[side] = {**source, "storage_path": path}
+            if not any(p == path for _, p in asset_paths):
+                asset_paths.append((fname, path))
+
     # ---- 3. Legacy: traverse order_items → documents → assets ----
     if not asset_paths and target_item_ids:
         documents = (

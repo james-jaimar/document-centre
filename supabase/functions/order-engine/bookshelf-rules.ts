@@ -52,5 +52,16 @@ export async function copyBookshelfSnapshot(snapshot: any, prefix: string, copy:
     if (s.document_id && !documentId) throw new Error("A document section references missing artwork");
     return { ...s, document_id: documentId };
   });
-  return { ...snapshot, documents, sections };
+  const spec = { ...snapshot.spec };
+  if (spec.perfect_bound_cover) {
+    const cover = { ...spec.perfect_bound_cover };
+    for (const side of ["front", "back", "wrap"]) {
+      if (!cover[side]) continue;
+      const id = ids.get(cover[side].document_id);
+      if (!id) throw new Error("A cover references missing artwork");
+      cover[side] = { ...cover[side], document_id: id };
+    }
+    spec.perfect_bound_cover = cover;
+  }
+  return { ...snapshot, spec, documents, sections };
 }

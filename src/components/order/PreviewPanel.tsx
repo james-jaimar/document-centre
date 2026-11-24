@@ -46,6 +46,7 @@ interface PreviewPanelProps {
   paperGsm?: number | null;
   /** Title printed on the spine of perfect-bound books. */
   bookTitle?: string;
+  insideOnly?: boolean;
 }
 
 interface PageInfo {
@@ -344,6 +345,7 @@ export default function PreviewPanel({
   productFamilySlug,
   paperGsm,
   bookTitle,
+  insideOnly,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -984,14 +986,13 @@ export default function PreviewPanel({
     return sec ? getSectionLabel(sec.section_type, productFamilySlug) : "";
   }, [visibleLeft, visibleRight, finalPages, totalPages, productFamilySlug]);
 
-  const isPerfectBound = productType === "perfect_bound";
+  const isPerfectBound = productType === "perfect_bound" && !insideOnly;
   const [bookView, setBookView] = useState<"book" | "pages">("book");
   const perfectBound = useMemo(() => {
     if (!isPerfectBound) return null;
     const real = pages.filter((p) => p.thumbnailUrl);
-    const front = real.find((p) => p.section?.section_type === "front_cover") ?? real[0];
-    const back = real.filter((p) => p.section?.section_type === "back_cover").pop()
-      ?? (real.length > 1 ? real[real.length - 1] : undefined);
+    const front = real.find((p) => p.section?.section_type === "front_cover");
+    const back = real.filter((p) => p.section?.section_type === "back_cover").pop();
     const body = real.filter((p) => (p.section?.section_type ?? "body") === "body" && p !== front && p !== back);
     const duplex = body.every((p) => p.section?.is_duplex ?? true);
     const spine = calculateSpine({ pages: body.length, duplex, gsm: paperGsm });

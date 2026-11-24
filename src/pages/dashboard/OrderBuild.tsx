@@ -51,6 +51,8 @@ import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import PerfectBoundCoverStudio from "@/components/order/PerfectBoundCoverStudio";
+import { isPerfectBoundFamily, bodySpine, sectionPageCount, coverValidation } from "@/lib/perfectBinding/workflow";
 import { gsmFromLabel, checkPageLimits } from "@/lib/perfectBinding/spine";
 import {
   planCoverSplit,
@@ -336,6 +338,7 @@ export default function OrderBuild() {
     if (orderItem?.spec) {
       const s = orderItem.spec as unknown as ItemSpec;
       const newSpec: ItemSpec = {
+        ...(s.perfect_bound_cover ? { perfect_bound_cover: s.perfect_bound_cover } : {}),
         page_count: s.page_count ?? 0,
         quantity: s.quantity ?? 1,
         is_color: s.is_color ?? true,
@@ -566,7 +569,7 @@ export default function OrderBuild() {
   // cover collapses the sections back to one whole-document body.
   const coverSplitBusyRef = useRef(false);
   useEffect(() => {
-    if (!orderItemId) return;
+    if (!orderItemId || isPerfectBoundFamily(productFamily) || spec.perfect_bound_cover) return;
     if (documents.length !== 1) return;
     if (coverSplitBusyRef.current) return;
     const doc = documents[0];
@@ -666,7 +669,7 @@ export default function OrderBuild() {
     });
     // Reacts to the cover picker + the uploaded file only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderItemId, documents, sections, options, spec.selected_options]);
+  }, [orderItemId, documents, sections, options, spec.selected_options, productFamily, spec.perfect_bound_cover]);
 
 
 
@@ -735,6 +738,7 @@ export default function OrderBuild() {
 
   // Derive preview type from binding option metadata or product family slug
   const productType: ProductPreviewType = useMemo(() => {
+    if (isPerfectBoundFamily(productFamily) || spec.perfect_bound_cover) return "perfect_bound";
     // Case-insensitive lookup for "Binding" option
     const bindingOption = options.find((o) => o.name.toLowerCase() === "binding");
     // Try matching the option name exactly in selected_options, or case-insensitive
@@ -819,7 +823,7 @@ export default function OrderBuild() {
       || "loose_sheets";
     if (import.meta.env.DEV) console.log("[PreviewType] fallback slug:", productFamily?.slug, "kind:", kind, "→", slugResult);
     return slugResult;
-  }, [options, spec.selected_options, productFamily?.slug, productFamily?.kind]);
+  }, [options, spec.selected_options, productFamily, spec.perfect_bound_cover]);
 
   // Derive visual finishing effects from selected options metadata
   const previewEffects: PreviewEffects = useMemo(() => {
@@ -1143,14 +1147,18 @@ export default function OrderBuild() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Admin-configured body page limits (perfect bound defaults to 40 minimum).
-  const bodyPageCount = useMemo(() => {
-    const seen = new Set<string>();
-    return sections.reduce((sum, section) => {
-      if (section.section_type !== "body" || !section.document_id || seen.has(section.document_id)) return sum;
-      seen.add(section.document_id);
-      return sum + (documents.find((d) => d.id === section.document_id)?.page_count ?? 0);
-    }, 0);
-  }, [sections, documents]);
+  const bodyPageCount = useMemo(() => sections.filter((s) => s.section_type === "body").reduce((n, s) => n + sectionPageCount(s, documents), 0), [sections, documents]);
+  const perfectBoundSpine = useMemo(() => bodySpine(sections, documents, bodyPaperGsm), [sections, documents, bodyPaperGsm]);
+  const bodyDocument = documents.find((d) => sections.some((s) => s.section_type === "body" && s.document_id === d.id));
+  const perfectTrim = canvasSizeMm ?? { widthMm: bodyDocument?.page_width_mm ?? 210, heightMm: bodyDocument?.page_height_mm ?? 297 };
+  const perfectCoverError = productType === "perfect_bound" ? coverValidation(spec.perfect_bound_cover, documents, perfectTrim, perfectBoundSpine) : null;
+  useEffect(() => {
+    if (!spec.perfect_bound_cover) return;
+    const updated = { ...spec.perfect_bound_cover, trim: perfectTrim, spine: perfectBoundSpine };
+    if (JSON.stringify(updated) !== JSON.stringify(spec.perfect_bound_cover)) setSpec((prev) => ({ ...prev, perfect_bound_cover: updated }));
+  }, [spec.perfect_bound_cover, perfectTrim.widthMm, perfectTrim.heightMm, perfectBoundSpine]);
+  const perfectSetupError = productType === "perfect_bound" && !options.some((o) => o.name.toLowerCase() === "binding" && isStructuredValues(o.values) && o.values.some((v) => v.slug === spec.selected_options[o.name] && (v.metadata?.binding_method === "perfect" || /perfect/i.test(v.label))))
+    ? "This product's perfect-binding option and price still need to be set up by the print shop." : null;
   const pageLimit = useMemo(() => {
     const rules = ((productFamily as any)?.printing_rules ?? {}) as { min_pages?: number | null; max_pages?: number | null };
     const perfectBound = productType === "perfect_bound";
@@ -1160,7 +1168,7 @@ export default function OrderBuild() {
     return checkPageLimits(pages, rules, { perfectBound });
   }, [productFamily, productType, bodyPageCount, spec?.page_count]);
 
-  const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0 && pageLimit.ok;
+  const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0 && pageLimit.ok && !perfectCoverError && !perfectSetupError;
 
   // Build a pricing-aware spec that includes per-section colour/sides for
   // mixed bound documents. Only printable sections (body/cover) feed the
@@ -1732,6 +1740,8 @@ export default function OrderBuild() {
         </Button>
       </div>
 
+      {productType === "perfect_bound" && orderItemId && <PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} />}
+
       {/* Split panel */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0">
 
@@ -1824,6 +1834,8 @@ export default function OrderBuild() {
             )}
           </div>
           <div className="p-3 shrink-0">
+            {perfectCoverError && <p role="alert" className="text-sm text-destructive">{perfectCoverError}</p>}
+            {perfectSetupError && <p role="alert" className="text-sm text-destructive">{perfectSetupError}</p>}
             {!pageLimit.ok && (
               <div role="alert" className="mb-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
                 {"message" in pageLimit ? pageLimit.message : null}
@@ -1869,6 +1881,7 @@ export default function OrderBuild() {
             productFamilySlug={productFamily?.slug ?? undefined}
             paperGsm={bodyPaperGsm}
             bookTitle={reference || orderItem?.title || undefined}
+            insideOnly={productType === "perfect_bound"}
           />
         </div>
       </div>

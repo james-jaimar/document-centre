@@ -1,4 +1,5 @@
 import type { StructuredOptionValue } from "./productOptionTypes";
+import type { PerfectBoundCover } from "./perfectBinding/workflow";
 import { isStructuredValues } from "./productOptionTypes";
 import type { Tables } from "@/integrations/supabase/types";
 import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
@@ -26,6 +27,7 @@ export interface ItemSpecSection {
 
 
 export interface ItemSpec {
+  perfect_bound_cover?: PerfectBoundCover;
   page_count: number;
   quantity: number;
   is_color: boolean;

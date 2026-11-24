@@ -43,6 +43,7 @@ export interface DocumentRow {
   file_size: number | null;
   page_width_mm: number | null;
   page_height_mm: number | null;
+  file_path?: string | null;
   /** Resolved source PDF path so the worker is self-contained. */
   asset_id?: string | null;
   storage_path?: string | null;
@@ -624,7 +625,16 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
     ? []
     : buildMergeDirectives(sections, documents, isSaddleStitched);
 
-  const sourceAssets = isRasterProduct ? [] : buildSourceAssets(documents);
+  const sourceAssets: Array<{ asset_id: string | null; file_name: string; storage_path: string | null; page_count: number | null }> = isRasterProduct ? [] : buildSourceAssets(documents);
+  if (spec.perfect_bound_cover) {
+    for (const side of ["front", "back", "wrap"]) {
+      const ref = spec.perfect_bound_cover[side];
+      const doc = ref && documents.find((d) => d.id === ref.document_id);
+      if (doc && !sourceAssets.some((a) => (doc.asset_id && a.asset_id === doc.asset_id) || (doc.file_path && a.storage_path === doc.file_path))) {
+        sourceAssets.push({ asset_id: doc.asset_id ?? null, file_name: doc.file_name, storage_path: doc.asset_id ? null : (doc.storage_path ?? doc.file_path ?? null), page_count: doc.page_count });
+      }
+    }
+  }
 
   return {
     configuration: {
@@ -656,6 +666,15 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       // merged PDF if the background render hasn't completed yet.
       source_order_item_id: item.id,
       // preserve raw spec for debugging/integration
+      ...(spec?.perfect_bound_cover ? { perfect_bound_cover: {
+        ...spec.perfect_bound_cover,
+        ...Object.fromEntries(["front", "back", "wrap"].map((side) => {
+          const source = spec.perfect_bound_cover[side];
+          const doc = source && documents.find((d) => d.id === source.document_id);
+          if (source && !doc?.asset_id && !doc?.storage_path && !doc?.file_path) throw new Error("Cover source PDF is missing");
+          return [side, source ? { ...source, asset_id: doc?.asset_id ?? null, storage_path: doc?.asset_id ? null : (doc?.storage_path ?? doc?.file_path ?? null) } : undefined];
+        })),
+      } } : {}),
       raw_spec: spec,
     },
     product_snapshot: {

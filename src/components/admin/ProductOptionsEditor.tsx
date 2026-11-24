@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { previewMetadataForFinishingCode } from "@/lib/catalog/optionAdapter";
+import { PERFECT_BOUND_OPTIONS, perfectBindingFinishing } from "@/lib/perfectBinding/preset";
+import { isPerfectBoundFamily } from "@/lib/perfectBinding/workflow";
 import {
   useProductOptions,
   useCreateProductOption,
@@ -308,14 +310,26 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("product_families")
-        .select("id, quantity_mode")
+        .select("id, quantity_mode, slug, printing_rules")
         .eq("id", productFamilyId)
         .single();
       if (error) throw error;
-      return data as { id: string; quantity_mode: "free" | "blocks" | null };
+      return data as { id: string; quantity_mode: "free" | "blocks" | null; slug: string; printing_rules: unknown };
     },
   });
   const isBlocksFamily = family?.quantity_mode === "blocks";
+  const [applyingPerfectSetup, setApplyingPerfectSetup] = useState(false);
+  const addPerfectSetup = async () => {
+    setApplyingPerfectSetup(true);
+    try {
+      for (const [index, definition] of PERFECT_BOUND_OPTIONS.entries()) {
+        if (options.some((o) => o.name.toLowerCase() === definition.name.toLowerCase())) continue;
+        await createOption.mutateAsync({ product_family_id: productFamilyId, name: definition.name, option_type: "select", sort_order: index, is_required: true, source: definition.source, source_filter: definition.source_filter as Json, values: [] });
+      }
+      toast({ title: "Perfect-bound options added", description: "Enable your sizes and stock, then configure the perfect-binding charge in Master Catalogue and Pricing." });
+    } catch (error) { toast({ title: "Setup could not finish", description: error instanceof Error ? error.message : "Try again; existing options will be kept.", variant: "destructive" }); }
+    finally { setApplyingPerfectSetup(false); }
+  };
 
   // Metric / Imperial lens. The master catalogue is two parallel lists; the
   // editor works on one at a time so the two measurement systems can never be
@@ -488,6 +502,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       const rows = (catFinishing as any[])
         .filter((f) => f.is_active)
         .filter((f) => f.category === cat)
+        .filter((f) => (editingOption?.source_filter as { binding_method?: string } | null)?.binding_method !== "perfect" || perfectBindingFinishing(f))
         .map((f) => {
           const code = canonicalCode(f);
           // Bake preview-engine metadata (front/back/binding_method/etc.)
@@ -736,7 +751,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         source: optionForm.source,
         source_filter:
           optionForm.source === "catalog.finishing"
-            ? { category: optionForm.finishingCategory }
+            ? { category: optionForm.finishingCategory, ...((editingOption?.source_filter as { binding_method?: string } | null)?.binding_method === "perfect" ? { binding_method: "perfect" } : {}) }
             : optionForm.source === "catalog.papers"
             ? optionForm.paperCategories.length > 0
               ? { categories: optionForm.paperCategories }
@@ -784,6 +799,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
 
   return (
     <div className="space-y-3">
+      {isPerfectBoundFamily(family) && <div className="border-b pb-3 space-y-2">
+        <Button variant="outline" disabled={applyingPerfectSetup} onClick={() => void addPerfectSetup()}><Plus className="mr-2 h-4 w-4" />{applyingPerfectSetup ? "Adding options…" : "Add Perfect Bound Options"}</Button>
+        <p className="text-xs text-muted-foreground">Kind: Bound document. Binding workflow: Perfect bound. Set minimum/maximum inner pages, enable sizes in Catalogue, and choose text stock, cover stock and lamination. Binding is a per-book charge. Set Cover Printing to your complete wrap printing + stock price per book (not two inner-page prices); lamination stays separate. Choose your default stock and finishing before enabling orders.</p>
+      </div>}
       <div className="flex items-center justify-between">
         <div>
           <h4 className="text-sm font-semibold text-foreground">Product Options</h4>

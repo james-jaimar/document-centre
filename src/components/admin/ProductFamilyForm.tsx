@@ -37,6 +37,7 @@ const ALL_FINISHED_SIZES = [
 ] as const;
 
 interface PrintingRules {
+  binding_method?: string | null;
   allowed_finished_sizes: string[];
   default_finished_size: string;
   cover_is_heavy_stock: boolean;
@@ -322,6 +323,13 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 </FormItem>
               )}
             />
+
+            {form.watch("kind") === "bound_document" && <FormField control={form.control} name="printing_rules.binding_method" render={({ field }) => (
+              <FormItem><FormLabel>Binding workflow</FormLabel><Select value={field.value ?? "selectable"} onValueChange={(v) => field.onChange(v === "selectable" ? null : v)}>
+                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>
+                  <SelectItem value="selectable">Customer-selected binding</SelectItem><SelectItem value="perfect">Perfect bound — inner pages then cover</SelectItem>
+                </SelectContent></Select><FormMessage /></FormItem>
+            )} />}
 
             <FormField
               control={form.control}

@@ -8,6 +8,7 @@ import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import { getBindingImage, normaliseBindingColor } from "@/components/preview/bindingAssets";
 import { bookshelfCoverShape, type BookshelfShape } from "@/lib/bookshelfShape";
 import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
+import { savedPerfectCover } from "@/lib/perfectBinding/savedCover";
 
 const COVER_BOX: Record<BookshelfShape, string> = {
   portrait: "h-56 w-40",
@@ -17,12 +18,13 @@ const COVER_BOX: Record<BookshelfShape, string> = {
 };
 
 export function BookshelfCover({ item }: { item: Pick<BookshelfItem, "name" | "snapshot"> }) {
-  const raw = item.snapshot.documents?.flatMap(document => document.thumbnail_urls ?? [])
+  const perfectCover = savedPerfectCover(item.snapshot);
+  const raw = perfectCover?.path ?? item.snapshot.documents?.flatMap(document => document.thumbnail_urls ?? [])
     .find(path => typeof path === "string" && path.length > 0) ?? null;
   const url = useSignedThumbnailUrl(raw);
   const shape = bookshelfCoverShape(item.snapshot);
   const landscape = shape === "landscape";
-  const binding = shape === "ring_binder" ? null : selectedBindingArt(item.snapshot.spec.selected_options ?? {}, []);
+  const binding = shape === "ring_binder" || item.snapshot.spec.perfect_bound_cover ? null : selectedBindingArt(item.snapshot.spec.selected_options ?? {}, []);
   const bindingUrl = binding ? getBindingImage({
     method: binding.method,
     color: normaliseBindingColor(binding.color),
@@ -35,7 +37,8 @@ export function BookshelfCover({ item }: { item: Pick<BookshelfItem, "name" | "s
   useEffect(() => setFailed(false), [url]);
   useEffect(() => setBindingFailed(false), [bindingUrl]);
   const artwork = url && !failed
-    ? <img src={url} alt={`${item.name} cover`} className={`h-full w-full object-contain${mono ? " grayscale contrast-[1.05]" : ""}`} onError={() => setFailed(true)} />
+    ? perfectCover?.wrap ? <div className="relative h-full w-full overflow-hidden"><img src={url} alt={`${item.name} cover`} className="absolute max-w-none" style={{ width: `${perfectCover.widthScale * 100}%`, height: `${perfectCover.heightScale * 100}%`, right: `${-perfectCover.rightOffset * 100}%`, top: `${-perfectCover.topOffset * 100}%` }} onError={() => setFailed(true)} /></div>
+      : <img src={url} alt={`${item.name} cover`} className={`h-full w-full object-contain${mono ? " grayscale contrast-[1.05]" : ""}`} onError={() => setFailed(true)} />
     : <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-secondary/50 px-5 text-center"><BookOpen className="h-9 w-9 text-primary" /><span className="line-clamp-4 text-sm font-semibold text-foreground">{item.name}</span></div>;
 
   if (shape === "ring_binder") {

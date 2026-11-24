@@ -32,6 +32,14 @@ const snapshot = {
   sections: [{ document_id: "original", section_type: "body", is_duplex: true }],
 };
 describe("Bookshelf retains configured PDFs", () => {
+  it("copies later cover PDFs and remaps the saved cover selections", async () => {
+    const coverSnapshot = { ...snapshot, spec: { ...snapshot.spec, perfect_bound_cover: { mode: "guided", front: { document_id: "cover", page: 0 }, back: { document_id: "cover", page: 1 } } }, documents: [...snapshot.documents, { ...snapshot.documents[0], id: "cover", file_path: "cart/cover.pdf" }] };
+    let i = 0;
+    const result = await copyBookshelfSnapshot(coverSnapshot, "shelf", vi.fn().mockResolvedValue(undefined), () => `copy-${++i}`);
+    expect(result.spec.perfect_bound_cover.front.document_id).toBe("copy-2");
+    expect(result.spec.perfect_bound_cover.back).toEqual({ document_id: "copy-2", page: 1 });
+    expect(coverSnapshot.spec.perfect_bound_cover.front.document_id).toBe("cover");
+  });
   it("copies artwork and remaps anchors without altering the print settings or original", async () => {
     const copy = vi.fn().mockResolvedValue(undefined);
     const result = await copyBookshelfSnapshot(snapshot, "shelf/version", copy, () => "copied");

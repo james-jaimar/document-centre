@@ -7,6 +7,12 @@ const documents = [
 ];
 
 describe("cart-edit artwork references", () => {
+  it("remaps independent front, back and wrap cover documents without touching the saved source", () => {
+    const cover = { front: { document_id: "header-doc", page: 0 }, back: { document_id: "watermark-doc", page: 2 }, wrap: { document_id: "header-doc", page: 1 } };
+    const result = remapClonedArtwork({ perfect_bound_cover: cover }, documents);
+    expect(result.perfect_bound_cover).toEqual({ front: { document_id: "new-header", page: 0 }, back: { document_id: "new-watermark", page: 2 }, wrap: { document_id: "new-header", page: 1 } });
+    expect(cover.front.document_id).toBe("header-doc");
+  });
   it("remaps all template placeholders while retaining original-density and layout values", () => {
     const spec = { templated_artwork: { template_id: "design-6", placeholders: [
       { kind: "image", document_id: "header-doc", storage_path: "uploads/header.jpg", offset_x: 12 },
