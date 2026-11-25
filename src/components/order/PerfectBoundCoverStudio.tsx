@@ -141,7 +141,7 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       <Button size="sm" variant={view === "flat" ? "default" : "outline"} onClick={() => setView("flat")}><Layers className="mr-2 h-4 w-4" />2D flat wrap</Button>
       <Button size="sm" variant={view === "3d" ? "default" : "outline"} onClick={() => setView("3d")}><Box className="mr-2 h-4 w-4" />3D book</Button>
     </div>
-    <div className="min-h-0 flex-1">{view === "flat" ? <PerfectBoundFlatWrap {...previewProps} onPlacementChange={cover.mode === "guided" ? setPlacement : undefined} /> : <PerfectBoundBook3D {...previewProps} />}</div>
+    <div className="min-h-0 flex-1 rounded-lg p-4 shadow-inner" style={{ background: "radial-gradient(ellipse at center, hsl(var(--studio-backdrop) / 0.55), hsl(var(--studio-backdrop)))" }}>{view === "flat" ? <PerfectBoundFlatWrap {...previewProps} onPlacementChange={cover.mode === "guided" ? setPlacement : undefined} /> : <PerfectBoundBook3D {...previewProps} />}</div>
   </div>;
   const slots: { side: "front" | "back" | "wrap"; label: string; hint: string }[] = cover.mode === "wrap"
     ? [{ side: "wrap", label: "Full wrap PDF", hint: `${wrapSize.widthMm} × ${wrapSize.heightMm} mm including bleed` }]

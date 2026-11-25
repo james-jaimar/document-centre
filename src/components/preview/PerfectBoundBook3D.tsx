@@ -21,7 +21,7 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
     const el = host.current; if (!el) return;
     const css = getComputedStyle(el);
     const token = (name: string) => `hsl(${css.getPropertyValue(name).trim()})`;
-    const paper = new THREE.Color(token("--background"));
+    const paper = new THREE.Color("#FFFFFF"); // unprinted board is white paper in every theme
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();

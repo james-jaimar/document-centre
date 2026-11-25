@@ -20,6 +20,7 @@
     --secondary-foreground: 222 24% 18%;
 
     --muted: 210 18% 94%;
+    --studio-backdrop: 214 14% 86%;
     --muted-foreground: 215 16% 45%;
 
     --accent: 160 45% 66%;
@@ -81,6 +82,7 @@
     --secondary-foreground: 210 40% 98%;
 
     --muted: 217.2 32.6% 17.5%;
+    --studio-backdrop: 215 14% 32%;
     --muted-foreground: 215 20.2% 65.1%;
 
     --accent: 160 45% 40%;

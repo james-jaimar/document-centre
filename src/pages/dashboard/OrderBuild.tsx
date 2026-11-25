@@ -675,6 +675,19 @@ export default function OrderBuild() {
 
 
 
+  // Documents that define the book's page size/orientation. For perfect-bound
+  // books, cover PDFs (front/back/wrap) are excluded — a wide wrap must never
+  // flip the inside pages to landscape and inflate the cover wrap size.
+  const sizingDocuments = useMemo(() => {
+    const isPerfect = isPerfectBoundFamily(productFamily) || !!spec.perfect_bound_cover;
+    if (!isPerfect) return documents;
+    const c = spec.perfect_bound_cover;
+    const coverIds = new Set([c?.front?.document_id, c?.back?.document_id, c?.wrap?.document_id].filter(Boolean));
+    const bodyIds = new Set(sections.filter((s) => s.section_type === "body" && s.document_id).map((s) => s.document_id));
+    const body = documents.filter((d) => bodyIds.has(d.id) && !coverIds.has(d.id));
+    return body.length ? body : documents.filter((d) => !coverIds.has(d.id));
+  }, [documents, sections, productFamily, spec.perfect_bound_cover]);
+
   // Auto-match Document Size from uploaded document dimensions
   // Only fires when no Document Size is currently selected — preserves user choice across edit cycles
   useEffect(() => {
@@ -700,7 +713,8 @@ export default function OrderBuild() {
       return;
     }
 
-    const doc = documents[0];
+    const doc = sizingDocuments[0];
+    if (!doc) return;
     const docW = doc.page_width_mm ? Number(doc.page_width_mm) : null;
     const docH = doc.page_height_mm ? Number(doc.page_height_mm) : null;
     if (!docW || !docH) return;
@@ -735,7 +749,7 @@ export default function OrderBuild() {
         selected_options: { ...prev.selected_options, [sizeOpt.name]: matched.slug },
       }));
     }
-  }, [options, documents, spec.selected_options]);
+  }, [options, documents, sizingDocuments, spec.selected_options]);
 
   // Derive preview type from binding option metadata or product family slug
   const productType: ProductPreviewType = useMemo(() => {
@@ -897,10 +911,10 @@ export default function OrderBuild() {
   // honour a landscape upload even when only portrait-flavoured size option
   // values exist (e.g. DOC_SIZE_POSTER has no `a2-landscape` slug).
   const docOrientationForCanvas: "portrait" | "landscape" | null = useMemo(() => {
-    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    const doc = sizingDocuments.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc || !doc.page_width_mm || !doc.page_height_mm) return null;
     return Number(doc.page_width_mm) > Number(doc.page_height_mm) ? "landscape" : "portrait";
-  }, [documents]);
+  }, [sizingDocuments]);
 
   const canvasSizeMm = useMemo(() => {
     if (!sizeMeta) return undefined;
@@ -946,10 +960,10 @@ export default function OrderBuild() {
   // we would request short-edge spine artwork that no longer matches the
   // page shape.
   const docPageOrientation: "portrait" | "landscape" | null = useMemo(() => {
-    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    const doc = sizingDocuments.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc || !doc.page_width_mm || !doc.page_height_mm) return null;
     return Number(doc.page_width_mm) > Number(doc.page_height_mm) ? "landscape" : "portrait";
-  }, [documents]);
+  }, [sizingDocuments]);
 
   const bindingEdge: "left" | "top" = useMemo(() => {
     // 1. If we know the actual page orientation, that wins.
