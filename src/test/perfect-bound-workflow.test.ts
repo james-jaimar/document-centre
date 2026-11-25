@@ -27,6 +27,7 @@ describe("perfect-bound workflow", () => {
     const trim = { widthMm: 148, heightMm: 210 }, spine = calculateSpine({ pages: 80, duplex: true, gsm: 80 });
     const cover = { ...DEFAULT_COVER, trim, spine, front: { document_id: "a", page: 0 } };
     expect(coverValidation(cover, [], trim, spine)).toBe("Choose both front and back covers, or leave the back blank.");
+    expect(coverValidation({ ...cover, back_blank: "colour", back_colour: "#AA0000" }, [{ id: "a", page_count: 1, page_width_mm: 170.2, page_height_mm: 236 }], trim, spine)).toBeNull();
     expect(coverValidation({ ...cover, mode: "wrap", wrap: { document_id: "a", page: 0 } }, [{ id: "a", page_count: 1, page_width_mm: 312, page_height_mm: 216 }], trim, spine)).toContain("Cover PDF must be");
   });
 });

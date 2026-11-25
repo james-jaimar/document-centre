@@ -71,8 +71,10 @@ export interface PerfectBoundCover {
   front?: CoverSource;
   back?: CoverSource;
   wrap?: CoverSource;
-  /** Leave the back cover unprinted (white) or fill it with the spine colour. */
-  back_blank?: "white" | "spine";
+  /** Leave the back cover unprinted (white), or fill it with the spine colour or its own flat colour. */
+  back_blank?: "white" | "spine" | "colour";
+  /** Flat back-cover colour used when back_blank is "colour". */
+  back_colour?: string;
   spine_font?: SpineFont;
   spine_colour: string;
   text_colour: string;
@@ -112,6 +114,8 @@ export function coverValidation(cover: PerfectBoundCover | undefined, documents:
     if (doc.document_status && !["ready", "analyzed"].includes(doc.document_status)) return "Wait for the cover PDF checks to finish.";
     const preflight = doc.preflight_data as { boxes?: { MediaBox?: number[] }; awaiting_review?: boolean } | null;
     if (preflight?.awaiting_review) return "Resolve the cover PDF size check before ordering.";
+    // Guided covers are placed and fitted on their panel, so any artwork size is accepted.
+    if (cover.mode === "guided") continue;
     const media = preflight?.boxes?.MediaBox;
     const w = cover.mode === "wrap" && media?.length === 4 ? Math.abs(media[2] - media[0]) * 25.4 / 72 : doc.page_width_mm ?? 0;
     const h = cover.mode === "wrap" && media?.length === 4 ? Math.abs(media[3] - media[1]) * 25.4 / 72 : doc.page_height_mm ?? 0;

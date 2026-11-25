@@ -11,7 +11,7 @@ interface Props {
   spine: SpineResult; trimMm: { widthMm: number; heightMm: number };
   title?: string; spineColor?: string; textColor?: string; bleedMm?: number;
   frontPlacement?: CoverPlacement; backPlacement?: CoverPlacement;
-  backBlank?: "white" | "spine"; spineFont?: SpineFont;
+  backBlank?: "white" | "spine" | "colour"; backColor?: string; spineFont?: SpineFont;
   frontBoxes?: PdfBoxes; backBoxes?: PdfBoxes;
   /** When set, customers can drag to move and scroll to zoom each cover panel. */
   onPlacementChange?: (side: Side, placement: CoverPlacement) => void;
@@ -22,7 +22,7 @@ const HINGE_MM = 6;
 const PAPER = "#FFFFFF";
 
 /** Flat press-sheet view of the cover wrap: back | spine | front with bleed, trim and hinge guides. */
-export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, frontPlacement, backPlacement, backBlank, spineFont = "sans", onPlacementChange, frontBoxes, backBoxes }: Props) {
+export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, frontPlacement, backPlacement, backBlank, backColor, spineFont = "sans", onPlacementChange, frontBoxes, backBoxes }: Props) {
   const [urls, setUrls] = useState<string[]>([]);
   const [natural, setNatural] = useState<Partial<Record<Side, { w: number; h: number }>>>({});
   const root = useRef<HTMLDivElement>(null);
@@ -74,7 +74,7 @@ export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, sp
     const editable = !!onPlacementChange && !!url;
     return <div data-side={side} aria-label={editable ? `${side} cover: drag to move, scroll to zoom` : undefined}
       className={`absolute top-0 bottom-0 overflow-hidden ${editable ? "cursor-grab touch-none active:cursor-grabbing" : ""}`}
-      style={{ left: x(boxLeft), width: x(boxW), backgroundColor: side === "back" && backBlank === "spine" ? spineColor : PAPER }} {...(editable ? pointer(side) : {})}>
+      style={{ left: x(boxLeft), width: x(boxW), backgroundColor: side === "back" && backBlank === "spine" ? spineColor : side === "back" && backBlank === "colour" ? backColor ?? PAPER : PAPER }} {...(editable ? pointer(side) : {})}>
       {url ? (() => {
         const n = natural[side];
         const crop = n ? thumbnailCrop(n.w, n.h, side === "front" ? frontBoxes : backBoxes) : { x: 0, y: 0, w: 1, h: 1 };

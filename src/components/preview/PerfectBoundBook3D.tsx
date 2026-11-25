@@ -12,9 +12,9 @@ interface Props {
   spine: SpineResult; trimMm: { widthMm: number; heightMm: number };
   title?: string; spineColor?: string; textColor?: string; bleedMm?: number;
   mono?: boolean; maxHeightPx?: number;
-  frontPlacement?: CoverPlacement; backPlacement?: CoverPlacement; backBlank?: "white" | "spine"; spineFont?: SpineFont;
+  frontPlacement?: CoverPlacement; backPlacement?: CoverPlacement; backBlank?: "white" | "spine" | "colour"; backColor?: string; spineFont?: SpineFont;
 }
-export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono, frontPlacement, backPlacement, backBlank, spineFont = "sans", frontBoxes, backBoxes }: Props) {
+export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono, frontPlacement, backPlacement, backBlank, backColor, spineFont = "sans", frontBoxes, backBoxes }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const changeView = useRef<(view: string) => void>(() => {});
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
     }
     if (backBlank) {
       const c = blank(16, 16), bctx = c.getContext("2d");
-      if (bctx) { bctx.fillStyle = backBlank === "spine" ? spineColor ?? token("--primary") : "#FFFFFF"; bctx.fillRect(0, 0, 16, 16); texture(c, 5); }
+      if (bctx) { bctx.fillStyle = backBlank === "spine" ? spineColor ?? token("--primary") : backBlank === "colour" ? backColor ?? "#FFFFFF" : "#FFFFFF"; bctx.fillRect(0, 0, 16, 16); texture(c, 5); }
     }
     void resolveUrls([frontPath ?? "", backBlank ? "" : backPath ?? "", wrapPath ?? ""]).then(async (urls) => {
       for (const [index, url] of urls.entries()) {
@@ -95,7 +95,7 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
     let frame = 0;
     const draw = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(draw); }; draw();
     return () => { alive = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); geometry.dispose(); materials.forEach((m) => m.dispose()); textures.forEach((t) => t.dispose()); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono, backBlank, spineFont, frontPlacement?.x, frontPlacement?.y, frontPlacement?.scale, backPlacement?.x, backPlacement?.y, backPlacement?.scale, frontBoxes, backBoxes]);
+  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono, backBlank, backColor, spineFont, frontPlacement?.x, frontPlacement?.y, frontPlacement?.scale, backPlacement?.x, backPlacement?.y, backPlacement?.scale, frontBoxes, backBoxes]);
   return <div className="flex h-full min-h-0 w-full flex-col gap-3">
     <div ref={host} className="min-h-[360px] w-full flex-1 touch-none" role="img" aria-label="Rotatable book cover preview" />
     <div className="flex justify-center gap-2">{["front", "spine", "back"].map((v) => <Button key={v} variant="outline" size="sm" className="capitalize" onClick={() => changeView.current(v)}>{v}</Button>)}</div>

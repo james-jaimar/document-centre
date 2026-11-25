@@ -135,7 +135,7 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
   const backRaster = useCoverRaster(cover.mode === "guided" && !cover.back_blank ? pdfPath(cover.back) : null, cover.back?.page ?? 0, coverHasRealBleed(boxesOf(docFor(cover.back))));
   const wrapRaster = useCoverRaster(cover.mode === "wrap" ? pdfPath(cover.wrap) : null, cover.wrap?.page ?? 0, false);
   const boxesFor = (source?: CoverSource) => (documents.find((d) => d.id === source?.document_id)?.preflight_data as { boxes?: PdfBoxes } | null)?.boxes;
-  const previewProps = { frontBoxes: frontRaster ? undefined : boxesFor(cover.front), backBoxes: backRaster ? undefined : boxesFor(cover.back), frontPlacement: cover.front?.placement, backPlacement: cover.back?.placement, backBlank: cover.mode === "guided" ? cover.back_blank : undefined, spineFont: cover.spine_font, frontPath: cover.mode === "wrap" ? undefined : frontRaster ?? thumb(cover.front), backPath: cover.mode === "wrap" ? undefined : backRaster ?? thumb(cover.back), wrapPath: cover.mode === "wrap" ? wrapRaster ?? thumb(cover.wrap) : undefined, spine, trimMm: trim, title: [cover.title, cover.author].filter(Boolean).join(" · "), spineColor: cover.spine_colour, textColor: cover.text_colour, bleedMm: cover.bleed_mm };
+  const previewProps = { frontBoxes: frontRaster ? undefined : boxesFor(cover.front), backBoxes: backRaster ? undefined : boxesFor(cover.back), frontPlacement: cover.front?.placement, backPlacement: cover.back?.placement, backBlank: cover.mode === "guided" ? cover.back_blank : undefined, backColor: cover.back_colour ?? "#FFFFFF", spineFont: cover.spine_font, frontPath: cover.mode === "wrap" ? undefined : frontRaster ?? thumb(cover.front), backPath: cover.mode === "wrap" ? undefined : backRaster ?? thumb(cover.back), wrapPath: cover.mode === "wrap" ? wrapRaster ?? thumb(cover.wrap) : undefined, spine, trimMm: trim, title: [cover.title, cover.author].filter(Boolean).join(" · "), spineColor: cover.spine_colour, textColor: cover.text_colour, bleedMm: cover.bleed_mm };
   const preview = <div className="flex h-full min-h-0 w-full flex-col gap-3">
     <div className="flex justify-center gap-2" role="group" aria-label="Preview style">
       <Button size="sm" variant={view === "flat" ? "default" : "outline"} onClick={() => setView("flat")}><Layers className="mr-2 h-4 w-4" />2D flat wrap</Button>
@@ -204,7 +204,9 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
             <Button size="sm" variant={!cover.back_blank ? "default" : "outline"} onClick={() => change({ back_blank: undefined })}>Upload back</Button>
             <Button size="sm" variant={cover.back_blank === "white" ? "default" : "outline"} onClick={() => change({ back_blank: "white" })}>Blank (white)</Button>
             <Button size="sm" variant={cover.back_blank === "spine" ? "default" : "outline"} onClick={() => change({ back_blank: "spine" })}>Blank (spine colour)</Button>
+            <Button size="sm" variant={cover.back_blank === "colour" ? "default" : "outline"} onClick={() => change({ back_blank: "colour", back_colour: cover.back_colour ?? "#FFFFFF" })}>Solid colour</Button>
           </div>
+          {cover.back_blank === "colour" && <div className="flex gap-3 items-center"><Label htmlFor="back-colour">Back colour</Label><Input id="back-colour" type="color" value={cover.back_colour ?? "#FFFFFF"} onChange={(e) => change({ back_colour: e.target.value })} className="w-12 h-10 p-1" /></div>}
           {!cover.back_blank && selector("back", "Back cover")}
         </div>
       </div>

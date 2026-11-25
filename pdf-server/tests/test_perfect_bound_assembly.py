@@ -32,6 +32,12 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         self.assertIn("Safety Booklet", pages[0].extract_text())
         self.assertEqual(len(report["warnings"]), 2)
 
+    def test_guided_accepts_any_size_front_and_flat_colour_back(self):
+        src = self.pdf("b5ish.pdf", 170.2, 236)
+        cover = {**self.cover, "back_blank": "colour", "back_colour": "#AA0000"}
+        report = compose_perfect_bound_wrap(cover, {"front": src}, self.root / "odd.pdf")
+        self.assertAlmostEqual(report["width_mm"], 306.7, places=3)
+
     def test_rejects_designer_wrap_with_stale_spine(self):
         src = self.pdf("wrong.pdf", 316, 216)
         with self.assertRaisesRegex(ValueError, "dimensions"):
@@ -53,9 +59,8 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         cover = {**self.cover, "back_blank": "white"}
         report = compose_perfect_bound_wrap(cover, {"front": path}, self.root / "out.pdf")
         self.assertEqual(len(report["warnings"]), 1)
-        with self.assertRaisesRegex(ValueError, "dimensions"):
-            plain = self.pdf("plain.pdf", 300, 210)
-            compose_perfect_bound_wrap(cover, {"front": plain}, self.root / "out2.pdf")
+        plain = self.pdf("plain.pdf", 300, 210)
+        compose_perfect_bound_wrap(cover, {"front": plain}, self.root / "out2.pdf")  # guided covers are fitted, not rejected
 
     def test_covers_never_take_pages_from_text_block(self):
         with self.assertRaisesRegex(ValueError, "Missing (front|back)"):

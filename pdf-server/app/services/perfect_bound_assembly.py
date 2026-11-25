@@ -147,12 +147,13 @@ def compose_perfect_bound_wrap(cover: dict, sources: dict[str, Path], output: Pa
         writer.add_page(page)
     elif cover.get("mode") == "guided":
         blank_back = cover.get("back_blank")
-        if blank_back not in (None, "white", "spine"):
+        if blank_back not in (None, "white", "spine", "colour"):
             raise ValueError("Invalid blank back cover choice")
         writer.add_page(_solid_page(tw, th, None))
         result = writer.pages[0]
-        if blank_back == "spine":
-            result.merge_page(_solid_page(tw, th, cover.get("spine_colour"), (0, 0, (bleed + w) * mm, th)))
+        if blank_back in ("spine", "colour"):
+            fill = cover.get("spine_colour") if blank_back == "spine" else cover.get("back_colour")
+            result.merge_page(_solid_page(tw, th, fill, (0, 0, (bleed + w) * mm, th)))
         sides = [("front", (bleed + w + spine) * mm, tw)] + ([] if blank_back else [("back", 0, (bleed + w) * mm)])
         for side, panel_left, panel_right in sides:
             page = page_for(side)
@@ -161,9 +162,14 @@ def compose_perfect_bound_wrap(cover: dict, sources: dict[str, Path], output: Pa
             pw, ph = float(box.width), float(box.height)
             with_bleed = abs(pw / mm - (w + 6)) <= 1 and abs(ph / mm - (h + 6)) <= 1
             trim_only = abs(pw / mm - w) <= 1 and abs(ph / mm - h) <= 1
-            if not (with_bleed or trim_only):
-                raise ValueError(f"{side.title()} cover dimensions do not match the book")
             left, top, fw, fh = placement_frame(w, h, bleed, (cover.get(side) or {}).get("placement"))
+            if not (with_bleed or trim_only) and pw > 0 and ph > 0:
+                # Any artwork size is accepted: fit it uniformly inside the
+                # frame, centred, mirroring containInFrame in the preview.
+                fa, aa = fw / fh, pw / ph
+                if abs(fa - aa) >= 0.01 * fa:
+                    nw, nh = (fw, fw / aa) if aa > fa else (fh * aa, fh)
+                    left, top, fw, fh = left + (fw - nw) / 2, top + (fh - nh) / 2, nw, nh
             trim_left = bleed + w + spine if side == "front" else bleed
             frame_left = (trim_left + left) * mm
             frame_bottom = (bleed + h - top - fh) * mm
