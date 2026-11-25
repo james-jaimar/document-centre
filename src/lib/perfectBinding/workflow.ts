@@ -119,7 +119,7 @@ export function coverValidation(cover: PerfectBoundCover | undefined, documents:
     const media = preflight?.boxes?.MediaBox;
     const w = cover.mode === "wrap" && media?.length === 4 ? Math.abs(media[2] - media[0]) * 25.4 / 72 : doc.page_width_mm ?? 0;
     const h = cover.mode === "wrap" && media?.length === 4 ? Math.abs(media[3] - media[1]) * 25.4 / 72 : doc.page_height_mm ?? 0;
-    const bleed = cover.mode === "guided" ? 2 * cover.bleed_mm : 0;
+    const bleed = 0;
     const fits = (dw: number, dh: number) => Math.abs(w - dw) <= 1 && Math.abs(h - dh) <= 1;
     if (!fits(expected.widthMm, expected.heightMm) && !(bleed && fits(expected.widthMm + bleed, expected.heightMm + bleed))) {
       return `Cover PDF must be ${expected.widthMm} × ${expected.heightMm} mm${bleed ? ` (or ${expected.widthMm + bleed} × ${expected.heightMm + bleed} mm with bleed)` : " including bleed"}.`;
