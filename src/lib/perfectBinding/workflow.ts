@@ -10,13 +10,43 @@ export function perfectBoundProductionReady(rules: unknown): boolean {
   return !!rules && typeof rules === "object" && (rules as { perfect_bound_production_ready?: unknown }).perfect_bound_production_ready === true;
 }
 
-export interface CoverSource { document_id: string; page: number }
+/** Artwork position on its panel: mm offsets from centre (y down); scale 1 fills trim + bleed. */
+export interface CoverPlacement { x: number; y: number; scale: number }
+export const DEFAULT_PLACEMENT: CoverPlacement = { x: 0, y: 0, scale: 1 };
+export const PLACEMENT_SCALE = { min: 0.3, max: 3 } as const;
+export interface CoverSource { document_id: string; page: number; placement?: CoverPlacement }
+export type SpineFont = "sans" | "sans_bold" | "serif";
+export const SPINE_FONTS: Record<SpineFont, { label: string; family: string; weight: number }> = {
+  sans: { label: "Clean sans", family: "Helvetica, Arial, sans-serif", weight: 400 },
+  sans_bold: { label: "Bold sans", family: "Helvetica, Arial, sans-serif", weight: 700 },
+  serif: { label: "Classic serif", family: "'Times New Roman', Times, serif", weight: 400 },
+};
+/** Spine text keeps this clearance from each spine fold. */
+export const SPINE_SAFE_MM = 1.5;
+/** Spine text height in mm (matches the print server's font sizing before length fitting). */
+export function spineTextSizeMm(spineMm: number): number {
+  return Math.min(14 * 25.4 / 72, Math.max(0, spineMm - 2 * SPINE_SAFE_MM) * 0.75);
+}
+export function clampPlacement(p: Partial<CoverPlacement> | undefined, trim: { widthMm: number; heightMm: number }, bleedMm: number): CoverPlacement {
+  const scale = Math.min(PLACEMENT_SCALE.max, Math.max(PLACEMENT_SCALE.min, Number.isFinite(p?.scale) ? p!.scale! : 1));
+  const lim = (v: number | undefined, span: number) => Math.round(Math.min(span, Math.max(-span, Number.isFinite(v) ? v! : 0)) * 10) / 10;
+  return { scale: Math.round(scale * 1000) / 1000, x: lim(p?.x, trim.widthMm + 2 * bleedMm), y: lim(p?.y, trim.heightMm + 2 * bleedMm) };
+}
+/** Artwork frame in mm relative to the panel's trim top-left; mirrors placement_frame on the print server. */
+export function placementFrame(trim: { widthMm: number; heightMm: number }, bleedMm: number, p?: CoverPlacement) {
+  const { x, y, scale } = p ?? DEFAULT_PLACEMENT;
+  const fw = (trim.widthMm + 2 * bleedMm) * scale, fh = (trim.heightMm + 2 * bleedMm) * scale;
+  return { left: -bleedMm + (trim.widthMm + 2 * bleedMm - fw) / 2 + x, top: -bleedMm + (trim.heightMm + 2 * bleedMm - fh) / 2 + y, width: fw, height: fh };
+}
 export interface PerfectBoundCover {
   version: 1;
   mode: "guided" | "wrap";
   front?: CoverSource;
   back?: CoverSource;
   wrap?: CoverSource;
+  /** Leave the back cover unprinted (white) or fill it with the spine colour. */
+  back_blank?: "white" | "spine";
+  spine_font?: SpineFont;
   spine_colour: string;
   text_colour: string;
   title: string;
@@ -46,8 +76,8 @@ export function bodySpine(sections: Section[], documents: Doc[], gsm?: number | 
 
 export function coverValidation(cover: PerfectBoundCover | undefined, documents: Doc[], trim: { widthMm: number; heightMm: number }, spine: SpineResult): string | null {
   if (!cover) return "Add the book cover before ordering.";
-  const sources = cover.mode === "wrap" ? [cover.wrap] : [cover.front, cover.back];
-  if (sources.some((s) => !s)) return cover.mode === "wrap" ? "Choose a wrap PDF." : "Choose both front and back covers.";
+  const sources = cover.mode === "wrap" ? [cover.wrap] : cover.back_blank ? [cover.front] : [cover.front, cover.back];
+  if (sources.some((s) => !s)) return cover.mode === "wrap" ? "Choose a wrap PDF." : cover.back_blank ? "Choose a front cover." : "Choose both front and back covers, or leave the back blank.";
   const expected = cover.mode === "wrap" ? coverWrapSizeMm(trim, spine.spineMm, cover.bleed_mm) : trim;
   for (const source of sources) {
     const doc = documents.find((d) => d.id === source?.document_id);

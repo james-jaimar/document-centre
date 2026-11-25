@@ -4,14 +4,16 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Button } from "@/components/ui/button";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import type { SpineResult } from "@/lib/perfectBinding/spine";
+import { SPINE_FONTS, placementFrame, type CoverPlacement, type SpineFont } from "@/lib/perfectBinding/workflow";
 
 interface Props {
   frontPath?: string; backPath?: string; wrapPath?: string;
   spine: SpineResult; trimMm: { widthMm: number; heightMm: number };
   title?: string; spineColor?: string; textColor?: string; bleedMm?: number;
   mono?: boolean; maxHeightPx?: number;
+  frontPlacement?: CoverPlacement; backPlacement?: CoverPlacement; backBlank?: "white" | "spine"; spineFont?: SpineFont;
 }
-export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono }: Props) {
+export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono, frontPlacement, backPlacement, backBlank, spineFont = "sans" }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const changeView = useRef<(view: string) => void>(() => {});
   useEffect(() => {
@@ -42,11 +44,15 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
       ctx.fillStyle = spineColor ?? token("--primary"); ctx.fillRect(0, 0, 128, 1600);
       if (spine.textAllowed && title) {
         ctx.translate(64, 800); ctx.rotate(Math.PI / 2); ctx.fillStyle = textColor ?? token("--primary-foreground");
-        ctx.font = "60px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(title, 0, 0, 1380);
+        const f = SPINE_FONTS[spineFont] ?? SPINE_FONTS.sans; ctx.font = `${f.weight} 60px ${f.family}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(title, 0, 0, 1380);
       }
       texture(spineCanvas, 1);
     }
-    void resolveUrls([frontPath ?? "", backPath ?? "", wrapPath ?? ""]).then(async (urls) => {
+    if (backBlank) {
+      const c = blank(16, 16), bctx = c.getContext("2d");
+      if (bctx) { bctx.fillStyle = backBlank === "spine" ? spineColor ?? token("--primary") : "#FFFFFF"; bctx.fillRect(0, 0, 16, 16); texture(c, 5); }
+    }
+    void resolveUrls([frontPath ?? "", backBlank ? "" : backPath ?? "", wrapPath ?? ""]).then(async (urls) => {
       for (const [index, url] of urls.entries()) {
         if (!url) continue;
         const img = new Image(); img.crossOrigin = "anonymous";
@@ -65,10 +71,15 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
           paint(1, (bleedMm + trimMm.widthMm) * sx, bleedMm * sy, spine.spineMm * sx, trimMm.heightMm * sy);
           paint(4, (bleedMm + trimMm.widthMm + spine.spineMm) * sx, bleedMm * sy, trimMm.widthMm * sx, trimMm.heightMm * sy);
         } else {
-          const hasBleed = Math.abs(img.width / img.height - (trimMm.widthMm + 2 * bleedMm) / (trimMm.heightMm + 2 * bleedMm)) < .002;
-          const bX = hasBleed ? img.width * bleedMm / (trimMm.widthMm + 2 * bleedMm) : 0;
-          const bY = hasBleed ? img.height * bleedMm / (trimMm.heightMm + 2 * bleedMm) : 0;
-          paint(index === 0 ? 4 : 5, bX, bY, img.width - 2 * bX, img.height - 2 * bY);
+          // Same frame maths as the flat view and the print server: artwork fills trim + bleed, then moves/zooms.
+          const canvas = blank(1000, 1600), c = canvas.getContext("2d");
+          if (!c) continue;
+          const f = placementFrame(trimMm, bleedMm, index === 0 ? frontPlacement : backPlacement);
+          const px = canvas.width / trimMm.widthMm, py = canvas.height / trimMm.heightMm;
+          c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, canvas.width, canvas.height);
+          c.filter = mono ? "grayscale(1)" : "none";
+          c.drawImage(img, f.left * px, f.top * py, f.width * px, f.height * py);
+          texture(canvas, index === 0 ? 4 : 5);
         }
       }
     }).catch(() => {});
@@ -82,7 +93,7 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
     let frame = 0;
     const draw = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(draw); }; draw();
     return () => { alive = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); geometry.dispose(); materials.forEach((m) => m.dispose()); textures.forEach((t) => t.dispose()); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono]);
+  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono, backBlank, spineFont, frontPlacement?.x, frontPlacement?.y, frontPlacement?.scale, backPlacement?.x, backPlacement?.y, backPlacement?.scale]);
   return <div className="w-full space-y-3">
     <div ref={host} className="h-[360px] sm:h-[420px] w-full touch-none" role="img" aria-label="Rotatable book cover preview" />
     <div className="flex justify-center gap-2">{["front", "spine", "back"].map((v) => <Button key={v} variant="outline" size="sm" className="capitalize" onClick={() => changeView.current(v)}>{v}</Button>)}</div>

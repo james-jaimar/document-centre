@@ -44,5 +44,41 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         self.assertAlmostEqual(float(PdfReader(output).pages[0].trimbox.height) * 25.4 / 72, 210, places=3)
 
     def test_covers_never_take_pages_from_text_block(self):
-        with self.assertRaisesRegex(ValueError, "Missing back"):
+        with self.assertRaisesRegex(ValueError, "Missing (front|back)"):
             compose_perfect_bound_wrap(self.cover, {}, self.root / "out.pdf")
+
+class PerfectBoundPlacementTest(PerfectBoundAssemblyTest):
+    def test_blank_back_needs_only_front(self):
+        src = self.pdf("front.pdf", 154, 216)
+        output = self.root / "wrap.pdf"
+        report = compose_perfect_bound_wrap({**self.cover, "back_blank": "white"}, {"front": src}, output)
+        self.assertEqual(report["warnings"], [])
+        self.assertAlmostEqual(float(PdfReader(output).pages[0].mediabox.width) * 25.4 / 72, 306.7, places=3)
+
+    def test_rejects_unknown_blank_back(self):
+        src = self.pdf("front.pdf", 154, 216)
+        with self.assertRaisesRegex(ValueError, "blank back"):
+            compose_perfect_bound_wrap({**self.cover, "back_blank": "pink"}, {"front": src}, self.root / "o.pdf")
+
+    def test_default_frame_fills_trim_plus_bleed(self):
+        from app.services.perfect_bound_assembly import placement_frame
+        self.assertEqual(placement_frame(148, 210, 3, None), (-3, -3, 154, 216))
+
+    def test_zoom_keeps_centre_and_offset_moves(self):
+        from app.services.perfect_bound_assembly import placement_frame
+        left, top, fw, fh = placement_frame(148, 210, 3, {"scale": 2, "x": 10, "y": -5})
+        self.assertEqual((fw, fh), (308, 432))
+        self.assertAlmostEqual(left + fw / 2, 74 + 10)
+        self.assertAlmostEqual(top + fh / 2, 105 - 5)
+
+    def test_rejects_extreme_zoom(self):
+        src = self.pdf("front.pdf", 154, 216)
+        with self.assertRaisesRegex(ValueError, "zoom"):
+            compose_perfect_bound_wrap({**self.cover, "back_blank": "white", "front": {"page": 0, "placement": {"scale": 9}}}, {"front": src}, self.root / "o.pdf")
+
+    def test_spine_font_respects_safe_margin(self):
+        from app.services.perfect_bound_assembly import spine_font_size_pt
+        # 5 mm spine minus 1.5 mm each side leaves 2 mm; text must fit inside it.
+        self.assertLessEqual(spine_font_size_pt(5, 210, "A", "Helvetica"), 2 * 72 / 25.4)
+        with self.assertRaisesRegex(ValueError, "spine font"):
+            compose_perfect_bound_wrap({**self.cover, "back_blank": "white", "spine_font": "comic"}, {"front": self.pdf("f.pdf", 154, 216)}, self.root / "o.pdf")

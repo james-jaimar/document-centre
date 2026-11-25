@@ -183,7 +183,7 @@ def load_job_bundle(job_id: str) -> JobBundle:
     if isinstance(configuration, dict) and configuration.get("perfect_bound_cover"):
         cover = configuration["perfect_bound_cover"]
         frozen = configuration.get("source_assets") or []
-        for side in (["wrap"] if cover.get("mode") == "wrap" else ["back", "front"]):
+        for side in (["wrap"] if cover.get("mode") == "wrap" else (["front"] if cover.get("back_blank") else ["back", "front"])):
             source = cover.get(side) or {}
             aid = source.get("asset_id")
             path = source.get("storage_path")
