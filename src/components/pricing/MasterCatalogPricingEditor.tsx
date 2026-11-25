@@ -43,6 +43,7 @@ import {
   usePatchCatalogPaper,
   usePatchCatalogFinishing,
   type CatalogScope,
+  type CatalogUnitSystem,
 } from "@/hooks/useCatalog";
 import {
   useCatalogPaperPrices,
@@ -69,6 +70,7 @@ interface Props {
   branchId?: string | null;
   title?: string;
   description?: string;
+  unitSystem?: CatalogUnitSystem | null;
 }
 
 /**
@@ -81,8 +83,9 @@ export default function MasterCatalogPricingEditor({
   branchId = null,
   title,
   description,
+  unitSystem = null,
 }: Props = {}) {
-  const scopeArgs = { scope, tenantId, branchId };
+  const scopeArgs = { scope, tenantId, branchId, unitSystem };
   const cloneToTenant = useCloneMasterCatalogToTenant();
   const resyncTenant = useResyncTenantCatalogFromMaster();
   const cloneToBranch = useCloneTenantCatalogToBranch();
@@ -203,7 +206,7 @@ const SIZE_ORDER = [
   "photo_4x6", "photo_5x7", "photo_6x8", "photo_8x10",
 ];
 
-function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
+function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null; unitSystem: CatalogUnitSystem | null } }) {
   const { data: papers = [] } = useCatalogPapers(scopeArgs);
   const { data: prices = [], isLoading } = useCatalogPaperPrices(scopeArgs);
   const upsert = useUpsertCatalogPaperPrice(scopeArgs);
@@ -499,7 +502,7 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
 // Finishing
 // ----------------------------------------------------------------------------
 
-function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
+function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null; unitSystem: CatalogUnitSystem | null } }) {
   const { data: items = [] } = useCatalogFinishing(scopeArgs);
   const { data: sizes = [] } = useCatalogSizes(scopeArgs);
   const { data: prices = [], isLoading } = useCatalogFinishingPrices(scopeArgs);
