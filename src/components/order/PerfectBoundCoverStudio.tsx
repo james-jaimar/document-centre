@@ -15,10 +15,11 @@ import { useDocumentUpload } from "@/hooks/useDocumentUpload";
 import type { Tables } from "@/integrations/supabase/types";
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
-import { DEFAULT_COVER, PLACEMENT_SCALE, SPINE_FONTS, clampPlacement, coverValidation, type CoverPlacement, type PerfectBoundCover, type CoverSource, type SpineFont, type PdfBoxes } from "@/lib/perfectBinding/workflow";
+import { DEFAULT_COVER, PLACEMENT_SCALE, SPINE_FONTS, clampPlacement, coverValidation, coverHasRealBleed, type CoverPlacement, type PerfectBoundCover, type CoverSource, type SpineFont, type PdfBoxes } from "@/lib/perfectBinding/workflow";
 import { Slider } from "@/components/ui/slider";
 import { coverWrapSizeMm, type SpineResult } from "@/lib/perfectBinding/spine";
 import PerfectBoundBook3D from "@/components/preview/PerfectBoundBook3D";
+import { useCoverRaster } from "@/hooks/useCoverRaster";
 
 interface Props {
   orderItemId: string;
@@ -104,7 +105,6 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
             {eligible.map((d) => <SelectItem key={d.id} value={d.id}>{d.file_name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="icon" title={`Upload ${label.toLowerCase()}`} aria-label={`Upload ${label.toLowerCase()}`} disabled={isUploading} onClick={() => setDialogOpen(true)}><Upload className="h-4 w-4" /></Button>
       </div>
       {source && pages > 1 && <div className="flex items-center gap-2"><Label htmlFor={`cover-${side}-page`}>Page</Label><Input id={`cover-${side}-page`} type="number" min={1} max={pages} value={source.page + 1} className="w-24" onChange={(e) => change({ [side]: { ...source, page: Math.max(0, Math.min(pages - 1, Number(e.target.value) - 1)) } })} /></div>}
     </div>;
@@ -129,8 +129,13 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       <p className="text-xs text-muted-foreground">Drag the cover in the flat view to move it; scroll to zoom.</p>
     </div>;
   };
+  const docFor = (source?: CoverSource) => documents.find((d) => d.id === source?.document_id);
+  const pdfPath = (source?: CoverSource) => { const d = docFor(source); return d ? ((d.preflight_data as { processed_file_path?: string } | null)?.processed_file_path || d.file_path || null) : null; };
+  const frontRaster = useCoverRaster(cover.mode === "guided" ? pdfPath(cover.front) : null, cover.front?.page ?? 0, coverHasRealBleed(boxesOf(docFor(cover.front))));
+  const backRaster = useCoverRaster(cover.mode === "guided" && !cover.back_blank ? pdfPath(cover.back) : null, cover.back?.page ?? 0, coverHasRealBleed(boxesOf(docFor(cover.back))));
+  const wrapRaster = useCoverRaster(cover.mode === "wrap" ? pdfPath(cover.wrap) : null, cover.wrap?.page ?? 0, false);
   const boxesFor = (source?: CoverSource) => (documents.find((d) => d.id === source?.document_id)?.preflight_data as { boxes?: PdfBoxes } | null)?.boxes;
-  const previewProps = { frontBoxes: boxesFor(cover.front), backBoxes: boxesFor(cover.back), frontPlacement: cover.front?.placement, backPlacement: cover.back?.placement, backBlank: cover.mode === "guided" ? cover.back_blank : undefined, spineFont: cover.spine_font, frontPath: thumb(cover.mode === "wrap" ? undefined : cover.front), backPath: thumb(cover.mode === "wrap" ? undefined : cover.back), wrapPath: cover.mode === "wrap" ? thumb(cover.wrap) : undefined, spine, trimMm: trim, title: [cover.title, cover.author].filter(Boolean).join(" · "), spineColor: cover.spine_colour, textColor: cover.text_colour, bleedMm: cover.bleed_mm };
+  const previewProps = { frontBoxes: frontRaster ? undefined : boxesFor(cover.front), backBoxes: backRaster ? undefined : boxesFor(cover.back), frontPlacement: cover.front?.placement, backPlacement: cover.back?.placement, backBlank: cover.mode === "guided" ? cover.back_blank : undefined, spineFont: cover.spine_font, frontPath: cover.mode === "wrap" ? undefined : frontRaster ?? thumb(cover.front), backPath: cover.mode === "wrap" ? undefined : backRaster ?? thumb(cover.back), wrapPath: cover.mode === "wrap" ? wrapRaster ?? thumb(cover.wrap) : undefined, spine, trimMm: trim, title: [cover.title, cover.author].filter(Boolean).join(" · "), spineColor: cover.spine_colour, textColor: cover.text_colour, bleedMm: cover.bleed_mm };
   const preview = <div className="flex h-full min-h-0 w-full flex-col gap-3">
     <div className="flex justify-center gap-2" role="group" aria-label="Preview style">
       <Button size="sm" variant={view === "flat" ? "default" : "outline"} onClick={() => setView("flat")}><Layers className="mr-2 h-4 w-4" />2D flat wrap</Button>
@@ -142,6 +147,13 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
     ? [{ side: "wrap", label: "Full wrap PDF", hint: `${wrapSize.widthMm} × ${wrapSize.heightMm} mm including bleed` }]
     : [{ side: "front", label: "Front cover", hint: `${trim.widthMm} × ${trim.heightMm} mm (+3 mm bleed optional)` }, ...(cover.back_blank ? [] : [{ side: "back" as const, label: "Back cover", hint: `${trim.widthMm} × ${trim.heightMm} mm (+3 mm bleed optional)` }])];
   const stuckDoc = documents.find((d) => [cover.front, cover.back, cover.wrap].some((src) => src?.document_id === d.id) && (d.preflight_data as { awaiting_review?: boolean } | null)?.awaiting_review);
+  // Cover size is checked by the studio, so a stuck size advisory is finished automatically.
+  const autoFinished = useRef(new Set<string>());
+  useEffect(() => {
+    if (!stuckDoc || finishing || isUploading || autoFinished.current.has(stuckDoc.id)) return;
+    autoFinished.current.add(stuckDoc.id);
+    void finishCoverCheck(stuckDoc.id);
+  }, [stuckDoc?.id, finishing, isUploading]); // eslint-disable-line react-hooks/exhaustive-deps
   const dialog = <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader><DialogTitle>Upload cover artwork</DialogTitle><DialogDescription>Drop a PDF into each box. We check it and place it on your cover automatically.</DialogDescription></DialogHeader>
@@ -152,7 +164,7 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
           const busy = (up && !["done", "error"].includes(up.status)) || (finishing && cover[side]?.document_id === finishing);
           const doc = documents.find((d) => d.id === cover[side]?.document_id);
           const ready = !!doc && ["ready", "analyzed"].includes(doc.document_status) && !(doc.preflight_data as { awaiting_review?: boolean } | null)?.awaiting_review;
-          const src = thumb(cover[side]);
+          const src = (side === "front" ? frontRaster : side === "back" ? backRaster : wrapRaster) ?? thumb(cover[side]);
           return <label key={side} className="flex min-h-48 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 text-center transition-colors hover:border-primary hover:bg-accent/40"
             onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) void uploadTo(side, f); }}>
             <input type="file" accept="application/pdf,.pdf" className="sr-only" aria-label={`Upload ${label.toLowerCase()}`} disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadTo(side, f); }} />
@@ -211,11 +223,10 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       </div>
       {spine.textAllowed ? <p className="text-xs text-muted-foreground">Text reads top to bottom, sized to fit with 1.5 mm clear of each spine fold.</p> : <p className="text-xs text-muted-foreground">Spine under 4 mm — spine text is not recommended.</p>}
     </> : <><p className="text-sm">Wrap: {wrapSize.widthMm} × {wrapSize.heightMm} mm · back + {spine.spineMm} mm spine + front · 3 mm bleed</p>{selector("wrap", "Wrap cover")}</>}
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {stuckDoc && <Button variant="outline" size="sm" disabled={!!finishing} onClick={() => void finishCoverCheck(stuckDoc.id)}>{finishing ? "Finishing cover check…" : "Finish cover check"}</Button>}
     {part === "all" && preview}
   </section>;
 }
+function boxesOf(d?: Document) { return (d?.preflight_data as { boxes?: PdfBoxes } | null)?.boxes; }
 function CoverThumb({ path }: { path: string }) {
   const [url, setUrl] = useState<string>();
   useEffect(() => { let alive = true; void resolveUrls([path]).then(([u]) => alive && setUrl(u)).catch(() => {}); return () => { alive = false; }; }, [path]);

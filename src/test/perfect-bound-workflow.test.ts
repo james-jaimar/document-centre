@@ -69,3 +69,13 @@ describe("cover preview proportions", () => {
     expect(r.width).toBe(200); expect(r.height).toBe(200); expect(r.top).toBe(50);
   });
 });
+
+import { coverHasRealBleed } from "@/lib/perfectBinding/workflow";
+describe("cover artwork box", () => {
+  const k = 72 / 25.4;
+  it("uses bleed only when an inner TrimBox has ~3 mm BleedBox around it", () => {
+    expect(coverHasRealBleed({ MediaBox: [0, 0, 300 * k, 220 * k], TrimBox: [152 * k, 5 * k, 300 * k - 5 * k, 215 * k], BleedBox: [149 * k, 2 * k, 300 * k - 2 * k, 218 * k] })).toBe(true);
+    expect(coverHasRealBleed({ MediaBox: [0, 0, 986.457, 668.976], TrimBox: [503.894, 0, 986.457, 668.976], BleedBox: [503.894, 0, 986.457, 668.976] })).toBe(false);
+    expect(coverHasRealBleed({ MediaBox: [0, 0, 100, 100], TrimBox: [0, 0, 100, 100], BleedBox: [0, 0, 100, 100] })).toBe(false);
+  });
+});

@@ -43,6 +43,20 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         compose_perfect_bound_wrap({**self.cover, "mode": "wrap", "wrap": {"page": 0}}, {"wrap": src}, output)
         self.assertAlmostEqual(float(PdfReader(output).pages[0].trimbox.height) * 25.4 / 72, 210, places=3)
 
+    def test_front_cover_uses_trimbox_of_larger_sheet(self):
+        from pypdf.generic import RectangleObject
+        k = 72 / 25.4
+        path = self.root / "spread.pdf"
+        writer = PdfWriter(); page = writer.add_blank_page(300 * k, 210 * k)
+        page.trimbox = RectangleObject([152 * k, 0, 300 * k, 210 * k])
+        with open(path, "wb") as f: writer.write(f)
+        cover = {**self.cover, "back_blank": "white"}
+        report = compose_perfect_bound_wrap(cover, {"front": path}, self.root / "out.pdf")
+        self.assertEqual(len(report["warnings"]), 1)
+        with self.assertRaisesRegex(ValueError, "dimensions"):
+            plain = self.pdf("plain.pdf", 300, 210)
+            compose_perfect_bound_wrap(cover, {"front": plain}, self.root / "out2.pdf")
+
     def test_covers_never_take_pages_from_text_block(self):
         with self.assertRaisesRegex(ValueError, "Missing (front|back)"):
             compose_perfect_bound_wrap(self.cover, {}, self.root / "out.pdf")

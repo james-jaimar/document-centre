@@ -17,3 +17,4 @@
 - Keep perfect-bound covers as versioned document-ID selections separate from body sections; resolve frozen cover assets in production and remap IDs on cart/bookshelf copies so covers cannot consume inner pages or share deletable originals.
 - Price full-wrap printing/stock with an explicit admin-authored per-book cover option, separate from body clicks and binding; require explicit production readiness before ordering so undeployed cover assembly cannot silently produce body-only jobs.
 - Keep cover placement maths (frame fills trim+bleed at scale 1, mm offsets y-down) mirrored between workflow.placementFrame and pdf-server placement_frame; previews and the compositor must agree, and artwork is clipped to its own panel.
+- Preview perfect-bound covers from browser rasters of the cover PDF's artwork box (TrimBox, or BleedBox with ~3 mm bleed), mirroring pdf-server artwork_box; server thumbnails are unreliable for covers cut from larger sheets.

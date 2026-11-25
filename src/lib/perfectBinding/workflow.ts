@@ -43,6 +43,14 @@ export function thumbnailCrop(natW: number, natH: number, boxes?: PdfBoxes) {
   const r = { x: (t[0] - m[0]) / mw, y: (m[3] - t[3]) / mh, w: (t[2] - t[0]) / mw, h: (t[3] - t[1]) / mh };
   return r.w > 0 && r.h > 0 && (r.w < 0.98 || r.h < 0.98) ? r : full;
 }
+/** True when a cover page has an explicit TrimBox inside its MediaBox and a BleedBox ~3 mm around it; mirrors artwork_box on the print server. */
+export function coverHasRealBleed(boxes?: PdfBoxes) {
+  const m = boxes?.MediaBox, t = boxes?.TrimBox, b = boxes?.BleedBox;
+  if (!m || !t || !b || m.length < 4 || t.length < 4 || b.length < 4) return false;
+  if (t[2] - t[0] >= m[2] - m[0] - 1 && t[3] - t[1] >= m[3] - m[1] - 1) return false;
+  const mm = 25.4 / 72;
+  return [t[0] - b[0], b[2] - t[2], t[1] - b[1], b[3] - t[3]].every((g) => g * mm >= 2 && g * mm <= 4);
+}
 /** Preview-only: centre artwork of the given aspect inside the frame without distortion. */
 export function containInFrame(f: { left: number; top: number; width: number; height: number }, aspect: number) {
   if (!(aspect > 0)) return f;

@@ -6,7 +6,7 @@ import math
 import re
 
 from pypdf import PdfReader, PdfWriter, Transformation
-from pypdf.generic import RectangleObject
+from pypdf.generic import DecodedStreamObject, RectangleObject
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 
@@ -63,6 +63,28 @@ def _solid_page(tw, th, colour, rect=None):
     c.rect(x, y, rw, rh, fill=1, stroke=0)
     c.showPage(); c.save()
     return PdfReader(buf).pages[0]
+
+
+def artwork_box(page, w, h):
+    """The rectangle of a cover page that is the artwork: an explicit TrimBox
+    (or its BleedBox when that carries ~3 mm bleed) wins over the MediaBox, so
+    a front cover saved as one half of a larger sheet is placed correctly."""
+    media = page.mediabox
+    trim = page.trimbox
+    if float(trim.width) >= float(media.width) - 1 and float(trim.height) >= float(media.height) - 1:
+        return media
+    bleed = page.bleedbox
+    gap = [(float(trim.left) - float(bleed.left)) / mm, (float(bleed.right) - float(trim.right)) / mm,
+           (float(trim.bottom) - float(bleed.bottom)) / mm, (float(bleed.top) - float(trim.top)) / mm]
+    return bleed if all(2 <= g <= 4 for g in gap) else trim
+
+
+def _clip_page(page, box):
+    """Clip a page's own content to box so off-box artwork never shows."""
+    data = page.get_contents().get_data() if page.get_contents() is not None else b""
+    stream = DecodedStreamObject()
+    stream.set_data(b"q %f %f %f %f re W n\n" % (float(box.left), float(box.bottom), float(box.width), float(box.height)) + data + b"\nQ\n")
+    page.replace_contents(stream)
 
 
 def _spine_page(cover, tw, th, w, h, spine, bleed):
@@ -134,7 +156,8 @@ def compose_perfect_bound_wrap(cover: dict, sources: dict[str, Path], output: Pa
         sides = [("front", (bleed + w + spine) * mm, tw)] + ([] if blank_back else [("back", 0, (bleed + w) * mm)])
         for side, panel_left, panel_right in sides:
             page = page_for(side)
-            box = page.mediabox
+            box = artwork_box(page, w, h)
+            _clip_page(page, box)
             pw, ph = float(box.width), float(box.height)
             with_bleed = abs(pw / mm - (w + 6)) <= 1 and abs(ph / mm - (h + 6)) <= 1
             trim_only = abs(pw / mm - w) <= 1 and abs(ph / mm - h) <= 1
