@@ -52,6 +52,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import PerfectBoundCoverStudio from "@/components/order/PerfectBoundCoverStudio";
+import { glueAllowanceFromRules } from "@/lib/perfectBinding/spine";
 import { isPerfectBoundFamily, bodySpine, sectionPageCount, coverValidation, perfectBoundProductionReady } from "@/lib/perfectBinding/workflow";
 import { gsmFromLabel, checkPageLimits } from "@/lib/perfectBinding/spine";
 import {
@@ -1149,7 +1150,7 @@ export default function OrderBuild() {
 
   // Admin-configured body page limits (perfect bound defaults to 40 minimum).
   const bodyPageCount = useMemo(() => sections.filter((s) => s.section_type === "body").reduce((n, s) => n + sectionPageCount(s, documents), 0), [sections, documents]);
-  const perfectBoundSpine = useMemo(() => bodySpine(sections, documents, bodyPaperGsm), [sections, documents, bodyPaperGsm]);
+  const perfectBoundSpine = useMemo(() => bodySpine(sections, documents, bodyPaperGsm, glueAllowanceFromRules((productFamily as any)?.printing_rules)), [sections, documents, bodyPaperGsm, productFamily]);
   const bodyDocument = documents.find((d) => sections.some((s) => s.section_type === "body" && s.document_id === d.id));
   const perfectTrim = canvasSizeMm ?? { widthMm: bodyDocument?.page_width_mm ?? 210, heightMm: bodyDocument?.page_height_mm ?? 297 };
   const perfectCoverError = productType === "perfect_bound" ? coverValidation(spec.perfect_bound_cover, documents, perfectTrim, perfectBoundSpine) : null;

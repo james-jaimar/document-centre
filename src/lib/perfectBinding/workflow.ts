@@ -35,13 +35,13 @@ export function sectionPageCount(section: Section, documents: Doc[]): number {
   const count = documents.find((d) => d.id === section.document_id)?.page_count ?? 0;
   return Math.max(0, Math.min(count - 1, section.page_range_end ?? count - 1) - Math.max(0, section.page_range_start ?? 0) + 1);
 }
-export function bodySpine(sections: Section[], documents: Doc[], gsm?: number | null) {
+export function bodySpine(sections: Section[], documents: Doc[], gsm?: number | null, allowanceMm?: number) {
   // Sum leaves per section: two odd-length duplex PDFs each require their own last sheet.
   const sheets = sections.filter((s) => s.section_type === "body").reduce((n, s) => {
     const pages = sectionPageCount(s, documents);
     return n + (s.is_duplex === false ? pages : Math.ceil(pages / 2));
   }, 0);
-  return calculateSpine({ pages: sheets * 2, duplex: true, gsm });
+  return calculateSpine({ pages: sheets * 2, duplex: true, gsm, allowanceMm });
 }
 
 export function coverValidation(cover: PerfectBoundCover | undefined, documents: Doc[], trim: { widthMm: number; heightMm: number }, spine: SpineResult): string | null {

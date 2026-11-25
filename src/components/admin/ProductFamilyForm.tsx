@@ -39,6 +39,8 @@ const ALL_FINISHED_SIZES = [
 interface PrintingRules {
   binding_method?: string | null;
   perfect_bound_production_ready?: boolean;
+  /** Perfect bound: glue/milling allowance added to the spine (mm). */
+  spine_glue_allowance_mm?: number | null;
   allowed_finished_sizes: string[];
   default_finished_size: string;
   cover_is_heavy_stock: boolean;
@@ -333,6 +335,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
             )} />}
             {form.watch("kind") === "bound_document" && <FormField control={form.control} name="printing_rules.perfect_bound_production_ready" render={({ field }) => (
               <FormItem className="flex items-center justify-between gap-3"><div><FormLabel>Perfect-bound production enabled</FormLabel><FormDescription>Enable only after the print server's separate cover-wrap output has been deployed and checked.</FormDescription></div><FormControl><Switch checked={field.value === true} onCheckedChange={field.onChange} /></FormControl></FormItem>
+            )} />}
+            {form.watch("kind") === "bound_document" && form.watch("printing_rules.binding_method") === "perfect" && <FormField control={form.control} name="printing_rules.spine_glue_allowance_mm" render={({ field }) => (
+              <FormItem><FormLabel>Spine glue allowance (mm)</FormLabel><FormControl><Input type="number" step="0.1" min={0} max={5} placeholder="1.0" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))} /></FormControl><FormDescription>Added to the paper thickness for glue and spine milling. Most binders need about 1 mm.</FormDescription></FormItem>
             )} />}
 
             <FormField

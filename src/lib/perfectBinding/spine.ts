@@ -14,8 +14,14 @@ export const PAPER_CALIPER_MM: Record<number, number> = {
   170: 0.16,
 };
 
-/** Cover board + PUR glue allowance added to the text block. */
-export const SPINE_GLUE_ALLOWANCE_MM = 0.5;
+/** Glue layer + spine milling + hinge take-up added to the text block (PUR/EVA trade practice). */
+export const SPINE_GLUE_ALLOWANCE_MM = 1.0;
+
+/** Admin per-family override (printing_rules.spine_glue_allowance_mm), clamped 0–5 mm. */
+export function glueAllowanceFromRules(rules: unknown): number {
+  const v = rules && typeof rules === "object" ? Number((rules as { spine_glue_allowance_mm?: unknown }).spine_glue_allowance_mm) : NaN;
+  return Number.isFinite(v) && v >= 0 && v <= 5 ? v : SPINE_GLUE_ALLOWANCE_MM;
+}
 /** Below this the printer can't safely place spine text. */
 export const MIN_SPINE_TEXT_MM = 4;
 /** Typical PUR perfect binders can't bind thinner than this. */
@@ -44,10 +50,10 @@ export interface SpineResult {
   bindable: boolean;
 }
 
-export function calculateSpine(opts: { pages: number; duplex: boolean; gsm?: number | null }): SpineResult {
+export function calculateSpine(opts: { pages: number; duplex: boolean; gsm?: number | null; allowanceMm?: number }): SpineResult {
   const sheets = sheetsFromPages(opts.pages, opts.duplex);
   const caliperMm = caliperForGsm(opts.gsm);
-  const spineMm = sheets === 0 ? 0 : +(sheets * caliperMm + SPINE_GLUE_ALLOWANCE_MM).toFixed(1);
+  const spineMm = sheets === 0 ? 0 : +(sheets * caliperMm + (opts.allowanceMm ?? SPINE_GLUE_ALLOWANCE_MM)).toFixed(1);
   return {
     sheets,
     caliperMm,
