@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import type { SpineResult } from "@/lib/perfectBinding/spine";
-import { SPINE_FONTS, clampPlacement, placementFrame, spineTextSizeMm, type CoverPlacement, type SpineFont } from "@/lib/perfectBinding/workflow";
+import { SPINE_FONTS, clampPlacement, placementFrame, spineTextSizeMm, thumbnailCrop, containInFrame, type PdfBoxes, type CoverPlacement, type SpineFont } from "@/lib/perfectBinding/workflow";
 
 type Side = "front" | "back";
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   title?: string; spineColor?: string; textColor?: string; bleedMm?: number;
   frontPlacement?: CoverPlacement; backPlacement?: CoverPlacement;
   backBlank?: "white" | "spine"; spineFont?: SpineFont;
+  frontBoxes?: PdfBoxes; backBoxes?: PdfBoxes;
   /** When set, customers can drag to move and scroll to zoom each cover panel. */
   onPlacementChange?: (side: Side, placement: CoverPlacement) => void;
 }
@@ -19,8 +20,9 @@ const HINGE_MM = 6;
 const PAPER = "#FFFFFF";
 
 /** Flat press-sheet view of the cover wrap: back | spine | front with bleed, trim and hinge guides. */
-export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, frontPlacement, backPlacement, backBlank, spineFont = "sans", onPlacementChange }: Props) {
+export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, frontPlacement, backPlacement, backBlank, spineFont = "sans", onPlacementChange, frontBoxes, backBoxes }: Props) {
   const [urls, setUrls] = useState<string[]>([]);
+  const [natural, setNatural] = useState<Partial<Record<Side, { w: number; h: number }>>>({});
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let alive = true;
@@ -70,14 +72,22 @@ export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, sp
     return <div data-side={side} aria-label={editable ? `${side} cover: drag to move, scroll to zoom` : undefined}
       className={`absolute top-0 bottom-0 overflow-hidden ${editable ? "cursor-grab touch-none active:cursor-grabbing" : ""}`}
       style={{ left: x(boxLeft), width: x(boxW), backgroundColor: side === "back" && backBlank === "spine" ? spineColor : PAPER }} {...(editable ? pointer(side) : {})}>
-      {url ? <img src={url} alt="" draggable={false} className="pointer-events-none absolute max-w-none select-none"
-        style={{ left: `${((trimOffsetX + f.left) / boxW) * 100}%`, top: `${((b + f.top) / H) * 100}%`, width: `${(f.width / boxW) * 100}%`, height: `${(f.height / H) * 100}%` }} />
+      {url ? (() => {
+        const n = natural[side];
+        const crop = n ? thumbnailCrop(n.w, n.h, side === "front" ? frontBoxes : backBoxes) : { x: 0, y: 0, w: 1, h: 1 };
+        const r = n ? containInFrame(f, (n.w * crop.w) / (n.h * crop.h)) : f;
+        return <div className="pointer-events-none absolute overflow-hidden" style={{ left: `${((trimOffsetX + r.left) / boxW) * 100}%`, top: `${((b + r.top) / H) * 100}%`, width: `${(r.width / boxW) * 100}%`, height: `${(r.height / H) * 100}%` }}>
+          <img src={url} alt="" draggable={false} onLoad={(e) => { const i = e.currentTarget; setNatural((m) => ({ ...m, [side]: { w: i.naturalWidth, h: i.naturalHeight } })); }}
+            className="absolute max-w-none select-none" style={{ left: `${(-crop.x / crop.w) * 100}%`, top: `${(-crop.y / crop.h) * 100}%`, width: `${100 / crop.w}%`, height: `${100 / crop.h}%` }} />
+        </div>;
+      })()
         : side === "back" && backBlank ? null : <Placeholder label={side === "back" ? "Back cover" : "Front cover"} />}
     </div>;
   };
   const font = SPINE_FONTS[spineFont] ?? SPINE_FONTS.sans;
-  return <div className="w-full space-y-2">
-    <div ref={root} className="relative w-full overflow-hidden rounded-sm bg-background shadow-md" style={{ aspectRatio: `${W} / ${H}`, containerType: "inline-size" }} role="group" aria-label="Flat cover wrap preview">
+  return <div className="flex h-full min-h-0 w-full flex-col gap-2">
+    <div className="flex min-h-[240px] flex-1 items-center justify-center" style={{ containerType: "size" }}>
+    <div ref={root} className="relative overflow-hidden rounded-sm bg-background shadow-md" style={{ aspectRatio: `${W} / ${H}`, width: `min(100cqw, calc(100cqh * ${W / H}))`, containerType: "inline-size" }} role="group" aria-label="Flat cover wrap preview">
       {wrap ? <img src={wrap} alt="" className="absolute inset-0 h-full w-full object-fill" /> : <>
         {panel("back", back, 0, b)}
         {panel("front", front, b + w + s, 0)}
@@ -91,6 +101,7 @@ export default function PerfectBoundFlatWrap({ frontPath, backPath, wrapPath, sp
         {vline(x(b + w), "border-primary")}{vline(x(b + w + s), "border-primary")}
         {vline(x(b + w - HINGE_MM), "border-dotted border-muted-foreground")}{vline(x(b + w + s + HINGE_MM), "border-dotted border-muted-foreground")}
       </div>
+    </div>
     </div>
     <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
       <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed border-destructive/70 align-middle" />Trim (3 mm bleed outside)</span>

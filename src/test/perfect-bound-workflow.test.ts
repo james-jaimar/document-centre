@@ -57,3 +57,15 @@ describe("cover placement and blank back", () => {
     expect(cv(base, [doc], trim, spine)).toMatch(/back/);
   });
 });
+
+import { thumbnailCrop as _crop, containInFrame as _contain } from "@/lib/perfectBinding/workflow";
+describe("cover preview proportions", () => {
+  it("crops a MediaBox thumbnail to the trim box", () => {
+    const r = _crop(986, 669, { MediaBox: [0, 0, 986, 669], TrimBox: [504, 0, 986, 669] });
+    expect(r.x).toBeCloseTo(504 / 986, 3); expect(r.w).toBeCloseTo(482 / 986, 3);
+  });
+  it("keeps artwork aspect inside the frame", () => {
+    const r = _contain({ left: 0, top: 0, width: 200, height: 300 }, 1);
+    expect(r.width).toBe(200); expect(r.height).toBe(200); expect(r.top).toBe(50);
+  });
+});

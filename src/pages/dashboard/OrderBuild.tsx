@@ -1881,7 +1881,7 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-2 overflow-auto flex flex-col gap-2">
-          {coverStageActive && orderItemId ? <div className="flex-1 min-h-0 flex items-center justify-center"><PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} part="preview" /></div> : <PreviewPanel
+          {coverStageActive && orderItemId ? <div className="flex-1 min-h-0 flex"><PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} part="preview" /></div> : <PreviewPanel
             key={`inside-${perfectStage}`}
             documents={documents}
             sections={sections}

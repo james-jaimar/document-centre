@@ -32,6 +32,25 @@ export function clampPlacement(p: Partial<CoverPlacement> | undefined, trim: { w
   const lim = (v: number | undefined, span: number) => Math.round(Math.min(span, Math.max(-span, Number.isFinite(v) ? v! : 0)) * 10) / 10;
   return { scale: Math.round(scale * 1000) / 1000, x: lim(p?.x, trim.widthMm + 2 * bleedMm), y: lim(p?.y, trim.heightMm + 2 * bleedMm) };
 }
+export type PdfBoxes = Partial<Record<"MediaBox" | "CropBox" | "TrimBox" | "BleedBox", number[]>>;
+/** Preview-only: when a thumbnail shows the whole MediaBox but the PDF's real page is a smaller Trim/Crop box, return that region (fractions of the image). */
+export function thumbnailCrop(natW: number, natH: number, boxes?: PdfBoxes) {
+  const full = { x: 0, y: 0, w: 1, h: 1 };
+  const m = boxes?.MediaBox, t = boxes?.TrimBox ?? boxes?.CropBox;
+  if (!m || !t || m.length < 4 || t.length < 4 || !natW || !natH) return full;
+  const mw = m[2] - m[0], mh = m[3] - m[1];
+  if (mw <= 0 || mh <= 0 || Math.abs(natW / natH - mw / mh) > 0.02 * (mw / mh)) return full;
+  const r = { x: (t[0] - m[0]) / mw, y: (m[3] - t[3]) / mh, w: (t[2] - t[0]) / mw, h: (t[3] - t[1]) / mh };
+  return r.w > 0 && r.h > 0 && (r.w < 0.98 || r.h < 0.98) ? r : full;
+}
+/** Preview-only: centre artwork of the given aspect inside the frame without distortion. */
+export function containInFrame(f: { left: number; top: number; width: number; height: number }, aspect: number) {
+  if (!(aspect > 0)) return f;
+  const fa = f.width / f.height;
+  if (Math.abs(fa - aspect) < 0.01 * fa) return f;
+  const width = aspect > fa ? f.width : f.height * aspect, height = aspect > fa ? f.width / aspect : f.height;
+  return { left: f.left + (f.width - width) / 2, top: f.top + (f.height - height) / 2, width, height };
+}
 /** Artwork frame in mm relative to the panel's trim top-left; mirrors placement_frame on the print server. */
 export function placementFrame(trim: { widthMm: number; heightMm: number }, bleedMm: number, p?: CoverPlacement) {
   const { x, y, scale } = p ?? DEFAULT_PLACEMENT;

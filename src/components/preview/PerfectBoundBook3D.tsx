@@ -4,16 +4,17 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Button } from "@/components/ui/button";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import type { SpineResult } from "@/lib/perfectBinding/spine";
-import { SPINE_FONTS, placementFrame, type CoverPlacement, type SpineFont } from "@/lib/perfectBinding/workflow";
+import { SPINE_FONTS, placementFrame, thumbnailCrop, containInFrame, type PdfBoxes, type CoverPlacement, type SpineFont } from "@/lib/perfectBinding/workflow";
 
 interface Props {
+  frontBoxes?: PdfBoxes; backBoxes?: PdfBoxes;
   frontPath?: string; backPath?: string; wrapPath?: string;
   spine: SpineResult; trimMm: { widthMm: number; heightMm: number };
   title?: string; spineColor?: string; textColor?: string; bleedMm?: number;
   mono?: boolean; maxHeightPx?: number;
   frontPlacement?: CoverPlacement; backPlacement?: CoverPlacement; backBlank?: "white" | "spine"; spineFont?: SpineFont;
 }
-export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono, frontPlacement, backPlacement, backBlank, spineFont = "sans" }: Props) {
+export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spine, trimMm, title, spineColor, textColor, bleedMm = 3, mono, frontPlacement, backPlacement, backBlank, spineFont = "sans", frontBoxes, backBoxes }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const changeView = useRef<(view: string) => void>(() => {});
   useEffect(() => {
@@ -74,11 +75,12 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
           // Same frame maths as the flat view and the print server: artwork fills trim + bleed, then moves/zooms.
           const canvas = blank(1000, 1600), c = canvas.getContext("2d");
           if (!c) continue;
-          const f = placementFrame(trimMm, bleedMm, index === 0 ? frontPlacement : backPlacement);
+          const crop = thumbnailCrop(img.width, img.height, index === 0 ? frontBoxes : backBoxes);
+          const f = containInFrame(placementFrame(trimMm, bleedMm, index === 0 ? frontPlacement : backPlacement), (img.width * crop.w) / (img.height * crop.h));
           const px = canvas.width / trimMm.widthMm, py = canvas.height / trimMm.heightMm;
           c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, canvas.width, canvas.height);
           c.filter = mono ? "grayscale(1)" : "none";
-          c.drawImage(img, f.left * px, f.top * py, f.width * px, f.height * py);
+          c.drawImage(img, crop.x * img.width, crop.y * img.height, crop.w * img.width, crop.h * img.height, f.left * px, f.top * py, f.width * px, f.height * py);
           texture(canvas, index === 0 ? 4 : 5);
         }
       }
@@ -93,9 +95,9 @@ export default function PerfectBoundBook3D({ frontPath, backPath, wrapPath, spin
     let frame = 0;
     const draw = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(draw); }; draw();
     return () => { alive = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); geometry.dispose(); materials.forEach((m) => m.dispose()); textures.forEach((t) => t.dispose()); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono, backBlank, spineFont, frontPlacement?.x, frontPlacement?.y, frontPlacement?.scale, backPlacement?.x, backPlacement?.y, backPlacement?.scale]);
-  return <div className="w-full space-y-3">
-    <div ref={host} className="h-[360px] sm:h-[420px] w-full touch-none" role="img" aria-label="Rotatable book cover preview" />
+  }, [frontPath, backPath, wrapPath, spine.spineMm, spine.textAllowed, trimMm.widthMm, trimMm.heightMm, title, spineColor, textColor, bleedMm, mono, backBlank, spineFont, frontPlacement?.x, frontPlacement?.y, frontPlacement?.scale, backPlacement?.x, backPlacement?.y, backPlacement?.scale, frontBoxes, backBoxes]);
+  return <div className="flex h-full min-h-0 w-full flex-col gap-3">
+    <div ref={host} className="min-h-[360px] w-full flex-1 touch-none" role="img" aria-label="Rotatable book cover preview" />
     <div className="flex justify-center gap-2">{["front", "spine", "back"].map((v) => <Button key={v} variant="outline" size="sm" className="capitalize" onClick={() => changeView.current(v)}>{v}</Button>)}</div>
     <p className="text-center text-xs text-muted-foreground">Spine {spine.spineMm} mm · {spine.sheets} sheets</p>
   </div>;

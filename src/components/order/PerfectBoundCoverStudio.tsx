@@ -15,7 +15,7 @@ import { useDocumentUpload } from "@/hooks/useDocumentUpload";
 import type { Tables } from "@/integrations/supabase/types";
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
-import { DEFAULT_COVER, PLACEMENT_SCALE, SPINE_FONTS, clampPlacement, coverValidation, type CoverPlacement, type PerfectBoundCover, type CoverSource, type SpineFont } from "@/lib/perfectBinding/workflow";
+import { DEFAULT_COVER, PLACEMENT_SCALE, SPINE_FONTS, clampPlacement, coverValidation, type CoverPlacement, type PerfectBoundCover, type CoverSource, type SpineFont, type PdfBoxes } from "@/lib/perfectBinding/workflow";
 import { Slider } from "@/components/ui/slider";
 import { coverWrapSizeMm, type SpineResult } from "@/lib/perfectBinding/spine";
 import PerfectBoundBook3D from "@/components/preview/PerfectBoundBook3D";
@@ -104,7 +104,7 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
             {eligible.map((d) => <SelectItem key={d.id} value={d.id}>{d.file_name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="icon" title={`Upload ${label.toLowerCase()}`} aria-label={`Upload ${label.toLowerCase()}`} disabled={isUploading} onClick={() => { setTarget(side); input.current?.click(); }}><Upload className="h-4 w-4" /></Button>
+        <Button variant="outline" size="icon" title={`Upload ${label.toLowerCase()}`} aria-label={`Upload ${label.toLowerCase()}`} disabled={isUploading} onClick={() => setDialogOpen(true)}><Upload className="h-4 w-4" /></Button>
       </div>
       {source && pages > 1 && <div className="flex items-center gap-2"><Label htmlFor={`cover-${side}-page`}>Page</Label><Input id={`cover-${side}-page`} type="number" min={1} max={pages} value={source.page + 1} className="w-24" onChange={(e) => change({ [side]: { ...source, page: Math.max(0, Math.min(pages - 1, Number(e.target.value) - 1)) } })} /></div>}
     </div>;
@@ -129,13 +129,14 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       <p className="text-xs text-muted-foreground">Drag the cover in the flat view to move it; scroll to zoom.</p>
     </div>;
   };
-  const previewProps = { frontPlacement: cover.front?.placement, backPlacement: cover.back?.placement, backBlank: cover.mode === "guided" ? cover.back_blank : undefined, spineFont: cover.spine_font, frontPath: thumb(cover.mode === "wrap" ? undefined : cover.front), backPath: thumb(cover.mode === "wrap" ? undefined : cover.back), wrapPath: cover.mode === "wrap" ? thumb(cover.wrap) : undefined, spine, trimMm: trim, title: [cover.title, cover.author].filter(Boolean).join(" · "), spineColor: cover.spine_colour, textColor: cover.text_colour, bleedMm: cover.bleed_mm };
-  const preview = <div className="space-y-3">
+  const boxesFor = (source?: CoverSource) => (documents.find((d) => d.id === source?.document_id)?.preflight_data as { boxes?: PdfBoxes } | null)?.boxes;
+  const previewProps = { frontBoxes: boxesFor(cover.front), backBoxes: boxesFor(cover.back), frontPlacement: cover.front?.placement, backPlacement: cover.back?.placement, backBlank: cover.mode === "guided" ? cover.back_blank : undefined, spineFont: cover.spine_font, frontPath: thumb(cover.mode === "wrap" ? undefined : cover.front), backPath: thumb(cover.mode === "wrap" ? undefined : cover.back), wrapPath: cover.mode === "wrap" ? thumb(cover.wrap) : undefined, spine, trimMm: trim, title: [cover.title, cover.author].filter(Boolean).join(" · "), spineColor: cover.spine_colour, textColor: cover.text_colour, bleedMm: cover.bleed_mm };
+  const preview = <div className="flex h-full min-h-0 w-full flex-col gap-3">
     <div className="flex justify-center gap-2" role="group" aria-label="Preview style">
       <Button size="sm" variant={view === "flat" ? "default" : "outline"} onClick={() => setView("flat")}><Layers className="mr-2 h-4 w-4" />2D flat wrap</Button>
       <Button size="sm" variant={view === "3d" ? "default" : "outline"} onClick={() => setView("3d")}><Box className="mr-2 h-4 w-4" />3D book</Button>
     </div>
-    {view === "flat" ? <PerfectBoundFlatWrap {...previewProps} onPlacementChange={cover.mode === "guided" ? setPlacement : undefined} /> : <PerfectBoundBook3D {...previewProps} />}
+    <div className="min-h-0 flex-1">{view === "flat" ? <PerfectBoundFlatWrap {...previewProps} onPlacementChange={cover.mode === "guided" ? setPlacement : undefined} /> : <PerfectBoundBook3D {...previewProps} />}</div>
   </div>;
   const slots: { side: "front" | "back" | "wrap"; label: string; hint: string }[] = cover.mode === "wrap"
     ? [{ side: "wrap", label: "Full wrap PDF", hint: `${wrapSize.widthMm} × ${wrapSize.heightMm} mm including bleed` }]
@@ -210,7 +211,6 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
       </div>
       {spine.textAllowed ? <p className="text-xs text-muted-foreground">Text reads top to bottom, sized to fit with 1.5 mm clear of each spine fold.</p> : <p className="text-xs text-muted-foreground">Spine under 4 mm — spine text is not recommended.</p>}
     </> : <><p className="text-sm">Wrap: {wrapSize.widthMm} × {wrapSize.heightMm} mm · back + {spine.spineMm} mm spine + front · 3 mm bleed</p>{selector("wrap", "Wrap cover")}</>}
-    {isUploading && <p role="status" className="text-sm text-muted-foreground">{Object.values(uploads).find((u) => u.status !== "done")?.statusText ?? "Checking cover PDF…"}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {stuckDoc && <Button variant="outline" size="sm" disabled={!!finishing} onClick={() => void finishCoverCheck(stuckDoc.id)}>{finishing ? "Finishing cover check…" : "Finish cover check"}</Button>}
     {part === "all" && preview}
