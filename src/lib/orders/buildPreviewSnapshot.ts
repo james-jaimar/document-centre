@@ -497,7 +497,13 @@ export function buildPreviewSnapshot(input: {
   const isBound = BOUND_TYPES.has(productType);
 
   const effects = resolveEffects(selectedOptions, productOptions);
-  const bindingEdge = resolveBindingEdge(selectedOptions, productOptions, documents);
+  // Perfect-bound covers (often a wide wrap) must never define the book's
+  // page size: size from inside-page (body) documents first.
+  const bodyIds = new Set(sections.filter((s) => s.section_type === "body" && s.document_id).map((s) => s.document_id));
+  const sizingDocs = productType === "perfect_bound" && bodyIds.size
+    ? [...documents.filter((d) => bodyIds.has(d.id)), ...documents.filter((d) => !bodyIds.has(d.id))]
+    : documents;
+  const bindingEdge = resolveBindingEdge(selectedOptions, productOptions, sizingDocs);
   const bindingArt = selectedBindingArt(selectedOptions, productOptions);
 
   const sortedSections = sortSectionsByRole(sections);
@@ -663,8 +669,8 @@ export function buildPreviewSnapshot(input: {
     });
   });
 
-  const docWithSize = documents.find((d) => d.page_width_mm && d.page_height_mm);
-  const docWithPdfSource = documents.find((d) => !!getProcessedPdfPath(d));
+  const docWithSize = sizingDocs.find((d) => d.page_width_mm && d.page_height_mm);
+  const docWithPdfSource = sizingDocs.find((d) => !!getProcessedPdfPath(d));
   const pdfSizeMm = resolvePdfSizeMm(docWithPdfSource ?? docWithSize);
   const trimCrop = resolveTrimCrop(docWithPdfSource ?? docWithSize);
   let pageAspectRatio: number | null =
