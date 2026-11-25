@@ -48,6 +48,7 @@ import {
   type CatalogFinishing,
 } from "@/hooks/useCatalog";
 import { Plus, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatSize } from "@/lib/units";
 import { toast } from "sonner";
 
@@ -296,7 +297,14 @@ export default function PlatformCatalog() {
       </p>
 
 
-      {/* ---------- Sizes ---------- */}
+      <Tabs defaultValue="sizes" className="w-full">
+        <TabsList>
+          <TabsTrigger value="sizes">Document Sizes</TabsTrigger>
+          <TabsTrigger value="attrs">Print Attributes</TabsTrigger>
+          <TabsTrigger value="papers">Paper Stocks</TabsTrigger>
+          <TabsTrigger value="finishing">Finishing</TabsTrigger>
+        </TabsList>
+      <TabsContent value="sizes" className="mt-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -354,7 +362,8 @@ export default function PlatformCatalog() {
         </CardContent>
       </Card>
 
-      {/* ---------- Print Attributes ---------- */}
+      </TabsContent>
+      <TabsContent value="attrs" className="mt-4">
       <Card>
         <CardHeader>
           <CardTitle>Print Attributes</CardTitle>
@@ -383,7 +392,8 @@ export default function PlatformCatalog() {
         </CardContent>
       </Card>
 
-      {/* ---------- Papers ---------- */}
+      </TabsContent>
+      <TabsContent value="papers" className="mt-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -448,7 +458,8 @@ export default function PlatformCatalog() {
         </CardContent>
       </Card>
 
-      {/* ---------- Finishing ---------- */}
+      </TabsContent>
+      <TabsContent value="finishing" className="mt-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -510,6 +521,8 @@ export default function PlatformCatalog() {
           )}
         </CardContent>
       </Card>
+      </TabsContent>
+      </Tabs>
 
       {/* size dialog */}
       <Dialog open={dlgOpen} onOpenChange={setDlgOpen}>
