@@ -1,3 +1,8 @@
+## Paper and finishing price-break controls (2026-11-25)
+- [x] Add the shared tier editor beside saved paper-size prices and each finishing price, preserving master/tenant/branch scope and ZAR defaults
+- [x] Check scoped editor wiring and ZAR defaults with six integration tests; eight existing pricing tests passed and preview builds clean
+- [ ] Verify saving and reopening tiers on the signed-in pricing screen; blocked by external unmanaged authentication
+
 ## Perfect bound books (2026-11-23)
 - [x] Set the admin-owned perfect-binding charge to 7.50 per book (printing, paper and lamination excluded)
 - [x] Admin min/max body page setting per product (40-page default for perfect bound); block add-to-cart outside limits

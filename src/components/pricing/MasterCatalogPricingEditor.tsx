@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import TiersButton from "./TiersButton";
 
 import {
   useCatalogSizes,
@@ -379,7 +380,7 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
             <TableHead className="w-16">GSM</TableHead>
             <TableHead>Finish</TableHead>
             {allSizes.map((s) => (
-              <TableHead key={s} className="w-24 uppercase">{s.replace("_", " ")} (R)</TableHead>
+              <TableHead key={s} className="w-32 uppercase">{s.replace("_", " ")} (R)</TableHead>
             ))}
             <TableHead>Flags</TableHead>
           </TableRow>
@@ -418,6 +419,7 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
                     (row ? (row.sell_price_minor / 100).toFixed(2) : "");
                   return (
                     <TableCell key={size}>
+                      <div className="flex items-center gap-1">
                       <Input
                         type="number"
                         step="0.01"
@@ -434,6 +436,19 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
                           commitCell(paper, size, e.target.value);
                         }}
                       />
+                      {row && (
+                        <TiersButton
+                          table="papers"
+                          lineId={row.id}
+                          label={`${paper.label} · ${size.toUpperCase()} · Sheets`}
+                          scope={scopeArgs.scope}
+                          tenantId={scopeArgs.tenantId}
+                          branchId={scopeArgs.branchId}
+                          fallbackSell={row.sell_price_minor / 100}
+                          fallbackCost={(row.cost_price_minor ?? 0) / 100}
+                        />
+                      )}
+                      </div>
                     </TableCell>
                   );
                 })}
@@ -691,6 +706,7 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
             <TableHead>Sell (R)</TableHead>
             <TableHead>Cost (R)</TableHead>
             <TableHead>Active</TableHead>
+            <TableHead className="w-10">Tiers</TableHead>
             <TableHead className="w-10" />
           </TableRow>
         </TableHeader>
@@ -817,6 +833,18 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
                   />
                 </TableCell>
                 <TableCell>
+                  <TiersButton
+                    table="finishing"
+                    lineId={row.id}
+                    label={`${row.item?.label ?? "Finishing"} · ${row.size?.label ?? row.size_code ?? "Any size"} · ${(row.item?.pricing_basis ?? "per_unit").replace(/_/g, " ")}`}
+                    scope={scopeArgs.scope}
+                    tenantId={scopeArgs.tenantId}
+                    branchId={scopeArgs.branchId}
+                    fallbackSell={row.sell_price_minor / 100}
+                    fallbackCost={(row.cost_price_minor ?? 0) / 100}
+                  />
+                </TableCell>
+                <TableCell>
                   <Button
                     size="icon"
                     variant="ghost"
@@ -831,7 +859,7 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
           })}
           {!isLoading && rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-6">
+              <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-6">
                 No finishing prices yet.
               </TableCell>
             </TableRow>

@@ -1,5 +1,7 @@
 # Architecture rules
 
+- Reuse TiersButton for catalogue paper-size and finishing price-row IDs, converting minor-unit defaults to ZAR; this keeps all scopes on the existing quantity-tier editor and pricing engine.
+
 - Group bookshelf rows by the customer-chosen `snapshot.shelf_category` (set by order-engine beside the frozen spec, preserved on revise), falling back to the product-family label; shelf labels and cover shapes are presentation-only and must never change specs or pricing.
 - Reuse BookshelfCover for shelf, detail, express-order, cart and checkout previews from saved/restored thumbnails and print selections; use the shared binding resolver and closed-front assets with clearance outside the clipped cover so all views agree without changing saved specifications.
 

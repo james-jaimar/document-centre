@@ -37,6 +37,7 @@ export default function TiersButton({
         variant="ghost"
         className="h-7 w-7"
         title="Edit quantity price breaks"
+        aria-label={`Edit quantity price breaks for ${label}`}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
