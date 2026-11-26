@@ -106,9 +106,14 @@ export function placedJobBookshelfSnapshot(job: any, assets: FrozenAsset[], deri
     });
     return id;
   };
-  const sections = (config.merge_directives ?? []).filter((d: any) => d?.asset_id).map((d: any, i: number) => ({
+  // New snapshots keep editable chapters/inserts, not the sliced production instructions.
+  const frozenSections = job?.product_snapshot?.sections;
+  const editableSections = Array.isArray(frozenSections) && frozenSections.some((s: any) => s.asset_id)
+    ? frozenSections : (config.merge_directives ?? []).filter((d: any) => d?.asset_id);
+  const sections = editableSections.map((d: any, i: number) => ({
     document_id: addDoc(d.asset_id, d.file_name), section_type: d.section_type ?? "body", page_range_start: d.page_range_start ?? null, page_range_end: d.page_range_end ?? null,
-    paper_stock: d.paper_stock ?? null, paper_weight_gsm: d.paper_weight_gsm ?? null, is_color: d.is_color ?? null, is_duplex: d.is_duplex ?? null, sort_order: i,
+    paper_stock: d.paper_stock ?? null, paper_weight_gsm: d.paper_weight_gsm ?? null, is_color: d.is_color ?? false, is_duplex: d.is_duplex ?? true, sort_order: d.sort_order ?? i,
+    start_on_right: d.start_on_right ?? true, label: d.label ?? null, color: d.color ?? null,
   }));
   const spec = { ...raw };
   if (raw.perfect_bound_cover) {

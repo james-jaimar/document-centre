@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
+import { Switch } from "@/components/ui/switch";
 
 type DocumentSection = Tables<"document_sections">;
 type Document = Tables<"documents">;
@@ -102,6 +103,8 @@ interface SectionListProps {
   onToggleDuplex: (section: DocumentSection) => void;
   onMove: (sectionId: string, direction: "up" | "down") => void;
   familySlug?: string | null;
+  perfectBound?: boolean;
+  onToggleStartOnRight?: (section: DocumentSection) => void;
 }
 
 export default function SectionList({
@@ -113,6 +116,8 @@ export default function SectionList({
   onToggleDuplex,
   onMove,
   familySlug,
+  perfectBound,
+  onToggleStartOnRight,
 }: SectionListProps) {
   const labels = getLabels(familySlug);
   const hideDuplex = HIDE_DUPLEX.has(familySlug ?? "");
@@ -298,6 +303,12 @@ export default function SectionList({
                   ? "Cover sheets print single-sided only."
                   : "Single-page cover — back is blank. Upload a 2-page PDF for a printed inside."}
               </p>
+            )}
+            {perfectBound && section.section_type === "body" && idx > 0 && onToggleStartOnRight && (
+              <label className="flex items-center justify-between gap-2 mt-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                Start on right-hand page
+                <Switch aria-label={`Start ${doc?.file_name ?? "chapter"} on right-hand page`} checked={section.start_on_right !== false} onCheckedChange={() => onToggleStartOnRight(section)} />
+              </label>
             )}
           </div>
         );

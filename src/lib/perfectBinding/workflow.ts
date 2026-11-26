@@ -1,4 +1,5 @@
 import { calculateSpine, coverWrapSizeMm, type SpineResult } from "./spine";
+import { perfectBodyLayout, type BodySection } from "./bodyLayout";
 
 export function isPerfectBoundFamily(family?: { slug?: string | null; printing_rules?: unknown } | null, bindingMethod?: string | null): boolean {
   const rules = family?.printing_rules as { binding_method?: string } | undefined;
@@ -89,17 +90,13 @@ export const DEFAULT_COVER: Pick<PerfectBoundCover, "version" | "mode" | "spine_
 };
 
 type Doc = { id: string; page_count: number | null; page_width_mm?: number | null; page_height_mm?: number | null; document_status?: string; preflight_data?: unknown };
-type Section = { document_id: string | null; section_type: string; page_range_start?: number | null; page_range_end?: number | null; is_duplex?: boolean };
+type Section = BodySection;
 export function sectionPageCount(section: Section, documents: Doc[]): number {
   const count = documents.find((d) => d.id === section.document_id)?.page_count ?? 0;
   return Math.max(0, Math.min(count - 1, section.page_range_end ?? count - 1) - Math.max(0, section.page_range_start ?? 0) + 1);
 }
 export function bodySpine(sections: Section[], documents: Doc[], gsm?: number | null, allowanceMm?: number) {
-  // Sum leaves per section: two odd-length duplex PDFs each require their own last sheet.
-  const sheets = sections.filter((s) => s.section_type === "body").reduce((n, s) => {
-    const pages = sectionPageCount(s, documents);
-    return n + (s.is_duplex === false ? pages : Math.ceil(pages / 2));
-  }, 0);
+  const sheets = Math.ceil(perfectBodyLayout(sections, documents).length / 2);
   return calculateSpine({ pages: sheets * 2, duplex: true, gsm, allowanceMm });
 }
 

@@ -288,6 +288,7 @@ export function useAddSection() {
       is_color?: boolean;
       bank_position?: number | null;
       label?: string | null;
+      color?: string | null;
     }) => {
       const { data, error } = await supabase
         .from("document_sections")

@@ -1,5 +1,7 @@
 # Architecture rules
 
+- Compile perfect-bound chapters and anchored inserts through the shared physical body layout for preview, spine and PDF directives; persist right-hand starts on sections and freeze editable sections beside sliced production directives so copies preserve choices without double-padding.
+
 - Reuse TiersButton for catalogue paper-size and finishing price-row IDs, converting minor-unit defaults to ZAR; this keeps all scopes on the existing quantity-tier editor and pricing engine.
 
 - Group bookshelf rows by the customer-chosen `snapshot.shelf_category` (set by order-engine beside the frozen spec, preserved on revise), falling back to the product-family label; shelf labels and cover shapes are presentation-only and must never change specs or pricing.

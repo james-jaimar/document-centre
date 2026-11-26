@@ -2501,6 +2501,7 @@ export type Database = {
           paper_weight_gsm: number | null
           section_type: Database["public"]["Enums"]["section_type"]
           sort_order: number
+          start_on_right: boolean
           updated_at: string
         }
         Insert: {
@@ -2520,6 +2521,7 @@ export type Database = {
           paper_weight_gsm?: number | null
           section_type?: Database["public"]["Enums"]["section_type"]
           sort_order?: number
+          start_on_right?: boolean
           updated_at?: string
         }
         Update: {
@@ -2539,6 +2541,7 @@ export type Database = {
           paper_weight_gsm?: number | null
           section_type?: Database["public"]["Enums"]["section_type"]
           sort_order?: number
+          start_on_right?: boolean
           updated_at?: string
         }
         Relationships: [

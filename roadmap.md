@@ -1,3 +1,9 @@
+## Perfect-bound chapter starts and manual inserts (2026-11-26)
+- [x] Share a physical body-page plan across preview, spine and frozen PDF instructions; default chapters to right-hand starts
+- [x] Add coloured sheets and single blank pages to the existing drawer without tabs; preserve choices on cart/bookshelf copies and deploy order-engine
+- [x] Verify 151-page chapter alignment and the actual worker directive loop with real PDFs; 43 frontend and 22 Python tests passed, isolated desktop/mobile drawer controls checked, preview builds clean
+- [ ] Verify signed-in order → deployed Cloud Run output; blocked by external print-server redeployment and unavailable user-managed authentication
+
 ## Paper and finishing price-break controls (2026-11-25)
 - [x] Add the shared tier editor beside saved paper-size prices and each finishing price, preserving master/tenant/branch scope and ZAR defaults
 - [x] Check scoped editor wiring and ZAR defaults with six integration tests; eight existing pricing tests passed and preview builds clean

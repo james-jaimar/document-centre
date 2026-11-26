@@ -54,6 +54,7 @@ import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import PerfectBoundCoverStudio from "@/components/order/PerfectBoundCoverStudio";
 import { glueAllowanceFromRules } from "@/lib/perfectBinding/spine";
 import { isPerfectBoundFamily, bodySpine, sectionPageCount, coverValidation, perfectBoundProductionReady } from "@/lib/perfectBinding/workflow";
+import { perfectBodyLayout } from "@/lib/perfectBinding/bodyLayout";
 import { gsmFromLabel, checkPageLimits } from "@/lib/perfectBinding/spine";
 import {
   planCoverSplit,
@@ -380,6 +381,11 @@ export default function OrderBuild() {
   // instead of 1).
   useEffect(() => {
     const seenDocs = new Set<string>();
+    if (isPerfectBoundFamily(productFamily) || spec.perfect_bound_cover) {
+      const page_count = perfectBodyLayout(sections, documents).length;
+      setSpec((prev) => prev.page_count === page_count ? prev : { ...prev, page_count });
+      return;
+    }
     const totalPages = sections.reduce((sum, section) => {
       const docId = section.document_id;
       if (!docId || seenDocs.has(docId)) return sum;
@@ -388,7 +394,7 @@ export default function OrderBuild() {
       return sum + (doc?.page_count ?? 0);
     }, 0);
     setSpec((prev) => ({ ...prev, page_count: totalPages }));
-  }, [sections, documents]);
+  }, [sections, documents, productFamily, spec.perfect_bound_cover]);
 
   // Initialize defaults from product options
   // Track whether auto-size-match has fired so it only runs once PER unique
@@ -1163,7 +1169,7 @@ export default function OrderBuild() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Admin-configured body page limits (perfect bound defaults to 40 minimum).
-  const bodyPageCount = useMemo(() => sections.filter((s) => s.section_type === "body").reduce((n, s) => n + sectionPageCount(s, documents), 0), [sections, documents]);
+  const bodyPageCount = useMemo(() => productType === "perfect_bound" ? perfectBodyLayout(sections, documents).length : sections.filter((s) => s.section_type === "body").reduce((n, s) => n + sectionPageCount(s, documents), 0), [sections, documents, productType]);
   const perfectBoundSpine = useMemo(() => bodySpine(sections, documents, bodyPaperGsm, glueAllowanceFromRules((productFamily as any)?.printing_rules)), [sections, documents, bodyPaperGsm, productFamily]);
   const bodyDocument = documents.find((d) => sections.some((s) => s.section_type === "body" && s.document_id === d.id));
   const perfectTrim = canvasSizeMm ?? { widthMm: bodyDocument?.page_width_mm ?? 210, heightMm: bodyDocument?.page_height_mm ?? 297 };
@@ -1419,6 +1425,7 @@ export default function OrderBuild() {
   // sensible defaults so the drawer still opens on rows that haven't been
   // fully annotated in the master catalogue yet.
   const tabInfo = useMemo(() => {
+    if (productType === "perfect_bound") return null;
     const tabOpt = options.find((o) => o.name.toLowerCase().includes("tab"));
     if (!tabOpt || !isStructuredValues(tabOpt.values)) return null;
     const key = Object.keys(spec.selected_options).find(
@@ -1449,7 +1456,7 @@ export default function OrderBuild() {
       (typeof meta.sheet_size === "string" && meta.sheet_size.trim()) ||
       (unit === "imperial" ? "Letter" : "A4");
     return { count, packCount, multiColor, sheetSize };
-  }, [options, spec.selected_options, unit]);
+  }, [options, spec.selected_options, unit, productType]);
 
   // ── Tab dividers pin the document size ──
   // Resolve the Document Size value that matches the tab bank's sheet size
@@ -1497,6 +1504,7 @@ export default function OrderBuild() {
 
   // ── Derive insert info from product options ──
   const insertEnabled = useMemo(() => {
+    if (productType === "perfect_bound") return true;
     // Match "Inserts" specifically — never "Tab Dividers" (which also
     // contains the word "divider"). Prefer exact-ish names, then a
     // contains-"insert" fallback that excludes anything tab-related.
@@ -1517,7 +1525,7 @@ export default function OrderBuild() {
     if (slug === "none" || slug === "no-inserts" || slug === "no_inserts") return false;
     if (/(^|[-_])none([-_]|$)/i.test(slug)) return false;
     return true;
-  }, [options, spec.selected_options]);
+  }, [options, spec.selected_options, productType]);
 
 
   // Auto-open drawer when tabs or inserts become enabled
@@ -1526,13 +1534,13 @@ export default function OrderBuild() {
     const nowHasTabs = !!tabInfo;
     const nowHasInserts = insertEnabled;
     // If tabs or inserts were just enabled, auto-open the drawer
-    if ((nowHasTabs && !prev.hadTabs) || (nowHasInserts && !prev.hadInserts)) {
+    if (productType !== "perfect_bound" && ((nowHasTabs && !prev.hadTabs) || (nowHasInserts && !prev.hadInserts))) {
       setDrawerOpen(true);
       setHasOpenedDrawer(true);
     }
     prev.hadTabs = nowHasTabs;
     prev.hadInserts = nowHasInserts;
-  }, [tabInfo, insertEnabled]);
+  }, [tabInfo, insertEnabled, productType]);
 
   
 
@@ -1611,17 +1619,20 @@ export default function OrderBuild() {
     await updateSectionMut.mutateAsync({ id: sectionId, bank_position: bankPosition } as any);
   }, [updateSectionMut]);
 
-  const handleAddInsert = useCallback(async (afterPage: number, color: string) => {
+  const handleAddInsert = useCallback(async (afterPage: number, color: string, blank = false) => {
     if (!orderItemId) return;
     const maxSort = sections.reduce((max, s) => Math.max(max, s.sort_order), 0);
-    const section = await addSectionMut.mutateAsync({
+    await addSectionMut.mutateAsync({
       order_item_id: orderItemId,
       section_type: "insert",
       sort_order: maxSort + 1,
       document_id: null,
       page_range_start: afterPage,
-    } as any);
-    await supabase.from("document_sections").update({ color } as any).eq("id", section.id);
+      color,
+      is_duplex: !blank,
+      is_color: false,
+      label: blank ? "Blank page" : `${color} insert sheet`,
+    });
   }, [orderItemId, addSectionMut, sections]);
 
   const handleDeleteInsert = useCallback(async (sectionId: string) => {
@@ -1788,7 +1799,7 @@ export default function OrderBuild() {
           <div className="flex-1 overflow-auto p-3 space-y-3">
             {coverStageActive && orderItemId ? <PerfectBoundCoverStudio orderItemId={orderItemId} documents={documents} sections={sections} value={spec.perfect_bound_cover} trim={perfectTrim} spine={perfectBoundSpine} onChange={(cover) => setSpec((prev) => ({ ...prev, perfect_bound_cover: cover }))} part="controls" /> : <>
             <OptionsPanel
-              options={options}
+              options={productType === "perfect_bound" ? options.filter((o) => !/tab/i.test(o.name)) : options}
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
               familySlug={productFamily?.slug ?? undefined}
@@ -1859,7 +1870,7 @@ export default function OrderBuild() {
                 }}
               >
                 <Settings2 className="h-3.5 w-3.5 mr-1.5" />
-                Manage Tabs & Inserts
+                {productType === "perfect_bound" ? "Inserts & Blank Pages" : "Manage Tabs & Inserts"}
               </Button>
             )}
             </>}
@@ -1936,6 +1947,9 @@ export default function OrderBuild() {
         onUpdateTabLabel={handleUpdateTabLabel}
         onUpdateTabBankPosition={handleUpdateTabBankPosition}
         insertEnabled={insertEnabled}
+        perfectBound={productType === "perfect_bound"}
+        onAddBlank={(afterPage) => handleAddInsert(afterPage, "white", true)}
+        onToggleStartOnRight={(section) => updateSectionMut.mutate({ id: section.id, start_on_right: !section.start_on_right })}
         onAddInsert={handleAddInsert}
         onDeleteInsert={handleDeleteInsert}
         onMoveInsert={handleMoveInsert}

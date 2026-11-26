@@ -354,6 +354,7 @@ export function useEditCartItem() {
             sort_order: s.sort_order,
             label: s.label,
             color: s.color,
+            start_on_right: s.start_on_right,
           }));
           await supabase.from("document_sections").insert(secInserts);
         }
@@ -520,7 +521,7 @@ export function usePlaceOrder() {
             ? supabase
                 .from("document_sections")
                 .select(
-                  "id, order_item_id, document_id, label, section_type, page_range_start, page_range_end, paper_stock, paper_weight_gsm, is_color, is_duplex, lamination, color, sort_order, bank_position"
+                  "id, order_item_id, document_id, label, section_type, page_range_start, page_range_end, paper_stock, paper_weight_gsm, is_color, is_duplex, lamination, color, sort_order, bank_position, start_on_right"
                 )
                 .in("order_item_id", itemIds)
                 .order("sort_order")

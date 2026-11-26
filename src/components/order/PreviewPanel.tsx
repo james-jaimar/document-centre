@@ -22,6 +22,7 @@ import { ringTotalViews, resolveRingView, stepRingView } from "@/lib/preview/rin
 import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
 import PerfectBoundBook3D from "@/components/preview/PerfectBoundBook3D";
 import { calculateSpine } from "@/lib/perfectBinding/spine";
+import { perfectBodyLayout } from "@/lib/perfectBinding/bodyLayout";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
@@ -127,6 +128,16 @@ function buildPageSequence(
   isBound: boolean,
   productType?: ProductPreviewType,
 ): PageInfo[] {
+  if (productType === "perfect_bound") {
+    return perfectBodyLayout(sections, documents).map((face) => {
+      const section = face.section;
+      if (face.kind === "blank") return { thumbnailUrl: "", pageIndex: -1, documentName: "Blank page", isColor: false, section: { ...section, section_type: "body" } };
+      if (face.kind === "insert") return { thumbnailUrl: "", pageIndex: face.back ? -1 : 0, documentName: "Insert sheet", isColor: true, section, color: face.color };
+      const doc = documents.find((d) => d.id === section.document_id);
+      const thumbnails = Array.isArray(doc?.thumbnail_urls) ? doc.thumbnail_urls as string[] : [];
+      return { thumbnailUrl: thumbnails[face.page] ?? "", pageIndex: face.page, documentName: doc?.file_name ?? "Body", section, isColor: section.is_color, filePath: doc ? (doc.preflight_data as { processed_file_path?: string } | null)?.processed_file_path ?? doc.file_path : null };
+    });
+  }
   // Saddle-stitched booklets are always duplex — skip blank_back injection
   const forceDuplex = productType === "saddle_stitched";
   // Sort by role so Front Cover always renders before Body, regardless of
@@ -993,9 +1004,7 @@ export default function PreviewPanel({
     const real = pages.filter((p) => p.thumbnailUrl);
     const front = real.find((p) => p.section?.section_type === "front_cover");
     const back = real.filter((p) => p.section?.section_type === "back_cover").pop();
-    const body = real.filter((p) => (p.section?.section_type ?? "body") === "body" && p !== front && p !== back);
-    const duplex = body.every((p) => p.section?.is_duplex ?? true);
-    const spine = calculateSpine({ pages: body.length, duplex, gsm: paperGsm });
+    const spine = calculateSpine({ pages: pages.length, duplex: true, gsm: paperGsm });
     const trim = canvasSizeMm ?? pdfSizeMm ?? { widthMm: 210, heightMm: 297 };
     return { front, back, spine, trim };
   }, [isPerfectBound, pages, paperGsm, canvasSizeMm, pdfSizeMm]);

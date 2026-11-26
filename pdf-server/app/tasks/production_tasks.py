@@ -32,6 +32,7 @@ from app.services.production_orchestrator import (
     write_job_field,
 )
 from app.services.storage import StorageService
+from app.services.body_filler import make_body_filler
 
 storage = StorageService()
 
@@ -300,6 +301,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # v6: per-section greyscale for mixed colour jobs + duplex_mode
             # wired into TargetSpec + orientation-transpose resize guard.
             "colour_pipeline_version": 6,
+            "body_layout_version": 1,
         }
 
         new_hash = pdf_ops.spec_hash(spec_inputs)
@@ -340,6 +342,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             last_component = "body"
             section_used_any = False
             per_section_colour: list[dict] = []
+            has_coloured_inserts = any(isinstance(d, dict) and d.get("kind") == "insert_page" and d.get("color", "white") != "white" for d in directives)
 
             def _component_key(d: dict) -> str:
                 st = d.get("section_type") or ""
@@ -371,7 +374,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
 
                 # Helper: build a blank one-page PDF sized to the target spec
                 # (or A4 fallback in points: 1 mm = 2.83465 pt).
-                def _make_blank(idx: int) -> Path:
+                def _make_blank(idx: int, color: str = "white") -> Path:
                     tw_mm = target.width_mm or 210.0
                     th_mm = target.height_mm or 297.0
                     w_pt = float(tw_mm) * 2.83464567
@@ -381,11 +384,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     elif target.orientation == "portrait" and w_pt > h_pt:
                         w_pt, h_pt = h_pt, w_pt
                     out = ws.path(f"{idx:03d}-blank.pdf")
-                    writer = PdfWriter()
-                    writer.add_blank_page(width=w_pt, height=h_pt)
-                    with open(out, "wb") as f:
-                        writer.write(f)
-                    return out
+                    return make_body_filler(out, w_pt / 2.83464567, h_pt / 2.83464567, color)
 
                 downloaded: dict[str, Path] = {}
                 sliced_cache: dict[tuple[str, int, int], Path] = {}
@@ -406,7 +405,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 # sections flagged is_color=False; the rest stay colour.
                 # For whole-doc "bw" jobs we let the downstream step handle
                 # greyscale (single pass over the merged file).
-                mixed_colour = target.colour_mode == "mixed"
+                mixed_colour = target.colour_mode == "mixed" or (target.colour_mode == "bw" and has_coloured_inserts)
 
                 for idx, d in enumerate(directives):
                     if not isinstance(d, dict):
@@ -416,6 +415,8 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         sid = d.get("section_id")
                         resolved = bundle.section_paths.get(sid) if sid else None
                         if not resolved:
+                            if d.get("layout_explicit"):
+                                raise ValueError(f"Missing source for explicit body section {sid}")
                             continue
                         fname, path = resolved
                         # Download once per source path (covers reused assets).
@@ -459,6 +460,8 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                                         sliced_cache[key] = section_file
                                         steps.append(f"slice:{label}:{s_clamped}-{e_clamped}")
                                     except Exception as ex:
+                                        if d.get("layout_explicit"):
+                                            raise ValueError(f"Cannot slice explicit body pages {s_clamped}-{e_clamped}") from ex
                                         warnings.append(
                                             f"slice failed for {label} ({s_clamped}-{e_clamped}): {ex}"
                                         )
@@ -482,7 +485,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         # blank back page so the press doesn't print on the
                         # back of the next section. Covers already handled
                         # at snapshot time via blank_page directives.
-                        if d.get("is_duplex") is False:
+                        if d.get("is_duplex") is False and not d.get("layout_explicit"):
                             section_type = d.get("section_type") or ""
                             if section_type not in ("front_cover", "back_cover"):
                                 try:
@@ -498,6 +501,10 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     elif kind == "blank_page":
                         _add_file(_make_blank(idx), last_component)
                         steps.append(f"blank:{d.get('reason') or 'unknown'}")
+                    elif kind == "insert_page":
+                        # Two consecutive directives are the two faces of a real insert sheet.
+                        _add_file(_make_blank(idx, d.get("color") or "white"), "body")
+                        steps.append(f"insert:{d.get('color') or 'white'}")
 
             if not section_used_any:
                 # ── Fallback: download all sources in document order ─────
@@ -570,7 +577,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 needs_bleed = target.print_to_edge and not pdf_ops.detect_bleed(current)
                 # Whole-doc greyscale only when *every* printable section is B&W.
                 # Mixed jobs are handled per-file above the merge.
-                needs_greyscale = target.colour_mode == "bw"
+                needs_greyscale = target.colour_mode == "bw" and not has_coloured_inserts
 
                 # ── Step 3: resize / re-orient ──────────────────────────
                 if needs_resize and target.width_mm and target.height_mm:

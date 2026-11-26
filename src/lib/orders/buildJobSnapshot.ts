@@ -9,6 +9,8 @@ import type { JobConfiguration, ConfigSection, ConfigSummary } from "./types";
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import { isStructuredValues } from "@/lib/productOptionTypes";
 import { sortSectionsByRole } from "./sectionOrdering";
+import { perfectBodyLayout } from "../perfectBinding/bodyLayout";
+import { isPerfectBoundFamily } from "../perfectBinding/workflow";
 
 export interface ProductOptionRow {
   id: string;
@@ -34,6 +36,7 @@ export interface DocumentSectionRow {
   document_id?: string | null;
   /** Physical slot (1..N) within a pre-cut tab divider pack of 10. Tabs only. */
   bank_position?: number | null;
+  start_on_right?: boolean;
 }
 
 export interface DocumentRow {
@@ -469,9 +472,33 @@ export type MergeDirective =
       // print-ready PDF per component.
       paper_stock?: string | null;
       paper_weight_gsm?: number | null;
+      layout_explicit?: boolean;
 
     }
-  | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" | "booklet_pad" };
+  | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" | "booklet_pad" | "chapter_recto" | "user_blank" | "simplex_body_back" | "insert_alignment" }
+  | { kind: "insert_page"; section_id: string; color: string; paper_stock?: string | null; paper_weight_gsm?: number | null };
+
+function perfectMergeDirectives(sections: DocumentSectionRow[], documents: DocumentRow[]): MergeDirective[] {
+  const out: MergeDirective[] = [];
+  for (const face of perfectBodyLayout(sections, documents)) {
+    const s = face.section;
+    if (face.kind === "blank") { out.push({ kind: "blank_page", reason: face.reason }); continue; }
+    if (face.kind === "insert") {
+      out.push({ kind: "insert_page", section_id: s.id, color: face.color, paper_stock: s.paper_stock, paper_weight_gsm: s.paper_weight_gsm });
+      continue;
+    }
+    const doc = documents.find((d) => d.id === s.document_id);
+    const last = out[out.length - 1];
+    if (last?.kind === "section" && last.section_id === s.id && last.page_range_end === face.page - 1) {
+      last.page_range_end = face.page;
+    } else {
+      out.push({ kind: "section", section_id: s.id, section_type: "body", asset_id: doc?.asset_id, storage_path: doc?.storage_path,
+        file_name: doc?.file_name, page_count: doc?.page_count, page_range_start: face.page, page_range_end: face.page,
+        is_color: s.is_color, is_duplex: s.is_duplex, paper_stock: s.paper_stock, paper_weight_gsm: s.paper_weight_gsm, layout_explicit: true });
+    }
+  }
+  return out;
+}
 
 
 function buildMergeDirectives(
@@ -623,6 +650,8 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
 
   const mergeDirectives = isRasterProduct
     ? []
+    : spec.perfect_bound_cover || isPerfectBoundFamily(item.product_families)
+    ? perfectMergeDirectives(sections, documents)
     : buildMergeDirectives(sections, documents, isSaddleStitched);
 
   const sourceAssets: Array<{ asset_id: string | null; file_name: string; storage_path: string | null; page_count: number | null }> = isRasterProduct ? [] : buildSourceAssets(documents);
@@ -693,6 +722,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
         metadata: r.metadata,
       })),
       sections: sections.map((s) => ({
+        asset_id: documents.find((d) => d.id === s.document_id)?.asset_id ?? null,
+        sort_order: s.sort_order,
+        start_on_right: s.start_on_right ?? true,
         label: s.label,
         section_type: s.section_type,
         page_range_start: s.page_range_start,

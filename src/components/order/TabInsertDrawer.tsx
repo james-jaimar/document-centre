@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Wand2, Trash2, Tag, FileStack } from "lucide-react";
 import { TAB_COLORS } from "@/components/preview/previewTypes";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
+import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
 
 type DocumentSection = Tables<"document_sections">;
 type Document = Tables<"documents">;
@@ -20,14 +22,16 @@ const INSERT_COLORS = [
 ];
 
 /** Build a flat list of body pages with unique sequential indices */
-function buildBodyPages(sections: DocumentSection[], documents: Document[]) {
+function buildBodyPages(sections: DocumentSection[], documents: Document[], perfectBound = false) {
   const pages: { pageNumber: number; label: string }[] = [];
   let pageNum = 1;
-  for (const section of sections) {
+  for (const section of sortSectionsByRole(sections)) {
+    if (perfectBound && section.section_type !== "body") continue;
     if (section.section_type === "tab" || section.section_type === "insert") continue;
     const doc = documents.find((d) => d.id === section.document_id);
     if (!doc) continue;
-    const count = doc.page_count ?? 0;
+    const total = doc.page_count ?? 0;
+    const count = perfectBound ? Math.max(0, Math.min(total - 1, section.page_range_end ?? total - 1) - Math.max(0, section.page_range_start ?? 0) + 1) : total;
     for (let p = 0; p < count; p++) {
       pages.push({ pageNumber: pageNum, label: `Page ${pageNum}` });
       pageNum++;
@@ -56,6 +60,9 @@ interface TabInsertDrawerProps {
   onAddInsert: (afterPage: number, color: string) => Promise<void>;
   onDeleteInsert: (sectionId: string) => Promise<void>;
   onMoveInsert: (sectionId: string, afterPage: number) => Promise<void>;
+  perfectBound?: boolean;
+  onAddBlank?: (afterPage: number) => Promise<void>;
+  onToggleStartOnRight?: (section: DocumentSection) => void;
 }
 
 export default function TabInsertDrawer({
@@ -78,16 +85,22 @@ export default function TabInsertDrawer({
   onAddInsert,
   onDeleteInsert,
   onMoveInsert,
+  perfectBound = false,
+  onAddBlank,
+  onToggleStartOnRight,
 }: TabInsertDrawerProps) {
   const [selectedInsertColor, setSelectedInsertColor] = useState("white");
+  const [insertKind, setInsertKind] = useState<"sheet" | "blank">("sheet");
+  const [afterPage, setAfterPage] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
 
-  const bodyPages = useMemo(() => buildBodyPages(sections, documents), [sections, documents]);
+  const bodyPages = useMemo(() => buildBodyPages(sections, documents, perfectBound), [sections, documents, perfectBound]);
 
   // For duplex, only allow placement at sheet boundaries (even page numbers)
   const validPages = useMemo(() => {
-    if (!isDuplex) return bodyPages;
+    if (!isDuplex || perfectBound) return bodyPages;
     return bodyPages.filter((p) => p.pageNumber % 2 === 0);
-  }, [bodyPages, isDuplex]);
+  }, [bodyPages, isDuplex, perfectBound]);
 
   const tabSections = useMemo(
     () => sections
@@ -147,12 +160,23 @@ export default function TabInsertDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[400px] sm:max-w-[400px] overflow-auto">
         <SheetHeader>
-          <SheetTitle>Tabs & Insert Sheets</SheetTitle>
+          <SheetTitle>{perfectBound ? "Inserts & Blank Pages" : "Tabs & Insert Sheets"}</SheetTitle>
         </SheetHeader>
 
         <div className="mt-6 space-y-6">
+          {perfectBound && onToggleStartOnRight && (
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold">Chapter starts</h3>
+              {sortSectionsByRole(sections).filter((s) => s.section_type === "body").slice(1).map((s) => (
+                <label key={s.id} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="min-w-0"><span className="block truncate">{documents.find((d) => d.id === s.document_id)?.file_name ?? s.label}</span><span className="text-muted-foreground">Start on right-hand page</span></span>
+                  <Switch aria-label={`Start ${documents.find((d) => d.id === s.document_id)?.file_name ?? "chapter"} on right-hand page`} checked={s.start_on_right !== false} onCheckedChange={() => onToggleStartOnRight(s)} />
+                </label>
+              ))}
+            </section>
+          )}
           {/* ── TAB DIVIDERS ── */}
-          {tabEnabled && (
+          {tabEnabled && !perfectBound && (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -283,25 +307,44 @@ export default function TabInsertDrawer({
                 <div className="flex items-center gap-2">
                   <FileStack className="h-4 w-4 text-primary" />
                   <h3 className="text-sm font-semibold text-foreground">
-                    Insert Sheets ({insertSections.length})
+                    {perfectBound ? "Inserts & blanks" : "Insert Sheets"} ({insertSections.length})
                   </h3>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   className="text-xs h-7"
-                  onClick={() => onAddInsert(
-                    validPages.length > 0 ? validPages[validPages.length - 1].pageNumber : 1,
-                    selectedInsertColor
-                  )}
+                  disabled={adding || validPages.length === 0}
+                  onClick={async () => {
+                    const anchor = afterPage ?? validPages[validPages.length - 1]?.pageNumber ?? 1;
+                    setAdding(true);
+                    try {
+                      if (perfectBound && insertKind === "blank" && onAddBlank) await onAddBlank(anchor);
+                      else await onAddInsert(anchor, selectedInsertColor);
+                    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not add insert"); }
+                    finally { setAdding(false); }
+                  }}
                 >
                   <Plus className="h-3 w-3 mr-1" /> Add
                 </Button>
               </div>
 
+              {perfectBound && (
+                <div className="flex gap-2">
+                  <Select value={insertKind} onValueChange={(value) => setInsertKind(value === "blank" ? "blank" : "sheet")}>
+                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="sheet">Coloured sheet</SelectItem><SelectItem value="blank">Blank page</SelectItem></SelectContent>
+                  </Select>
+                  <Select value={String(afterPage ?? validPages[validPages.length - 1]?.pageNumber ?? "")} onValueChange={(value) => setAfterPage(Number(value))}>
+                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="Insert after…" /></SelectTrigger>
+                    <SelectContent>{validPages.map((p) => <SelectItem key={p.pageNumber} value={String(p.pageNumber)}>After {p.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* Color picker */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Color:</span>
+              {(!perfectBound || insertKind === "sheet") && <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Colour:</span>
                 {INSERT_COLORS.map((c) => (
                   <button
                     key={c.slug}
@@ -314,7 +357,7 @@ export default function TabInsertDrawer({
                     title={c.label}
                   />
                 ))}
-              </div>
+              </div>}
 
               {insertSections.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-3 border border-dashed border-border rounded-lg">
@@ -332,7 +375,7 @@ export default function TabInsertDrawer({
                           style={{ backgroundColor: colorObj.hex }}
                         />
                         <span className="text-xs font-medium text-foreground flex-1">
-                          {colorObj.label} Sheet
+                          {perfectBound && ins.is_duplex === false ? "Blank page" : `${colorObj.label} Sheet`}
                         </span>
                         <Select
                           value={String(anchor)}

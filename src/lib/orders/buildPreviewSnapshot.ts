@@ -33,6 +33,7 @@ import {
 } from "@/lib/productOptionTypes";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
+import { perfectBodyLayout } from "@/lib/perfectBinding/bodyLayout";
 
 interface DocLike {
   id: string;
@@ -58,6 +59,7 @@ interface SectionLike {
   sort_order: number;
   /** Physical slot 1..10 within a pre-cut tab pack. Only set for section_type='tab'. */
   bank_position?: number | null;
+  start_on_right?: boolean;
 }
 
 interface OptionLike {
@@ -267,6 +269,16 @@ function buildPageSequence(
   isBound: boolean,
   productType: ProductPreviewType,
 ): PageInfo[] {
+  if (productType === "perfect_bound") {
+    return perfectBodyLayout(sections, documents).map((face) => {
+      const section = face.section;
+      if (face.kind === "blank") return { thumbnailUrl: "", pageIndex: -1, isColor: false, section: { ...section, section_type: "body" } };
+      if (face.kind === "insert") return { thumbnailUrl: "", pageIndex: face.back ? -1 : 0, isColor: true, section, color: face.color };
+      const doc = documents.find((d) => d.id === section.document_id);
+      const raw = Array.isArray(doc?.thumbnail_urls) ? doc.thumbnail_urls[face.page] : "";
+      return { thumbnailUrl: typeof raw === "string" ? raw : raw?.path ?? raw?.url ?? "", pageIndex: face.page, isColor: section.is_color, section, filePath: doc ? getProcessedPdfPath(doc) : null };
+    });
+  }
   const forceDuplex = productType === "saddle_stitched";
   const bodySections = sections.filter(
     (s) => s.section_type !== "tab" && s.section_type !== "insert",

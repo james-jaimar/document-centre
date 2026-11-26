@@ -2876,6 +2876,8 @@ export default function OrderFiles() {
             onToggleDuplex={handleToggleDuplex}
             onMove={handleMoveSection}
             familySlug={familySlug}
+            perfectBound={isPerfectBound}
+            onToggleStartOnRight={(section) => updateSection.mutate({ id: section.id, start_on_right: !section.start_on_right })}
           />
         </div>
       </div>
