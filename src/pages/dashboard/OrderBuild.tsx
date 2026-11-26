@@ -1677,9 +1677,13 @@ export default function OrderBuild() {
           quantity: spec.quantity,
           is_color: spec.is_color,
           selected_options: spec.selected_options,
+          perfect_bound_cover: spec.perfect_bound_cover,
         },
         sections,
         documents: documents.map(document => ({
+          id: document.id,
+          file_path: document.file_path,
+          preflight_data: document.preflight_data,
           thumbnail_urls: Array.isArray(document.thumbnail_urls)
             ? document.thumbnail_urls.filter((path): path is string => typeof path === "string")
             : [],
