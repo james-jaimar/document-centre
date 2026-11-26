@@ -1,5 +1,7 @@
 # Architecture rules
 
+- Rebuild every perfect-bound body page onto one press sheet after merge (exact trim, customer bleed capped at 3 mm or white, waste margin, crop marks); per-page boxes keep mixed bleed/no-bleed uploads in one consistent file.
+
 - Add press margins and crop marks after perfect-bound wrap composition, with nested Media/Crop, Bleed and Trim boxes; this preserves Cover Studio placement and designer input dimensions while keeping marks outside artwork.
 
 - Compile perfect-bound chapters and anchored inserts through the shared physical body layout for preview, spine and PDF directives; persist right-hand starts on sections and freeze editable sections beside sliced production directives so copies preserve choices without double-padding.

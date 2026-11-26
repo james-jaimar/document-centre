@@ -1,3 +1,7 @@
+## Perfect-bound body press sheet (2026-11-26)
+- [x] Inside pages: one sheet size with kept bleed, white bleed for plain files, crop marks
+- [ ] Redeploy print server and re-assemble INV-01008 (needs GitHub/Cloud Run deploy)
+
 ## Perfect-bound cover crop marks (2026-11-26)
 - [x] Add outer press margin and crop marks to guided/designer cover PDFs, preserving 3 mm bleed and stamping Media/Crop/Trim/Bleed boxes; invalidate old assembly caches
 - [x] Verify guided/designer boxes and eight crop marks (20 cover tests + 4 body tests passed); Ghostscript render confirms visible marks outside bleed; read template/preview, production downloads/retry, automatic trigger/proxy/resolver and imposition paths

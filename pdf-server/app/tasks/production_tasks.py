@@ -304,6 +304,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             "body_layout_version": 1,
             # Cover output now includes a waste margin, crop marks and nested boxes.
             "perfect_bound_wrap_version": 2,
+            "perfect_bound_body_press_version": 1,
         }
 
         new_hash = pdf_ops.spec_hash(spec_inputs)
@@ -580,6 +581,12 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 # Whole-doc greyscale only when *every* printable section is B&W.
                 # Mixed jobs are handled per-file above the merge.
                 needs_greyscale = target.colour_mode == "bw" and not has_coloured_inserts
+                # Perfect-bound body: every page is rebuilt onto one press sheet
+                # (trim + kept 3 mm bleed + crop marks) after greyscale below.
+                pb_body = comp == "body" and bool((bundle.configuration or {}).get("perfect_bound_cover") if isinstance(bundle.configuration, dict) else False)
+                if pb_body and target.width_mm and target.height_mm:
+                    needs_resize = False
+                    needs_bleed = False
 
                 # ── Step 3: resize / re-orient ──────────────────────────
                 if needs_resize and target.width_mm and target.height_mm:
@@ -643,6 +650,12 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     # Mixed-colour job: report per-section greyscale outcomes.
                     colour_check = {"mode": "mixed", "sections": per_section_colour}
 
+                if pb_body and target.width_mm and target.height_mm:
+                    from app.services.body_press_marks import add_body_press_marks
+                    marked = ws.path(f"press-{ci}.pdf")
+                    add_body_press_marks(current, marked, float(target.width_mm), float(target.height_mm), 3.0)
+                    current = marked
+                    comp_steps.append("press:3mm bleed+crop marks")
                 steps.extend(f"{comp}/{s}" if multi else s for s in comp_steps)
 
                 # ── Decide where the result lives ───────────────────────
