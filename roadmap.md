@@ -4,6 +4,7 @@
 - [ ] Verify saving and reopening tiers on the signed-in pricing screen; blocked by external unmanaged authentication
 
 ## Placed perfect-bound books (2026-11-26)
+- [x] Limit bookshelf thumbnail copies to first/selected cover pages, preserve full independent PDFs; 15 regression tests passed and order-engine deployed
 - [x] Bypass the body-document size advisory for Cover Studio uploads so preparation and previews chain immediately
 - [x] Add a customer order-preview toggle between the frozen 3D cover and inside pages
 - [x] Save placed-order jobs to the bookshelf from frozen production assets, including after draft cleanup

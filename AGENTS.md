@@ -6,6 +6,7 @@
 - Reuse BookshelfCover for shelf, detail, express-order, cart and checkout previews from saved/restored thumbnails and print selections; use the shared binding resolver and closed-front assets with clearance outside the clipped cover so all views agree without changing saved specifications.
 
 - Store bookshelf products as private, versioned snapshots with independent PDF and thumbnail copies; restore into new drafts through order-engine and a service-only transaction so cart cleanup and artwork revisions cannot change saved products or placed orders.
+- Copy only first-page and explicitly selected cover-page thumbnails in the shared bookshelf copier, retaining empty page-index placeholders and full PDFs; this bounds storage calls without sharing deletable previews or losing print artwork.
 - Require an explicit tenant-local bookshelf setting for reads and mutations, without platform fallback; use the existing builder for current pricing and preflight before bookshelf copies enter the cart.
 
 - Keep watermark density normalisation in the artwork value helpers and apply it on hydration, edits and spec saves; store the explicit original-density opt-in alongside effective opacity so browser proofs and the existing PDF compositor agree without changing immutable placed orders.

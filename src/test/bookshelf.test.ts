@@ -51,6 +51,32 @@ describe("Bookshelf retains configured PDFs", () => {
   it("never falls back to a deletable original after a failed copy", async () => {
     await expect(copyBookshelfSnapshot(snapshot, "shelf", async () => { throw new Error("copy failed"); })).rejects.toThrow("copy failed");
   });
+  it("copies a 60-page body PDF and only its first thumbnail, not all 60 pages", async () => {
+    const copy = vi.fn().mockResolvedValue(undefined);
+    const source = { ...snapshot, documents: [{ ...snapshot.documents[0], page_count: 60, thumbnail_urls: Array.from({ length: 60 }, (_, page) => `cart/body-${page}.png`) }] };
+    const result = await copyBookshelfSnapshot(source, "shelf", copy, () => "body");
+    expect(copy.mock.calls).toEqual([["cart/original.pdf", "shelf/body.pdf"], ["cart/body-0.png", "shelf/body-page-0.png"]]);
+    expect(result.documents[0].page_count).toBe(60);
+    expect(result.documents[0].thumbnail_urls).toEqual(["shelf/body-page-0.png", ...Array(59).fill("")]);
+    expect(source.documents[0].thumbnail_urls[59]).toBe("cart/body-59.png");
+  });
+  it("keeps selected front, back and wrap thumbnails at their original page indices", async () => {
+    const copy = vi.fn().mockResolvedValue(undefined);
+    const source = {
+      ...snapshot,
+      spec: { ...snapshot.spec, perfect_bound_cover: { front: { document_id: "original", page: 2 }, back: { document_id: "original", page: 4 }, wrap: { document_id: "original", page: 2 } } },
+      documents: [{ ...snapshot.documents[0], thumbnail_urls: Array.from({ length: 6 }, (_, page) => `cart/cover-${page}.png`) }],
+    };
+    const result = await copyBookshelfSnapshot(source, "shelf", copy, () => "cover");
+    expect(copy.mock.calls).toEqual([
+      ["cart/original.pdf", "shelf/cover.pdf"],
+      ["cart/cover-0.png", "shelf/cover-page-0.png"],
+      ["cart/cover-2.png", "shelf/cover-page-2.png"],
+      ["cart/cover-4.png", "shelf/cover-page-4.png"],
+    ]);
+    expect(result.documents[0].thumbnail_urls).toEqual(["shelf/cover-page-0.png", "", "shelf/cover-page-2.png", "", "shelf/cover-page-4.png", ""]);
+    expect(result.spec.perfect_bound_cover.back).toEqual({ document_id: "cover", page: 4 });
+  });
   it("keeps independent cover thumbnails after the source draft is removed", async () => {
     const copy = vi.fn().mockResolvedValue(undefined);
     const result = await copyBookshelfSnapshot({ ...snapshot, documents: [{ ...snapshot.documents[0], thumbnail_urls: ["cart/cover.png"], backend_asset_id: "old-asset" }] }, "shelf", copy, () => "copy");

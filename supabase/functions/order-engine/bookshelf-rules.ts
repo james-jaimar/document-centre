@@ -26,7 +26,7 @@ export function assertBookshelfPdf(snapshot: any) {
   }
 }
 
-/** Independent document copies also remap section anchors; no deletable originals are shared. */
+/** Copy full PDFs, but only shelf/selected-cover thumbnails; keep page indices and independent paths. */
 export async function copyBookshelfSnapshot(snapshot: any, prefix: string, copy: (from: string, to: string) => Promise<void>, uuid: () => string = () => crypto.randomUUID()) {
   const documents = [];
   const ids = new Map<string, string>();
@@ -35,9 +35,17 @@ export async function copyBookshelfSnapshot(snapshot: any, prefix: string, copy:
     const path = `${prefix}/${id}.pdf`;
     await copy(doc.file_path, path);
     ids.set(doc.id, id);
+    const thumbnailPages = new Set<number>([0]);
+    for (const side of ["front", "back", "wrap"]) {
+      const source = snapshot.spec?.perfect_bound_cover?.[side];
+      if (source?.document_id === doc.id && Number.isSafeInteger(source.page) && source.page >= 0) {
+        thumbnailPages.add(source.page);
+      }
+    }
     const thumbnails: string[] = [];
     for (const [index, thumbnail] of (doc.thumbnail_urls ?? []).entries()) {
-      if (!thumbnail) { thumbnails.push(""); continue; }
+      // Empty placeholders prevent selected page numbers shifting and never retain source paths.
+      if (!thumbnailPages.has(index) || !thumbnail) { thumbnails.push(""); continue; }
       if (typeof thumbnail !== "string") throw new Error("Invalid PDF thumbnail");
       const clean = thumbnail.split("?")[0];
       const extension = clean.match(/\.(png|jpe?g|webp)$/i)?.[1] ?? "png";
