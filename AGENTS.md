@@ -20,3 +20,4 @@
 - Keep cover placement maths (frame fills trim+bleed at scale 1, mm offsets y-down) mirrored between workflow.placementFrame and pdf-server placement_frame; previews and the compositor must agree, and artwork is clipped to its own panel.
 - Preview perfect-bound covers from browser rasters of the cover PDF's artwork box (TrimBox, or BleedBox with ~3 mm bleed), mirroring pdf-server artwork_box; server thumbnails are unreliable for covers cut from larger sheets.
 - Save placed orders to the bookshelf by rebuilding the snapshot from the job's frozen production assets (merge directives + cover asset IDs) in order-engine; checkout cleans up cart drafts, and placed orders may only create, never revise.
+- Treat perfect-bound cover PDFs as placed artwork: checkout must not size-normalise them, and production, bookshelf and order previews read the cover asset's original upload, so print and previews match what Cover Studio placed.

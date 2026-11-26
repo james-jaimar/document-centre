@@ -17,7 +17,7 @@ function useFrozenFile(source?: FrozenSource): FrozenFile {
     if (!source?.asset_id) { setFile({ path: source?.storage_path ?? null }); return; }
     let alive = true;
     getAsset(source.asset_id)
-      .then((a) => alive && setFile({ path: a.normalized_storage_path || a.source_storage_path, boxes: (a.boxes ?? undefined) as PdfBoxes | undefined }))
+      .then((a) => alive && setFile({ path: a.source_storage_path || a.normalized_storage_path, boxes: (a.boxes ?? undefined) as PdfBoxes | undefined }))
       .catch(() => alive && setFile({ path: null }));
     return () => { alive = false; };
   }, [source?.asset_id, source?.storage_path]);

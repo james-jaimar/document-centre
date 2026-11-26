@@ -85,11 +85,12 @@ export function placedJobBookshelfSnapshot(job: any, assets: FrozenAsset[], deri
   const docIds = new Map<string, string>();
   const documents: any[] = [];
   const mm = 25.4 / 72;
-  const addDoc = (assetId: string | null | undefined, fileName?: string | null) => {
+  // Covers keep the customer's original upload: Cover Studio places that file and size-normalised copies distort it.
+  const addDoc = (assetId: string | null | undefined, fileName?: string | null, cover = false) => {
     if (!assetId) return null;
     if (docIds.has(assetId)) return docIds.get(assetId)!;
     const asset = byAsset.get(assetId);
-    const path = asset?.normalized_storage_path || asset?.source_storage_path;
+    const path = cover ? asset?.source_storage_path || asset?.normalized_storage_path : asset?.normalized_storage_path || asset?.source_storage_path;
     if (!asset || !path) throw new Error("This order's print files are no longer available");
     const pages = Number(asset.page_count ?? 0);
     const pick = (kind: string) => new Map(derived.filter((d) => d.asset_id === assetId && d.kind === kind && d.page != null).map((d) => [d.page as number, d.storage_path]));
@@ -114,7 +115,7 @@ export function placedJobBookshelfSnapshot(job: any, assets: FrozenAsset[], deri
     const cover = { ...raw.perfect_bound_cover };
     for (const side of ["front", "back", "wrap"]) {
       if (!cover[side]) continue;
-      const id = addDoc(frozenCover?.[side]?.asset_id);
+      const id = addDoc(frozenCover?.[side]?.asset_id, null, true);
       if (!id) throw new Error("This order's cover file is no longer available");
       cover[side] = { ...cover[side], document_id: id };
     }

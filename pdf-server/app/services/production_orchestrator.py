@@ -113,6 +113,7 @@ def load_job_bundle(job_id: str) -> JobBundle:
     # honour snapshots that carry only asset_id (the client cannot read the
     # `assets` table under RLS, so storage_path in the snapshot is often null).
     asset_lookup: dict[str, tuple[str, str]] = {}
+    cover_lookup: dict[str, tuple[str, str]] = {}
     if isinstance(configuration, dict):
         ids: set[str] = set()
         for d in (configuration.get("merge_directives") or []):
@@ -135,6 +136,11 @@ def load_job_bundle(job_id: str) -> JobBundle:
                     p = r.get("normalized_storage_path") or r.get("source_storage_path")
                     if p:
                         asset_lookup[r["id"]] = (r.get("original_filename") or "doc.pdf", p)
+                    # Covers are placed from the customer's original upload, exactly
+                    # as Cover Studio previewed it; size-normalised copies distort it.
+                    cp = r.get("source_storage_path") or r.get("normalized_storage_path")
+                    if cp:
+                        cover_lookup[r["id"]] = (r.get("original_filename") or "doc.pdf", cp)
             except Exception:
                 pass
 
@@ -189,8 +195,8 @@ def load_job_bundle(job_id: str) -> JobBundle:
             path = source.get("storage_path")
             if not any((aid and a.get("asset_id") == aid) or (path and a.get("storage_path") == path) for a in frozen if isinstance(a, dict)):
                 raise ValueError("Perfect-bound cover is not a frozen job asset")
-            if aid and aid in asset_lookup:
-                fname, path = asset_lookup[aid]
+            if aid and aid in cover_lookup:
+                fname, path = cover_lookup[aid]
             else:
                 fname = f"{side}-cover.pdf"
             if not path:

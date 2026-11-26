@@ -128,3 +128,12 @@ export function coverValidation(cover: PerfectBoundCover | undefined, documents:
   if (!spine.bindable) return "The text block is too thin for perfect binding.";
   return null;
 }
+/** Document IDs used as cover artwork; these must never be resized to the inside-page size. */
+export function perfectCoverDocumentIds(cover?: Partial<Pick<PerfectBoundCover, "front" | "back" | "wrap">> | null): Set<string> {
+  return new Set([cover?.front, cover?.back, cover?.wrap].flatMap((s) => s?.document_id ? [s.document_id] : []));
+}
+/** Preview-only: the front panel at trim size, with the artwork where the customer placed it (same maths as Cover Studio). */
+export function frontPanelDrawRect(trim: { widthMm: number; heightMm: number }, bleedMm: number, placement: CoverPlacement | undefined, imageAspect: number, pxPerMm: number) {
+  const f = containInFrame(placementFrame(trim, bleedMm, placement), imageAspect);
+  return { x: f.left * pxPerMm, y: f.top * pxPerMm, w: f.width * pxPerMm, h: f.height * pxPerMm };
+}

@@ -10,7 +10,7 @@ import { bookshelfCoverShape, type BookshelfShape } from "@/lib/bookshelfShape";
 import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
 import { savedPerfectCover } from "@/lib/perfectBinding/savedCover";
 import { useCoverRaster } from "@/hooks/useCoverRaster";
-import { coverHasRealBleed, type PdfBoxes } from "@/lib/perfectBinding/workflow";
+import { coverHasRealBleed, frontPanelDrawRect, type CoverPlacement, type PdfBoxes } from "@/lib/perfectBinding/workflow";
 
 const COVER_BOX: Record<BookshelfShape, string> = {
   portrait: "h-56 w-40",
@@ -19,16 +19,44 @@ const COVER_BOX: Record<BookshelfShape, string> = {
   ring_binder: "h-56 w-[13.3rem]",
 };
 
+/** Front panel at trim proportions, with the artwork scaled and moved exactly as placed in Cover Studio. */
+function usePlacedFront(raster: string | undefined, trim: { widthMm: number; heightMm: number } | undefined, bleedMm: number, placement: CoverPlacement | undefined) {
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    setUrl(undefined);
+    if (!raster || !trim?.widthMm || !trim?.heightMm) return;
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (!alive || !img.naturalWidth || !img.naturalHeight) return;
+      const pxPerMm = 800 / trim.heightMm;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(trim.widthMm * pxPerMm); canvas.height = 800;
+      const ctx = canvas.getContext("2d"); if (!ctx) return;
+      ctx.fillStyle = "#FFFFFF"; // unprinted board is white paper
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const r = frontPanelDrawRect(trim, bleedMm, placement, img.naturalWidth / img.naturalHeight, pxPerMm);
+      ctx.drawImage(img, r.x, r.y, r.w, r.h);
+      setUrl(canvas.toDataURL("image/jpeg", 0.9));
+    };
+    img.src = raster;
+    return () => { alive = false; };
+  }, [raster, trim?.widthMm, trim?.heightMm, bleedMm, placement?.x, placement?.y, placement?.scale]);
+  return url;
+}
+
 export function BookshelfCover({ item }: { item: Pick<BookshelfItem, "name" | "snapshot"> }) {
   const perfectCover = savedPerfectCover(item.snapshot);
   // Guided perfect-bound fronts are rasterised from the cover PDF's artwork box, like Cover Studio.
   const guided = item.snapshot.spec.perfect_bound_cover?.mode === "guided" ? item.snapshot.spec.perfect_bound_cover.front : undefined;
   const guidedDoc = guided ? item.snapshot.documents?.find((d) => d.id === guided.document_id) as ({ file_path?: string; preflight_data?: { boxes?: PdfBoxes } } | undefined) : undefined;
   const coverRaster = useCoverRaster(guidedDoc?.file_path ?? null, guided?.page ?? 0, coverHasRealBleed(guidedDoc?.preflight_data?.boxes));
+  const pbCover = item.snapshot.spec.perfect_bound_cover;
+  const placedFront = usePlacedFront(coverRaster, guided ? pbCover?.trim : undefined, pbCover?.bleed_mm ?? 3, guided?.placement);
   const raw = perfectCover?.path ?? item.snapshot.documents?.flatMap(document => document.thumbnail_urls ?? [])
     .find(path => typeof path === "string" && path.length > 0) ?? null;
   const signed = useSignedThumbnailUrl(guided && !perfectCover ? null : raw);
-  const url = coverRaster ?? signed;
+  const url = guided ? placedFront ?? (perfectCover ? signed : null) : signed;
   const shape = bookshelfCoverShape(item.snapshot);
   const landscape = shape === "landscape";
   const binding = shape === "ring_binder" || item.snapshot.spec.perfect_bound_cover ? null : selectedBindingArt(item.snapshot.spec.selected_options ?? {}, []);

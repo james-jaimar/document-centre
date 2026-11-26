@@ -104,12 +104,12 @@ describe("Saving a placed perfect-bound order to the bookshelf", () => {
   const assets = [
     { id: "body-a", normalized_storage_path: "prepared/a.pdf", page_count: 12, boxes: { MediaBox: [0, 0, 595.276, 841.89] } },
     { id: "body-b", source_storage_path: "uploads/b.pdf", page_count: 60 },
-    { id: "cover-a", normalized_storage_path: "resized/cover.pdf", page_count: 1 },
+    { id: "cover-a", source_storage_path: "uploads/cover.pdf", normalized_storage_path: "resized/cover.pdf", page_count: 1 },
   ];
   it("rebuilds from frozen files after the cart draft is gone, keeping cover choices", () => {
     let i = 0;
     const snap = placedJobBookshelfSnapshot(job, assets, [{ asset_id: "body-a", kind: "thumbnail_page", page: 1, storage_path: "thumbs/a1.png" }], () => `doc-${++i}`);
-    expect(snap.documents.map((d) => d.file_path)).toEqual(["prepared/a.pdf", "uploads/b.pdf", "resized/cover.pdf"]);
+    expect(snap.documents.map((d) => d.file_path)).toEqual(["prepared/a.pdf", "uploads/b.pdf", "uploads/cover.pdf"]);
     expect(snap.sections.map((s: any) => s.document_id)).toEqual(["doc-1", "doc-2"]);
     expect(snap.spec.perfect_bound_cover.front).toEqual({ document_id: "doc-3", page: 0, placement: { x: -0.3, y: 0.3, scale: 1 } });
     expect(snap.spec.perfect_bound_cover.back_colour).toBe("#ff2e17");

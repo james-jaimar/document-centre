@@ -665,6 +665,7 @@ export function usePlaceOrder() {
       try {
         const { processDocumentForProduction } = await import("@/lib/orders/mutations");
         const { getTargetDimensions } = await import("@/lib/paperSizes");
+        const { perfectCoverDocumentIds } = await import("@/lib/perfectBinding/workflow");
 
         const processingPromises: Promise<any>[] = [];
 
@@ -684,8 +685,11 @@ export function usePlaceOrder() {
           const sizeSlug = sizeOptionKey ? selectedOptions[sizeOptionKey] : null;
           const targetDims = sizeSlug ? getTargetDimensions(sizeSlug) : null;
 
+          const coverIds = perfectCoverDocumentIds(item.spec?.perfect_bound_cover);
           for (const doc of itemDocs) {
             if (!doc.backend_asset_id) continue;
+            // Cover PDFs are placed by Cover Studio and the cover assembler; resizing them to the page size distorts them.
+            if (coverIds.has(doc.id)) continue;
 
             // Only grayscale if THIS document's section(s) are B&W
             const docSections = itemSections.filter((s: any) => s.document_id === doc.id);
