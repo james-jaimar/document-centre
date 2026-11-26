@@ -3,6 +3,12 @@
 - [x] Check scoped editor wiring and ZAR defaults with six integration tests; eight existing pricing tests passed and preview builds clean
 - [ ] Verify saving and reopening tiers on the signed-in pricing screen; blocked by external unmanaged authentication
 
+## Placed perfect-bound books (2026-11-26)
+- [ ] Bypass the body-document size advisory for Cover Studio uploads so preparation and previews chain immediately
+- [ ] Add a customer order-preview toggle between the frozen 3D cover and inside pages
+- [ ] Save placed-order jobs to the bookshelf from frozen production assets, including after draft cleanup
+- [ ] Render the saved perfect-bound front cover on the bookshelf and run regression checks
+
 ## Perfect bound books (2026-11-23)
 - [x] Set the admin-owned perfect-binding charge to 7.50 per book (printing, paper and lamination excluded)
 - [x] Admin min/max body page setting per product (40-page default for perfect bound); block add-to-cart outside limits
