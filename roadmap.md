@@ -1,3 +1,8 @@
+## Perfect-bound cover crop marks (2026-11-26)
+- [x] Add outer press margin and crop marks to guided/designer cover PDFs, preserving 3 mm bleed and stamping Media/Crop/Trim/Bleed boxes; invalidate old assembly caches
+- [x] Verify guided/designer boxes and eight crop marks (20 cover tests + 4 body tests passed); Ghostscript render confirms visible marks outside bleed; read template/preview, production downloads/retry, automatic trigger/proxy/resolver and imposition paths
+- [ ] Verify deployed order → cover output; blocked by external Cloud Run deployment and unavailable user-managed authentication
+
 ## Perfect-bound chapter starts and manual inserts (2026-11-26)
 - [x] Share a physical body-page plan across preview, spine and frozen PDF instructions; default chapters to right-hand starts
 - [x] Add coloured sheets and single blank pages to the existing drawer without tabs; preserve choices on cart/bookshelf copies and deploy order-engine

@@ -302,6 +302,8 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # wired into TargetSpec + orientation-transpose resize guard.
             "colour_pipeline_version": 6,
             "body_layout_version": 1,
+            # Cover output now includes a waste margin, crop marks and nested boxes.
+            "perfect_bound_wrap_version": 2,
         }
 
         new_hash = pdf_ops.spec_hash(spec_inputs)

@@ -26,8 +26,8 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         report = compose_perfect_bound_wrap(self.cover, {"front": src, "back": src}, output)
         pages = PdfReader(output).pages
         self.assertEqual(len(pages), 1)
-        self.assertAlmostEqual(float(pages[0].mediabox.width) * 25.4 / 72, 306.7, places=3)
-        self.assertAlmostEqual(float(pages[0].mediabox.height) * 25.4 / 72, 216, places=3)
+        self.assertAlmostEqual(float(pages[0].mediabox.width) * 25.4 / 72, 320.7, places=3)
+        self.assertAlmostEqual(float(pages[0].mediabox.height) * 25.4 / 72, 230, places=3)
         self.assertAlmostEqual(float(pages[0].trimbox.width) * 25.4 / 72, 300.7, places=3)
         self.assertIn("Safety Booklet", pages[0].extract_text())
         self.assertEqual(len(report["warnings"]), 2)
@@ -36,7 +36,8 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         src = self.pdf("b5ish.pdf", 170.2, 236)
         cover = {**self.cover, "back_blank": "colour", "back_colour": "#AA0000"}
         report = compose_perfect_bound_wrap(cover, {"front": src}, self.root / "odd.pdf")
-        self.assertAlmostEqual(report["width_mm"], 306.7, places=3)
+        self.assertAlmostEqual(report["width_mm"], 320.7, places=3)
+        self.assertAlmostEqual(report["bleed_width_mm"], 306.7, places=3)
 
     def test_rejects_designer_wrap_with_stale_spine(self):
         src = self.pdf("wrong.pdf", 316, 216)
@@ -66,13 +67,49 @@ class PerfectBoundAssemblyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing (front|back)"):
             compose_perfect_bound_wrap(self.cover, {}, self.root / "out.pdf")
 
+    def test_both_modes_have_three_mm_bleed_and_visible_crop_marks(self):
+        from pypdf.generic import ContentStream
+        k = 72 / 25.4
+        for mode in ("guided", "wrap"):
+            with self.subTest(mode=mode):
+                src = self.pdf(f"{mode}.pdf", 306.7 if mode == "wrap" else 154, 216)
+                cover = {**self.cover, "mode": mode, "wrap": {"page": 0}}
+                output = self.root / f"{mode}-press.pdf"
+                report = compose_perfect_bound_wrap(cover, {"wrap": src} if mode == "wrap" else {"front": src, "back": src}, output)
+                reader = PdfReader(output)
+                page = reader.pages[0]
+                self.assertEqual(list(page.cropbox), list(page.mediabox))
+                for actual, expected in zip(page.bleedbox, [7, 7, 313.7, 223]):
+                    self.assertAlmostEqual(float(actual) / k, expected, places=3)
+                for actual, expected in zip(page.trimbox, [10, 10, 310.7, 220]):
+                    self.assertAlmostEqual(float(actual) / k, expected, places=3)
+                marks = []
+                start = None
+                for args, op in ContentStream(page.get_contents(), reader).operations:
+                    if op == b"m":
+                        start = tuple(float(v) / k for v in args)
+                    elif op == b"l" and start is not None:
+                        marks.append((start, tuple(float(v) / k for v in args)))
+                expected_marks = [
+                    ((10, 1), (10, 6)), ((10, 224), (10, 229)),
+                    ((310.7, 1), (310.7, 6)), ((310.7, 224), (310.7, 229)),
+                    ((1, 10), (6, 10)), ((314.7, 10), (319.7, 10)),
+                    ((1, 220), (6, 220)), ((314.7, 220), (319.7, 220)),
+                ]
+                self.assertEqual(len(marks), 8)
+                for actual, expected in zip(marks, expected_marks):
+                    for point, expected_point in zip(actual, expected):
+                        for value, expected_value in zip(point, expected_point):
+                            self.assertAlmostEqual(value, expected_value, places=3)
+                self.assertTrue(report["crop_marks"])
+
 class PerfectBoundPlacementTest(PerfectBoundAssemblyTest):
     def test_blank_back_needs_only_front(self):
         src = self.pdf("front.pdf", 154, 216)
         output = self.root / "wrap.pdf"
         report = compose_perfect_bound_wrap({**self.cover, "back_blank": "white"}, {"front": src}, output)
         self.assertEqual(report["warnings"], [])
-        self.assertAlmostEqual(float(PdfReader(output).pages[0].mediabox.width) * 25.4 / 72, 306.7, places=3)
+        self.assertAlmostEqual(float(PdfReader(output).pages[0].mediabox.width) * 25.4 / 72, 320.7, places=3)
 
     def test_rejects_unknown_blank_back(self):
         src = self.pdf("front.pdf", 154, 216)

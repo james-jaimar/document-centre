@@ -1,5 +1,7 @@
 # Architecture rules
 
+- Add press margins and crop marks after perfect-bound wrap composition, with nested Media/Crop, Bleed and Trim boxes; this preserves Cover Studio placement and designer input dimensions while keeping marks outside artwork.
+
 - Compile perfect-bound chapters and anchored inserts through the shared physical body layout for preview, spine and PDF directives; persist right-hand starts on sections and freeze editable sections beside sliced production directives so copies preserve choices without double-padding.
 
 - Reuse TiersButton for catalogue paper-size and finishing price-row IDs, converting minor-unit defaults to ZAR; this keeps all scopes on the existing quantity-tier editor and pricing engine.

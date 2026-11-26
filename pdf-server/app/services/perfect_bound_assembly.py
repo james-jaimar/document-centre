@@ -30,6 +30,9 @@ def _cmyk(hex_colour):
 
 SPINE_FONTS = {"sans": "Helvetica", "sans_bold": "Helvetica-Bold", "serif": "Times-Roman"}
 SPINE_SAFE_MM = 1.5
+WRAP_MARK_MARGIN_MM = 7
+WRAP_MARK_GAP_MM = 1
+WRAP_MARK_LENGTH_MM = 5
 
 
 def placement_frame(w, h, bleed, placement):
@@ -189,14 +192,44 @@ def compose_perfect_bound_wrap(cover: dict, sources: dict[str, Path], output: Pa
     else:
         raise ValueError("Choose guided or designer wrap cover")
 
-    page = writer.pages[0]
-    page.mediabox = RectangleObject([0, 0, tw, th])
-    page.cropbox = RectangleObject([0, 0, tw, th])
-    page.trimbox = RectangleObject([bleed * mm, bleed * mm, tw - bleed * mm, th - bleed * mm])
-    page.bleedbox = RectangleObject([0, 0, tw, th])
+    # Keep placement in the original bleed canvas; add press waste only after
+    # composition so customer zoom/offsets and designer dimensions stay intact.
+    artwork = writer.pages[0]
+    artwork.mediabox = RectangleObject([0, 0, tw, th])
+    artwork.cropbox = RectangleObject([0, 0, tw, th])
+    artwork.trimbox = RectangleObject([0, 0, tw, th])
+    _clip_page(artwork, RectangleObject([0, 0, tw, th]))
+    margin = WRAP_MARK_MARGIN_MM * mm
+    media_w, media_h = tw + 2 * margin, th + 2 * margin
+    press_writer = PdfWriter()
+    page = press_writer.add_page(_solid_page(media_w, media_h, None))
+    page.merge_transformed_page(artwork, Transformation().translate(margin, margin))
+
+    left, bottom = margin + bleed * mm, margin + bleed * mm
+    right, top = margin + tw - bleed * mm, margin + th - bleed * mm
+    offset = (bleed + WRAP_MARK_GAP_MM) * mm
+    length = WRAP_MARK_LENGTH_MM * mm
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=(media_w, media_h))
+    c.setLineWidth(0.25)
+    c.setStrokeColorCMYK(0, 0, 0, 1)
+    for x in (left, right):
+        c.line(x, bottom - offset - length, x, bottom - offset)
+        c.line(x, top + offset, x, top + offset + length)
+    for y in (bottom, top):
+        c.line(left - offset - length, y, left - offset, y)
+        c.line(right + offset, y, right + offset + length, y)
+    c.showPage(); c.save()
+    page.merge_page(PdfReader(buf).pages[0])
+    page.mediabox = RectangleObject([0, 0, media_w, media_h])
+    page.cropbox = RectangleObject([0, 0, media_w, media_h])
+    page.trimbox = RectangleObject([left, bottom, right, top])
+    page.bleedbox = RectangleObject([margin, margin, margin + tw, margin + th])
     with open(output, "wb") as stream:
-        writer.write(stream)
-    return {"spine_mm": spine, "width_mm": tw / mm, "height_mm": th / mm, "warnings": warnings}
+        press_writer.write(stream)
+    return {"spine_mm": spine, "width_mm": media_w / mm, "height_mm": media_h / mm,
+            "bleed_width_mm": tw / mm, "bleed_height_mm": th / mm,
+            "bleed_mm": bleed, "crop_marks": True, "warnings": warnings}
 
 
 def assemble_perfect_bound_cover(bundle, workspace, storage):
