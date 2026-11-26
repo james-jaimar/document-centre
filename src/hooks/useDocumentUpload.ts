@@ -513,6 +513,8 @@ export function useDocumentUpload(
   productFamilyPrintConfig?: FamilyPrintConfig | null,
   sessionLockedSize?: PaperSize | null,
   allowedCustomSizes?: PaperSize[] | null,
+  /** Cover Studio checks cover sizes itself, so its uploads skip the size advisory and render in one chained pass. */
+  skipSizeAdvisory = false,
 ) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
@@ -823,7 +825,7 @@ export function useDocumentUpload(
             lockedSize.heightMm,
           );
 
-        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch || lockedSizeMismatch;
+        const hasAdvisory = !skipSizeAdvisory && (!!detectedSize || !!nearIsoMatch || !!orientationMismatch || lockedSizeMismatch);
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
         // (print-ready CMYK only — orientation is preserved as authored).
@@ -947,7 +949,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [updateUpload, finalizeOrientationAndPrintReady, productFamilySlug],
+    [updateUpload, finalizeOrientationAndPrintReady, productFamilySlug, skipSizeAdvisory],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */

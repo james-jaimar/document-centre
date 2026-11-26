@@ -38,7 +38,7 @@ export default function PerfectBoundCoverStudio({ orderItemId, documents, sectio
   const customSizes = useMemo(() => [
     { name: "Cover wrap", ...wrapSize }, { name: "Cover wrap trim", widthMm: wrapSize.widthMm - 6, heightMm: wrapSize.heightMm - 6 }, { name: "Cover panel", widthMm: trim.widthMm + 6, heightMm: trim.heightMm + 6 },
   ], [wrapSize.widthMm, wrapSize.heightMm, trim.widthMm, trim.heightMm]);
-  const { uploadFile, uploads, renderWithProgress } = useDocumentUpload(orderItemId, null, null, null, customSizes);
+  const { uploadFile, uploads, renderWithProgress } = useDocumentUpload(orderItemId, null, null, null, customSizes, true);
   const isUploading = Object.values(uploads).some((u) => !["done", "error"].includes(u.status));
   const input = useRef<HTMLInputElement>(null);
   const [target, setTarget] = useState<"front" | "back" | "wrap">("front");

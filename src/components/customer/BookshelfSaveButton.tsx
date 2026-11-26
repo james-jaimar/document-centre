@@ -12,8 +12,9 @@ import { useNavigate } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { bookshelfCategoryNames } from "@/lib/bookshelfGroups";
 
-export default function BookshelfSaveButton({ orderItemId, name, shelfId, disabled, beforeSave }: {
-  orderItemId: string; name: string; shelfId?: string; disabled?: boolean; beforeSave: () => Promise<unknown>;
+export default function BookshelfSaveButton({ orderItemId, orderJobId, name, shelfId, disabled, beforeSave, className }: {
+  /** Draft item being built, or a placed order's job (create only). */
+  orderItemId?: string; orderJobId?: string; name: string; shelfId?: string; disabled?: boolean; beforeSave?: () => Promise<unknown>; className?: string;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -30,8 +31,8 @@ export default function BookshelfSaveButton({ orderItemId, name, shelfId, disabl
   const save = async () => {
     setSaving(true);
     try {
-      await beforeSave();
-      await shelf.operation.mutateAsync({ operation: shelfId ? "revise" : "create", id: shelfId, order_item_id: orderItemId, name: title.trim(), sku: sku.trim(), category: category.trim() });
+      await beforeSave?.();
+      await shelf.operation.mutateAsync({ operation: shelfId ? "revise" : "create", id: shelfId, ...(orderJobId ? { order_job_id: orderJobId } : { order_item_id: orderItemId }), name: title.trim(), sku: sku.trim(), category: category.trim() });
       setOpen(false);
       toast.success(shelfId ? "Bookshelf product updated" : "Saved to your bookshelf", {
         action: { label: "View bookshelf", onClick: () => navigate(tenantPath("bookshelf")) },
@@ -42,7 +43,7 @@ export default function BookshelfSaveButton({ orderItemId, name, shelfId, disabl
     } finally { setSaving(false); }
   };
   return <>
-    <Button className="w-full mt-2 gap-2" variant="outline" disabled={disabled || saving} onClick={() => {
+    <Button className={className ?? "w-full mt-2 gap-2"} variant="outline" disabled={disabled || saving} onClick={() => {
       setTitle(existing?.name || name); setSku(existing?.sku || ""); setCategory(existing?.snapshot.shelf_category || ""); setOpen(true);
     }}><BookPlus className="h-4 w-4" />{shelfId ? "Update bookshelf" : "Save to My Bookshelf"}</Button>
     <Dialog open={open} onOpenChange={value => { if (!saving) setOpen(value); }}>

@@ -65,3 +65,53 @@ export async function copyBookshelfSnapshot(snapshot: any, prefix: string, copy:
   }
   return { ...snapshot, spec, documents, sections };
 }
+type FrozenAsset = { id: string; original_filename?: string | null; source_storage_path?: string | null; normalized_storage_path?: string | null; page_count?: number | null; width_pt?: number | null; height_pt?: number | null; boxes?: Record<string, number[]> | null };
+type FrozenDerived = { asset_id: string; kind: string; page: number | null; storage_path: string };
+
+/** Rebuild an editable bookshelf snapshot from a placed job's frozen production assets (the cart draft may already be gone). */
+export function placedJobBookshelfSnapshot(job: any, assets: FrozenAsset[], derived: FrozenDerived[], uuid: () => string = () => crypto.randomUUID()) {
+  const config = job?.configuration ?? {};
+  const raw = config.raw_spec ?? {};
+  const frozenCover = config.perfect_bound_cover;
+  const byAsset = new Map(assets.map((a) => [a.id, a]));
+  const docIds = new Map<string, string>();
+  const documents: any[] = [];
+  const mm = 25.4 / 72;
+  const addDoc = (assetId: string | null | undefined, fileName?: string | null) => {
+    if (!assetId) return null;
+    if (docIds.has(assetId)) return docIds.get(assetId)!;
+    const asset = byAsset.get(assetId);
+    const path = asset?.normalized_storage_path || asset?.source_storage_path;
+    if (!asset || !path) throw new Error("This order's print files are no longer available");
+    const pages = Number(asset.page_count ?? 0);
+    const pick = (kind: string) => new Map(derived.filter((d) => d.asset_id === assetId && d.kind === kind && d.page != null).map((d) => [d.page as number, d.storage_path]));
+    const thumbs = pick("thumbnail_page"), previews = pick("preview_page");
+    const box = asset.boxes?.TrimBox ?? asset.boxes?.CropBox ?? asset.boxes?.MediaBox;
+    const id = uuid();
+    docIds.set(assetId, id);
+    documents.push({
+      id, file_name: fileName || asset.original_filename || "document.pdf", file_path: path, mime_type: "application/pdf", document_status: "ready",
+      page_count: pages, sort_order: documents.length,
+      page_width_mm: box ? Math.abs(box[2] - box[0]) * mm : null, page_height_mm: box ? Math.abs(box[3] - box[1]) * mm : null,
+      preflight_data: { boxes: asset.boxes ?? null }, thumbnail_urls: Array.from({ length: pages }, (_, i) => thumbs.get(i + 1) ?? previews.get(i + 1) ?? ""),
+    });
+    return id;
+  };
+  const sections = (config.merge_directives ?? []).filter((d: any) => d?.asset_id).map((d: any, i: number) => ({
+    document_id: addDoc(d.asset_id, d.file_name), section_type: d.section_type ?? "body", page_range_start: d.page_range_start ?? null, page_range_end: d.page_range_end ?? null,
+    paper_stock: d.paper_stock ?? null, paper_weight_gsm: d.paper_weight_gsm ?? null, is_color: d.is_color ?? null, is_duplex: d.is_duplex ?? null, sort_order: i,
+  }));
+  const spec = { ...raw };
+  if (raw.perfect_bound_cover) {
+    const cover = { ...raw.perfect_bound_cover };
+    for (const side of ["front", "back", "wrap"]) {
+      if (!cover[side]) continue;
+      const id = addDoc(frozenCover?.[side]?.asset_id);
+      if (!id) throw new Error("This order's cover file is no longer available");
+      cover[side] = { ...cover[side], document_id: id };
+    }
+    spec.perfect_bound_cover = cover;
+  }
+  const family = job?.product_snapshot?.product_family ?? {};
+  return { product_family_id: family.id, product_name: family.name ?? job?.product_name ?? "Document", spec, documents, sections };
+}

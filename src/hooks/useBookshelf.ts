@@ -59,7 +59,7 @@ export function useBookshelf() {
     },
   });
   const operation = useMutation({
-    mutationFn: async (input: { operation: "create" | "revise" | "restore" | "rename" | "archive" | "reorder"; id?: string; ids?: string[]; order_item_id?: string; name?: string; sku?: string; category?: string; quantity?: number }) => {
+    mutationFn: async (input: { operation: "create" | "revise" | "restore" | "rename" | "archive" | "reorder"; id?: string; ids?: string[]; order_item_id?: string; order_job_id?: string; name?: string; sku?: string; category?: string; quantity?: number }) => {
       if (!tenantId || !user || isAnonymousUser(user) || feature.data !== true) throw new Error("Bookshelf is unavailable");
       const { data, error } = await supabase.functions.invoke("order-engine", { body: { action: "bookshelf", tenant_id: tenantId, ...input } });
       if (error) {

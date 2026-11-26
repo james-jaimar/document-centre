@@ -38,6 +38,8 @@ import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
 import ArtworkAdminProof from "@/components/orders/detail/ArtworkAdminProof";
+import PlacedPerfectBoundPreview from "@/components/orders/detail/PlacedPerfectBoundPreview";
+import BookshelfSaveButton from "@/components/customer/BookshelfSaveButton";
 
 import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
 import { useBranch } from "@/contexts/BranchContext";
@@ -125,6 +127,8 @@ const CustomerOrderDetail = () => {
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
   const [previewJob, setPreviewJob] = useState<any | null>(null);
+  /** Perfect-bound jobs open on the cover; "pages" switches to the inside-pages flip book. */
+  const [previewMode, setPreviewMode] = useState<"cover" | "pages">("cover");
 
   const order = data?.order;
   const jobs = data?.jobs ?? [];
@@ -418,17 +422,22 @@ const CustomerOrderDetail = () => {
                             Qty: {job.quantity}
                             {job.unit_label ? ` ${job.unit_label}` : ""}
                           </p>
-                          {(config.preview?.thumbnails ?? []).some((t: string) => !!t) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mt-2 h-7 text-xs"
-                              onClick={() => setPreviewJob(job)}
-                            >
-                              <Eye className="h-3.5 w-3.5 mr-1.5" />
-                              View Preview
-                            </Button>
-                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {((config.preview?.thumbnails ?? []).some((t: string) => !!t) || config.perfect_bound_cover) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 h-7 text-xs"
+                                onClick={() => { setPreviewMode("cover"); setPreviewJob(job); }}
+                              >
+                                <Eye className="h-3.5 w-3.5 mr-1.5" />
+                                {config.perfect_bound_cover ? "View Book" : "View Preview"}
+                              </Button>
+                            )}
+                            {Array.isArray(config.merge_directives) && config.merge_directives.length > 0 && job.customer_job_status !== "cancelled" && (
+                              <BookshelfSaveButton orderJobId={job.id} name={job.job_name || job.product_name} className="mt-2 h-7 gap-1.5 text-xs" />
+                            )}
+                          </div>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-semibold text-foreground">{fmt(job.gross_price)}</p>
@@ -804,7 +813,15 @@ const CustomerOrderDetail = () => {
         </div>
       </div>
 
-      {previewJob && (() => {
+      {previewJob && previewMode === "cover" && (previewJob.configuration as any)?.perfect_bound_cover && (
+        <PlacedPerfectBoundPreview
+          cover={(previewJob.configuration as any).perfect_bound_cover}
+          insidePages={() => setPreviewMode("pages")}
+          onClose={() => setPreviewJob(null)}
+        />
+      )}
+
+      {previewJob && (previewMode === "pages" || !(previewJob.configuration as any)?.perfect_bound_cover) && (() => {
         const snap = (previewJob.configuration?.preview ?? {}) as any;
         const fallbackPreview = buildPreviewFallback(sourceDocumentsForJob(previewJob, sourceDocuments));
         const savedThumbs = (snap.thumbnails ?? []) as string[];

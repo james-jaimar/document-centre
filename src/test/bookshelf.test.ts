@@ -64,3 +64,33 @@ describe("Bookshelf retains configured PDFs", () => {
     expect(() => assertBookshelfPdf({ ...snapshot, documents: [{ ...snapshot.documents[0], mime_type: "image/png" }] })).toThrow("checks");
   });
 });
+import { placedJobBookshelfSnapshot } from "../../supabase/functions/order-engine/bookshelf-rules";
+describe("Saving a placed perfect-bound order to the bookshelf", () => {
+  const job = {
+    product_name: "Perfect Bound Books",
+    product_snapshot: { product_family: { id: "fam", name: "Perfect Bound Books" } },
+    configuration: {
+      merge_directives: [{ asset_id: "body-a", file_name: "a.pdf", section_type: "body", is_color: true, is_duplex: false }, { asset_id: "body-b", file_name: "b.pdf", section_type: "body", is_color: true, is_duplex: false }],
+      perfect_bound_cover: { front: { asset_id: "cover-a", document_id: "gone", page: 0 } },
+      raw_spec: { page_count: 72, perfect_bound_cover: { mode: "guided", back_blank: "colour", back_colour: "#ff2e17", front: { document_id: "gone", page: 0, placement: { x: -0.3, y: 0.3, scale: 1 } } } },
+    },
+  };
+  const assets = [
+    { id: "body-a", normalized_storage_path: "prepared/a.pdf", page_count: 12, boxes: { MediaBox: [0, 0, 595.276, 841.89] } },
+    { id: "body-b", source_storage_path: "uploads/b.pdf", page_count: 60 },
+    { id: "cover-a", normalized_storage_path: "resized/cover.pdf", page_count: 1 },
+  ];
+  it("rebuilds from frozen files after the cart draft is gone, keeping cover choices", () => {
+    let i = 0;
+    const snap = placedJobBookshelfSnapshot(job, assets, [{ asset_id: "body-a", kind: "thumbnail_page", page: 1, storage_path: "thumbs/a1.png" }], () => `doc-${++i}`);
+    expect(snap.documents.map((d) => d.file_path)).toEqual(["prepared/a.pdf", "uploads/b.pdf", "resized/cover.pdf"]);
+    expect(snap.sections.map((s: any) => s.document_id)).toEqual(["doc-1", "doc-2"]);
+    expect(snap.spec.perfect_bound_cover.front).toEqual({ document_id: "doc-3", page: 0, placement: { x: -0.3, y: 0.3, scale: 1 } });
+    expect(snap.spec.perfect_bound_cover.back_colour).toBe("#ff2e17");
+    expect(snap.documents[0].thumbnail_urls[0]).toBe("thumbs/a1.png");
+    expect(() => assertBookshelfPdf(snap)).not.toThrow();
+  });
+  it("refuses to save when a frozen print file is missing", () => {
+    expect(() => placedJobBookshelfSnapshot(job, assets.slice(0, 2), [])).toThrow("no longer available");
+  });
+});

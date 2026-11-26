@@ -9,6 +9,8 @@ import { getBindingImage, normaliseBindingColor } from "@/components/preview/bin
 import { bookshelfCoverShape, type BookshelfShape } from "@/lib/bookshelfShape";
 import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
 import { savedPerfectCover } from "@/lib/perfectBinding/savedCover";
+import { useCoverRaster } from "@/hooks/useCoverRaster";
+import { coverHasRealBleed, type PdfBoxes } from "@/lib/perfectBinding/workflow";
 
 const COVER_BOX: Record<BookshelfShape, string> = {
   portrait: "h-56 w-40",
@@ -19,9 +21,14 @@ const COVER_BOX: Record<BookshelfShape, string> = {
 
 export function BookshelfCover({ item }: { item: Pick<BookshelfItem, "name" | "snapshot"> }) {
   const perfectCover = savedPerfectCover(item.snapshot);
+  // Guided perfect-bound fronts are rasterised from the cover PDF's artwork box, like Cover Studio.
+  const guided = item.snapshot.spec.perfect_bound_cover?.mode === "guided" ? item.snapshot.spec.perfect_bound_cover.front : undefined;
+  const guidedDoc = guided ? item.snapshot.documents?.find((d) => d.id === guided.document_id) as ({ file_path?: string; preflight_data?: { boxes?: PdfBoxes } } | undefined) : undefined;
+  const coverRaster = useCoverRaster(guidedDoc?.file_path ?? null, guided?.page ?? 0, coverHasRealBleed(guidedDoc?.preflight_data?.boxes));
   const raw = perfectCover?.path ?? item.snapshot.documents?.flatMap(document => document.thumbnail_urls ?? [])
     .find(path => typeof path === "string" && path.length > 0) ?? null;
-  const url = useSignedThumbnailUrl(raw);
+  const signed = useSignedThumbnailUrl(guided && !perfectCover ? null : raw);
+  const url = coverRaster ?? signed;
   const shape = bookshelfCoverShape(item.snapshot);
   const landscape = shape === "landscape";
   const binding = shape === "ring_binder" || item.snapshot.spec.perfect_bound_cover ? null : selectedBindingArt(item.snapshot.spec.selected_options ?? {}, []);

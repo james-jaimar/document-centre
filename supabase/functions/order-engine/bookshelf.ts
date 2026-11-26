@@ -1,4 +1,4 @@
-import { assertBookshelfActor, assertBookshelfPdf, assertBookshelfQuantity, copyBookshelfSnapshot } from "./bookshelf-rules.ts";
+import { assertBookshelfActor, assertBookshelfPdf, assertBookshelfQuantity, copyBookshelfSnapshot, placedJobBookshelfSnapshot } from "./bookshelf-rules.ts";
 import { deleteS3Objects } from "../_shared/s3Delete.ts";
 
 export async function bookshelfOperation(admin: any, actor: { id: string; is_anonymous?: boolean }, authHeader: string, payload: any) {
@@ -37,7 +37,27 @@ export async function bookshelfOperation(admin: any, actor: { id: string; is_ano
   const data: any = { name: payload.name, sku: payload.sku ?? "", expected_revision: shelf?.revision };
   let snapshot: any;
   let prefix = "";
-  if (mode === "create" || mode === "revise") {
+  if (mode === "create" && typeof payload.order_job_id === "string") {
+    // Placed order: rebuild from the frozen production assets; the order itself is never modified.
+    const { data: job, error } = await admin.from("order_jobs").select("id,order_id,product_name,configuration,product_snapshot").eq("id", payload.order_job_id).single();
+    if (error || !job) throw new Error("Source product not found");
+    const { data: order } = await admin.from("orders").select("id,app_id").eq("id", job.order_id).eq("user_id", actor.id).eq("tenant_id", tenantId).single();
+    if (!order?.app_id) throw new Error("Source product not found in this tenant");
+    const assetIds = [...new Set([
+      ...(job.configuration?.merge_directives ?? []).map((d: any) => d?.asset_id),
+      ...["front", "back", "wrap"].map((s) => job.configuration?.perfect_bound_cover?.[s]?.asset_id),
+    ].filter((v): v is string => typeof v === "string"))];
+    const [assets, derived, family] = await Promise.all([
+      admin.from("assets").select("id,original_filename,source_storage_path,normalized_storage_path,page_count,width_pt,height_pt,boxes").in("id", assetIds),
+      admin.from("derived_files").select("asset_id,kind,page,storage_path").in("asset_id", assetIds).in("kind", ["thumbnail_page", "preview_page"]).order("created_at"),
+      admin.from("product_families").select("is_active").eq("id", job.product_snapshot?.product_family?.id).single(),
+    ]);
+    if (assets.error || derived.error || family.error || !family.data?.is_active) throw new Error("Could not load this order's print files");
+    snapshot = placedJobBookshelfSnapshot(job, assets.data ?? [], derived.data ?? []);
+    assertBookshelfPdf(snapshot);
+    data.source_order_id = order.id;
+    prefix = `tenants/${tenantId}/bookshelf/${id}/${crypto.randomUUID()}`;
+  } else if (mode === "create" || mode === "revise") {
     const { data: item, error } = await admin.from("order_items").select("*").eq("id", payload.order_item_id).single();
     if (error || !item) throw new Error("Source product not found");
     const { data: order } = await admin.from("orders").select("*").eq("id", item.order_id).eq("user_id", actor.id).eq("tenant_id", tenantId).single();
