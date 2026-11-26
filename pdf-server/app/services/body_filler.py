@@ -20,7 +20,8 @@ def make_body_filler(path: Path, width_mm: float, height_mm: float, color: str =
     w, h = width_mm * 72 / 25.4, height_mm * 72 / 25.4
     writer = PdfWriter()
     page = writer.add_blank_page(width=w, height=h)
-    if color != "white":
+    # Always paint an opaque fill: an empty page is transparent and renders black in some viewers/RIPs.
+    if True:
         r, g, b = INSERT_RGB[color]
         stream = DecodedStreamObject()
         stream.set_data(f"q {r:.6f} {g:.6f} {b:.6f} rg 0 0 {w:.6f} {h:.6f} re f Q".encode())
