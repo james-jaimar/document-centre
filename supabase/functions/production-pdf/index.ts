@@ -52,11 +52,12 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey);
 
     const body = await req.json();
-    const { action, job_id, imposition_template_id, force, component, wait } = body ?? {};
+    const { action, job_id, imposition_template_id, force, component, wait, pdf_job_id } = body ?? {};
+    const isStatus = action === "status";
     // `wait: false` → dispatch and return immediately. The caller polls
     // order_jobs for the artefact path instead of holding the request open.
     const waitForResult = wait !== false;
-    if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
+    if (!job_id || (!ENDPOINTS[action] && !isStatus)) return json({ error: "Invalid request" }, 400);
     if (action === "impose" && !imposition_template_id) {
       return json({ error: "imposition_template_id is required for impose action" }, 400);
     }
@@ -119,6 +120,24 @@ Deno.serve(async (req) => {
     const apiUrl = requireCloudRunApiBase();
     const apiKey = Deno.env.get("VPS_PDF_API_KEY");
     if (!apiUrl) return json({ error: "PDF API not configured (DOCUMENT_CENTRE_API_URL missing)" }, 500);
+
+    // Status check for a job dispatched with `wait: false`. Returns only the
+    // state (never storage paths) — the caller re-reads order_jobs itself.
+    if (isStatus) {
+      if (typeof pdf_job_id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(pdf_job_id)) {
+        return json({ error: "pdf_job_id is required" }, 400);
+      }
+      const statusRes = await fetch(`${apiUrl}/v1/jobs/${pdf_job_id}`, {
+        headers: apiKey ? { "x-api-key": apiKey } : {},
+      });
+      if (!statusRes.ok) return json({ status: "unknown" });
+      const sd = await statusRes.json();
+      return json({
+        status: sd.status ?? "unknown",
+        error: sd.status === "failed" ? (sd.error ?? "Unknown failure") : null,
+        reused_cache: !!sd.result?.reused_cache,
+      });
+    }
 
     // Persist the chosen template on the job so the worker can read it.
     // For per-component imposition the pdf-server route persists the choice

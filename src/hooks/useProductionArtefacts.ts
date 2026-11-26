@@ -111,28 +111,50 @@ export function useProductionArtefacts(jobId: string | null) {
     }
   }, [jobId, query.data?.order_id, qc, toast]);
 
+  /**
+   * Print-ready assembly can take minutes on large books, so dispatch with
+   * `wait: false` and poll the worker status from the browser instead of
+   * holding the edge function open (which times out at ~90s).
+   */
   const generatePrintReady = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
     setGenerating("print_ready");
     const before = query.data?.print_ready_assembled_at ?? null;
     try {
-      const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "assemble", job_id: jobId, force: !!opts?.force },
+      const res = await invokeEdgeFunctionVerbose("production-pdf", {
+        action: "assemble",
+        job_id: jobId,
+        force: !!opts?.force,
+        wait: false,
       });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      if (!res.ok) throw new Error(res.error ?? "Unknown error");
+      const pdfJobId = (res.data as any)?.pdf_job_id as string | undefined;
+      if (!pdfJobId) throw new Error("The PDF server did not return a job reference");
 
-      // Confirm the worker actually wrote a new artefact — a slow assemble
-      // returns ok while the job row still points at the previous PDF.
-      const { data: row } = await supabase
-        .from("order_jobs")
-        .select("print_ready_assembled_at")
-        .eq("id", jobId)
-        .maybeSingle();
-      const after = (row as any)?.print_ready_assembled_at ?? null;
+      // Poll for up to 15 minutes.
+      let status = "queued";
+      let failure: string | null = null;
+      let reused = false;
+      for (let i = 0; i < 180; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const { data, error } = await supabase.functions.invoke("production-pdf", {
+          body: { action: "status", job_id: jobId, pdf_job_id: pdfJobId },
+        });
+        if (error) continue; // transient — keep polling
+        status = (data as any)?.status ?? "unknown";
+        if (status === "completed") { reused = !!(data as any)?.reused_cache; break; }
+        if (status === "failed") { failure = (data as any)?.error ?? "Unknown failure"; break; }
+      }
+
       qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
+      if (failure) throw new Error(failure);
 
-      if ((data as any)?.reused_cache) {
+      if (status !== "completed") {
+        toast({
+          title: "Still generating",
+          description: "This is a big job and the PDF server is still working. Refresh in a few minutes.",
+        });
+      } else if (reused) {
         const at = before ? new Date(before).toLocaleString() : null;
         toast({
           title: "Already assembled for this job",
@@ -140,16 +162,9 @@ export function useProductionArtefacts(jobId: string | null) {
             ? `This job's print-ready PDF was built on ${at} and is up to date. Use Force rebuild to re-render it.`
             : "This job's print-ready PDF is already up to date. Use Force rebuild to re-render it.",
         });
-      } else if (after && after !== before) {
-        toast({ title: "Print-ready PDF generated", description: "Available for download below." });
       } else {
-        toast({
-          title: "Still generating",
-          description:
-            "The PDF server hasn't finished yet — the download below is still the previous version. Refresh in a moment.",
-        });
+        toast({ title: "Print-ready PDF generated", description: "Available for download below." });
       }
-
     } catch (e: any) {
       toast({
         title: "Could not generate print-ready PDF",
@@ -160,7 +175,6 @@ export function useProductionArtefacts(jobId: string | null) {
       setGenerating(null);
     }
   }, [jobId, qc, toast, query.data?.print_ready_assembled_at]);
-
 
   const generateImposition = useCallback(async (
     impositionTemplateId?: string | null,
