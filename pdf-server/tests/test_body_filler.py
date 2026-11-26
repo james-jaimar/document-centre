@@ -56,7 +56,7 @@ def test_actual_worker_injects_recto_blank_between_151_page_and_next_chapter(tmp
     ], {"a": 151, "b": 4})
     assert len(book.pages) == 156
     assert book.pages[150]["/SourceFace"] == "a:150"
-    assert book.pages[151].get_contents() is None
+    assert b"1.000000 1.000000 1.000000 rg" in book.pages[151].get_contents().get_data()
     assert book.pages[152]["/SourceFace"] == "b:0"
 
 
@@ -70,7 +70,7 @@ def test_actual_worker_slices_source_around_manual_blank_and_two_coloured_faces(
     ], {"a": 10})
     assert len(book.pages) == 13
     assert book.pages[4]["/SourceFace"] == "a:4"
-    assert book.pages[5].get_contents() is None
+    assert b"1.000000 1.000000 1.000000 rg" in book.pages[5].get_contents().get_data()
     assert b"0.996078 0.976471 0.764706 rg" in book.pages[6].get_contents().get_data()
     assert b"0.996078 0.976471 0.764706 rg" in book.pages[7].get_contents().get_data()
     assert book.pages[8]["/SourceFace"] == "a:5"
@@ -91,7 +91,7 @@ def test_151_page_chapter_has_real_page_152_before_next_chapter(tmp_path):
         writer.write(f)
     book = PdfReader(output)
     assert len(book.pages) == 153
-    assert book.pages[151].get_contents() is None
+    assert b"1.000000 1.000000 1.000000 rg" in book.pages[151].get_contents().get_data()
     assert book.pages[152]["/Chapter"] == "Next chapter"
     assert abs(float(book.pages[151].mediabox.width) * 25.4 / 72 - 210) < .001
     assert abs(float(book.pages[151].mediabox.height) * 25.4 / 72 - 297) < .001

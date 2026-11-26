@@ -777,8 +777,13 @@ class PdfOps:
             first_page = reader.pages[0]
             w = float(first_page.mediabox.width)
             h = float(first_page.mediabox.height)
+            from pypdf.generic import DecodedStreamObject, NameObject
             for _ in range(blanks_needed):
-                writer.add_blank_page(width=w, height=h)
+                # Opaque white: an empty page is transparent and can render black.
+                blank = writer.add_blank_page(width=w, height=h)
+                fill = DecodedStreamObject()
+                fill.set_data(f"q 1 1 1 rg 0 0 {w:.6f} {h:.6f} re f Q".encode())
+                blank[NameObject("/Contents")] = writer._add_object(fill)
                 added += 1
 
         with open(out_pdf, "wb") as f:
