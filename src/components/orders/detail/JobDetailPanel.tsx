@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/orders/StatusBadge";
 import { JOB_STATUS_CONFIG, PROOF_STATUS_CONFIG, URGENCY_CONFIG } from "@/lib/orders/status-maps";
 import { Separator } from "@/components/ui/separator";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
+import PlacedPerfectBoundPreview from "./PlacedPerfectBoundPreview";
 import { resolvePreviewType } from "@/lib/orders/inferPreviewType";
 import { bindingArtFromSlug } from "@/lib/orders/selectedBindingArt";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
@@ -53,6 +54,8 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
   const jobSize = resolveJobSize(job, config);
   const jobOrientation = orientationOf(jobSize);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const perfectCover = (config as any).perfect_bound_cover;
+  const [bookOpen, setBookOpen] = useState(false);
   const customerFiles = buildCustomerFiles(
     sourceDocumentsForJob(job, sourceDocuments),
     jobDocs,
@@ -113,7 +116,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         <JobWeightCard job={job} />
 
         {/* Preview button */}
-        {hasPreview ? (
+        {perfectCover ? (
+          <Button variant="default" size="sm" className="w-full h-7 text-xs" onClick={() => setBookOpen(true)}>
+            <Eye className="h-3.5 w-3.5 mr-1.5" />
+            View book{previewPageCount > 0 ? ` (${previewPageCount} pages)` : ""}
+          </Button>
+        ) : hasPreview ? (
           <Button
             variant="default"
             size="sm"
@@ -259,6 +267,14 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber, 
         }
         jobSize={jobSize}
       />
+
+      {bookOpen && perfectCover && (
+        <PlacedPerfectBoundPreview
+          cover={perfectCover}
+          insidePages={() => { setBookOpen(false); setPreviewOpen(true); }}
+          onClose={() => setBookOpen(false)}
+        />
+      )}
 
       {previewOpen && (
         <PreviewLightbox
