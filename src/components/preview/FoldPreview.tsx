@@ -4,6 +4,7 @@ import { FOLD_GEOMETRY } from "./previewTypes";
 import { buildSpecForFoldType } from "./brochure/brochure-specs";
 import type { BrochureSpec, Panel } from "./brochure/brochure-types";
 import BrochureViewer from "./brochure/BrochureViewer";
+import FoldedLeaflet3D from "./brochure/FoldedLeaflet3D";
 import { FileText, AlertTriangle } from "lucide-react";
 
 /**
@@ -83,6 +84,7 @@ export default function FoldPreview({
   const [outsideSpec, setOutsideSpec] = useState<BrochureSpec | null>(null);
   const [insideSpec, setInsideSpec] = useState<BrochureSpec | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [classic, setClassic] = useState(false);
 
   const geometry = FOLD_GEOMETRY[foldType];
   const hasTwoSides = urls.length >= 2;
@@ -171,7 +173,13 @@ export default function FoldPreview({
     );
   }
 
+  if (!classic) {
+    return <FoldedLeaflet3D spec={outsideSpec} foldType={foldType} width={width} height={height} onClassic={() => setClassic(true)} />;
+  }
+
   return (
+    <div className="relative" style={{ width, height }}>
+      <button type="button" onClick={() => setClassic(false)} className="absolute right-2 top-2 z-10 rounded-md border bg-background px-2 py-1 text-xs">3D view</button>
     <BrochureViewer
       outsideSpec={outsideSpec}
       insideSpec={insideSpec}
@@ -179,5 +187,6 @@ export default function FoldPreview({
       height={height}
       foldType={foldType}
     />
+    </div>
   );
 }
