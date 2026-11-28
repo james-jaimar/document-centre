@@ -6,12 +6,12 @@ import { Slider } from "@/components/ui/slider";
 import type { BrochureSpec } from "./brochure-types";
 import { foldPlan, hingeAngle, hingeProgress } from "@/lib/brochure/fold3d";
 
-interface Props { spec: BrochureSpec; foldType: string; width: number; height: number; onClassic?: () => void }
+interface Props { spec: BrochureSpec; foldType: string; width: number; height: number }
 
 const GAP = 0.012; // stacking gap between folded panels (scene units)
 const SPEED = 0.9; // closure units per second for Fold/Open buttons
 
-export default function FoldedLeaflet3D({ spec, foldType, width, height, onClassic }: Props) {
+export default function FoldedLeaflet3D({ spec, foldType, width, height }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const target = useRef(0);
   const closure = useRef(0);
@@ -32,7 +32,7 @@ export default function FoldedLeaflet3D({ spec, foldType, width, height, onClass
     const rim = new THREE.DirectionalLight(0xffffff, 0.7); rim.position.set(-2, 1, -4); scene.add(rim);
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = false; controls.enableDamping = true; controls.minDistance = 2.5; controls.maxDistance = 9;
+    controls.enablePan = false; controls.enableDamping = true; controls.minDistance = 1.5; controls.maxDistance = 9;
 
     const n = spec.panels.length;
     const H = 2;
@@ -85,7 +85,7 @@ export default function FoldedLeaflet3D({ spec, foldType, width, height, onClass
     const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }); disposables.push(shadowMat);
     const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.rotation.x = -Math.PI / 2; shadow.position.y = -H / 2 - 0.25; scene.add(shadow);
 
-    const fitDistance = (w: number) => { const aspect = camera.aspect || 1; const vFov = (camera.fov * Math.PI) / 180; return Math.max(H / 0.8, w / aspect / 0.85) / (2 * Math.tan(vFov / 2)); };
+    const fitDistance = (w: number) => { const aspect = camera.aspect || 1; const vFov = (camera.fov * Math.PI) / 180; return Math.max(H / 0.9, w / aspect / 0.94) / (2 * Math.tan(vFov / 2)); };
     camera.position.set(0.6, 0.35, fitDistance(sheetW));
     viewRef.current = (side) => {
       const d = camera.position.length();
@@ -93,7 +93,7 @@ export default function FoldedLeaflet3D({ spec, foldType, width, height, onClass
       controls.update();
     };
 
-    const resize = () => { const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); renderer.domElement.style.width = "100%"; renderer.domElement.style.height = "100%"; camera.aspect = w / h; camera.updateProjectionMatrix(); };
+    const resize = () => { const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); renderer.domElement.style.width = "100%"; renderer.domElement.style.height = "100%"; camera.aspect = w / h; camera.updateProjectionMatrix(); camera.position.setLength(fitDistance(sheetW)); controls.update(); };
     const ro = new ResizeObserver(resize); ro.observe(el); resize();
     camera.position.setLength(fitDistance(sheetW));
 
@@ -129,7 +129,6 @@ export default function FoldedLeaflet3D({ spec, foldType, width, height, onClass
     return (
       <div className="flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground" style={{ width, height }}>
         <p>3D preview isn't supported on this device.</p>
-        {onClassic && <Button size="sm" variant="outline" onClick={onClassic}>Use classic view</Button>}
       </div>
     );
   }
@@ -149,7 +148,6 @@ export default function FoldedLeaflet3D({ spec, foldType, width, height, onClass
           <Button size="sm" onClick={() => { target.current = closed ? 0 : 1; }}>{closed ? "Unfold" : "Fold"}</Button>
           <Button size="sm" variant="outline" onClick={() => viewRef.current("front")}>Front</Button>
           <Button size="sm" variant="outline" onClick={() => viewRef.current("back")}>Back</Button>
-          {onClassic && <Button size="sm" variant="ghost" onClick={onClassic}>Classic view</Button>}
         </div>
         <p className="text-center text-xs text-muted-foreground">Drag to turn the leaflet · scroll to zoom</p>
       </div>

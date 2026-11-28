@@ -59,6 +59,9 @@ export default function PreviewLightbox({
     faceLabels && !isRingBinder ? faceLabels[page] : undefined;
 
   const step = BOUND_TYPES.has(productType) ? 2 : 1;
+  // Folded leaflets are one interactive 3D sheet: no page arrows or counter.
+  const isFold = ["bi_fold", "tri_fold", "z_fold", "gate_fold"].includes(productType);
+  const showPager = total > 1 && !isFold;
 
   const goNext = useCallback(() => {
     if (isRingBinder) {
@@ -86,7 +89,7 @@ export default function PreviewLightbox({
     return () => window.removeEventListener("keydown", handler);
   }, [onClose, goNext, goPrev, page]);
 
-  if (total === 0) return null;
+  if (total === 0 && !isFold) return null;
 
   return (
     <div
@@ -100,7 +103,7 @@ export default function PreviewLightbox({
         <X className="h-5 w-5" />
       </button>
 
-      {total > 1 && (
+      {showPager && (
         <button
           onClick={(e) => { e.stopPropagation(); goPrev(); }}
           disabled={page === 0}
@@ -113,19 +116,19 @@ export default function PreviewLightbox({
         </button>
       )}
 
-      <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
+      <div onClick={(e) => e.stopPropagation()} className={cn("flex items-center justify-center", isFold && "rounded-xl bg-background p-4 shadow-2xl")}>
         <DocumentPreview
           thumbnailPaths={safeThumbnailPaths}
           productType={productType}
-          width={window.innerWidth * 0.95}
-          height={window.innerHeight * 0.92}
+          width={window.innerWidth * (isFold ? 0.9 : 0.95)}
+          height={window.innerHeight * (isFold ? 0.88 : 0.92)}
           currentPage={page}
           onPageChange={setPage}
           {...extraProps}
         />
       </div>
 
-      {total > 1 && (
+      {showPager && (
         <button
           onClick={(e) => { e.stopPropagation(); goNext(); }}
           disabled={page === total - 1}
@@ -138,7 +141,7 @@ export default function PreviewLightbox({
         </button>
       )}
 
-      {total > 1 && (
+      {showPager && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-4 py-1.5 rounded-full">
           {currentDisplayNum !== null
             ? `${currentDisplayNum} / ${contentTotal}`
